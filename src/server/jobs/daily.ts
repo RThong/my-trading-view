@@ -16,6 +16,7 @@ import { QUOTE_SYMBOLS, MACRO_SERIES } from '../config';
 import type { YahooOptionsClient } from '../fetchers/yahooOptions';
 import { defaultYahooOptionsClient } from '../fetchers/yahooOptions';
 import { runOptionsSnapshot, DEFAULT_RATE } from './optionsSnapshot';
+import { fetchVxFrontMonthSeries } from '../fetchers/cboeVx';
 
 type QuoteSymbol = { symbol: string; label: string; group: string };
 type MacroSpec = { id: string; label: string; unit: string };
@@ -30,6 +31,7 @@ type RunDailyJobOpts = {
   optionsUnderlyings?: Array<'SPX' | 'VIX'>;
   yahooOptions?: YahooOptionsClient;
   riskFreeRate?: number;
+  fetchVxFutures?: boolean;
 };
 
 function daysAgo(n: number): Date {
@@ -105,6 +107,21 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       });
     }
   }
+
+  // vx_futures group (CBOE VIX futures front-month series, stored as quote_eod symbol='VX1')
+  if (opts.fetchVxFutures) {
+    const runId = startJobRun(opts.db, 'vx_futures');
+    try {
+      // Only re-fetch contracts that haven't expired more than 7 days ago. Their
+      // history doesn't change, but we want to catch any late settlement edits.
+      const lookbackStart = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
+      const rows = await fetchVxFrontMonthSeries({ freshSince: lookbackStart });
+      insertQuotes(opts.db, rows, 'cboe');
+      finishJobRun(opts.db, runId, { status: 'success', recordsWritten: rows.length });
+    } catch (err) {
+      finishJobRun(opts.db, runId, { status: 'failed', error: (err as Error).message });
+    }
+  }
 }
 
 // CLI entry
@@ -126,6 +143,7 @@ if (import.meta.main) {
     optionsUnderlyings: ['SPX', 'VIX'],
     yahooOptions: defaultYahooOptionsClient(),
     riskFreeRate,
+    fetchVxFutures: true,
   });
   db.close();
   console.log('Daily job complete.');
