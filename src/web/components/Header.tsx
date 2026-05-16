@@ -1,37 +1,31 @@
 import { StatusLight } from './StatusLight';
+import type { Interval } from '../hooks/useChartData';
 
-const RANGES = [
-  { label: '1D', days: 1 },
-  { label: '1W', days: 7 },
-  { label: '1M', days: 30 },
-  { label: '1Q', days: 90 },
-  { label: '1Y', days: 365 },
-  { label: 'All', days: 1825 },
-];
+const INTERVALS: Interval[] = ['1D', '1W', '1M', '1Q', '1Y'];
 
 type HeaderProps = {
-  days: number;
-  onDaysChange: (d: number) => void;
+  interval: Interval;
+  onIntervalChange: (i: Interval) => void;
 };
 
-export function Header({ days, onDaysChange }: HeaderProps) {
+export function Header({ interval, onIntervalChange }: HeaderProps) {
   return (
     <header className="flex items-center gap-4 border-b border-neutral-800 px-6 py-3">
       <StatusLight />
       <h1 className="text-lg font-semibold">My Trading View</h1>
       <div className="ml-auto flex items-center gap-1">
-        {RANGES.map(r => (
+        {INTERVALS.map(i => (
           <button
-            key={r.label}
-            onClick={() => onDaysChange(r.days)}
+            key={i}
+            onClick={() => onIntervalChange(i)}
             className={
               'rounded px-3 py-1 text-sm ' +
-              (r.days === days
+              (i === interval
                 ? 'bg-neutral-700 text-white'
                 : 'text-neutral-400 hover:text-white hover:bg-neutral-800')
             }
           >
-            {r.label}
+            {i}
           </button>
         ))}
       </div>

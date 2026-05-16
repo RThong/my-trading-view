@@ -1,10 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { createChart, LineSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
-import { useChartData, type SeriesConfig } from '../hooks/useChartData';
+import { useChartData, type SeriesConfig, type Interval } from '../hooks/useChartData';
 
 type Props = {
   configs: SeriesConfig[];
-  days: number;
+  interval: Interval;
   /** Number of panes to create. Defaults to max(config.pane) + 1. */
   paneCount?: number;
 };
@@ -18,11 +18,11 @@ const CHART_OPTIONS = {
   autoSize: true,
 };
 
-export function ChartView({ configs, days, paneCount }: Props) {
+export function ChartView({ configs, interval, paneCount }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
-  const { series, loading, error } = useChartData(configs, days);
+  const { series, loading, error } = useChartData(configs, interval);
 
   const paneIndexFor = (label: string) => {
     const cfg = configs.find(c => c.label === label);

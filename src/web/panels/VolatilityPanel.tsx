@@ -1,5 +1,5 @@
 import { ChartView } from '../components/ChartView';
-import type { SeriesConfig } from '../hooks/useChartData';
+import type { SeriesConfig, Interval } from '../hooks/useChartData';
 
 const CONFIGS: SeriesConfig[] = [
   { source: 'quotes', symbol: '^VIX',   label: 'VIX',   color: '#f87171', axis: 'left' },
@@ -9,6 +9,6 @@ const CONFIGS: SeriesConfig[] = [
   { source: 'quotes', symbol: '^SKEW',  label: 'SKEW',  color: '#60a5fa', axis: 'right' },
 ];
 
-export function VolatilityPanel({ days }: { days: number }) {
-  return <ChartView configs={CONFIGS} days={days} />;
+export function VolatilityPanel({ interval }: { interval: Interval }) {
+  return <ChartView configs={CONFIGS} interval={interval} />;
 }

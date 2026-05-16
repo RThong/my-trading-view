@@ -5,6 +5,7 @@ import { VolatilityPanel } from './panels/VolatilityPanel';
 import { MacroPanel } from './panels/MacroPanel';
 import { IndicesPanel } from './panels/IndicesPanel';
 import { AssetsPanel } from './panels/AssetsPanel';
+import type { Interval } from './hooks/useChartData';
 
 const TABS = [
   { id: 'volatility', label: 'Volatility' },
@@ -14,19 +15,19 @@ const TABS = [
 ];
 
 export function App() {
-  const [days, setDays] = useState(1825);
+  const [interval, setInterval] = useState<Interval>('1D');
   const [tab, setTab] = useState('volatility');
 
   return (
     <div className="flex h-screen flex-col">
-      <Header days={days} onDaysChange={setDays} />
+      <Header interval={interval} onIntervalChange={setInterval} />
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
       <main className="flex-1 p-4 min-h-0">
         <div className="h-full w-full rounded border border-neutral-800 p-3">
-          {tab === 'volatility' && <VolatilityPanel days={days} />}
-          {tab === 'macro'      && <MacroPanel days={days} />}
-          {tab === 'indices'    && <IndicesPanel days={days} />}
-          {tab === 'assets'     && <AssetsPanel days={days} />}
+          {tab === 'volatility' && <VolatilityPanel interval={interval} />}
+          {tab === 'macro'      && <MacroPanel interval={interval} />}
+          {tab === 'indices'    && <IndicesPanel interval={interval} />}
+          {tab === 'assets'     && <AssetsPanel interval={interval} />}
         </div>
       </main>
     </div>

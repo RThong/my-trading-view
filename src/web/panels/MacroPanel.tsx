@@ -1,5 +1,5 @@
 import { ChartView } from '../components/ChartView';
-import type { SeriesConfig } from '../hooks/useChartData';
+import type { SeriesConfig, Interval } from '../hooks/useChartData';
 
 const CONFIGS: SeriesConfig[] = [
   { source: 'macro', seriesId: 'DGS10',    label: 'UST 10Y',   color: '#34d399', axis: 'left' },
@@ -8,6 +8,6 @@ const CONFIGS: SeriesConfig[] = [
   { source: 'macro', seriesId: 'DTWEXBGS', label: 'USD Index', color: '#f59e0b', axis: 'right' },
 ];
 
-export function MacroPanel({ days }: { days: number }) {
-  return <ChartView configs={CONFIGS} days={days} />;
+export function MacroPanel({ interval }: { interval: Interval }) {
+  return <ChartView configs={CONFIGS} interval={interval} />;
 }
