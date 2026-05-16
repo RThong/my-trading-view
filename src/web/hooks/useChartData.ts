@@ -4,8 +4,9 @@ import { api } from '../lib/client';
 export type LinePoint = { time: string; value: number };
 export type SeriesData = { label: string; color: string; data: LinePoint[] };
 
-type QuoteSeriesConfig = { source: 'quotes'; symbol: string; label: string; color: string };
-type MacroSeriesConfig = { source: 'macro';  seriesId: string; label: string; color: string };
+type AxisAndPane = { axis?: 'left' | 'right'; pane?: number };
+type QuoteSeriesConfig = AxisAndPane & { source: 'quotes'; symbol: string; label: string; color: string };
+type MacroSeriesConfig = AxisAndPane & { source: 'macro';  seriesId: string; label: string; color: string };
 export type SeriesConfig = QuoteSeriesConfig | MacroSeriesConfig;
 
 export function useChartData(configs: SeriesConfig[], days: number): {
