@@ -1,8 +1,10 @@
 import type { MacroRow } from '../storage/repository';
 
+type FetchFn = (url: string) => Promise<Response>;
+
 type FredOpts = {
   apiKey: string;
-  fetch?: typeof fetch;
+  fetch?: FetchFn;
 };
 
 export function createFredFetcher(opts: FredOpts) {

@@ -3,7 +3,7 @@ import { createFredFetcher } from './fred';
 
 describe('fred fetcher', () => {
   test('fetchSeries parses observations into MacroRow shape', async () => {
-    const fakeFetch: typeof fetch = async (input) => {
+    const fakeFetch =async (input: string) => {
       const url = String(input);
       expect(url).toContain('series_id=DGS10');
       expect(url).toContain('api_key=test-key');
@@ -24,7 +24,7 @@ describe('fred fetcher', () => {
   });
 
   test('fetchSeries throws on non-200', async () => {
-    const fakeFetch: typeof fetch = async () =>
+    const fakeFetch =async () =>
       new Response('forbidden', { status: 403 });
     const fetcher = createFredFetcher({ apiKey: 'k', fetch: fakeFetch });
     await expect(fetcher.fetchSeries('DGS10', '2026-05-01')).rejects.toThrow(/FRED/);
