@@ -3,18 +3,31 @@ import { resolve } from 'node:path';
 export const PROJECT_ROOT = resolve(import.meta.dirname, '..', '..');
 export const DB_PATH = resolve(PROJECT_ROOT, 'data', 'mtv.db');
 
+/** Symbols fetched from Yahoo (yahoo-finance2). */
 export const QUOTE_SYMBOLS = [
-  { symbol: '^VIX',    label: 'VIX',   group: 'volatility' as const },
-  { symbol: '^VIX9D',  label: 'VIX9D', group: 'volatility' as const },
-  { symbol: '^VIX3M',  label: 'VIX3M', group: 'volatility' as const },
-  { symbol: '^VVIX',   label: 'VVIX',  group: 'volatility' as const },
-  { symbol: '^SKEW',   label: 'SKEW',  group: 'volatility' as const },
   { symbol: '^GSPC',   label: 'S&P 500', group: 'index' as const },
   { symbol: 'QQQ',     label: 'QQQ',   group: 'index' as const },
   { symbol: 'IWM',     label: 'IWM',   group: 'index' as const },
   { symbol: 'GLD',     label: 'GLD',   group: 'asset' as const },
   { symbol: 'TLT',     label: 'TLT',   group: 'asset' as const },
   { symbol: 'BTC-USD', label: 'BTC',   group: 'asset' as const },
+];
+
+/**
+ * Indices fetched directly from CBOE (cdn.cboe.com), which has full history
+ * dating back to the 1990s or earlier. `cboeSymbol` is the URL token; we
+ * store under `symbol` (with `^` prefix to stay consistent with the
+ * Yahoo-style naming used elsewhere in the DB).
+ */
+export const CBOE_INDEX_SYMBOLS = [
+  { symbol: '^VIX',    cboeSymbol: 'VIX',    label: 'VIX',   group: 'volatility' as const },
+  { symbol: '^VIX9D',  cboeSymbol: 'VIX9D',  label: 'VIX9D', group: 'volatility' as const },
+  { symbol: '^VIX3M',  cboeSymbol: 'VIX3M',  label: 'VIX3M', group: 'volatility' as const },
+  { symbol: '^VIX6M',  cboeSymbol: 'VIX6M',  label: 'VIX6M', group: 'volatility' as const },
+  { symbol: '^VIX1Y',  cboeSymbol: 'VIX1Y',  label: 'VIX1Y', group: 'volatility' as const },
+  { symbol: '^VVIX',   cboeSymbol: 'VVIX',   label: 'VVIX',  group: 'volatility' as const },
+  { symbol: '^SKEW',   cboeSymbol: 'SKEW',   label: 'SKEW',  group: 'volatility' as const },
+  { symbol: '^RXM',    cboeSymbol: 'RXM',    label: 'RXM',   group: 'strategy'   as const },
 ];
 
 export const MACRO_SERIES = [

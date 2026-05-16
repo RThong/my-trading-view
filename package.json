@@ -10,6 +10,7 @@
     "build:web": "vite build",
     "job:daily": "bun run src/server/jobs/daily.ts",
     "backfill:vx": "bun run src/server/jobs/backfillVx.ts",
+    "backfill:cboe-indices": "bun run src/server/jobs/backfillCboeIndices.ts",
     "db:migrate": "bun run src/server/storage/db.ts migrate",
     "test": "bun test"
   },

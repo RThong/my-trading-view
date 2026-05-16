@@ -12,14 +12,16 @@ import {
 } from '../storage/repository';
 import { createYahooFetcher } from '../fetchers/yahoo';
 import { createFredFetcher } from '../fetchers/fred';
-import { QUOTE_SYMBOLS, MACRO_SERIES } from '../config';
+import { QUOTE_SYMBOLS, MACRO_SERIES, CBOE_INDEX_SYMBOLS } from '../config';
 import type { YahooOptionsClient } from '../fetchers/yahooOptions';
 import { defaultYahooOptionsClient } from '../fetchers/yahooOptions';
 import { runOptionsSnapshot, DEFAULT_RATE } from './optionsSnapshot';
 import { fetchVxFrontMonthSeries } from '../fetchers/cboeVx';
+import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 
 type QuoteSymbol = { symbol: string; label: string; group: string };
 type MacroSpec = { id: string; label: string; unit: string };
+type CboeIndexSpec = { symbol: string; cboeSymbol: string; label: string; group: string };
 
 type RunDailyJobOpts = {
   db: Database;
@@ -28,6 +30,7 @@ type RunDailyJobOpts = {
   yahoo: { fetchDailyBars(symbol: string, since: Date): Promise<QuoteRow[]> };
   fred: { fetchSeries(seriesId: string, since: string): Promise<MacroRow[]> };
   historyDays: number;
+  cboeIndices?: CboeIndexSpec[];
   optionsUnderlyings?: Array<'SPX' | 'VIX'>;
   yahooOptions?: YahooOptionsClient;
   riskFreeRate?: number;
@@ -58,6 +61,35 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     if (failures.length === 0) {
       finishJobRun(opts.db, runId, { status: 'success', recordsWritten: total });
     } else if (failures.length === opts.quoteSymbols.length) {
+      finishJobRun(opts.db, runId, { status: 'failed', error: failures.join('; ') });
+    } else {
+      finishJobRun(opts.db, runId, { status: 'partial', recordsWritten: total, error: failures.join('; ') });
+    }
+  }
+
+  // cboe_indices group (VIX family, SKEW, RXM — direct from CBOE CDN, 1990+ history)
+  if (opts.cboeIndices && opts.cboeIndices.length > 0) {
+    const runId = startJobRun(opts.db, 'cboe_indices');
+    const failures: string[] = [];
+    let total = 0;
+    for (const spec of opts.cboeIndices) {
+      try {
+        const latest = getLatestQuoteDate(opts.db, spec.symbol);
+        const rows = await fetchCboeIndexAsQuotes({
+          cboeSymbol: spec.cboeSymbol,
+          storedSymbol: spec.symbol,
+          afterDate: latest ?? undefined,
+          sinceDate: '1995-01-01',
+        });
+        insertQuotes(opts.db, rows, 'cboe');
+        total += rows.length;
+      } catch (err) {
+        failures.push(`${spec.symbol}: ${(err as Error).message}`);
+      }
+    }
+    if (failures.length === 0) {
+      finishJobRun(opts.db, runId, { status: 'success', recordsWritten: total });
+    } else if (failures.length === opts.cboeIndices.length) {
       finishJobRun(opts.db, runId, { status: 'failed', error: failures.join('; ') });
     } else {
       finishJobRun(opts.db, runId, { status: 'partial', recordsWritten: total, error: failures.join('; ') });
@@ -137,6 +169,7 @@ if (import.meta.main) {
     db,
     quoteSymbols: QUOTE_SYMBOLS,
     macroSeries: MACRO_SERIES,
+    cboeIndices: CBOE_INDEX_SYMBOLS,
     yahoo: createYahooFetcher(),
     fred: createFredFetcher({ apiKey: fredKey }),
     historyDays: 180,
