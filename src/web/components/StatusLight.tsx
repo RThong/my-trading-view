@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api/client';
+import { api } from '../lib/client';
 import type { JobStatus } from '../../shared/types';
 
 type Tone = 'green' | 'yellow' | 'red' | 'gray';

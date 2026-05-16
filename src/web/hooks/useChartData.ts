@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api/client';
+import { api } from '../lib/client';
 
 export type LinePoint = { time: string; value: number };
 export type SeriesData = { label: string; color: string; data: LinePoint[] };

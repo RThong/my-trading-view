@@ -74,7 +74,7 @@ src/
     ├── App.tsx              top-level layout
     ├── components/          Header, StatusLight, generic ChartPanel
     ├── panels/              one file per panel (Volatility, Macro, …)
-    └── api/client.ts        hc<AppType> typed client
+    └── lib/client.ts        hc<AppType> typed client
 ```
 
 ## Indicators included (Phase 1)
