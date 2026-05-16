@@ -1,10 +1,12 @@
 import { StatusLight } from './StatusLight';
 
 const RANGES = [
-  { label: '90D',  days: 90 },
-  { label: '180D', days: 180 },
-  { label: '1Y',   days: 365 },
-  { label: 'All',  days: 1825 },
+  { label: '1D', days: 1 },
+  { label: '1W', days: 7 },
+  { label: '1M', days: 30 },
+  { label: '1Q', days: 90 },
+  { label: '1Y', days: 365 },
+  { label: 'All', days: 1825 },
 ];
 
 type HeaderProps = {

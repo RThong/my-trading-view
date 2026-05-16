@@ -14,7 +14,7 @@ const TABS = [
 ];
 
 export function App() {
-  const [days, setDays] = useState(180);
+  const [days, setDays] = useState(1825);
   const [tab, setTab] = useState('volatility');
 
   return (
