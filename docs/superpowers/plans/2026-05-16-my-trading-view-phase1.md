@@ -112,7 +112,7 @@ my-trading-view/
   },
   "dependencies": {
     "hono": "^4.6.0",
-    "yahoo-finance2": "^2.13.0",
+    "yahoo-finance2": "^3.14.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "lightweight-charts": "^5.0.0"
@@ -874,7 +874,7 @@ export type YahooClient = {
 };
 
 export function defaultYahooClient(): YahooClient {
-  const instance = new YahooFinance({ suppressNotices: ['yahooSurvey'] });
+  const instance = new YahooFinance();
   return {
     chart: (symbol, opts) => instance.chart(symbol, opts) as any,
   };

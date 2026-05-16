@@ -1,4 +1,4 @@
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
 import type { QuoteRow } from '../storage/repository';
 
 type YahooQuote = {
@@ -16,8 +16,9 @@ export type YahooClient = {
 };
 
 export function defaultYahooClient(): YahooClient {
+  const instance = new YahooFinance();
   return {
-    chart: (symbol, opts) => (yahooFinance.chart as any)(symbol, opts),
+    chart: (symbol, opts) => instance.chart(symbol, opts) as any,
   };
 }
 

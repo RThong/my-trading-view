@@ -13,10 +13,10 @@
   },
   "dependencies": {
     "hono": "^4.6.0",
-    "yahoo-finance2": "^2.13.0",
+    "lightweight-charts": "^5.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "lightweight-charts": "^5.0.0"
+    "yahoo-finance2": "^3"
   },
   "devDependencies": {
     "@types/bun": "latest",
