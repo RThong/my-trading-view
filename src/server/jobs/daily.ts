@@ -13,6 +13,9 @@ import {
 import { createYahooFetcher } from '../fetchers/yahoo';
 import { createFredFetcher } from '../fetchers/fred';
 import { QUOTE_SYMBOLS, MACRO_SERIES } from '../config';
+import type { YahooOptionsClient } from '../fetchers/yahooOptions';
+import { defaultYahooOptionsClient } from '../fetchers/yahooOptions';
+import { runOptionsSnapshot, DEFAULT_RATE } from './optionsSnapshot';
 
 type QuoteSymbol = { symbol: string; label: string; group: string };
 type MacroSpec = { id: string; label: string; unit: string };
@@ -24,6 +27,9 @@ type RunDailyJobOpts = {
   yahoo: { fetchDailyBars(symbol: string, since: Date): Promise<QuoteRow[]> };
   fred: { fetchSeries(seriesId: string, since: string): Promise<MacroRow[]> };
   historyDays: number;
+  optionsUnderlyings?: Array<'SPX' | 'VIX'>;
+  yahooOptions?: YahooOptionsClient;
+  riskFreeRate?: number;
 };
 
 function daysAgo(n: number): Date {
@@ -80,6 +86,25 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       finishJobRun(opts.db, runId, { status: 'partial', recordsWritten: total, error: failures.join('; ') });
     }
   }
+
+  // options group
+  if (opts.optionsUnderlyings && opts.optionsUnderlyings.length > 0 && opts.yahooOptions) {
+    const runId = startJobRun(opts.db, 'options');
+    try {
+      const rows = await runOptionsSnapshot({
+        db: opts.db,
+        underlyings: opts.optionsUnderlyings,
+        yahooOptions: opts.yahooOptions,
+        riskFreeRate: opts.riskFreeRate ?? DEFAULT_RATE,
+      });
+      finishJobRun(opts.db, runId, { status: 'success', recordsWritten: rows.length });
+    } catch (err) {
+      finishJobRun(opts.db, runId, {
+        status: 'failed',
+        error: (err as Error).message,
+      });
+    }
+  }
 }
 
 // CLI entry
@@ -87,6 +112,10 @@ if (import.meta.main) {
   const db = openDb();
   migrate(db);
   const fredKey = process.env.FRED_API_KEY ?? '';
+  const rateRow = db.query(
+    "SELECT value FROM macro_series WHERE series_id = 'DGS3MO' ORDER BY obs_date DESC LIMIT 1"
+  ).get() as { value: number } | null;
+  const riskFreeRate = rateRow ? rateRow.value / 100 : DEFAULT_RATE;
   await runDailyJob({
     db,
     quoteSymbols: QUOTE_SYMBOLS,
@@ -94,6 +123,9 @@ if (import.meta.main) {
     yahoo: createYahooFetcher(),
     fred: createFredFetcher({ apiKey: fredKey }),
     historyDays: 180,
+    optionsUnderlyings: ['SPX', 'VIX'],
+    yahooOptions: defaultYahooOptionsClient(),
+    riskFreeRate,
   });
   db.close();
   console.log('Daily job complete.');
