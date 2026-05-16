@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import type { QuoteBar } from '../../shared/types';
+import type { QuoteBar, MacroPoint } from '../../shared/types';
 
 export type QuoteRow = {
   symbol: string;
@@ -55,5 +55,47 @@ export function getLatestQuoteDate(db: Database, symbol: string): string | null 
   const row = db.query(`
     SELECT MAX(trade_date) AS d FROM quote_eod WHERE symbol = $symbol
   `).get({ $symbol: symbol }) as { d: string | null };
+  return row?.d ?? null;
+}
+
+// ── macro_series ─────────────────────────────────────────────────────────────
+
+export type MacroRow = {
+  seriesId: string;
+  obsDate: string;
+  value: number;
+};
+
+export function insertMacro(db: Database, rows: MacroRow[]): void {
+  if (rows.length === 0) return;
+  const stmt = db.prepare(`
+    INSERT INTO macro_series (series_id, obs_date, value, fetched_at)
+    VALUES ($id, $date, $value, $fetched)
+    ON CONFLICT(series_id, obs_date) DO UPDATE SET
+      value=excluded.value, fetched_at=excluded.fetched_at
+  `);
+  const fetched = new Date().toISOString();
+  const tx = db.transaction((batch: MacroRow[]) => {
+    for (const r of batch) {
+      stmt.run({ $id: r.seriesId, $date: r.obsDate, $value: r.value, $fetched: fetched });
+    }
+  });
+  tx(rows);
+}
+
+export function getMacroSeries(db: Database, seriesId: string, days: number): MacroPoint[] {
+  const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+  return db.query(`
+    SELECT obs_date AS date, value
+    FROM macro_series
+    WHERE series_id = $id AND obs_date >= $since
+    ORDER BY obs_date ASC
+  `).all({ $id: seriesId, $since: since }) as MacroPoint[];
+}
+
+export function getLatestMacroDate(db: Database, seriesId: string): string | null {
+  const row = db.query(`
+    SELECT MAX(obs_date) AS d FROM macro_series WHERE series_id = $id
+  `).get({ $id: seriesId }) as { d: string | null };
   return row?.d ?? null;
 }
