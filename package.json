@@ -10,7 +10,6 @@
     "build:web": "vite build",
     "job:daily": "bun run src/server/jobs/daily.ts",
     "backfill:vx": "bun run src/server/jobs/backfillVx.ts",
-    "seed:options": "bun run src/server/jobs/seedMockOptions.ts",
     "db:migrate": "bun run src/server/storage/db.ts migrate",
     "test": "bun test"
   },
