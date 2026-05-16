@@ -1,5 +1,2 @@
 [install]
 exact = false
-
-[test]
-preload = [""]
