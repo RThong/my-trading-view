@@ -24,18 +24,6 @@ export type HealthResponse = {
   jobs: JobStatus[];
 };
 
-export type JobStatus = {
-  name: string;
-  status: 'success' | 'partial' | 'failed' | 'running';
-  lastRunAt: string | null;
-  lastSuccessAt: string | null;
-  error: string | null;
-};
-
-export type HealthResponse = {
-  jobs: JobStatus[];
-};
-
 export type CatalogResponse = {
   quotes: Array<{ symbol: string; label: string; group: 'volatility' | 'index' | 'asset' }>;
   macro: Array<{ id: string; label: string; unit: string }>;
