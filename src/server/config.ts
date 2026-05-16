@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 
-export const PROJECT_ROOT = resolve(import.meta.dirname, '..', '..', '..');
+export const PROJECT_ROOT = resolve(import.meta.dirname, '..', '..');
 export const DB_PATH = resolve(PROJECT_ROOT, 'data', 'mtv.db');
 
 export const QUOTE_SYMBOLS = [
