@@ -36,3 +36,15 @@ CREATE TABLE IF NOT EXISTS schema_version (
     version       INTEGER PRIMARY KEY,
     applied_at    TEXT    NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS option_snapshot_25delta (
+    underlying       TEXT    NOT NULL,
+    snapshot_date    TEXT    NOT NULL,
+    call_iv          REAL    NOT NULL,
+    put_iv           REAL    NOT NULL,
+    skew             REAL    NOT NULL,
+    is_mock          INTEGER NOT NULL DEFAULT 0,
+    fetched_at       TEXT    NOT NULL,
+    PRIMARY KEY (underlying, snapshot_date)
+);
+CREATE INDEX IF NOT EXISTS idx_opt25_date ON option_snapshot_25delta(snapshot_date);

@@ -5,6 +5,7 @@ import { VolatilityPanel } from './panels/VolatilityPanel';
 import { MacroPanel } from './panels/MacroPanel';
 import { IndicesPanel } from './panels/IndicesPanel';
 import { AssetsPanel } from './panels/AssetsPanel';
+import { OptionsPanel } from './panels/OptionsPanel';
 import type { Interval } from './hooks/useChartData';
 
 const TABS = [
@@ -12,6 +13,7 @@ const TABS = [
   { id: 'macro',      label: 'Macro / Rates' },
   { id: 'indices',    label: 'Indices' },
   { id: 'assets',     label: 'Other Assets' },
+  { id: 'options',    label: 'Options (25Δ)' },
 ];
 
 export function App() {
@@ -28,6 +30,7 @@ export function App() {
           {tab === 'macro'      && <MacroPanel interval={interval} />}
           {tab === 'indices'    && <IndicesPanel interval={interval} />}
           {tab === 'assets'     && <AssetsPanel interval={interval} />}
+          {tab === 'options'    && <OptionsPanel interval={interval} />}
         </div>
       </main>
     </div>

@@ -1,6 +1,15 @@
 import type { Database } from 'bun:sqlite';
 import type { QuoteBar, MacroPoint, JobStatus } from '../../shared/types';
 
+export type Options25DeltaRow = {
+  underlying: 'SPX' | 'VIX';
+  snapshotDate: string;
+  callIv: number;
+  putIv: number;
+  skew: number;
+  isMock: boolean;
+};
+
 export type QuoteRow = {
   symbol: string;
   tradeDate: string;     // 'YYYY-MM-DD'
@@ -125,6 +134,62 @@ export function finishJobRun(db: Database, runId: number, params: FinishParams):
       runId,
     ],
   );
+}
+
+export function insertOptions25Delta(db: Database, rows: Options25DeltaRow[]): void {
+  if (rows.length === 0) return;
+  const stmt = db.prepare(`
+    INSERT INTO option_snapshot_25delta
+      (underlying, snapshot_date, call_iv, put_iv, skew, is_mock, fetched_at)
+    VALUES ($u, $d, $c, $p, $s, $m, $f)
+    ON CONFLICT(underlying, snapshot_date) DO UPDATE SET
+      call_iv=excluded.call_iv, put_iv=excluded.put_iv, skew=excluded.skew,
+      is_mock=excluded.is_mock, fetched_at=excluded.fetched_at
+  `);
+  const fetched = new Date().toISOString();
+  const tx = db.transaction((batch: Options25DeltaRow[]) => {
+    for (const r of batch) {
+      stmt.run({
+        $u: r.underlying,
+        $d: r.snapshotDate,
+        $c: r.callIv,
+        $p: r.putIv,
+        $s: r.skew,
+        $m: r.isMock ? 1 : 0,
+        $f: fetched,
+      });
+    }
+  });
+  tx(rows);
+}
+
+export function getOptions25Delta(
+  db: Database,
+  underlying: 'SPX' | 'VIX',
+  days: number,
+): Options25DeltaRow[] {
+  const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+  const rows = db.query(`
+    SELECT underlying, snapshot_date, call_iv, put_iv, skew, is_mock
+    FROM option_snapshot_25delta
+    WHERE underlying = $u AND snapshot_date >= $since
+    ORDER BY snapshot_date ASC
+  `).all({ $u: underlying, $since: since }) as Array<{
+    underlying: string;
+    snapshot_date: string;
+    call_iv: number;
+    put_iv: number;
+    skew: number;
+    is_mock: number;
+  }>;
+  return rows.map(r => ({
+    underlying: r.underlying as 'SPX' | 'VIX',
+    snapshotDate: r.snapshot_date,
+    callIv: r.call_iv,
+    putIv: r.put_iv,
+    skew: r.skew,
+    isMock: r.is_mock === 1,
+  }));
 }
 
 export function getJobHealth(db: Database): JobStatus[] {

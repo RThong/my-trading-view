@@ -28,3 +28,11 @@ export type CatalogResponse = {
   quotes: Array<{ symbol: string; label: string; group: 'volatility' | 'index' | 'asset' }>;
   macro: Array<{ id: string; label: string; unit: string }>;
 };
+
+export type OptionIVPoint = {
+  date: string;        // 'YYYY-MM-DD'
+  callIv: number;
+  putIv: number;
+  skew: number;
+  isMock: boolean;
+};
