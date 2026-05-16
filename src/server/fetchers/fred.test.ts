@@ -30,7 +30,8 @@ describe('fred fetcher', () => {
     await expect(fetcher.fetchSeries('DGS10', '2026-05-01')).rejects.toThrow(/FRED/);
   });
 
-  test('fetchSeries throws on missing api key', () => {
-    expect(() => createFredFetcher({ apiKey: '', fetch })).toThrow(/FRED_API_KEY/);
+  test('fetchSeries throws on missing api key', async () => {
+    const fetcher = createFredFetcher({ apiKey: '', fetch });
+    await expect(fetcher.fetchSeries('DGS10', '2026-05-01')).rejects.toThrow(/FRED_API_KEY/);
   });
 });

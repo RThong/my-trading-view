@@ -8,14 +8,14 @@ type FredOpts = {
 };
 
 export function createFredFetcher(opts: FredOpts) {
-  if (!opts.apiKey) {
-    throw new Error('FRED_API_KEY is required');
-  }
   const doFetch = opts.fetch ?? globalThis.fetch;
   const base = 'https://api.stlouisfed.org/fred/series/observations';
 
   return {
     async fetchSeries(seriesId: string, since: string): Promise<MacroRow[]> {
+      if (!opts.apiKey) {
+        throw new Error('FRED_API_KEY is required');
+      }
       const params = new URLSearchParams({
         series_id: seriesId,
         api_key: opts.apiKey,
