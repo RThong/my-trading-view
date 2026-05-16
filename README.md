@@ -36,14 +36,18 @@ bun run job:daily               # first run pulls ~6 months of history
 
 ## Run the dashboard
 
-In two terminals:
-
 ```bash
-bun run dev:server              # Hono on :3000
-bun run dev:web                 # Vite on :5173
+bun run dev                     # Hono on :3000 + Vite on :5173 in one terminal
 ```
 
-Open <http://localhost:5173>.
+Open <http://localhost:5173>. Ctrl-C kills both.
+
+If you'd rather have separate terminals (clearer logs), run them individually:
+
+```bash
+bun run dev:server
+bun run dev:web
+```
 
 ## Schedule the daily job (macOS)
 
