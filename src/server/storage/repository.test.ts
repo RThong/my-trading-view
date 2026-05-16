@@ -8,6 +8,9 @@ import {
   insertMacro,
   getMacroSeries,
   getLatestMacroDate,
+  startJobRun,
+  finishJobRun,
+  getJobHealth,
   type QuoteRow,
   type MacroRow,
 } from './repository';
@@ -82,5 +85,34 @@ describe('repository: macro_series', () => {
 
   test('getLatestMacroDate returns null when empty', () => {
     expect(getLatestMacroDate(db, 'DGS10')).toBeNull();
+  });
+});
+
+describe('repository: job_run', () => {
+  let db: Database;
+  beforeEach(() => { db = freshDb(); });
+
+  test('startJobRun returns id, finishJobRun marks success', () => {
+    const id = startJobRun(db, 'quotes');
+    finishJobRun(db, id, { status: 'success', recordsWritten: 42 });
+    const health = getJobHealth(db);
+    const quotes = health.find(j => j.name === 'quotes')!;
+    expect(quotes.status).toBe('success');
+    expect(quotes.error).toBeNull();
+    expect(quotes.lastSuccessAt).not.toBeNull();
+  });
+
+  test('failed run does not update lastSuccessAt', () => {
+    const id1 = startJobRun(db, 'quotes');
+    finishJobRun(db, id1, { status: 'success', recordsWritten: 10 });
+    const successAt = getJobHealth(db).find(j => j.name === 'quotes')!.lastSuccessAt;
+
+    const id2 = startJobRun(db, 'quotes');
+    finishJobRun(db, id2, { status: 'failed', error: 'boom' });
+
+    const after = getJobHealth(db).find(j => j.name === 'quotes')!;
+    expect(after.status).toBe('failed');
+    expect(after.error).toBe('boom');
+    expect(after.lastSuccessAt).toBe(successAt);
   });
 });

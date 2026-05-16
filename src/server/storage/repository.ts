@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import type { QuoteBar, MacroPoint } from '../../shared/types';
+import type { QuoteBar, MacroPoint, JobStatus } from '../../shared/types';
 
 export type QuoteRow = {
   symbol: string;
@@ -98,4 +98,56 @@ export function getLatestMacroDate(db: Database, seriesId: string): string | nul
     SELECT MAX(obs_date) AS d FROM macro_series WHERE series_id = $id
   `).get({ $id: seriesId }) as { d: string | null };
   return row?.d ?? null;
+}
+
+// ── job_run ───────────────────────────────────────────────────────────────────
+
+export function startJobRun(db: Database, jobName: string): number {
+  const result = db.run(
+    `INSERT INTO job_run (job_name, started_at, status) VALUES (?, ?, 'running')`,
+    [jobName, new Date().toISOString()],
+  );
+  return Number(result.lastInsertRowid);
+}
+
+type FinishParams =
+  | { status: 'success' | 'partial'; recordsWritten: number; error?: string }
+  | { status: 'failed'; error: string; recordsWritten?: number };
+
+export function finishJobRun(db: Database, runId: number, params: FinishParams): void {
+  db.run(
+    `UPDATE job_run SET finished_at = ?, status = ?, records_written = ?, error_message = ? WHERE run_id = ?`,
+    [
+      new Date().toISOString(),
+      params.status,
+      params.recordsWritten ?? null,
+      params.error ?? null,
+      runId,
+    ],
+  );
+}
+
+export function getJobHealth(db: Database): JobStatus[] {
+  const rows = db.query(`
+    SELECT job_name AS name, status, finished_at, error_message,
+           (SELECT MAX(finished_at) FROM job_run jr2
+            WHERE jr2.job_name = jr.job_name AND jr2.status = 'success') AS last_success_at
+    FROM job_run jr
+    WHERE run_id = (SELECT MAX(run_id) FROM job_run jr3 WHERE jr3.job_name = jr.job_name AND jr3.finished_at IS NOT NULL)
+    ORDER BY name
+  `).all() as Array<{
+    name: string;
+    status: 'success' | 'partial' | 'failed' | 'running';
+    finished_at: string | null;
+    error_message: string | null;
+    last_success_at: string | null;
+  }>;
+
+  return rows.map(r => ({
+    name: r.name,
+    status: r.status as JobStatus['status'],
+    lastRunAt: r.finished_at,
+    lastSuccessAt: r.last_success_at,
+    error: r.error_message,
+  }));
 }
