@@ -79,7 +79,6 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
           cboeSymbol: spec.cboeSymbol,
           storedSymbol: spec.symbol,
           afterDate: latest ?? undefined,
-          sinceDate: '1995-01-01',
         });
         insertQuotes(opts.db, rows, 'cboe');
         total += rows.length;

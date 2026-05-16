@@ -11,7 +11,8 @@ export type SeriesConfig = QuoteSeriesConfig | MacroSeriesConfig;
 
 export type Interval = '1D' | '1W' | '1M' | '1Q' | '1Y';
 
-const HISTORY_DAYS = 18250; // 50y — enough to cover all CBOE history (back to 1986)
+// ~22y — server-side caps at HISTORY_MAX_DAYS from config.ts (currently 8000).
+const HISTORY_DAYS = 8000;
 
 function periodKey(dateStr: string, interval: Interval): string {
   if (interval === '1D') return dateStr;

@@ -3,6 +3,11 @@ import { resolve } from 'node:path';
 export const PROJECT_ROOT = resolve(import.meta.dirname, '..', '..');
 export const DB_PATH = resolve(PROJECT_ROOT, 'data', 'mtv.db');
 
+/** Earliest trade date we keep. Used by all backfill + filter logic. */
+export const HISTORY_START_DATE = '2007-01-01';
+/** Corresponding day count for API/frontend caps (~22y headroom). */
+export const HISTORY_MAX_DAYS = 8000;
+
 /** Symbols fetched from Yahoo (yahoo-finance2). */
 export const QUOTE_SYMBOLS = [
   { symbol: '^GSPC',   label: 'S&P 500', group: 'index' as const },

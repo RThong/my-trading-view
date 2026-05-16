@@ -1,8 +1,8 @@
 /**
- * One-shot backfill of all CBOE-sourced indices from 1995-01-01 to today.
- * Use this when first switching the VIX family from Yahoo to CBOE, since
- * the incremental daily job won't pull history if some Yahoo-sourced rows
- * already exist for those symbols.
+ * One-shot backfill of all CBOE-sourced indices from HISTORY_START_DATE
+ * to today. Use this when first switching the VIX family from Yahoo to
+ * CBOE, since the incremental daily job won't pull history if some
+ * Yahoo-sourced rows already exist for those symbols.
  *
  *   bun run backfill:cboe-indices
  */
@@ -22,7 +22,6 @@ async function main(): Promise<void> {
       const rows = await fetchCboeIndexAsQuotes({
         cboeSymbol: spec.cboeSymbol,
         storedSymbol: spec.symbol,
-        sinceDate: '1995-01-01',
       });
       insertQuotes(db, rows, 'cboe');
       const dt = ((Date.now() - t0) / 1000).toFixed(1);

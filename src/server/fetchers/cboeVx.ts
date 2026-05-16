@@ -22,6 +22,7 @@
  */
 
 import type { QuoteRow } from '../storage/repository';
+import { HISTORY_START_DATE } from '../config';
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -157,13 +158,15 @@ export async function fetchVxFrontMonthSeries(opts: FetchAllOpts = {}): Promise<
   }
 
   const fm = computeFrontMonth(contractRows);
-  return fm.map((r) => ({
-    symbol: 'VX1',
-    tradeDate: r.tradeDate,
-    open: null,
-    high: null,
-    low: null,
-    close: r.settle,
-    volume: null,
-  }));
+  return fm
+    .filter((r) => r.tradeDate >= HISTORY_START_DATE)
+    .map((r) => ({
+      symbol: 'VX1',
+      tradeDate: r.tradeDate,
+      open: null,
+      high: null,
+      low: null,
+      close: r.settle,
+      volume: null,
+    }));
 }

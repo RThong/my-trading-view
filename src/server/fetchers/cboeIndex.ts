@@ -12,6 +12,7 @@
  */
 
 import type { QuoteRow } from '../storage/repository';
+import { HISTORY_START_DATE } from '../config';
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -93,22 +94,22 @@ function parseNullable(s: string | undefined): number | null {
 type FetchToRowsOpts = {
   cboeSymbol: string;
   storedSymbol: string;
-  sinceDate?: string;   // YYYY-MM-DD; default '1995-01-01'
-  afterDate?: string;   // YYYY-MM-DD; only rows STRICTLY after this; takes precedence over sinceDate
+  /** Only rows STRICTLY after this date. Takes precedence over the default HISTORY_START_DATE floor. */
+  afterDate?: string;
   client?: CboeIndexClient;
 };
 
 /**
  * Fetch a CBOE index and return QuoteRow[] ready to insert into quote_eod.
- * For backfill, pass `sinceDate: '1995-01-01'`.
- * For incremental updates, pass `afterDate: latestStoredDate`.
+ * Always floored at HISTORY_START_DATE. For incremental updates, pass
+ * `afterDate: latestStoredDate` to fetch only newer rows.
  */
 export async function fetchCboeIndexAsQuotes(opts: FetchToRowsOpts): Promise<QuoteRow[]> {
   const client = opts.client ?? defaultCboeIndexClient();
   const all = await client.fetchHistory(opts.cboeSymbol);
-  const filtered = opts.afterDate
-    ? all.filter((r) => r.tradeDate > opts.afterDate!)
-    : all.filter((r) => r.tradeDate >= (opts.sinceDate ?? '1995-01-01'));
+  const cutoff = opts.afterDate && opts.afterDate > HISTORY_START_DATE ? opts.afterDate : HISTORY_START_DATE;
+  const isStrict = opts.afterDate !== undefined;
+  const filtered = all.filter((r) => isStrict ? r.tradeDate > cutoff : r.tradeDate >= cutoff);
   return filtered.map((r) => ({
     symbol: opts.storedSymbol,
     tradeDate: r.tradeDate,
