@@ -8,8 +8,8 @@ describe('yahooOptions DI', () => {
         underlyingSymbol: sym,
         underlyingPrice: 5000,
         expirationDate: '2026-06-15',
-        calls: [{ strike: 5100, impliedVolatility: 0.18 }],
-        puts:  [{ strike: 4900, impliedVolatility: 0.22 }],
+        calls: [{ contractSymbol: 'TEST', strike: 5100, expiration: '2026-06-15', impliedVolatility: 0.18, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null }],
+        puts:  [{ contractSymbol: 'TEST', strike: 4900, expiration: '2026-06-15', impliedVolatility: 0.22, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null }],
       }),
     };
     const out = await mock.fetchChain('^SPX', 30);

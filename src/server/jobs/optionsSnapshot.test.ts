@@ -16,17 +16,17 @@ const SAMPLE_CHAIN: OptionChainSnapshot = {
   underlyingPrice: 5000,
   expirationDate: new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10),
   calls: [
-    { strike: 4800, impliedVolatility: 0.25 },
-    { strike: 5000, impliedVolatility: 0.20 },
-    { strike: 5200, impliedVolatility: 0.18 },
-    { strike: 5400, impliedVolatility: 0.19 },  // ~25Δ call should land here-ish
-    { strike: 5600, impliedVolatility: 0.21 },
+    { contractSymbol: 'TEST', strike: 4800, expiration: '2026-06-15', impliedVolatility: 0.25, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null },
+    { contractSymbol: 'TEST', strike: 5000, expiration: '2026-06-15', impliedVolatility: 0.20, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null },
+    { contractSymbol: 'TEST', strike: 5200, expiration: '2026-06-15', impliedVolatility: 0.18, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null },
+    { contractSymbol: 'TEST', strike: 5400, expiration: '2026-06-15', impliedVolatility: 0.19, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null },  // ~25Δ call should land here-ish
+    { contractSymbol: 'TEST', strike: 5600, expiration: '2026-06-15', impliedVolatility: 0.21, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null },
   ],
   puts: [
-    { strike: 4400, impliedVolatility: 0.30 },
-    { strike: 4600, impliedVolatility: 0.27 },  // ~25Δ put should land here-ish
-    { strike: 4800, impliedVolatility: 0.25 },
-    { strike: 5000, impliedVolatility: 0.22 },
+    { contractSymbol: 'TEST', strike: 4400, expiration: '2026-06-15', impliedVolatility: 0.30, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null },
+    { contractSymbol: 'TEST', strike: 4600, expiration: '2026-06-15', impliedVolatility: 0.27, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null },  // ~25Δ put should land here-ish
+    { contractSymbol: 'TEST', strike: 4800, expiration: '2026-06-15', impliedVolatility: 0.25, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null },
+    { contractSymbol: 'TEST', strike: 5000, expiration: '2026-06-15', impliedVolatility: 0.22, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null },
   ],
 };
 

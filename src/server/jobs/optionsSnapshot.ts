@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { insertOptions25Delta, type Options25DeltaRow } from '../storage/repository';
+import { insertOptions25Delta, insertOptionChainRaw, type Options25DeltaRow, type OptionChainRawRow } from '../storage/repository';
 import { callDelta } from '../analytics/greeks';
 import type { OptionChainSnapshot, YahooOptionsClient } from '../fetchers/yahooOptions';
 
@@ -72,6 +72,7 @@ const TICKER: Record<'SPX' | 'VIX', string> = { SPX: '^SPX', VIX: '^VIX' };
 export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaRow[]> {
   const today = new Date().toISOString().slice(0, 10);
   const rows: Options25DeltaRow[] = [];
+  const rawRows: OptionChainRawRow[] = [];
   for (const u of opts.underlyings) {
     const chain = await opts.yahooOptions.fetchChain(TICKER[u], TARGET_DTE);
     const sel = select25Delta(chain, opts.riskFreeRate);
@@ -91,8 +92,20 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaR
       skew: sel.skew * scale,
       isMock: false,
     });
+
+    // Archive the full chain (gzipped) for future analyses (max pain, OI distribution, GEX, etc.)
+    const chainJson = JSON.stringify({ calls: chain.calls, puts: chain.puts });
+    const gz = Bun.gzipSync(new TextEncoder().encode(chainJson));
+    rawRows.push({
+      underlying: u,
+      snapshotDate: today,
+      expiry: chain.expirationDate,
+      underlyingPrice: chain.underlyingPrice,
+      chainJsonGz: gz,
+    });
   }
   insertOptions25Delta(opts.db, rows);
+  insertOptionChainRaw(opts.db, rawRows);
   return rows;
 }
 

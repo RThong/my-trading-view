@@ -1,11 +1,17 @@
 import YahooFinance from 'yahoo-finance2';
 
 export type OptionContract = {
+  contractSymbol: string;
   strike: number;
+  expiration: string;          // 'YYYY-MM-DD' (ISO)
   impliedVolatility: number;  // decimal: 0.20 = 20%
-  bid?: number;
-  ask?: number;
-  lastPrice?: number;
+  bid: number | null;
+  ask: number | null;
+  lastPrice: number | null;
+  volume: number | null;
+  openInterest: number | null;
+  inTheMoney: boolean;
+  lastTradeDate: string | null;   // ISO datetime, may be null on stale strikes
 };
 
 export type OptionChainSnapshot = {
@@ -24,6 +30,17 @@ export type YahooOptionsClient = {
 function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
+
+const toIsoDateAny = (d: any): string => {
+  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  if (typeof d === 'string') return d.slice(0, 10);
+  return '';
+};
+const toIsoDateTime = (d: any): string | null => {
+  if (d instanceof Date) return d.toISOString();
+  if (typeof d === 'string') return d;
+  return null;
+};
 
 export function defaultYahooOptionsClient(): YahooOptionsClient {
   const yf = new YahooFinance();
@@ -54,11 +71,17 @@ export function defaultYahooOptionsClient(): YahooOptionsClient {
       const map = (arr: any[]): OptionContract[] => arr
         .filter(o => typeof o.strike === 'number' && typeof o.impliedVolatility === 'number' && o.impliedVolatility > 0)
         .map(o => ({
+          contractSymbol: String(o.contractSymbol ?? ''),
           strike: o.strike,
+          expiration: toIsoDateAny(o.expiration),
           impliedVolatility: o.impliedVolatility,
-          bid: o.bid,
-          ask: o.ask,
-          lastPrice: o.lastPrice,
+          bid: typeof o.bid === 'number' ? o.bid : null,
+          ask: typeof o.ask === 'number' ? o.ask : null,
+          lastPrice: typeof o.lastPrice === 'number' ? o.lastPrice : null,
+          volume: typeof o.volume === 'number' ? o.volume : null,
+          openInterest: typeof o.openInterest === 'number' ? o.openInterest : null,
+          inTheMoney: Boolean(o.inTheMoney),
+          lastTradeDate: toIsoDateTime(o.lastTradeDate),
         }));
       return {
         underlyingSymbol: symbol,

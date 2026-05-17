@@ -48,3 +48,14 @@ CREATE TABLE IF NOT EXISTS option_snapshot_25delta (
     PRIMARY KEY (underlying, snapshot_date)
 );
 CREATE INDEX IF NOT EXISTS idx_opt25_date ON option_snapshot_25delta(snapshot_date);
+
+CREATE TABLE IF NOT EXISTS option_chain_raw (
+    underlying       TEXT    NOT NULL,
+    snapshot_date    TEXT    NOT NULL,
+    expiry           TEXT    NOT NULL,
+    underlying_price REAL,
+    chain_json_gz    BLOB    NOT NULL,
+    fetched_at       TEXT    NOT NULL,
+    PRIMARY KEY (underlying, snapshot_date, expiry)
+);
+CREATE INDEX IF NOT EXISTS idx_opt_chain_date ON option_chain_raw(snapshot_date);

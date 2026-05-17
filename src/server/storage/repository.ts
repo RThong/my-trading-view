@@ -192,6 +192,41 @@ export function getOptions25Delta(
   }));
 }
 
+export type OptionChainRawRow = {
+  underlying: string;
+  snapshotDate: string;
+  expiry: string;
+  underlyingPrice: number | null;
+  chainJsonGz: Uint8Array;
+};
+
+export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[]): void {
+  if (rows.length === 0) return;
+  const stmt = db.prepare(`
+    INSERT INTO option_chain_raw
+      (underlying, snapshot_date, expiry, underlying_price, chain_json_gz, fetched_at)
+    VALUES ($u, $d, $e, $price, $gz, $f)
+    ON CONFLICT(underlying, snapshot_date, expiry) DO UPDATE SET
+      underlying_price = excluded.underlying_price,
+      chain_json_gz    = excluded.chain_json_gz,
+      fetched_at       = excluded.fetched_at
+  `);
+  const fetched = new Date().toISOString();
+  const tx = db.transaction((batch: OptionChainRawRow[]) => {
+    for (const r of batch) {
+      stmt.run({
+        $u: r.underlying,
+        $d: r.snapshotDate,
+        $e: r.expiry,
+        $price: r.underlyingPrice,
+        $gz: r.chainJsonGz,
+        $f: fetched,
+      });
+    }
+  });
+  tx(rows);
+}
+
 export function getJobHealth(db: Database): JobStatus[] {
   const rows = db.query(`
     SELECT job_name AS name, status, finished_at, error_message,
