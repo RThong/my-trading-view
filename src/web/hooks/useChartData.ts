@@ -39,6 +39,20 @@ function periodKey(dateStr: string, interval: Interval): string {
   return monday.toISOString().slice(0, 10);
 }
 
+/**
+ * Drop Saturday/Sunday rows so the time axis matches the US-equity trading
+ * week (TradingView-style compressed weekends). Stocks/indices have no
+ * weekend data anyway — this is a no-op for them. BTC-USD is the only
+ * symbol that loses ~52 rows/year. If we ever add a crypto-native panel
+ * that wants 7-day continuous data, we'll add a per-series opt-out.
+ */
+function dropWeekends(data: LinePoint[]): LinePoint[] {
+  return data.filter((p) => {
+    const dow = new Date(p.time + 'T12:00:00Z').getUTCDay();
+    return dow !== 0 && dow !== 6;
+  });
+}
+
 function aggregate(data: LinePoint[], interval: Interval): LinePoint[] {
   if (interval === '1D') return data;
   const byKey = new Map<string, LinePoint>();
@@ -73,7 +87,7 @@ export function useChartData(configs: SeriesConfig[], interval: Interval): {
         return {
           label: cfg.label,
           color: cfg.color,
-          data: aggregate(bars.map(b => ({ time: b.date, value: b.close })), interval),
+          data: aggregate(dropWeekends(bars.map(b => ({ time: b.date, value: b.close }))), interval),
         };
       } else {
         const res = await (api.api.macro[':seriesId'].$get as (args: unknown) => Promise<Response>)({
@@ -84,7 +98,7 @@ export function useChartData(configs: SeriesConfig[], interval: Interval): {
         return {
           label: cfg.label,
           color: cfg.color,
-          data: aggregate(points.map(p => ({ time: p.date, value: p.value })), interval),
+          data: aggregate(dropWeekends(points.map(p => ({ time: p.date, value: p.value }))), interval),
         };
       }
     }))
