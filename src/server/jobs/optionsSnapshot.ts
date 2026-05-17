@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { insertOptions25Delta, insertOptionChainRaw, type Options25DeltaRow, type OptionChainRawRow } from '../storage/repository';
 import { callDelta } from '../analytics/greeks';
 import type { OptionChainSnapshot, YahooOptionsClient } from '../fetchers/yahooOptions';
+import { lastClosedTradingDate } from './tradingCalendar';
 
 // NOTE: VIX option pricing here uses plain Black-Scholes with VIX *spot* as
 // the underlying. Real VIX options are priced off VIX *futures*, so our 25Δ
@@ -70,7 +71,11 @@ type RunOpts = {
 const TICKER: Record<'SPX' | 'VIX', string> = { SPX: '^SPX', VIX: '^VIX' };
 
 export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaRow[]> {
-  const today = new Date().toISOString().slice(0, 10);
+  // Yahoo's option chain serves the most recent close on weekends/after-hours,
+  // so stamp the snapshot with the last *closed* US trading day rather than
+  // wall-clock today. Idempotent under upsert: a weekend run and the actual
+  // Friday-evening run will write to the same row.
+  const today = lastClosedTradingDate();
   const rows: Options25DeltaRow[] = [];
   const rawRows: OptionChainRawRow[] = [];
   for (const u of opts.underlyings) {
