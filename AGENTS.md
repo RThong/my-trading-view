@@ -3,6 +3,19 @@
 个人用的美股市场状态监控盘(类 TradingView)。**Bun + TypeScript 全栈**(前后端都是 TS),
 不要引入 Python 工具链。EOD 天级数据,本地单机跑,SQLite 单文件 `data/mtv.db`。
 
+## 取数方式总览
+
+| 源 | 内容 | 方式 | 历史 |
+|---|---|---|---|
+| **CBOE 指数** | VIX 家族 / SKEW / RXM | **静态 CSV 直下**:`cdn.cboe.com/api/global/us_indices/daily_prices/{指数}_History.csv`(无需 key,免爬虫) | 1990 至今全历史 |
+| **CBOE VX 期货** | VX 近月连续(存为 `VX1`) | API 列清单(`www-api.cboe.com/.../product/list/VX/`)+ `cdn.cboe.com/{path}` 下 CSV | 全历史 |
+| **FRED** | 利率(UST 10Y/2Y/3M)/ 美元指数(`DTWEXBGS` 广义贸易加权,非 ICE DXY) | JSON API `api.stlouisfed.org/fred/series/observations`(要 key) | 全历史 |
+| **Yahoo** | 股票 EOD | `yahoo-finance2` npm(底层 Yahoo query JSON API) | 可回填多年 |
+| **moomoo** | 期权链 | 本地 OpenD WebSocket `127.0.0.1:33333` | **仅当天快照,不可回填** |
+
+**关键差异**:只有 **moomoo 期权是快照型**——25Δ 序列只能从今往后每个交易日攒一个点,
+拿不到历史(25Δ 行权价每天滚动,固定合约的历史 IV 无法重建该序列)。其余源都能回填全历史。
+
 ## 数据源踩坑(大多是试出来的,文档里没有——改之前先读)
 
 ### moomoo OpenAPI(期权)

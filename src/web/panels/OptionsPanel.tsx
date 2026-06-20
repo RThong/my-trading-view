@@ -7,9 +7,9 @@ type LinePoint = { time: string; value: number };
 type MetricKey = 'callIv' | 'putIv' | 'skew';
 
 const COLORS = {
-  spyCall: '#22c55e',
-  spyPut:  '#ec4899',
-  spySkew: '#be123c',
+  call: '#22c55e',
+  put:  '#ec4899',
+  skew: '#3b82f6',
 };
 
 const CHART_OPTIONS = {
@@ -58,11 +58,12 @@ function toLinePoints(raw: RawPoint[], metric: MetricKey): LinePoint[] {
   return raw.map(r => ({ time: r.date, value: r[metric] }));
 }
 
-export function OptionsPanel({ interval }: { interval: Interval }) {
+export function OptionsPanel({ interval, underlying }: { interval: Interval; underlying: string }) {
+  const label = underlying.replace(/^\./, ''); // ".VIX" → "VIX"
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
-  const [spy, setSpy] = useState<RawPoint[]>([]);
+  const [rows, setRows] = useState<RawPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,14 +72,19 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
     setLoading(true);
     setError(null);
 
-    fetch(`/api/options/25delta/SPY?days=${HISTORY_DAYS}`)
-      .then(r => r.json() as Promise<RawPoint[]>)
-      .then(s => { if (!cancelled) setSpy(s); })
+    fetch(`/api/options/25delta/${encodeURIComponent(underlying)}?days=${HISTORY_DAYS}`)
+      // 非 2xx(如未知 underlying 返回 400 {error})要抛错走 catch,
+      // 否则会把错误对象塞进 rows,后续 toLinePoints 的 .map 直接崩。
+      .then(async r => {
+        if (!r.ok) throw new Error(`加载 ${label} 期权数据失败 (${r.status})`);
+        return r.json() as Promise<RawPoint[]>;
+      })
+      .then(s => { if (!cancelled) setRows(s); })
       .catch(e => { if (!cancelled) setError((e as Error).message); })
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => { cancelled = true; };
-  }, []);
+  }, [underlying]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -99,11 +105,11 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
     if (!chart) return;
 
     const specs = [
-      // Pane 0:SPY 25Δ 的 call + put IV
-      { key: 'spy-call', pane: 0, color: COLORS.spyCall, title: 'SPY 25Δ Call IV', data: aggregate(toLinePoints(spy, 'callIv'), interval) },
-      { key: 'spy-put',  pane: 0, color: COLORS.spyPut,  title: 'SPY 25Δ Put IV',  data: aggregate(toLinePoints(spy, 'putIv'),  interval) },
-      // Pane 1:SPY 25Δ skew(put IV − call IV)
-      { key: 'spy-skew', pane: 1, color: COLORS.spySkew, title: 'SPY 25Δ Skew',    data: aggregate(toLinePoints(spy, 'skew'),   interval) },
+      // Pane 0:call + put IV 放一起
+      { key: 'call', pane: 0, color: COLORS.call, title: `${label} 25Δ Call IV`, data: aggregate(toLinePoints(rows, 'callIv'), interval) },
+      { key: 'put',  pane: 0, color: COLORS.put,  title: `${label} 25Δ Put IV`,  data: aggregate(toLinePoints(rows, 'putIv'),  interval) },
+      // Pane 1:25Δ skew(put IV − call IV)单独一格
+      { key: 'skew', pane: 1, color: COLORS.skew, title: `${label} 25Δ Skew`,    data: aggregate(toLinePoints(rows, 'skew'),   interval) },
     ];
 
     const keysNow = new Set(specs.map(s => s.key));
@@ -128,7 +134,7 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
     }
 
     chart.timeScale().fitContent();
-  }, [spy, interval]);
+  }, [rows, interval, label]);
 
   return (
     <div className="relative h-full w-full">

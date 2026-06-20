@@ -13,7 +13,8 @@ const TABS = [
   { id: 'macro',      label: 'Macro / Rates' },
   { id: 'indices',    label: 'Indices' },
   { id: 'assets',     label: 'Other Assets' },
-  { id: 'options',    label: 'SPY Options (25Δ)' },
+  { id: 'options-spy', label: 'SPY Options (25Δ)' },
+  { id: 'options-vix', label: 'VIX Options (25Δ)' },
 ];
 
 export function App() {
@@ -30,7 +31,8 @@ export function App() {
           {tab === 'macro'      && <MacroPanel interval={interval} />}
           {tab === 'indices'    && <IndicesPanel interval={interval} />}
           {tab === 'assets'     && <AssetsPanel interval={interval} />}
-          {tab === 'options'    && <OptionsPanel interval={interval} />}
+          {tab === 'options-spy' && <OptionsPanel interval={interval} underlying="SPY" />}
+          {tab === 'options-vix' && <OptionsPanel interval={interval} underlying=".VIX" />}
         </div>
       </main>
     </div>
