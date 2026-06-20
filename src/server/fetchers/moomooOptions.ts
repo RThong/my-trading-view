@@ -1,10 +1,10 @@
 /**
  * moomoo OpenD 期权链抓取器(WebSocket)。
  *
- * 返回与 yahooOptions.ts 相同的 OptionChainSnapshot 结构,这样后续流水线
- * (select25Delta、原始数据归档)无需关心数据来源。与 Yahoo 不同,moomoo
- * 提供交易所级别的 OI/IV 以及预先算好的希腊字母(delta/gamma/vega/theta/rho),
- * 我们将其作为可选字段一并透传。
+ * 返回 optionsSnapshot.ts 定义的 OptionChainSnapshot 结构,这样后续流水线
+ * (select25Delta、原始数据归档)无需关心数据来源。moomoo 提供交易所级别的
+ * OI/IV 以及预先算好的希腊字母(delta/gamma/vega/theta/rho),我们将其作为
+ * 可选字段一并透传。
  *
  * 两步协议:
  *   1. GetOptionChain  → 拉取某个日期窗口内的静态信息(合约代码、行权价)
@@ -16,8 +16,7 @@
 
 // @ts-expect-error — moomoo-api 没有附带类型声明
 import mmWebsocket from 'moomoo-api';
-import type { OptionContract } from './yahooOptions';
-import type { OptionsChainClient } from '../jobs/optionsSnapshot';
+import type { OptionContract, OptionsChainClient } from '../jobs/optionsSnapshot';
 
 const QOT_MARKET_US = 11;
 const SNAPSHOT_BATCH = 400;
@@ -136,8 +135,8 @@ function toContract(staticC: StaticContract, snap: any): OptionContract | null {
     contractSymbol: staticC.code,
     strike: staticC.strikePrice,
     expiration: expiryDate(ox.strikeTime),
-    // moomoo 的 IV 以百分数给出(19.296 表示 19.296%);这里归一化成小数,
-    // 以对齐 yahooOptions 的约定(0.20 表示 20%)。
+    // moomoo 的 IV 以百分数给出(19.296 表示 19.296%);这里归一化成小数
+    //(0.20 表示 20%),与流水线约定一致。
     impliedVolatility: ox.impliedVolatility / 100,
     bid: typeof basic?.bidPrice === 'number' ? basic.bidPrice : null,
     ask: typeof basic?.askPrice === 'number' ? basic.askPrice : null,

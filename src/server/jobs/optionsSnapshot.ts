@@ -1,8 +1,32 @@
 import type { Database } from 'bun:sqlite';
 import { insertOptions25Delta, insertOptionChainRaw, type Options25DeltaRow, type OptionChainRawRow } from '../storage/repository';
 import { callDelta } from '../analytics/greeks';
-import type { OptionChainSnapshot } from '../fetchers/yahooOptions';
 import { lastClosedTradingDate } from './tradingCalendar';
+
+export type OptionContract = {
+  contractSymbol: string;
+  strike: number;
+  expiration: string;          // 'YYYY-MM-DD'(ISO)
+  impliedVolatility: number;  // 小数形式:0.20 表示 20%
+  bid: number | null;
+  ask: number | null;
+  lastPrice: number | null;
+  volume: number | null;
+  openInterest: number | null;
+  inTheMoney: boolean;
+  lastTradeDate: string | null;   // ISO 日期时间,长期无成交的行权价可能为 null
+  // 希腊字母 —— 数据源提供时才有(moomoo)。
+  delta?: number | null;
+  gamma?: number | null;
+};
+
+export type OptionChainSnapshot = {
+  underlyingSymbol: string;
+  underlyingPrice: number;     // 拉取时刻的现货价
+  expirationDate: string;      // 'YYYY-MM-DD'
+  calls: OptionContract[];
+  puts: OptionContract[];
+};
 
 // 我们用 Black-Scholes delta,从每个 strike 的 IV 推算出 25Δ 的选取结果。
 // moomoo 也会为每个合约返回它自己预先算好的 delta;但为了在不同数据源之间
@@ -58,7 +82,7 @@ function pickClosest<T>(arr: T[], distance: (x: T) => number): T {
     .reduce((best, cur) => (cur.d < best.d ? cur : best)).x;
 }
 
-/** Yahoo 和 moomoo 两个抓取器都满足的最小 client 接口。 */
+/** 抓取器满足的最小 client 接口(目前由 moomoo 实现)。 */
 export type OptionsChainClient = {
   fetchChain(symbol: string, targetDte: number): Promise<OptionChainSnapshot>;
 };

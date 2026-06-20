@@ -2,8 +2,7 @@ import { describe, test, expect, beforeEach } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
 import { getOptions25Delta } from '../storage/repository';
-import { select25Delta, runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
-import type { OptionChainSnapshot } from '../fetchers/yahooOptions';
+import { select25Delta, runOptionsSnapshot, type OptionsChainClient, type OptionChainSnapshot } from './optionsSnapshot';
 
 function freshDb(): Database {
   const db = new Database(':memory:');
