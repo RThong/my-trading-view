@@ -5,6 +5,7 @@ import { OPTIONS_UNDERLYINGS, DERIBIT_UNDERLYINGS } from '../config';
 import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
 import { defaultDeribitOptionsClient } from '../fetchers/deribitOptions';
 import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
+import { updateVrpInputs } from './vrpInputs';
 
 type RunDailyJobOpts = {
   db: Database;
@@ -14,6 +15,8 @@ type RunDailyJobOpts = {
   /** Deribit 加密期权标的(如 ['BTC'])。需配合 cryptoOptionsClient 使用。 */
   cryptoOptionsUnderlyings?: string[];
   cryptoOptionsClient?: OptionsChainClient;
+  /** VRP 输入序列更新器(注入式;CLI 传 updateVrpInputs,测试省略以免联网)。 */
+  vrpInputsUpdater?: (db: Database) => Promise<{ total: number; succeeded: number; failures: string[] }>;
 };
 
 /** 跑一组期权快照并记一个 job_run(单标的失败 → partial,全失败 → failed)。 */
@@ -46,6 +49,24 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   if (opts.cryptoOptionsUnderlyings?.length && opts.cryptoOptionsClient) {
     await runOptionsGroup(opts.db, 'options_crypto', opts.cryptoOptionsUnderlyings, opts.cryptoOptionsClient);
   }
+
+  // vrp_inputs 分组:增量更新 VIX/SPX/BTC/DVOL(VRP 的隐含腿与 RV 腿)。
+  // 每源独立容错:全成功 → success,部分源失败 → partial,全失败 → failed。
+  if (opts.vrpInputsUpdater) {
+    const vrpRun = startJobRun(opts.db, 'vrp_inputs');
+    try {
+      const { total, succeeded, failures } = await opts.vrpInputsUpdater(opts.db);
+      if (failures.length === 0) {
+        finishJobRun(opts.db, vrpRun, { status: 'success', recordsWritten: total });
+      } else if (succeeded === 0) {
+        finishJobRun(opts.db, vrpRun, { status: 'failed', error: failures.join('; ') });
+      } else {
+        finishJobRun(opts.db, vrpRun, { status: 'partial', recordsWritten: total, error: failures.join('; ') });
+      }
+    } catch (err) {
+      finishJobRun(opts.db, vrpRun, { status: 'failed', error: (err as Error).message });
+    }
+  }
 }
 
 // CLI 入口
@@ -59,6 +80,7 @@ if (import.meta.main) {
     optionsClient: defaultMoomooOptionsClient(),
     cryptoOptionsUnderlyings: DERIBIT_UNDERLYINGS,
     cryptoOptionsClient: defaultDeribitOptionsClient(),
+    vrpInputsUpdater: updateVrpInputs,
   });
 
   db.close();

@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import { Header } from './components/Header';
 import { TabBar } from './components/TabBar';
-import { OptionsPanel } from './panels/OptionsPanel';
+import { AssetView } from './panels/AssetView';
 import type { Interval } from './hooks/interval';
 
+// 一个资产一个 tab,tab 名即资产名;该资产的所有期权指标都在这个 tab 内。
 const TABS = [
-  { id: 'options-spy', label: 'SPY Options (25Δ)' },
-  { id: 'options-vix', label: 'VIX Options (25Δ)' },
-  { id: 'options-btc', label: 'BTC Options (25Δ)' },
+  { id: 'spy', label: 'SPY' },
+  { id: 'vix', label: 'VIX' },
+  { id: 'btc', label: 'BTC' },
 ];
 
 export function App() {
   const [interval, setInterval] = useState<Interval>('1D');
-  const [tab, setTab] = useState('options-spy');
+  const [tab, setTab] = useState('spy');
 
   return (
     <div className="flex h-screen flex-col">
@@ -20,9 +21,9 @@ export function App() {
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
       <main className="flex-1 p-4 min-h-0">
         <div className="h-full w-full rounded border border-neutral-800 p-3">
-          {tab === 'options-spy' && <OptionsPanel interval={interval} underlying="SPY" />}
-          {tab === 'options-vix' && <OptionsPanel interval={interval} underlying=".VIX" />}
-          {tab === 'options-btc' && <OptionsPanel interval={interval} underlying="BTC" />}
+          {tab === 'spy' && <AssetView interval={interval} underlying="SPY" vrpUnderlying="SPY" />}
+          {tab === 'vix' && <AssetView interval={interval} underlying=".VIX" />}
+          {tab === 'btc' && <AssetView interval={interval} underlying="BTC" vrpUnderlying="BTC" />}
         </div>
       </main>
     </div>

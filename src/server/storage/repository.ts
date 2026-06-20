@@ -27,6 +27,35 @@ export type MacroRow = {
   value: number;
 };
 
+// ── market_series(VRP 输入:VIX / ^GSPC / BTC-USD / DVOL)────────────────────
+
+export type MarketSeriesRow = { seriesId: string; obsDate: string; value: number };
+
+export function insertMarketSeries(db: Database, rows: MarketSeriesRow[]): void {
+  if (rows.length === 0) return;
+  const stmt = db.prepare(`
+    INSERT INTO market_series (series_id, obs_date, value, fetched_at)
+    VALUES ($id, $date, $value, $fetched)
+    ON CONFLICT(series_id, obs_date) DO UPDATE SET value=excluded.value, fetched_at=excluded.fetched_at
+  `);
+  const fetched = new Date().toISOString();
+  const tx = db.transaction((batch: MarketSeriesRow[]) => {
+    for (const r of batch) stmt.run({ $id: r.seriesId, $date: r.obsDate, $value: r.value, $fetched: fetched });
+  });
+  tx(rows);
+}
+
+export function getMarketSeries(db: Database, seriesId: string): Array<{ date: string; value: number }> {
+  return db.query(`
+    SELECT obs_date AS date, value FROM market_series WHERE series_id = $id ORDER BY obs_date ASC
+  `).all({ $id: seriesId }) as Array<{ date: string; value: number }>;
+}
+
+export function getLatestMarketDate(db: Database, seriesId: string): string | null {
+  const row = db.query(`SELECT MAX(obs_date) AS d FROM market_series WHERE series_id = $id`).get({ $id: seriesId }) as { d: string | null };
+  return row?.d ?? null;
+}
+
 // ── job_run ───────────────────────────────────────────────────────────────────
 
 export function startJobRun(db: Database, jobName: string): number {

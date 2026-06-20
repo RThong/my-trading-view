@@ -3,6 +3,17 @@
 DROP TABLE IF EXISTS quote_eod;
 DROP TABLE IF EXISTS macro_series;
 
+-- VRP 计算的输入序列:VIX / ^GSPC / BTC-USD / DVOL(隐含腿 + 现货 RV 腿)。
+-- 通用 (series_id, obs_date, value);RV、VRP 在读取时按窗口现算,不预存。
+CREATE TABLE IF NOT EXISTS market_series (
+    series_id   TEXT NOT NULL,
+    obs_date    TEXT NOT NULL,
+    value       REAL NOT NULL,
+    fetched_at  TEXT NOT NULL,
+    PRIMARY KEY (series_id, obs_date)
+);
+CREATE INDEX IF NOT EXISTS idx_market_series_date ON market_series(obs_date);
+
 CREATE TABLE IF NOT EXISTS job_run (
     run_id            INTEGER PRIMARY KEY AUTOINCREMENT,
     job_name          TEXT      NOT NULL,
