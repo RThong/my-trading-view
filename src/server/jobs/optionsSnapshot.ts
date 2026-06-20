@@ -52,13 +52,10 @@ export function select25Delta(
 
 function pickClosest<T>(arr: T[], distance: (x: T) => number): T {
   if (arr.length === 0) throw new Error('empty array');
-  let best = arr[0];
-  let bestD = distance(best);
-  for (let i = 1; i < arr.length; i++) {
-    const d = distance(arr[i]);
-    if (d < bestD) { best = arr[i]; bestD = d; }
-  }
-  return best;
+  // distance 每个元素只算一次,再用 reduce 取最小。
+  return arr
+    .map((x) => ({ x, d: distance(x) }))
+    .reduce((best, cur) => (cur.d < best.d ? cur : best)).x;
 }
 
 /** Yahoo 和 moomoo 两个抓取器都满足的最小 client 接口。 */

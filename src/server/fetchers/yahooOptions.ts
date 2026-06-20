@@ -57,12 +57,9 @@ export function defaultYahooOptionsClient(): YahooOptionsClient {
       }
       const target = Date.now() + targetDte * 86_400_000;
       // 选 |expiry - target| 最小的到期日
-      let best = expirations[0];
-      let bestDiff = Math.abs(best.getTime() - target);
-      for (const e of expirations) {
-        const diff = Math.abs(e.getTime() - target);
-        if (diff < bestDiff) { best = e; bestDiff = diff; }
-      }
+      const best = expirations.reduce((a, e) =>
+        Math.abs(e.getTime() - target) < Math.abs(a.getTime() - target) ? e : a,
+      );
       // 第二次调用:获取该到期日对应的期权链。
       const chain = await (yf.options(symbol, { date: best }) as Promise<any>);
       const node = chain.options?.[0];

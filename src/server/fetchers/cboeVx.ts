@@ -57,17 +57,11 @@ export function defaultCboeVxClient(opts?: { fetch?: FetchFn }): CboeVxClient {
         string,
         Array<{ product_display: string; expire_date: string; path: string }>
       >;
-      const out: CboeContract[] = [];
-      for (const year of Object.keys(data)) {
-        for (const c of data[year]) {
-          out.push({
-            symbol: c.product_display,
-            expireDate: c.expire_date,
-            csvUrl: CDN_BASE + c.path,
-          });
-        }
-      }
-      return out;
+      return Object.values(data).flat().map((c) => ({
+        symbol: c.product_display,
+        expireDate: c.expire_date,
+        csvUrl: CDN_BASE + c.path,
+      }));
     },
     async fetchContractCsv(contract) {
       const res = await doFetch(contract.csvUrl, { headers: { 'User-Agent': UA } });
@@ -82,16 +76,15 @@ export function defaultCboeVxClient(opts?: { fetch?: FetchFn }): CboeVxClient {
 export function parseSettleCsv(text: string): CboeSettleRow[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
-  const out: CboeSettleRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(',');
-    // 列依次为:Trade Date, Futures, Open, High, Low, Close, Settle, Change, Total Volume, EFP, OI
+  // 跳过表头行;flatMap 返回 [] 即丢弃该行(等价于原来的 continue)。
+  // 列依次为:Trade Date, Futures, Open, High, Low, Close, Settle, Change, Total Volume, EFP, OI
+  return lines.slice(1).flatMap((line): CboeSettleRow[] => {
+    const cols = line.split(',');
     const tradeDate = cols[0]?.trim();
     const settle = Number(cols[6]?.trim());
-    if (!tradeDate || !Number.isFinite(settle) || settle <= 0) continue;
-    out.push({ tradeDate, settle });
-  }
-  return out;
+    if (!tradeDate || !Number.isFinite(settle) || settle <= 0) return [];
+    return [{ tradeDate, settle }];
+  });
 }
 
 /**
@@ -102,14 +95,18 @@ export function parseSettleCsv(text: string): CboeSettleRow[] {
 export function computeFrontMonth(
   contractRows: Array<{ expireDate: string; rows: CboeSettleRow[] }>,
 ): Array<{ tradeDate: string; settle: number; expireDate: string }> {
+  // 先扁平化成 {交易日, 结算价, 到期日} 候选行(防御性地跳过到期之后的数据行),
+  // 再按交易日归并,每个交易日保留到期日最早的那条(即近月)。
+  const candidates = contractRows.flatMap((c) =>
+    c.rows
+      .filter((r) => c.expireDate > r.tradeDate)
+      .map((r) => ({ tradeDate: r.tradeDate, settle: r.settle, expireDate: c.expireDate })),
+  );
   const byDate = new Map<string, { settle: number; expireDate: string }>();
-  for (const c of contractRows) {
-    for (const r of c.rows) {
-      if (c.expireDate <= r.tradeDate) continue; // 防御性地跳过到期之后的数据行
-      const existing = byDate.get(r.tradeDate);
-      if (!existing || c.expireDate < existing.expireDate) {
-        byDate.set(r.tradeDate, { settle: r.settle, expireDate: c.expireDate });
-      }
+  for (const r of candidates) {
+    const existing = byDate.get(r.tradeDate);
+    if (!existing || r.expireDate < existing.expireDate) {
+      byDate.set(r.tradeDate, { settle: r.settle, expireDate: r.expireDate });
     }
   }
   return Array.from(byDate.entries())

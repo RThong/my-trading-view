@@ -42,10 +42,13 @@ function periodKey(dateStr: string, interval: Interval): string {
 
 function aggregate(points: LinePoint[], interval: Interval): LinePoint[] {
   if (interval === '1D') return points;
-  const byKey = new Map<string, LinePoint>();
-  for (const p of points) {
-    byKey.set(periodKey(p.time, interval), { time: periodKey(p.time, interval), value: p.value });
-  }
+  // 同一周期内多个点取最后一个(Map 重复 key 保留后写入的),再按时间升序。
+  const byKey = new Map(
+    points.map((p) => {
+      const key = periodKey(p.time, interval);
+      return [key, { time: key, value: p.value }] as const;
+    }),
+  );
   return Array.from(byKey.values()).sort((a, b) => a.time.localeCompare(b.time));
 }
 

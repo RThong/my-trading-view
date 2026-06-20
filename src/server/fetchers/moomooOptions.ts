@@ -82,7 +82,7 @@ async function withConnection<T>(
   }
 }
 
-type StaticContract = { code: string; strikePrice: number; type: number };
+type StaticContract = { code: string; strikePrice: number };
 
 async function fetchStaticChain(
   ws: any,
@@ -99,24 +99,13 @@ async function fetchStaticChain(
   });
   const chains = res?.s2c?.optionChain ?? [];
   return chains.map((ch: any) => {
-    const calls: StaticContract[] = [];
-    const puts: StaticContract[] = [];
-    for (const o of ch.option ?? []) {
-      if (o.call?.basic?.security?.code) {
-        calls.push({
-          code: o.call.basic.security.code,
-          strikePrice: o.call.optionExData?.strikePrice,
-          type: 1,
-        });
-      }
-      if (o.put?.basic?.security?.code) {
-        puts.push({
-          code: o.put.basic.security.code,
-          strikePrice: o.put.optionExData?.strikePrice,
-          type: 2,
-        });
-      }
-    }
+    const options: any[] = ch.option ?? [];
+    const calls: StaticContract[] = options
+      .filter((o) => o.call?.basic?.security?.code)
+      .map((o) => ({ code: o.call.basic.security.code, strikePrice: o.call.optionExData?.strikePrice }));
+    const puts: StaticContract[] = options
+      .filter((o) => o.put?.basic?.security?.code)
+      .map((o) => ({ code: o.put.basic.security.code, strikePrice: o.put.optionExData?.strikePrice }));
     return { expiry: expiryDate(ch.strikeTime), calls, puts };
   });
 }
@@ -179,15 +168,11 @@ export function defaultMoomooOptionsClient(): OptionsChainClient {
           throw new Error(`No expiries for ${symbol} in ${begin}..${end}`);
         }
 
-        // 选取与 targetDte 距离最近的那个到期日。
+        // 选取与 targetDte 距离最近的那个到期日(每个到期日的距离只算一次)。
         const target = now + targetDte * 86400_000;
-        let best = expiries[0];
-        let bestDiff = Infinity;
-        for (const e of expiries) {
-          const ms = new Date(e.expiry + 'T16:00:00Z').getTime();
-          const diff = Math.abs(ms - target);
-          if (diff < bestDiff) { best = e; bestDiff = diff; }
-        }
+        const best = expiries
+          .map((e) => ({ e, diff: Math.abs(new Date(e.expiry + 'T16:00:00Z').getTime() - target) }))
+          .reduce((a, b) => (b.diff < a.diff ? b : a)).e;
 
         // 对选中到期日的所有行权价(看涨 + 看跌)拉取 snapshot。
         const allStatic = [...best.calls, ...best.puts];

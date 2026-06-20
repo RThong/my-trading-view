@@ -54,11 +54,13 @@ function dropWeekends(data: LinePoint[]): LinePoint[] {
 
 function aggregate(data: LinePoint[], interval: Interval): LinePoint[] {
   if (interval === '1D') return data;
-  const byKey = new Map<string, LinePoint>();
-  for (const p of data) {
-    const key = periodKey(p.time, interval);
-    byKey.set(key, { time: key, value: p.value });
-  }
+  // 同一周期内多个点取最后一个(Map 重复 key 保留后写入的),再按时间升序。
+  const byKey = new Map(
+    data.map((p) => {
+      const key = periodKey(p.time, interval);
+      return [key, { time: key, value: p.value }] as const;
+    }),
+  );
   return Array.from(byKey.values()).sort((a, b) => a.time.localeCompare(b.time));
 }
 

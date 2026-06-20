@@ -56,25 +56,20 @@ export function parseCboeIndexCsv(text: string): CboeIndexRow[] {
     header.includes('LOW') &&
     header.includes('CLOSE');
 
-  const out: CboeIndexRow[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(',');
+  // 跳过表头行,逐行解析;flatMap 返回 [] 即丢弃该行(等价于原来的 continue)。
+  return lines.slice(1).flatMap((line): CboeIndexRow[] => {
+    const cols = line.split(',');
     const tradeDate = toIsoDate(cols[0]?.trim());
-    if (!tradeDate) continue;
+    if (!tradeDate) return [];
     if (isOhlc) {
-      const open = parseNullable(cols[1]);
-      const high = parseNullable(cols[2]);
-      const low = parseNullable(cols[3]);
       const close = parseNullable(cols[4]);
-      if (close === null) continue;
-      out.push({ tradeDate, open, high, low, close });
-    } else {
-      const close = parseNullable(cols[1]);
-      if (close === null) continue;
-      out.push({ tradeDate, open: null, high: null, low: null, close });
+      if (close === null) return [];
+      return [{ tradeDate, open: parseNullable(cols[1]), high: parseNullable(cols[2]), low: parseNullable(cols[3]), close }];
     }
-  }
-  return out;
+    const close = parseNullable(cols[1]);
+    if (close === null) return [];
+    return [{ tradeDate, open: null, high: null, low: null, close }];
+  });
 }
 
 function toIsoDate(s: string | undefined): string | null {
