@@ -1,5 +1,5 @@
 import { StatusLight } from './StatusLight';
-import type { Interval } from '../hooks/useChartData';
+import type { Interval } from '../hooks/interval';
 
 const INTERVALS: Interval[] = ['1D', '1W', '1M', '1Q', '1Y'];
 

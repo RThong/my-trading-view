@@ -3,7 +3,7 @@ import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DB_PATH } from '../config';
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2; // v2:瘦身为只剩期权,丢弃 quote_eod / macro_series
 
 export function openDb(path: string = DB_PATH): Database {
   mkdirSync(dirname(path), { recursive: true });

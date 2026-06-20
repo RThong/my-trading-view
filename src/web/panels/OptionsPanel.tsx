@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createChart, LineSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
-import type { Interval } from '../hooks/useChartData';
+import type { Interval } from '../hooks/interval';
 
 type RawPoint = { date: string; callIv: number; putIv: number; skew: number };
 type LinePoint = { time: string; value: number };

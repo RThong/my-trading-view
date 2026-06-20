@@ -1,25 +1,7 @@
-CREATE TABLE IF NOT EXISTS quote_eod (
-    symbol         TEXT    NOT NULL,
-    trade_date     TEXT    NOT NULL,
-    open           REAL,
-    high           REAL,
-    low            REAL,
-    close          REAL    NOT NULL,
-    volume         INTEGER,
-    source         TEXT    NOT NULL,
-    fetched_at     TEXT    NOT NULL,
-    PRIMARY KEY (symbol, trade_date)
-);
-CREATE INDEX IF NOT EXISTS idx_quote_date ON quote_eod(trade_date);
-
-CREATE TABLE IF NOT EXISTS macro_series (
-    series_id      TEXT    NOT NULL,
-    obs_date       TEXT    NOT NULL,
-    value          REAL    NOT NULL,
-    fetched_at     TEXT    NOT NULL,
-    PRIMARY KEY (series_id, obs_date)
-);
-CREATE INDEX IF NOT EXISTS idx_macro_date ON macro_series(obs_date);
+-- 瘦身为"只剩期权"后,丢弃旧的行情/宏观表(本地库里可能还残留历史数据)。
+-- IF EXISTS 保证幂等:首次 migrate 删除,之后为 no-op。
+DROP TABLE IF EXISTS quote_eod;
+DROP TABLE IF EXISTS macro_series;
 
 CREATE TABLE IF NOT EXISTS job_run (
     run_id            INTEGER PRIMARY KEY AUTOINCREMENT,

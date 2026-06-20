@@ -1,8 +1,9 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
-import { getQuotes, getMacroSeries, getJobHealth } from '../storage/repository';
+import { getOptions25Delta, getJobHealth } from '../storage/repository';
 import { runDailyJob } from './daily';
+import type { OptionsChainClient, OptionChainSnapshot } from './optionsSnapshot';
 
 function freshDb(): Database {
   const db = new Database(':memory:');
@@ -10,68 +11,35 @@ function freshDb(): Database {
   return db;
 }
 
-describe('daily job', () => {
+const CHAIN: OptionChainSnapshot = {
+  underlyingSymbol: 'X',
+  underlyingPrice: 100,
+  expirationDate: new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10),
+  calls: [{ contractSymbol: 'c', strike: 110, expiration: '2026-06-15', impliedVolatility: 0.20, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null, delta: 0.25 }],
+  puts:  [{ contractSymbol: 'p', strike:  90, expiration: '2026-06-15', impliedVolatility: 0.25, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null, delta: -0.25 }],
+};
+
+describe('daily job (options-only)', () => {
   let db: Database;
   beforeEach(() => { db = freshDb(); });
 
-  test('writes quote rows for each requested symbol and records success', async () => {
-    await runDailyJob({
-      db,
-      quoteSymbols: [{ symbol: 'AAA', label: 'A', group: 'index' }],
-      macroSeries: [],
-      yahoo: {
-        fetchDailyBars: async (sym, since) => [
-          { symbol: sym, tradeDate: '2026-05-10', open: 1, high: 2, low: 0, close: 1.5, volume: 100 },
-        ],
-      },
-      fred: { fetchSeries: async () => [] },
-      historyDays: 30,
-    });
+  test('writes options rows and records the options job success', async () => {
+    const client: OptionsChainClient = { fetchChain: async () => CHAIN };
+    await runDailyJob({ db, optionsUnderlyings: ['SPY'], optionsClient: client });
 
-    expect(getQuotes(db, 'AAA', 36500)).toHaveLength(1);
-    const health = getJobHealth(db);
-    expect(health.find(h => h.name === 'quotes')?.status).toBe('success');
+    expect(getOptions25Delta(db, 'SPY', 36500)).toHaveLength(1);
+    expect(getJobHealth(db).find(h => h.name === 'options')?.status).toBe('success');
   });
 
-  test('partial: one symbol fails, others succeed, marked partial', async () => {
-    const failingYahoo = {
-      fetchDailyBars: async (sym: string) => {
-        if (sym === 'BAD') throw new Error('rate limited');
-        return [{ symbol: sym, tradeDate: '2026-05-10', open: 1, high: 2, low: 0, close: 1.5, volume: 100 }];
-      },
+  test('partial: one underlying fails, the other still lands', async () => {
+    const client: OptionsChainClient = {
+      fetchChain: async (s) => { if (s === '.VIX') throw new Error('暂不支持美股指数'); return CHAIN; },
     };
-    await runDailyJob({
-      db,
-      quoteSymbols: [
-        { symbol: 'GOOD', label: 'G', group: 'index' },
-        { symbol: 'BAD', label: 'B', group: 'index' },
-      ],
-      macroSeries: [],
-      yahoo: failingYahoo,
-      fred: { fetchSeries: async () => [] },
-      historyDays: 30,
-    });
+    await runDailyJob({ db, optionsUnderlyings: ['SPY', '.VIX'], optionsClient: client });
 
-    expect(getQuotes(db, 'GOOD', 36500)).toHaveLength(1);
-    expect(getQuotes(db, 'BAD', 36500)).toHaveLength(0);
-    const health = getJobHealth(db).find(h => h.name === 'quotes')!;
-    expect(health.status).toBe('partial');
-    expect(health.error).toContain('BAD');
-  });
-
-  test('writes macro and records macro success independently', async () => {
-    await runDailyJob({
-      db,
-      quoteSymbols: [],
-      macroSeries: [{ id: 'DGS10', label: '10Y', unit: '%' }],
-      yahoo: { fetchDailyBars: async () => [] },
-      fred: {
-        fetchSeries: async () => [{ seriesId: 'DGS10', obsDate: '2026-05-10', value: 4.2 }],
-      },
-      historyDays: 30,
-    });
-
-    expect(getMacroSeries(db, 'DGS10', 36500)).toHaveLength(1);
-    expect(getJobHealth(db).find(h => h.name === 'macro')?.status).toBe('success');
+    expect(getOptions25Delta(db, 'SPY', 36500)).toHaveLength(1);
+    const h = getJobHealth(db).find(h => h.name === 'options')!;
+    expect(h.status).toBe('partial');
+    expect(h.error).toContain('.VIX');
   });
 });
