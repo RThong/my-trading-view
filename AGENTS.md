@@ -11,10 +11,12 @@
 | **CBOE VX 期货** | VX 近月连续(存为 `VX1`) | API 列清单(`www-api.cboe.com/.../product/list/VX/`)+ `cdn.cboe.com/{path}` 下 CSV | 全历史 |
 | **FRED** | 利率(UST 10Y/2Y/3M)/ 美元指数(`DTWEXBGS` 广义贸易加权,非 ICE DXY) | JSON API `api.stlouisfed.org/fred/series/observations`(要 key) | 全历史 |
 | **Yahoo** | 股票 EOD | `yahoo-finance2` npm(底层 Yahoo query JSON API) | 可回填多年 |
-| **moomoo** | 期权链 | 本地 OpenD WebSocket `127.0.0.1:33333` | **仅当天快照,不可回填** |
+| **moomoo** | 期权链(股票/ETF/指数:SPY/.VIX) | 本地 OpenD WebSocket `127.0.0.1:33333` | **仅当天快照,不可回填** |
+| **Deribit** | 加密期权链(BTC/ETH) | 公开 REST `deribit.com/api/v2/public`(免 key) | 链快照型;但 **DVOL** 波动率指数有历史 |
 
-**关键差异**:只有 **moomoo 期权是快照型**——25Δ 序列只能从今往后每个交易日攒一个点,
-拿不到历史(25Δ 行权价每天滚动,固定合约的历史 IV 无法重建该序列)。其余源都能回填全历史。
+**关键差异**:**两个期权源(moomoo + Deribit)的链都是快照型**——25Δ 序列只能从今往后每个
+交易日攒一个点,拿不到历史(25Δ 行权价每天滚动,固定合约的历史 IV 无法重建该序列)。
+其余源都能回填全历史;Deribit 的 **DVOL**(加密版 VIX)是个例外,带历史可回填。
 
 ## 数据源踩坑(大多是试出来的,文档里没有——改之前先读)
 
@@ -46,6 +48,21 @@
   (`SNAPSHOT_BATCH=400` 已压线)。当前 `fetchChain` **每个标的开一条 WebSocket**——
   SPY + .VIX 两个无所谓,但 moomoo 文档警告反复 connect/close 会变慢/超时,**扩到很多
   标的时应改成复用一条连接**(把 `withConnection` 抽出来包住整轮抓取,而非每标的一次)。
+
+### Deribit(加密期权 BTC/ETH)
+
+- **免 key 公开 REST**:`deribit.com/api/v2/public/{method}`,响应包 `{result}` 或 `{error}`。
+  实现了跟 moomoo 同一个 `OptionsChainClient` 接口,所以 `select25Delta` + 入库全复用。
+- **没有批量 greeks 接口**:`get_book_summary_by_currency` 只有 mark_iv/OI,**没有 delta**。
+  25Δ 选取需要 delta,只能逐合约打 `ticker`(带 greeks)。好在**单个到期日才几十个合约**
+  (~30天的 BTC 约 34 个),分批并发即可,不是负担。
+- **IV 是百分数**(`mark_iv: 35.12` = 35.12%),÷100 归一化,与流水线一致。
+- **期权价格是币本位**(如 `0.018` BTC,不是美元),归档原样保留,用时注意单位。
+- **现货价**走 `get_index_price?index_name=btc_usd`(ticker 里的 `underlying_price` 是该到期日远期)。
+- **DVOL**(加密版 VIX,带历史):`get_volatility_index_data?currency=BTC&...&resolution=43200`,
+  返回 OHLC。目前没接,要做加密波动率历史曲线时用它(对标 SKEW/VX 那种有历史的源)。
+- **加密 24/7**,没有"收盘"概念。我们仍用 `lastClosedTradingDate()` 给 BTC 打戳,
+  让它跟股票/指数落在同一日期轴上(便于同图对比),这是有意为之。
 
 ### 其它数据源
 

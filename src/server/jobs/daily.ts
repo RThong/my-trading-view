@@ -12,8 +12,9 @@ import {
 } from '../storage/repository';
 import { createYahooFetcher } from '../fetchers/yahoo';
 import { createFredFetcher } from '../fetchers/fred';
-import { QUOTE_SYMBOLS, MACRO_SERIES, CBOE_INDEX_SYMBOLS, OPTIONS_UNDERLYINGS } from '../config';
+import { QUOTE_SYMBOLS, MACRO_SERIES, CBOE_INDEX_SYMBOLS, OPTIONS_UNDERLYINGS, DERIBIT_UNDERLYINGS } from '../config';
 import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
+import { defaultDeribitOptionsClient } from '../fetchers/deribitOptions';
 import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
 import { fetchVxFrontMonthSeries } from '../fetchers/cboeVx';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
@@ -30,14 +31,39 @@ type RunDailyJobOpts = {
   fred: { fetchSeries(seriesId: string, since: string): Promise<MacroRow[]> };
   historyDays: number;
   cboeIndices?: CboeIndexSpec[];
-  /** 需要做期权快照的标的(如 ['SPY'])。需配合 optionsClient 使用。 */
+  /** moomoo 期权标的(如 ['SPY', '.VIX'])。需配合 optionsClient 使用。 */
   optionsUnderlyings?: string[];
   optionsClient?: OptionsChainClient;
+  /** Deribit 加密期权标的(如 ['BTC'])。需配合 cryptoOptionsClient 使用。 */
+  cryptoOptionsUnderlyings?: string[];
+  cryptoOptionsClient?: OptionsChainClient;
   fetchVxFutures?: boolean;
 };
 
 function daysAgo(n: number): Date {
   return new Date(Date.now() - n * 86400_000);
+}
+
+/** 跑一组期权快照并记一个 job_run(单标的失败 → partial,全失败 → failed)。 */
+async function runOptionsGroup(
+  db: Database,
+  jobName: string,
+  underlyings: string[],
+  client: OptionsChainClient,
+): Promise<void> {
+  const runId = startJobRun(db, jobName);
+  try {
+    const { rows, failures } = await runOptionsSnapshot({ db, underlyings, client });
+    if (failures.length === 0) {
+      finishJobRun(db, runId, { status: 'success', recordsWritten: rows.length });
+    } else if (rows.length === 0) {
+      finishJobRun(db, runId, { status: 'failed', error: failures.join('; ') });
+    } else {
+      finishJobRun(db, runId, { status: 'partial', recordsWritten: rows.length, error: failures.join('; ') });
+    }
+  } catch (err) {
+    finishJobRun(db, runId, { status: 'failed', error: (err as Error).message });
+  }
 }
 
 export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
@@ -122,28 +148,13 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     }
   }
 
-  // options 分组(通过 moomoo OpenD)
-  if (opts.optionsUnderlyings && opts.optionsUnderlyings.length > 0 && opts.optionsClient) {
-    const runId = startJobRun(opts.db, 'options');
-    try {
-      const { rows, failures } = await runOptionsSnapshot({
-        db: opts.db,
-        underlyings: opts.optionsUnderlyings,
-        client: opts.optionsClient,
-      });
-      if (failures.length === 0) {
-        finishJobRun(opts.db, runId, { status: 'success', recordsWritten: rows.length });
-      } else if (rows.length === 0) {
-        finishJobRun(opts.db, runId, { status: 'failed', error: failures.join('; ') });
-      } else {
-        finishJobRun(opts.db, runId, { status: 'partial', recordsWritten: rows.length, error: failures.join('; ') });
-      }
-    } catch (err) {
-      finishJobRun(opts.db, runId, {
-        status: 'failed',
-        error: (err as Error).message,
-      });
-    }
+  // options 分组(moomoo OpenD = 股票/ETF/指数;Deribit = 加密)。
+  // 两类用不同抓取器,各记一个 job,互不连累。
+  if (opts.optionsUnderlyings?.length && opts.optionsClient) {
+    await runOptionsGroup(opts.db, 'options', opts.optionsUnderlyings, opts.optionsClient);
+  }
+  if (opts.cryptoOptionsUnderlyings?.length && opts.cryptoOptionsClient) {
+    await runOptionsGroup(opts.db, 'options_crypto', opts.cryptoOptionsUnderlyings, opts.cryptoOptionsClient);
   }
 
   // vx_futures 分组(CBOE VIX 期货近月连续序列,以 quote_eod symbol='VX1' 存储)
@@ -179,6 +190,8 @@ if (import.meta.main) {
     historyDays: 180,
     optionsUnderlyings: OPTIONS_UNDERLYINGS,
     optionsClient: defaultMoomooOptionsClient(),
+    cryptoOptionsUnderlyings: DERIBIT_UNDERLYINGS,
+    cryptoOptionsClient: defaultDeribitOptionsClient(),
     fetchVxFutures: true,
   });
 

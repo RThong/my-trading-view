@@ -15,6 +15,7 @@ const TABS = [
   { id: 'assets',     label: 'Other Assets' },
   { id: 'options-spy', label: 'SPY Options (25Δ)' },
   { id: 'options-vix', label: 'VIX Options (25Δ)' },
+  { id: 'options-btc', label: 'BTC Options (25Δ)' },
 ];
 
 export function App() {
@@ -33,6 +34,7 @@ export function App() {
           {tab === 'assets'     && <AssetsPanel interval={interval} />}
           {tab === 'options-spy' && <OptionsPanel interval={interval} underlying="SPY" />}
           {tab === 'options-vix' && <OptionsPanel interval={interval} underlying=".VIX" />}
+          {tab === 'options-btc' && <OptionsPanel interval={interval} underlying="BTC" />}
         </div>
       </main>
     </div>

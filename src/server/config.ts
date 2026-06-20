@@ -39,6 +39,12 @@ export const CBOE_INDEX_SYMBOLS = [
 // .SPX = SPX 指数)—— 指数无现货报价权限,underlying_price 会存 null。
 export const OPTIONS_UNDERLYINGS = ['SPY', '.VIX'];
 
+// 通过 Deribit 做期权快照的加密标的(BTC/ETH);存储为 `underlying` 键(BTC)。
+export const DERIBIT_UNDERLYINGS = ['BTC'];
+
+// 期权 API 路由的白名单(moomoo + deribit 两类合并)。
+export const ALL_OPTION_UNDERLYINGS = [...OPTIONS_UNDERLYINGS, ...DERIBIT_UNDERLYINGS];
+
 export const MACRO_SERIES = [
   { id: 'DGS10',     label: 'UST 10Y',  unit: '%' },
   { id: 'DGS2',      label: 'UST 2Y',   unit: '%' },
