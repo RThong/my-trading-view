@@ -14,7 +14,7 @@ import { createYahooFetcher } from '../fetchers/yahoo';
 import { createFredFetcher } from '../fetchers/fred';
 import { QUOTE_SYMBOLS, MACRO_SERIES, CBOE_INDEX_SYMBOLS, OPTIONS_UNDERLYINGS } from '../config';
 import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
-import { runOptionsSnapshot, DEFAULT_RATE, type OptionsChainClient } from './optionsSnapshot';
+import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
 import { fetchVxFrontMonthSeries } from '../fetchers/cboeVx';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 
@@ -33,7 +33,6 @@ type RunDailyJobOpts = {
   /** 需要做期权快照的标的(如 ['SPY'])。需配合 optionsClient 使用。 */
   optionsUnderlyings?: string[];
   optionsClient?: OptionsChainClient;
-  riskFreeRate?: number;
   fetchVxFutures?: boolean;
 };
 
@@ -131,7 +130,6 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
         db: opts.db,
         underlyings: opts.optionsUnderlyings,
         client: opts.optionsClient,
-        riskFreeRate: opts.riskFreeRate ?? DEFAULT_RATE,
       });
       finishJobRun(opts.db, runId, { status: 'success', recordsWritten: rows.length });
     } catch (err) {
@@ -164,10 +162,6 @@ if (import.meta.main) {
   migrate(db);
 
   const fredKey = process.env.FRED_API_KEY ?? '';
-  const rateRow = db.query(
-    "SELECT value FROM macro_series WHERE series_id = 'DGS3MO' ORDER BY obs_date DESC LIMIT 1"
-  ).get() as { value: number } | null;
-  const riskFreeRate = rateRow ? rateRow.value / 100 : DEFAULT_RATE;
 
   await runDailyJob({
     db,
@@ -179,7 +173,6 @@ if (import.meta.main) {
     historyDays: 180,
     optionsUnderlyings: OPTIONS_UNDERLYINGS,
     optionsClient: defaultMoomooOptionsClient(),
-    riskFreeRate,
     fetchVxFutures: true,
   });
 

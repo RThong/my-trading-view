@@ -1,6 +1,5 @@
 import type { Database } from 'bun:sqlite';
 import { insertOptions25Delta, insertOptionChainRaw, type Options25DeltaRow, type OptionChainRawRow } from '../storage/repository';
-import { callDelta } from '../analytics/greeks';
 import { lastClosedTradingDate } from './tradingCalendar';
 
 export type OptionContract = {
@@ -32,13 +31,10 @@ export type OptionChainSnapshot = {
   puts: OptionContract[];
 };
 
-// 我们用 Black-Scholes delta,从每个 strike 的 IV 推算出 25Δ 的选取结果。
-// moomoo 也会为每个合约返回它自己预先算好的 delta;但为了在不同数据源之间
-// 保持一致,我们统一沿用自己算的 BS delta。moomoo 的 delta 已存进归档的
-// chain 里,将来想交叉验证时随时可以取用。
+// 25Δ 选取直接用 moomoo 为每个合约返回的 delta(交易所级、已算好)。
+// 之前为兼容无 Greeks 的 Yahoo 而自己用 BS 重算,Yahoo 期权源已删除,故去掉。
 
 const TARGET_DTE = 30;
-const DEFAULT_RATE = 0.045;
 
 export type Selection = {
   callIv: number;
@@ -48,26 +44,10 @@ export type Selection = {
   putStrike: number;
 };
 
-/** 从期权链中挑选 25-delta call 与 25-delta put 的 strike。 */
-export function select25Delta(
-  chain: OptionChainSnapshot,
-  rate: number,
-  todayMs: number = Date.now(),
-): Selection {
-  const expiryMs = new Date(chain.expirationDate + 'T16:00:00Z').getTime();
-  const yearsToExpiry = Math.max((expiryMs - todayMs) / (365 * 86_400_000), 1 / 365);
-  const spot = chain.underlyingPrice;
-
-  // 对每个 call strike 算出 delta,取 |delta − 0.25| 最小的那个。
-  const callPick = pickClosest(chain.calls, (c) => {
-    const d = callDelta({ spot, strike: c.strike, yearsToExpiry, iv: c.impliedVolatility, rate });
-    return Math.abs(d - 0.25);
-  });
-  // 对每个 put strike,put_delta ≈ −0.25 等价于同一 K 的 call_delta ≈ 0.75。
-  const putPick = pickClosest(chain.puts, (p) => {
-    const d = callDelta({ spot, strike: p.strike, yearsToExpiry, iv: p.impliedVolatility, rate });
-    return Math.abs(d - 0.75);
-  });
+/** 从期权链中挑选 25-delta call(delta≈0.25)与 25-delta put(delta≈−0.25)。 */
+export function select25Delta(chain: OptionChainSnapshot): Selection {
+  const callPick = pickClosestDelta(chain.calls, 0.25);
+  const putPick = pickClosestDelta(chain.puts, -0.25);
 
   return {
     callIv: callPick.impliedVolatility,
@@ -78,12 +58,15 @@ export function select25Delta(
   };
 }
 
-function pickClosest<T>(arr: T[], distance: (x: T) => number): T {
-  if (arr.length === 0) throw new Error('empty array');
-  // distance 每个元素只算一次,再用 reduce 取最小。
-  return arr
-    .map((x) => ({ x, d: distance(x) }))
-    .reduce((best, cur) => (cur.d < best.d ? cur : best)).x;
+// 依赖 moomoo 的符号约定:put delta 为负、call delta 为正。已用真实 OpenD
+// 抓取的链核实(SPY 6/19:249 个 put delta 全 <=0,728P=-0.2507 与 App 一致)。
+/** 取 delta 最接近 target 的合约;忽略没有 delta 的合约。 */
+function pickClosestDelta(arr: OptionContract[], target: number): OptionContract {
+  const withDelta = arr.filter((c) => typeof c.delta === 'number');
+  if (withDelta.length === 0) throw new Error('期权链缺少 delta,无法选取 25Δ');
+  return withDelta.reduce((best, cur) =>
+    Math.abs(cur.delta! - target) < Math.abs(best.delta! - target) ? cur : best,
+  );
 }
 
 /** 抓取器满足的最小 client 接口(目前由 moomoo 实现)。 */
@@ -96,7 +79,6 @@ type RunOpts = {
   /** 要做快照的标的,例如 ['SPY']。原样存储为 `underlying` 键。 */
   underlyings: string[];
   client: OptionsChainClient;
-  riskFreeRate: number;
 };
 
 export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaRow[]> {
@@ -108,7 +90,7 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaR
 
   for (const u of opts.underlyings) {
     const chain = await opts.client.fetchChain(u, TARGET_DTE);
-    const sel = select25Delta(chain, opts.riskFreeRate);
+    const sel = select25Delta(chain);
 
     // IV 以百分数存储(例如 16.63),方便图表坐标轴显示。
     rows.push({
@@ -140,4 +122,4 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaR
   return rows;
 }
 
-export { TARGET_DTE, DEFAULT_RATE };
+export { TARGET_DTE };
