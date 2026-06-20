@@ -32,6 +32,7 @@ function periodKey(dateStr: string, interval: Interval): string {
   if (interval === '1M') {
     return `${year}-${String(month + 1).padStart(2, '0')}-01`;
   }
+
   // 1W:取该周(近似 ISO 周)的周一
   const dow = d.getUTCDay();
   const diff = dow === 0 ? -6 : 1 - dow;

@@ -19,6 +19,7 @@ export function lastClosedTradingDate(now: Date = new Date()): string {
     hour: '2-digit',
     hour12: false,
   }).formatToParts(now);
+
   const m = Object.fromEntries(parts.map((p) => [p.type, p.value]));
   const y = Number(m.year);
   const mo = Number(m.month) - 1;
@@ -34,5 +35,6 @@ export function lastClosedTradingDate(now: Date = new Date()): string {
   while (date.getUTCDay() === 0 || date.getUTCDay() === 6) {
     date.setUTCDate(date.getUTCDate() - 1);
   }
+
   return date.toISOString().slice(0, 10);
 }

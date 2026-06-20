@@ -16,16 +16,19 @@ export function createFredFetcher(opts: FredOpts) {
       if (!opts.apiKey) {
         throw new Error('FRED_API_KEY is required');
       }
+
       const params = new URLSearchParams({
         series_id: seriesId,
         api_key: opts.apiKey,
         file_type: 'json',
         observation_start: since,
       });
+
       const res = await doFetch(`${base}?${params}`);
       if (!res.ok) {
         throw new Error(`FRED request failed for ${seriesId}: ${res.status} ${await res.text()}`);
       }
+
       const body = await res.json() as { observations: Array<{ date: string; value: string }> };
       return body.observations
         .filter(o => o.value !== '.' && o.value !== '')

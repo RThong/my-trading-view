@@ -77,6 +77,7 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaR
   const today = lastClosedTradingDate();
   const rows: Options25DeltaRow[] = [];
   const rawRows: OptionChainRawRow[] = [];
+
   for (const u of opts.underlyings) {
     const chain = await opts.client.fetchChain(u, TARGET_DTE);
     const sel = select25Delta(chain, opts.riskFreeRate);
@@ -104,8 +105,10 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaR
       chainJsonGz: gz,
     });
   }
+
   insertOptions25Delta(opts.db, rows);
   insertOptionChainRaw(opts.db, rawRows);
+
   return rows;
 }
 

@@ -12,6 +12,7 @@ describe('yahooOptions DI', () => {
         puts:  [{ contractSymbol: 'TEST', strike: 4900, expiration: '2026-06-15', impliedVolatility: 0.22, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null }],
       }),
     };
+
     const out = await mock.fetchChain('^SPX', 30);
     expect(out.calls.length).toBe(1);
     expect(out.calls[0].strike).toBe(5100);

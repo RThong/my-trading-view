@@ -40,6 +40,7 @@ export function defaultCboeIndexClient(opts?: { fetch?: FetchFn }): CboeIndexCli
       if (!res.ok) {
         throw new Error(`CBOE index ${cboeSymbol} failed: ${res.status}`);
       }
+
       return parseCboeIndexCsv(await res.text());
     },
   };
@@ -49,6 +50,7 @@ export function defaultCboeIndexClient(opts?: { fetch?: FetchFn }): CboeIndexCli
 export function parseCboeIndexCsv(text: string): CboeIndexRow[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
+
   const header = lines[0].split(',').map((s) => s.trim().toUpperCase());
   const isOhlc =
     header.includes('OPEN') &&
@@ -61,11 +63,13 @@ export function parseCboeIndexCsv(text: string): CboeIndexRow[] {
     const cols = line.split(',');
     const tradeDate = toIsoDate(cols[0]?.trim());
     if (!tradeDate) return [];
+
     if (isOhlc) {
       const close = parseNullable(cols[4]);
       if (close === null) return [];
       return [{ tradeDate, open: parseNullable(cols[1]), high: parseNullable(cols[2]), low: parseNullable(cols[3]), close }];
     }
+
     const close = parseNullable(cols[1]);
     if (close === null) return [];
     return [{ tradeDate, open: null, high: null, low: null, close }];
@@ -105,6 +109,7 @@ export async function fetchCboeIndexAsQuotes(opts: FetchToRowsOpts): Promise<Quo
   const cutoff = opts.afterDate && opts.afterDate > HISTORY_START_DATE ? opts.afterDate : HISTORY_START_DATE;
   const isStrict = opts.afterDate !== undefined;
   const filtered = all.filter((r) => isStrict ? r.tradeDate > cutoff : r.tradeDate >= cutoff);
+
   return filtered.map((r) => ({
     symbol: opts.storedSymbol,
     tradeDate: r.tradeDate,

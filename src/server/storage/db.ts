@@ -7,9 +7,11 @@ const CURRENT_SCHEMA_VERSION = 1;
 
 export function openDb(path: string = DB_PATH): Database {
   mkdirSync(dirname(path), { recursive: true });
+
   const db = new Database(path);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
+
   return db;
 }
 

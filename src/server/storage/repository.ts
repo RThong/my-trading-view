@@ -30,6 +30,7 @@ export function insertQuotes(db: Database, rows: QuoteRow[], source: string): vo
       close=excluded.close, volume=excluded.volume,
       source=excluded.source, fetched_at=excluded.fetched_at
   `);
+
   const fetched = new Date().toISOString();
   const tx = db.transaction((batch: QuoteRow[]) => {
     for (const r of batch) {
@@ -46,17 +47,20 @@ export function insertQuotes(db: Database, rows: QuoteRow[], source: string): vo
       });
     }
   });
+
   tx(rows);
 }
 
 export function getQuotes(db: Database, symbol: string, days: number): QuoteBar[] {
   const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+
   const rows = db.query(`
     SELECT trade_date AS date, open, high, low, close, volume
     FROM quote_eod
     WHERE symbol = $symbol AND trade_date >= $since
     ORDER BY trade_date ASC
   `).all({ $symbol: symbol, $since: since }) as QuoteBar[];
+
   return rows;
 }
 
@@ -83,12 +87,14 @@ export function insertMacro(db: Database, rows: MacroRow[]): void {
     ON CONFLICT(series_id, obs_date) DO UPDATE SET
       value=excluded.value, fetched_at=excluded.fetched_at
   `);
+
   const fetched = new Date().toISOString();
   const tx = db.transaction((batch: MacroRow[]) => {
     for (const r of batch) {
       stmt.run({ $id: r.seriesId, $date: r.obsDate, $value: r.value, $fetched: fetched });
     }
   });
+
   tx(rows);
 }
 
@@ -146,6 +152,7 @@ export function insertOptions25Delta(db: Database, rows: Options25DeltaRow[]): v
       call_iv=excluded.call_iv, put_iv=excluded.put_iv, skew=excluded.skew,
       is_mock=excluded.is_mock, fetched_at=excluded.fetched_at
   `);
+
   const fetched = new Date().toISOString();
   const tx = db.transaction((batch: Options25DeltaRow[]) => {
     for (const r of batch) {
@@ -160,6 +167,7 @@ export function insertOptions25Delta(db: Database, rows: Options25DeltaRow[]): v
       });
     }
   });
+
   tx(rows);
 }
 
@@ -169,6 +177,7 @@ export function getOptions25Delta(
   days: number,
 ): Options25DeltaRow[] {
   const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
+
   const rows = db.query(`
     SELECT underlying, snapshot_date, call_iv, put_iv, skew, is_mock
     FROM option_snapshot_25delta
@@ -211,6 +220,7 @@ export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[]): v
       chain_json_gz    = excluded.chain_json_gz,
       fetched_at       = excluded.fetched_at
   `);
+
   const fetched = new Date().toISOString();
   const tx = db.transaction((batch: OptionChainRawRow[]) => {
     for (const r of batch) {
@@ -224,6 +234,7 @@ export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[]): v
       });
     }
   });
+
   tx(rows);
 }
 

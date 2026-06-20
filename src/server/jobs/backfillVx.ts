@@ -13,8 +13,10 @@ async function main(): Promise<void> {
   const db = openDb();
   try {
     migrate(db);
+
     const t0 = Date.now();
     console.log('Backfilling VIX futures (VX1) from CBOE...');
+
     const rows = await fetchVxFrontMonthSeries({
       freshSince: '1900-01-01', // 全量抓取
       concurrency: 12,
@@ -25,8 +27,10 @@ async function main(): Promise<void> {
       },
     });
     insertQuotes(db, rows, 'cboe');
+
     const dt = ((Date.now() - t0) / 1000).toFixed(1);
     console.log(`Inserted ${rows.length} VX1 rows in ${dt}s`);
+
     if (rows.length > 0) {
       console.log(`  earliest: ${rows[0].tradeDate}  (close ${rows[0].close})`);
       console.log(`  latest:   ${rows[rows.length - 1].tradeDate}  (close ${rows[rows.length - 1].close})`);

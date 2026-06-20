@@ -98,6 +98,7 @@ async function fetchStaticChain(
     },
   });
   const chains = res?.s2c?.optionChain ?? [];
+
   return chains.map((ch: any) => {
     const options: any[] = ch.option ?? [];
     const calls: StaticContract[] = options
@@ -106,6 +107,7 @@ async function fetchStaticChain(
     const puts: StaticContract[] = options
       .filter((o) => o.put?.basic?.security?.code)
       .map((o) => ({ code: o.put.basic.security.code, strikePrice: o.put.optionExData?.strikePrice }));
+
     return { expiry: expiryDate(ch.strikeTime), calls, puts };
   });
 }
@@ -122,6 +124,7 @@ async function fetchSnapshots(ws: any, codes: string[]): Promise<Map<string, any
       if (code) byCode.set(code, s);
     }
   }
+
   return byCode;
 }
 

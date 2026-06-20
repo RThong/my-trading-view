@@ -55,19 +55,23 @@ export function defaultYahooOptionsClient(): YahooOptionsClient {
       if (expirations.length === 0) {
         throw new Error(`No expirations available for ${symbol}`);
       }
-      const target = Date.now() + targetDte * 86_400_000;
+
       // 选 |expiry - target| 最小的到期日
+      const target = Date.now() + targetDte * 86_400_000;
       const best = expirations.reduce((a, e) =>
         Math.abs(e.getTime() - target) < Math.abs(a.getTime() - target) ? e : a,
       );
+
       // 第二次调用:获取该到期日对应的期权链。
       const chain = await (yf.options(symbol, { date: best }) as Promise<any>);
       const node = chain.options?.[0];
       if (!node) throw new Error(`Empty chain for ${symbol} at ${toIsoDate(best)}`);
+
       const spot = chain.quote?.regularMarketPrice ?? meta.quote?.regularMarketPrice;
       if (typeof spot !== 'number') {
         throw new Error(`Could not determine spot for ${symbol}`);
       }
+
       const map = (arr: any[]): OptionContract[] => arr
         .filter(o => typeof o.strike === 'number' && typeof o.impliedVolatility === 'number' && o.impliedVolatility > 0)
         .map(o => ({
@@ -83,6 +87,7 @@ export function defaultYahooOptionsClient(): YahooOptionsClient {
           inTheMoney: Boolean(o.inTheMoney),
           lastTradeDate: toIsoDateTime(o.lastTradeDate),
         }));
+
       return {
         underlyingSymbol: symbol,
         underlyingPrice: spot,

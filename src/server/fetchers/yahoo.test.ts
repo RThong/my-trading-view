@@ -12,6 +12,7 @@ describe('yahoo fetcher', () => {
         ],
       }),
     };
+
     const fetcher = createYahooFetcher(mockClient);
     const rows = await fetcher.fetchDailyBars('TEST', new Date('2026-05-01'));
     expect(rows).toHaveLength(2);
@@ -29,6 +30,7 @@ describe('yahoo fetcher', () => {
         quotes: [{ date: new Date('2026-05-10T00:00:00Z'), open: null, high: null, low: null, close: 50, volume: null }],
       }),
     };
+
     const fetcher = createYahooFetcher(mockClient);
     const rows = await fetcher.fetchDailyBars('TEST', new Date('2026-05-01'));
     expect(rows[0]).toEqual({
@@ -48,6 +50,7 @@ describe('yahoo fetcher', () => {
         ],
       }),
     };
+
     const fetcher = createYahooFetcher(mockClient);
     const rows = await fetcher.fetchDailyBars('TEST', new Date('2026-05-01'));
     expect(rows).toHaveLength(1);

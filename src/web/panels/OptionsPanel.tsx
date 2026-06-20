@@ -24,10 +24,12 @@ const HISTORY_DAYS = 3650;
 
 function periodKey(dateStr: string, interval: Interval): string {
   if (interval === '1D') return dateStr;
+
   const d = new Date(dateStr + 'T00:00:00Z');
   const year = d.getUTCFullYear();
   const month = d.getUTCMonth();
   const day = d.getUTCDate();
+
   if (interval === '1Y') return `${year}-01-01`;
   if (interval === '1Q') {
     const qStartMonth = Math.floor(month / 3) * 3;
@@ -68,11 +70,13 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
     let cancelled = false;
     setLoading(true);
     setError(null);
+
     fetch(`/api/options/25delta/SPY?days=${HISTORY_DAYS}`)
       .then(r => r.json() as Promise<RawPoint[]>)
       .then(s => { if (!cancelled) setSpy(s); })
       .catch(e => { if (!cancelled) setError((e as Error).message); })
       .finally(() => { if (!cancelled) setLoading(false); });
+
     return () => { cancelled = true; };
   }, []);
 
@@ -82,6 +86,7 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
     chartRef.current = chart;
     chart.addPane(); // pane 1 用于展示 skew
     chart.panes().forEach(p => p.setStretchFactor(1));
+
     return () => {
       chart.remove();
       chartRef.current = null;
@@ -108,6 +113,7 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
         seriesRef.current.delete(k);
       }
     }
+
     for (const spec of specs) {
       let line = seriesRef.current.get(spec.key);
       if (!line) {
@@ -120,6 +126,7 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
       }
       line.setData(spec.data);
     }
+
     chart.timeScale().fitContent();
   }, [spy, interval]);
 

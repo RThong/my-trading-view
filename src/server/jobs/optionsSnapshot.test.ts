@@ -47,13 +47,16 @@ describe('runOptionsSnapshot', () => {
     const mock: OptionsChainClient = {
       fetchChain: async () => SAMPLE_CHAIN,
     };
+
     const written = await runOptionsSnapshot({
       db,
       underlyings: ['SPY'],
       client: mock,
       riskFreeRate: 0.045,
     });
+
     expect(written).toHaveLength(1);
+
     const spyRows = getOptions25Delta(db, 'SPY', 7);
     expect(spyRows).toHaveLength(1);
     expect(spyRows[0].isMock).toBe(false);

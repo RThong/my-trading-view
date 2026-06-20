@@ -52,6 +52,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
         const latest = getLatestQuoteDate(opts.db, symbol);
         const since = latest ? new Date(latest + 'T00:00:00Z') : daysAgo(opts.historyDays);
         const rows = await opts.yahoo.fetchDailyBars(symbol, since);
+
         insertQuotes(opts.db, rows, 'yahoo');
         total += rows.length;
       } catch (err) {
@@ -80,6 +81,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
           storedSymbol: spec.symbol,
           afterDate: latest ?? undefined,
         });
+
         insertQuotes(opts.db, rows, 'cboe');
         total += rows.length;
       } catch (err) {
@@ -105,6 +107,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
         const latest = getLatestMacroDate(opts.db, id);
         const since = latest ?? daysAgo(opts.historyDays).toISOString().slice(0, 10);
         const rows = await opts.fred.fetchSeries(id, since);
+
         insertMacro(opts.db, rows);
         total += rows.length;
       } catch (err) {
@@ -159,11 +162,13 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
 if (import.meta.main) {
   const db = openDb();
   migrate(db);
+
   const fredKey = process.env.FRED_API_KEY ?? '';
   const rateRow = db.query(
     "SELECT value FROM macro_series WHERE series_id = 'DGS3MO' ORDER BY obs_date DESC LIMIT 1"
   ).get() as { value: number } | null;
   const riskFreeRate = rateRow ? rateRow.value / 100 : DEFAULT_RATE;
+
   await runDailyJob({
     db,
     quoteSymbols: QUOTE_SYMBOLS,
@@ -177,6 +182,7 @@ if (import.meta.main) {
     riskFreeRate,
     fetchVxFutures: true,
   });
+
   db.close();
   console.log('Daily job complete.');
 }

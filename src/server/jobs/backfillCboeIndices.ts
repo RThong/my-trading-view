@@ -15,6 +15,7 @@ async function main(): Promise<void> {
   const db = openDb();
   try {
     migrate(db);
+
     let total = 0;
     for (const spec of CBOE_INDEX_SYMBOLS) {
       const t0 = Date.now();
@@ -23,6 +24,7 @@ async function main(): Promise<void> {
         storedSymbol: spec.symbol,
       });
       insertQuotes(db, rows, 'cboe');
+
       const dt = ((Date.now() - t0) / 1000).toFixed(1);
       const first = rows[0]?.tradeDate ?? '?';
       const last = rows[rows.length - 1]?.tradeDate ?? '?';

@@ -36,6 +36,7 @@ export function ChartView({ configs, interval, paneCount }: Props) {
   // 只创建一次 chart 和额外的 pane
   useEffect(() => {
     if (!containerRef.current) return;
+
     const chart = createChart(containerRef.current, CHART_OPTIONS);
     chartRef.current = chart;
 
@@ -65,6 +66,7 @@ export function ChartView({ configs, interval, paneCount }: Props) {
         seriesRef.current.delete(label);
       }
     }
+
     // 新增/更新其余 series
     for (const s of series) {
       let line = seriesRef.current.get(s.label);
@@ -83,6 +85,7 @@ export function ChartView({ configs, interval, paneCount }: Props) {
       }
       line.setData(s.data);
     }
+
     chart.timeScale().fitContent();
   }, [series]);
 

@@ -53,10 +53,12 @@ export function defaultCboeVxClient(opts?: { fetch?: FetchFn }): CboeVxClient {
       if (!res.ok) {
         throw new Error(`CBOE contract list failed: ${res.status} ${await res.text()}`);
       }
+
       const data = (await res.json()) as Record<
         string,
         Array<{ product_display: string; expire_date: string; path: string }>
       >;
+
       return Object.values(data).flat().map((c) => ({
         symbol: c.product_display,
         expireDate: c.expire_date,
@@ -68,6 +70,7 @@ export function defaultCboeVxClient(opts?: { fetch?: FetchFn }): CboeVxClient {
       if (!res.ok) {
         throw new Error(`CBOE CSV ${contract.symbol} failed: ${res.status}`);
       }
+
       return parseSettleCsv(await res.text());
     },
   };
@@ -102,6 +105,7 @@ export function computeFrontMonth(
       .filter((r) => c.expireDate > r.tradeDate)
       .map((r) => ({ tradeDate: r.tradeDate, settle: r.settle, expireDate: c.expireDate })),
   );
+
   const byDate = new Map<string, { settle: number; expireDate: string }>();
   for (const r of candidates) {
     const existing = byDate.get(r.tradeDate);
@@ -109,6 +113,7 @@ export function computeFrontMonth(
       byDate.set(r.tradeDate, { settle: r.settle, expireDate: r.expireDate });
     }
   }
+
   return Array.from(byDate.entries())
     .map(([tradeDate, v]) => ({ tradeDate, settle: v.settle, expireDate: v.expireDate }))
     .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));

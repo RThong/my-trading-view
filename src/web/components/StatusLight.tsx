@@ -21,6 +21,7 @@ const toneClass: Record<Tone, string> = {
 
 export function StatusLight() {
   const [jobs, setJobs] = useState<JobStatus[]>([]);
+
   useEffect(() => {
     api.api.health.$get().then(r => r.json()).then(data => setJobs(data.jobs));
   }, []);
