@@ -15,9 +15,13 @@ export type OptionContract = {
   openInterest: number | null;
   inTheMoney: boolean;
   lastTradeDate: string | null;   // ISO 日期时间,长期无成交的行权价可能为 null
-  // 希腊字母 —— 数据源提供时才有(moomoo)。
+  // 希腊字母 —— 数据源提供时才有(moomoo)。归档表全部保留:moomoo 是快照型、
+  // 免费档拿不到历史,今天不存的字段以后补不回来(vanna/charm 等高阶分析需要)。
   delta?: number | null;
   gamma?: number | null;
+  vega?: number | null;
+  theta?: number | null;
+  rho?: number | null;
 };
 
 export type OptionChainSnapshot = {

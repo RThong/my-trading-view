@@ -145,10 +145,12 @@ function toContract(staticC: StaticContract, snap: any): OptionContract | null {
     openInterest: typeof ox.openInterest === 'number' ? ox.openInterest : null,
     inTheMoney: false, // moomoo 不直接给这个标记;需要时在后续环节推导
     lastTradeDate: basic?.updateTime ?? null,
-    // moomoo 独有(Yahoo 没有)的额外字段:delta 用于 25Δ 交叉校验,gamma
-    // 用于基于归档期权链计算 GEX。vega/theta/rho 丢弃——没有地方用到。
+    // 希腊字母全部归档:moomoo 已算好一并推来,快照型数据丢了补不回来。
     delta: typeof ox.delta === 'number' ? ox.delta : null,
     gamma: typeof ox.gamma === 'number' ? ox.gamma : null,
+    vega: typeof ox.vega === 'number' ? ox.vega : null,
+    theta: typeof ox.theta === 'number' ? ox.theta : null,
+    rho: typeof ox.rho === 'number' ? ox.rho : null,
   };
 }
 
