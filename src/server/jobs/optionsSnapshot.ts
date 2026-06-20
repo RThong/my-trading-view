@@ -25,7 +25,7 @@ export type OptionContract = {
 
 export type OptionChainSnapshot = {
   underlyingSymbol: string;
-  underlyingPrice: number;     // 拉取时刻的现货价
+  underlyingPrice: number | null;  // 拉取时刻的现货价;指数(如 .VIX)无现货报价权限时为 null
   expirationDate: string;      // 'YYYY-MM-DD'
   calls: OptionContract[];
   puts: OptionContract[];
@@ -81,45 +81,60 @@ type RunOpts = {
   client: OptionsChainClient;
 };
 
-export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaRow[]> {
+export type OptionsSnapshotResult = {
+  rows: Options25DeltaRow[];
+  /** 失败的标的,形如 'SPY: <原因>';由上层 job 决定记为 partial 还是 failed。 */
+  failures: string[];
+};
+
+export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshotResult> {
   // 用最近一个*已收盘*的美股交易日打戳,而不是用本地时钟的今天,
   // 这样周末/盘后运行都会归并到正确的那个周五行上(在 upsert 下保持幂等)。
   const today = lastClosedTradingDate();
   const rows: Options25DeltaRow[] = [];
   const rawRows: OptionChainRawRow[] = [];
+  const failures: string[] = [];
 
+  // 每个标的独立处理:某个标的失败(抓取出错、缺 delta 等)只记下来,
+  // 不影响其它标的——否则一个标的挂掉会把同批已成功的数据一起丢掉。
   for (const u of opts.underlyings) {
-    const chain = await opts.client.fetchChain(u, TARGET_DTE);
-    const sel = select25Delta(chain);
+    try {
+      const chain = await opts.client.fetchChain(u, TARGET_DTE);
+      const sel = select25Delta(chain);
 
-    // IV 以百分数存储(例如 16.63),方便图表坐标轴显示。
-    rows.push({
-      underlying: u,
-      snapshotDate: today,
-      callIv: sel.callIv * 100,
-      putIv: sel.putIv * 100,
-      skew: sel.skew * 100,
-      isMock: false,
-    });
+      // IV 以百分数存储(例如 16.63),方便图表坐标轴显示。
+      rows.push({
+        underlying: u,
+        snapshotDate: today,
+        callIv: sel.callIv * 100,
+        putIv: sel.putIv * 100,
+        skew: sel.skew * 100,
+        isMock: false,
+      });
 
-    // 归档完整的 chain(gzip 压缩),供日后分析使用(max pain、OI 分布、
-    // GEX 等)。moomoo 的 chain 自带 Greeks,因此 GEX 可以直接从归档数据
-    // 推导,无需重新定价。
-    const chainJson = JSON.stringify({ calls: chain.calls, puts: chain.puts });
-    const gz = Bun.gzipSync(new TextEncoder().encode(chainJson));
-    rawRows.push({
-      underlying: u,
-      snapshotDate: today,
-      expiry: chain.expirationDate,
-      underlyingPrice: chain.underlyingPrice,
-      chainJsonGz: gz,
-    });
+      // 归档完整的 chain(gzip 压缩),供日后分析使用(max pain、OI 分布、
+      // GEX 等)。moomoo 的 chain 自带 Greeks,因此 GEX 可以直接从归档数据
+      // 推导,无需重新定价。
+      const chainJson = JSON.stringify({ calls: chain.calls, puts: chain.puts });
+      const gz = Bun.gzipSync(new TextEncoder().encode(chainJson));
+      rawRows.push({
+        underlying: u,
+        snapshotDate: today,
+        expiry: chain.expirationDate,
+        underlyingPrice: chain.underlyingPrice,
+        chainJsonGz: gz,
+      });
+    } catch (err) {
+      failures.push(`${u}: ${(err as Error).message}`);
+    }
   }
 
   insertOptions25Delta(opts.db, rows);
   insertOptionChainRaw(opts.db, rawRows);
 
-  return rows;
+  // 成功的行已落库;失败的标的一并回传,由上层 job 据此记 success/partial/failed
+  // (与 quotes/macro/cboe 分组的三态一致),不让个别标的拖垮整批。
+  return { rows, failures };
 }
 
 export { TARGET_DTE };

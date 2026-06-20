@@ -189,10 +189,21 @@ export function defaultMoomooOptionsClient(): OptionsChainClient {
           .map((c) => toContract(c, snaps.get(c.code)))
           .filter((c): c is OptionContract => c !== null);
 
-        // 标的现价:对标的本身拉取 snapshot。
-        const underlyingSnap = await fetchSnapshots(ws, [symbol]);
-        const spot = underlyingSnap.get(symbol)?.basic?.curPrice;
-        if (typeof spot !== 'number') {
+        // 标的现价:对标的本身拉取 snapshot。指数(双点代码,如 .VIX)没有现货
+        // 报价权限,会抛"暂不支持美股指数";这类标的允许 spot 为 null —— 25Δ
+        // 选取只用合约的 delta,不依赖现货(指数现货可另从 quote_eod 的 ^VIX 取)。
+        // 个股/ETF 则必须拿到现货:取不到就报错,避免把瞬时故障静默存成 null。
+        const isIndex = symbol.startsWith('.');
+        let spot: number | null = null;
+        try {
+          const underlyingSnap = await fetchSnapshots(ws, [symbol]);
+          const v = underlyingSnap.get(symbol)?.basic?.curPrice;
+          if (typeof v === 'number') spot = v;
+        } catch (err) {
+          if (!isIndex) throw err;
+          // 指数现货不支持,忽略;spot 保持 null
+        }
+        if (spot === null && !isIndex) {
           throw new Error(`Could not get spot price for ${symbol}`);
         }
 

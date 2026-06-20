@@ -126,12 +126,18 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   if (opts.optionsUnderlyings && opts.optionsUnderlyings.length > 0 && opts.optionsClient) {
     const runId = startJobRun(opts.db, 'options');
     try {
-      const rows = await runOptionsSnapshot({
+      const { rows, failures } = await runOptionsSnapshot({
         db: opts.db,
         underlyings: opts.optionsUnderlyings,
         client: opts.optionsClient,
       });
-      finishJobRun(opts.db, runId, { status: 'success', recordsWritten: rows.length });
+      if (failures.length === 0) {
+        finishJobRun(opts.db, runId, { status: 'success', recordsWritten: rows.length });
+      } else if (rows.length === 0) {
+        finishJobRun(opts.db, runId, { status: 'failed', error: failures.join('; ') });
+      } else {
+        finishJobRun(opts.db, runId, { status: 'partial', recordsWritten: rows.length, error: failures.join('; ') });
+      }
     } catch (err) {
       finishJobRun(opts.db, runId, {
         status: 'failed',

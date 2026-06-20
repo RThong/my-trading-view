@@ -34,9 +34,10 @@ export const CBOE_INDEX_SYMBOLS = [
   { symbol: '^RXM',    cboeSymbol: 'RXM',    label: 'RXM',   group: 'strategy'   as const },
 ];
 
-// 通过 moomoo 做期权快照的标的;原样存储为 `underlying` 键。
-// 目前只有 SPY,后续再扩展。
-export const OPTIONS_UNDERLYINGS = ['SPY'];
+// 通过 moomoo 做期权快照的标的;原样作为 moomoo 证券代码传入,并存储为
+// `underlying` 键。个股/ETF 用普通代码(SPY);指数用双点格式(.VIX = VIX 指数,
+// .SPX = SPX 指数)—— 指数无现货报价权限,underlying_price 会存 null。
+export const OPTIONS_UNDERLYINGS = ['SPY', '.VIX'];
 
 export const MACRO_SERIES = [
   { id: 'DGS10',     label: 'UST 10Y',  unit: '%' },

@@ -32,8 +32,9 @@ const SAMPLE_CHAIN: OptionChainSnapshot = {
 describe('select25Delta', () => {
   test('picks a strike whose call delta is near 0.25 for the call side', () => {
     const sel = select25Delta(SAMPLE_CHAIN);
-    expect(sel.callStrike).toBeGreaterThan(SAMPLE_CHAIN.underlyingPrice);  // 虚值 call
-    expect(sel.putStrike).toBeLessThan(SAMPLE_CHAIN.underlyingPrice);  // 虚值 put
+    const spot = SAMPLE_CHAIN.underlyingPrice!;
+    expect(sel.callStrike).toBeGreaterThan(spot);  // 虚值 call
+    expect(sel.putStrike).toBeLessThan(spot);  // 虚值 put
     expect(sel.skew).toBeCloseTo(sel.putIv - sel.callIv, 8);
   });
 });
@@ -47,7 +48,7 @@ describe('runOptionsSnapshot', () => {
       fetchChain: async () => SAMPLE_CHAIN,
     };
 
-    const written = await runOptionsSnapshot({
+    const { rows: written } = await runOptionsSnapshot({
       db,
       underlyings: ['SPY'],
       client: mock,
@@ -58,5 +59,26 @@ describe('runOptionsSnapshot', () => {
     const spyRows = getOptions25Delta(db, 'SPY', 7);
     expect(spyRows).toHaveLength(1);
     expect(spyRows[0].isMock).toBe(false);
+  });
+
+  test('一个标的失败不连累另一个:成功的照常落库,失败的进 failures', async () => {
+    // SPY 正常返回,.VIX 抓取抛错——只有 .VIX 应进 failures,SPY 仍要落库。
+    const mock: OptionsChainClient = {
+      fetchChain: async (symbol) => {
+        if (symbol === '.VIX') throw new Error('暂不支持美股指数');
+        return SAMPLE_CHAIN;
+      },
+    };
+
+    const { rows, failures } = await runOptionsSnapshot({
+      db,
+      underlyings: ['SPY', '.VIX'],
+      client: mock,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(getOptions25Delta(db, 'SPY', 7)).toHaveLength(1);
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toContain('.VIX');
   });
 });
