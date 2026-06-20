@@ -11,7 +11,7 @@ export type SeriesConfig = QuoteSeriesConfig | MacroSeriesConfig;
 
 export type Interval = '1D' | '1W' | '1M' | '1Q' | '1Y';
 
-// ~22y — server-side caps at HISTORY_MAX_DAYS from config.ts (currently 8000).
+// 约 22 年 —— 服务端会按 config.ts 里的 HISTORY_MAX_DAYS 截断(当前为 8000)。
 const HISTORY_DAYS = 8000;
 
 function periodKey(dateStr: string, interval: Interval): string {
@@ -32,7 +32,7 @@ function periodKey(dateStr: string, interval: Interval): string {
   if (interval === '1M') {
     return `${year}-${String(month + 1).padStart(2, '0')}-01`;
   }
-  // 1W: Monday of ISO-ish week
+  // 1W:取该周(近似 ISO 周)的周一
   const dow = d.getUTCDay();
   const diff = dow === 0 ? -6 : 1 - dow;
   const monday = new Date(Date.UTC(year, month, day + diff));
@@ -40,11 +40,10 @@ function periodKey(dateStr: string, interval: Interval): string {
 }
 
 /**
- * Drop Saturday/Sunday rows so the time axis matches the US-equity trading
- * week (TradingView-style compressed weekends). Stocks/indices have no
- * weekend data anyway — this is a no-op for them. BTC-USD is the only
- * symbol that loses ~52 rows/year. If we ever add a crypto-native panel
- * that wants 7-day continuous data, we'll add a per-series opt-out.
+ * 丢弃周六/周日的数据行,让时间轴对齐美股交易周(类似 TradingView 那样压缩
+ * 掉 weekend)。股票/指数本来就没有 weekend 数据,所以对它们而言这是空操作。
+ * 只有 BTC-USD 会因此每年损失约 52 行。如果以后新增一个需要 7 天连续数据的
+ * 加密原生面板,再为单个 series 加一个跳过开关。
  */
 function dropWeekends(data: LinePoint[]): LinePoint[] {
   return data.filter((p) => {

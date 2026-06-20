@@ -1,8 +1,7 @@
 /**
- * One-shot backfill of all CBOE-sourced indices from HISTORY_START_DATE
- * to today. Use this when first switching the VIX family from Yahoo to
- * CBOE, since the incremental daily job won't pull history if some
- * Yahoo-sourced rows already exist for those symbols.
+ * 一次性回填所有来自 CBOE 的指数,覆盖从 HISTORY_START_DATE 到今天的区间。
+ * 在首次把 VIX 系列的数据源从 Yahoo 切到 CBOE 时使用:因为只要这些 symbol
+ * 已经存在一些来自 Yahoo 的数据行,增量式的每日 job 就不会再去拉历史。
  *
  *   bun run backfill:cboe-indices
  */

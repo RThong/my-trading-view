@@ -4,10 +4,10 @@ import { callDelta } from '../analytics/greeks';
 import type { OptionChainSnapshot } from '../fetchers/yahooOptions';
 import { lastClosedTradingDate } from './tradingCalendar';
 
-// We compute 25Δ selection from each strike's IV via Black-Scholes delta.
-// moomoo also returns its own pre-computed delta per contract; we keep using
-// our BS delta for consistency across sources, but the moomoo delta is
-// available in the archived chain if we ever want to cross-check.
+// 我们用 Black-Scholes delta,从每个 strike 的 IV 推算出 25Δ 的选取结果。
+// moomoo 也会为每个合约返回它自己预先算好的 delta;但为了在不同数据源之间
+// 保持一致,我们统一沿用自己算的 BS delta。moomoo 的 delta 已存进归档的
+// chain 里,将来想交叉验证时随时可以取用。
 
 const TARGET_DTE = 30;
 const DEFAULT_RATE = 0.045;
@@ -20,7 +20,7 @@ export type Selection = {
   putStrike: number;
 };
 
-/** Picks 25-delta call & 25-delta put strikes from a chain. */
+/** 从期权链中挑选 25-delta call 与 25-delta put 的 strike。 */
 export function select25Delta(
   chain: OptionChainSnapshot,
   rate: number,
@@ -30,12 +30,12 @@ export function select25Delta(
   const yearsToExpiry = Math.max((expiryMs - todayMs) / (365 * 86_400_000), 1 / 365);
   const spot = chain.underlyingPrice;
 
-  // For each call strike, compute delta; pick min |delta − 0.25|.
+  // 对每个 call strike 算出 delta,取 |delta − 0.25| 最小的那个。
   const callPick = pickClosest(chain.calls, (c) => {
     const d = callDelta({ spot, strike: c.strike, yearsToExpiry, iv: c.impliedVolatility, rate });
     return Math.abs(d - 0.25);
   });
-  // For each put strike, put_delta ≈ −0.25 iff call_delta(same K) ≈ 0.75.
+  // 对每个 put strike,put_delta ≈ −0.25 等价于同一 K 的 call_delta ≈ 0.75。
   const putPick = pickClosest(chain.puts, (p) => {
     const d = callDelta({ spot, strike: p.strike, yearsToExpiry, iv: p.impliedVolatility, rate });
     return Math.abs(d - 0.75);
@@ -61,23 +61,22 @@ function pickClosest<T>(arr: T[], distance: (x: T) => number): T {
   return best;
 }
 
-/** Minimal client shape both Yahoo and moomoo fetchers satisfy. */
+/** Yahoo 和 moomoo 两个抓取器都满足的最小 client 接口。 */
 export type OptionsChainClient = {
   fetchChain(symbol: string, targetDte: number): Promise<OptionChainSnapshot>;
 };
 
 type RunOpts = {
   db: Database;
-  /** Underlyings to snapshot, e.g. ['SPY']. Stored verbatim as the `underlying` key. */
+  /** 要做快照的标的,例如 ['SPY']。原样存储为 `underlying` 键。 */
   underlyings: string[];
   client: OptionsChainClient;
   riskFreeRate: number;
 };
 
 export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaRow[]> {
-  // Stamp with the last *closed* US trading day rather than wall-clock today,
-  // so weekend/after-hours runs collapse onto the right Friday row (idempotent
-  // under upsert).
+  // 用最近一个*已收盘*的美股交易日打戳,而不是用本地时钟的今天,
+  // 这样周末/盘后运行都会归并到正确的那个周五行上(在 upsert 下保持幂等)。
   const today = lastClosedTradingDate();
   const rows: Options25DeltaRow[] = [];
   const rawRows: OptionChainRawRow[] = [];
@@ -85,7 +84,7 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaR
     const chain = await opts.client.fetchChain(u, TARGET_DTE);
     const sel = select25Delta(chain, opts.riskFreeRate);
 
-    // Store IV as percent (e.g. 16.63) for readable chart axes.
+    // IV 以百分数存储(例如 16.63),方便图表坐标轴显示。
     rows.push({
       underlying: u,
       snapshotDate: today,
@@ -95,9 +94,9 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaR
       isMock: false,
     });
 
-    // Archive the full chain (gzipped) for future analyses (max pain, OI
-    // distribution, GEX, etc.). moomoo chains carry Greeks, so GEX is derivable
-    // straight from the archive without re-pricing.
+    // 归档完整的 chain(gzip 压缩),供日后分析使用(max pain、OI 分布、
+    // GEX 等)。moomoo 的 chain 自带 Greeks,因此 GEX 可以直接从归档数据
+    // 推导,无需重新定价。
     const chainJson = JSON.stringify({ calls: chain.calls, puts: chain.puts });
     const gz = Bun.gzipSync(new TextEncoder().encode(chainJson));
     rawRows.push({

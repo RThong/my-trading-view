@@ -1,7 +1,6 @@
 /**
- * One-shot backfill of VIX futures front-month settlement (symbol 'VX1') from
- * the entire CBOE VX history (2013 to today). Subsequent updates are handled
- * by the daily job which only re-fetches recent contracts.
+ * 一次性回填 VIX 期货近月结算价(symbol 'VX1'),覆盖整段 CBOE VX 历史
+ *(2013 年至今)。后续更新交由每日 job 处理,它只会重新拉取近期合约。
  *
  *   bun run backfill:vx
  */
@@ -17,7 +16,7 @@ async function main(): Promise<void> {
     const t0 = Date.now();
     console.log('Backfilling VIX futures (VX1) from CBOE...');
     const rows = await fetchVxFrontMonthSeries({
-      freshSince: '1900-01-01', // grab everything
+      freshSince: '1900-01-01', // 全量抓取
       concurrency: 12,
       onProgress: (done, total) => {
         if (done % 50 === 0 || done === total) {

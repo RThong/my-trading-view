@@ -5,7 +5,7 @@ import { useChartData, type SeriesConfig, type Interval } from '../hooks/useChar
 type Props = {
   configs: SeriesConfig[];
   interval: Interval;
-  /** Number of panes to create. Defaults to max(config.pane) + 1. */
+  /** 要创建的 pane 数量。默认为 max(config.pane) + 1。 */
   paneCount?: number;
 };
 
@@ -33,7 +33,7 @@ export function ChartView({ configs, interval, paneCount }: Props) {
     return cfg?.axis ?? 'right';
   };
 
-  // create chart + extra panes once
+  // 只创建一次 chart 和额外的 pane
   useEffect(() => {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, CHART_OPTIONS);
@@ -43,7 +43,7 @@ export function ChartView({ configs, interval, paneCount }: Props) {
     for (let i = 1; i < wantedPanes; i++) {
       chart.addPane();
     }
-    // equal stretch
+    // 各 pane 等比例拉伸
     chart.panes().forEach((p) => p.setStretchFactor(1));
 
     return () => {
@@ -58,14 +58,14 @@ export function ChartView({ configs, interval, paneCount }: Props) {
     const chart = chartRef.current;
     if (!chart) return;
 
-    // remove dropped series
+    // 移除已不再需要的 series
     for (const [label, s] of seriesRef.current) {
       if (!series.find(x => x.label === label)) {
         chart.removeSeries(s);
         seriesRef.current.delete(label);
       }
     }
-    // add/update remaining
+    // 新增/更新其余 series
     for (const s of series) {
       let line = seriesRef.current.get(s.label);
       if (!line) {

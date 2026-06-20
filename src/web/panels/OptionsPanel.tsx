@@ -77,7 +77,7 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, CHART_OPTIONS);
     chartRef.current = chart;
-    chart.addPane(); // pane 1 for skew
+    chart.addPane(); // pane 1 用于展示 skew
     chart.panes().forEach(p => p.setStretchFactor(1));
     return () => {
       chart.remove();
@@ -91,10 +91,10 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
     if (!chart) return;
 
     const specs = [
-      // Pane 0: SPY 25Δ call + put IV
+      // Pane 0:SPY 25Δ 的 call + put IV
       { key: 'spy-call', pane: 0, color: COLORS.spyCall, title: 'SPY 25Δ Call IV', data: aggregate(toLinePoints(spy, 'callIv'), interval) },
       { key: 'spy-put',  pane: 0, color: COLORS.spyPut,  title: 'SPY 25Δ Put IV',  data: aggregate(toLinePoints(spy, 'putIv'),  interval) },
-      // Pane 1: SPY 25Δ skew (put IV − call IV)
+      // Pane 1:SPY 25Δ skew(put IV − call IV)
       { key: 'spy-skew', pane: 1, color: COLORS.spySkew, title: 'SPY 25Δ Skew',    data: aggregate(toLinePoints(spy, 'skew'),   interval) },
     ];
 

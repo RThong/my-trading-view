@@ -1,20 +1,20 @@
 /**
- * moomoo OpenD option chain fetcher (WebSocket).
+ * moomoo OpenD 期权链抓取器(WebSocket)。
  *
- * Returns the same OptionChainSnapshot shape as yahooOptions.ts so the rest
- * of the pipeline (select25Delta, raw archival) is source-agnostic. Unlike
- * Yahoo, moomoo provides exchange-grade OI/IV plus pre-computed Greeks
- * (delta/gamma/vega/theta/rho), which we carry through as optional fields.
+ * 返回与 yahooOptions.ts 相同的 OptionChainSnapshot 结构,这样后续流水线
+ * (select25Delta、原始数据归档)无需关心数据来源。与 Yahoo 不同,moomoo
+ * 提供交易所级别的 OI/IV 以及预先算好的希腊字母(delta/gamma/vega/theta/rho),
+ * 我们将其作为可选字段一并透传。
  *
- * Two-step protocol:
- *   1. GetOptionChain  → static info (contract codes, strikes) for a date window
- *   2. GetSecuritySnapshot (batched ≤400) → dynamic data (OI/IV/Greeks/quotes)
+ * 两步协议:
+ *   1. GetOptionChain  → 拉取某个日期窗口内的静态信息(合约代码、行权价)
+ *   2. GetSecuritySnapshot(按 ≤400 分批)→ 拉取动态数据(OI/IV/希腊字母/行情)
  *
- * Requires OpenD running with WebSocket enabled (default port 33333) and the
- * auth key in env. See .env: MOOMOO_WS_HOST / MOOMOO_WS_PORT / MOOMOO_WS_KEY.
+ * 需要 OpenD 在运行且已开启 WebSocket(默认端口 33333),并在环境变量里配置
+ * 鉴权 key。详见 .env:MOOMOO_WS_HOST / MOOMOO_WS_PORT / MOOMOO_WS_KEY。
  */
 
-// @ts-expect-error — moomoo-api ships no type declarations
+// @ts-expect-error — moomoo-api 没有附带类型声明
 import mmWebsocket from 'moomoo-api';
 import type { OptionContract } from './yahooOptions';
 import type { OptionsChainClient } from '../jobs/optionsSnapshot';
@@ -44,10 +44,10 @@ function isoDate(d: Date): string {
 }
 
 /**
- * moomoo documents strikeTime as "yyyy-MM-dd". Validate it rather than trust:
- * an unexpected format (e.g. a datetime) would otherwise parse to an Invalid
- * Date downstream and silently corrupt 25Δ selection. Fail loud instead — the
- * throw is caught by the daily job's options group and recorded as a failure.
+ * moomoo 文档里 strikeTime 标注为 "yyyy-MM-dd"。这里选择校验而非盲信:
+ * 一旦格式异常(例如返回的是 datetime),下游解析会得到 Invalid Date,
+ * 从而悄无声息地破坏 25Δ 选取。宁可显式报错——抛出的异常会被 daily job
+ * 的 options group 捕获并记录为一次失败。
  */
 function expiryDate(raw: unknown): string {
   const s = String(raw ?? '');
@@ -57,7 +57,7 @@ function expiryDate(raw: unknown): string {
   return s;
 }
 
-/** Connects, runs `fn`, then always closes the socket. */
+/** 建立连接,执行 `fn`,然后无论如何都关闭 socket。 */
 async function withConnection<T>(
   cfg: MoomooConfig,
   fn: (ws: any) => Promise<T>,
@@ -74,9 +74,9 @@ async function withConnection<T>(
     });
     return await fn(ws);
   } finally {
-    // stop() only unregisters the push callback. The underlying socket and its
-    // reconnect timer live on ws.websock — close() shuts both, otherwise the
-    // handle keeps the event loop alive and the daily CLI never exits.
+    // stop() 只是注销推送回调。底层 socket 及其重连定时器挂在 ws.websock 上
+    // —— close() 会把这两者一起关掉,否则这个句柄会让事件循环一直存活,
+    // daily CLI 永远退不出去。
     ws.stop();
     ws.websock?.close();
   }
@@ -144,18 +144,18 @@ function toContract(staticC: StaticContract, snap: any): OptionContract | null {
     contractSymbol: staticC.code,
     strike: staticC.strikePrice,
     expiration: expiryDate(ox.strikeTime),
-    // moomoo gives IV as percent (19.296 = 19.296%); normalize to decimal to
-    // match yahooOptions convention (0.20 = 20%).
+    // moomoo 的 IV 以百分数给出(19.296 表示 19.296%);这里归一化成小数,
+    // 以对齐 yahooOptions 的约定(0.20 表示 20%)。
     impliedVolatility: ox.impliedVolatility / 100,
     bid: typeof basic?.bidPrice === 'number' ? basic.bidPrice : null,
     ask: typeof basic?.askPrice === 'number' ? basic.askPrice : null,
     lastPrice: typeof basic?.curPrice === 'number' ? basic.curPrice : null,
     volume: basic?.volume != null ? Number(basic.volume) : null,
     openInterest: typeof ox.openInterest === 'number' ? ox.openInterest : null,
-    inTheMoney: false, // moomoo doesn't flag this directly; derived later if needed
+    inTheMoney: false, // moomoo 不直接给这个标记;需要时在后续环节推导
     lastTradeDate: basic?.updateTime ?? null,
-    // moomoo extras (absent from Yahoo): delta for 25Δ cross-check, gamma for
-    // GEX off the archived chain. vega/theta/rho dropped — no reader.
+    // moomoo 独有(Yahoo 没有)的额外字段:delta 用于 25Δ 交叉校验,gamma
+    // 用于基于归档期权链计算 GEX。vega/theta/rho 丢弃——没有地方用到。
     delta: typeof ox.delta === 'number' ? ox.delta : null,
     gamma: typeof ox.gamma === 'number' ? ox.gamma : null,
   };
@@ -164,12 +164,12 @@ function toContract(staticC: StaticContract, snap: any): OptionContract | null {
 export function defaultMoomooOptionsClient(): OptionsChainClient {
   return {
     async fetchChain(symbol, targetDte) {
-      // Resolve config lazily: a missing MOOMOO_WS_KEY then surfaces inside the
-      // options group's try/catch (recorded via finishJobRun) rather than
-      // throwing at construction time and aborting the whole daily job.
+      // 延迟读取配置:这样即便缺少 MOOMOO_WS_KEY,异常也会在 options group
+      // 的 try/catch 里浮现(经 finishJobRun 记录),而不是在构造时就抛出、
+      // 把整个 daily job 直接拖垮。
       const cfg = envConfig();
       return withConnection(cfg, async (ws) => {
-        // Window around target DTE (±10 days) so we catch a listed expiry.
+        // 在目标 DTE 附近取一个窗口(±10 天),确保能命中一个已上市的到期日。
         const now = Date.now();
         const begin = isoDate(new Date(now + (targetDte - 10) * 86400_000));
         const end = isoDate(new Date(now + (targetDte + 10) * 86400_000));
@@ -179,7 +179,7 @@ export function defaultMoomooOptionsClient(): OptionsChainClient {
           throw new Error(`No expiries for ${symbol} in ${begin}..${end}`);
         }
 
-        // Pick expiry whose distance to targetDte is smallest.
+        // 选取与 targetDte 距离最近的那个到期日。
         const target = now + targetDte * 86400_000;
         let best = expiries[0];
         let bestDiff = Infinity;
@@ -189,7 +189,7 @@ export function defaultMoomooOptionsClient(): OptionsChainClient {
           if (diff < bestDiff) { best = e; bestDiff = diff; }
         }
 
-        // Snapshot all strikes of the chosen expiry (calls + puts).
+        // 对选中到期日的所有行权价(看涨 + 看跌)拉取 snapshot。
         const allStatic = [...best.calls, ...best.puts];
         const snaps = await fetchSnapshots(ws, allStatic.map((c) => c.code));
 
@@ -200,7 +200,7 @@ export function defaultMoomooOptionsClient(): OptionsChainClient {
           .map((c) => toContract(c, snaps.get(c.code)))
           .filter((c): c is OptionContract => c !== null);
 
-        // Underlying spot: snapshot the underlying itself.
+        // 标的现价:对标的本身拉取 snapshot。
         const underlyingSnap = await fetchSnapshots(ws, [symbol]);
         const spot = underlyingSnap.get(symbol)?.basic?.curPrice;
         if (typeof spot !== 'number') {

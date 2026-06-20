@@ -34,10 +34,10 @@ describe('putDelta', () => {
     expect(putDelta(inp)).toBeCloseTo(callDelta(inp) - 1, 6);
   });
   test('25-delta call strike inversion: when call_delta ≈ 0.25, put_delta ≈ -0.75', () => {
-    // find a strike where call delta ≈ 0.25
+    // 找一个 call delta ≈ 0.25 的 strike
     const params = { spot: 100, yearsToExpiry: 0.083, iv: 0.20, rate: 0.045 };
-    // With spot=100, IV=20%, T≈30 days, the ~25-delta strike is around 102-103.
-    // Verify the delta is in the right ballpark.
+    // 当 spot=100、IV=20%、T≈30 天时,约 25-delta 的 strike 大致在 102-103 附近。
+    // 验证 delta 落在合理范围内。
     const d = callDelta({ ...params, strike: 103 });
     expect(d).toBeGreaterThan(0.15);
     expect(d).toBeLessThan(0.40);

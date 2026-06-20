@@ -3,12 +3,12 @@ import { resolve } from 'node:path';
 export const PROJECT_ROOT = resolve(import.meta.dirname, '..', '..');
 export const DB_PATH = resolve(PROJECT_ROOT, 'data', 'mtv.db');
 
-/** Earliest trade date we keep. Used by all backfill + filter logic. */
+/** 保留的最早交易日。所有回填和过滤逻辑都以此为准。 */
 export const HISTORY_START_DATE = '2007-01-01';
-/** Corresponding day count for API/frontend caps (~22y headroom). */
+/** 对应的天数,用于 API/前端的上限(约留 22 年余量)。 */
 export const HISTORY_MAX_DAYS = 8000;
 
-/** Symbols fetched from Yahoo (yahoo-finance2). */
+/** 从 Yahoo(yahoo-finance2)拉取的标的。 */
 export const QUOTE_SYMBOLS = [
   { symbol: '^GSPC',   label: 'S&P 500', group: 'index' as const },
   { symbol: 'QQQ',     label: 'QQQ',   group: 'index' as const },
@@ -19,10 +19,9 @@ export const QUOTE_SYMBOLS = [
 ];
 
 /**
- * Indices fetched directly from CBOE (cdn.cboe.com), which has full history
- * dating back to the 1990s or earlier. `cboeSymbol` is the URL token; we
- * store under `symbol` (with `^` prefix to stay consistent with the
- * Yahoo-style naming used elsewhere in the DB).
+ * 直接从 CBOE(cdn.cboe.com)拉取的指数,这里有可追溯到 1990 年代甚至更早的
+ * 完整历史数据。`cboeSymbol` 是 URL 里的标识;我们以 `symbol` 存储
+ * (加 `^` 前缀,以便和 DB 中其他地方使用的 Yahoo 风格命名保持一致)。
  */
 export const CBOE_INDEX_SYMBOLS = [
   { symbol: '^VIX',    cboeSymbol: 'VIX',    label: 'VIX',   group: 'volatility' as const },
@@ -35,8 +34,8 @@ export const CBOE_INDEX_SYMBOLS = [
   { symbol: '^RXM',    cboeSymbol: 'RXM',    label: 'RXM',   group: 'strategy'   as const },
 ];
 
-// Underlyings to snapshot options for via moomoo; stored verbatim as the
-// `underlying` key. SPY only for now, expand later.
+// 通过 moomoo 做期权快照的标的;原样存储为 `underlying` 键。
+// 目前只有 SPY,后续再扩展。
 export const OPTIONS_UNDERLYINGS = ['SPY'];
 
 export const MACRO_SERIES = [

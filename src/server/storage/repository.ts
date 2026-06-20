@@ -12,7 +12,7 @@ export type Options25DeltaRow = {
 
 export type QuoteRow = {
   symbol: string;
-  tradeDate: string;     // 'YYYY-MM-DD'
+  tradeDate: string;     // 格式 'YYYY-MM-DD'
   open: number | null;
   high: number | null;
   low: number | null;

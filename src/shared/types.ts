@@ -30,7 +30,7 @@ export type CatalogResponse = {
 };
 
 export type OptionIVPoint = {
-  date: string;        // 'YYYY-MM-DD'
+  date: string;        // 格式 'YYYY-MM-DD'
   callIv: number;
   putIv: number;
   skew: number;

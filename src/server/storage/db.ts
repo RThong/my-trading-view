@@ -27,7 +27,7 @@ export function migrate(db: Database): void {
   }
 }
 
-// CLI entry: `bun run src/server/storage/db.ts migrate`
+// CLI 入口:`bun run src/server/storage/db.ts migrate`
 if (import.meta.main) {
   const cmd = process.argv[2];
   if (cmd === 'migrate') {

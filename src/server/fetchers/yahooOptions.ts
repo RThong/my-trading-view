@@ -3,30 +3,30 @@ import YahooFinance from 'yahoo-finance2';
 export type OptionContract = {
   contractSymbol: string;
   strike: number;
-  expiration: string;          // 'YYYY-MM-DD' (ISO)
-  impliedVolatility: number;  // decimal: 0.20 = 20%
+  expiration: string;          // 'YYYY-MM-DD'(ISO)
+  impliedVolatility: number;  // 小数形式:0.20 表示 20%
   bid: number | null;
   ask: number | null;
   lastPrice: number | null;
   volume: number | null;
   openInterest: number | null;
   inTheMoney: boolean;
-  lastTradeDate: string | null;   // ISO datetime, may be null on stale strikes
-  // Greeks — present when the source provides them (moomoo); null for Yahoo.
+  lastTradeDate: string | null;   // ISO 日期时间,长期无成交的行权价可能为 null
+  // 希腊字母 —— 数据源提供时才有(moomoo);Yahoo 则为 null。
   delta?: number | null;
   gamma?: number | null;
 };
 
 export type OptionChainSnapshot = {
   underlyingSymbol: string;
-  underlyingPrice: number;     // spot price at time of fetch
+  underlyingPrice: number;     // 拉取时刻的现货价
   expirationDate: string;      // 'YYYY-MM-DD'
   calls: OptionContract[];
   puts: OptionContract[];
 };
 
 export type YahooOptionsClient = {
-  /** Returns the option chain for the expiry closest to (today + targetDte) days. */
+  /** 返回到期日最接近(今天 + targetDte 天)的期权链。 */
   fetchChain(symbol: string, targetDte: number): Promise<OptionChainSnapshot>;
 };
 
@@ -49,21 +49,21 @@ export function defaultYahooOptionsClient(): YahooOptionsClient {
   const yf = new YahooFinance();
   return {
     async fetchChain(symbol, targetDte) {
-      // First call: get available expirations + spot.
+      // 第一次调用:获取可用的到期日列表 + 现货价。
       const meta = await (yf.options(symbol) as Promise<any>);
       const expirations: Date[] = meta.expirationDates ?? [];
       if (expirations.length === 0) {
         throw new Error(`No expirations available for ${symbol}`);
       }
       const target = Date.now() + targetDte * 86_400_000;
-      // Pick expiry with min |expiry - target|
+      // 选 |expiry - target| 最小的到期日
       let best = expirations[0];
       let bestDiff = Math.abs(best.getTime() - target);
       for (const e of expirations) {
         const diff = Math.abs(e.getTime() - target);
         if (diff < bestDiff) { best = e; bestDiff = diff; }
       }
-      // Second call: get the chain for that specific expiry.
+      // 第二次调用:获取该到期日对应的期权链。
       const chain = await (yf.options(symbol, { date: best }) as Promise<any>);
       const node = chain.options?.[0];
       if (!node) throw new Error(`Empty chain for ${symbol} at ${toIsoDate(best)}`);

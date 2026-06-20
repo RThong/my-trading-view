@@ -1,14 +1,14 @@
 /**
- * Generic CBOE index history fetcher.
+ * 通用的 CBOE 指数历史数据抓取器。
  *
- * CBOE publishes daily EOD history for hundreds of indices as flat CSVs at:
+ * CBOE 以扁平 CSV 的形式发布数百个指数的每日 EOD 历史数据,地址为:
  *   https://cdn.cboe.com/api/global/us_indices/daily_prices/{INDEX}_History.csv
  *
- * Two CSV header shapes are observed in the wild:
- *   - Single value: "DATE,{SYMBOL}"           e.g. "DATE,SKEW"
- *   - OHLC:         "DATE,OPEN,HIGH,LOW,CLOSE" e.g. VIX, VIX9D, VIX3M
+ * 实际遇到的 CSV 表头有两种形态:
+ *   - 单值:  "DATE,{SYMBOL}"           例如 "DATE,SKEW"
+ *   - OHLC:  "DATE,OPEN,HIGH,LOW,CLOSE" 例如 VIX、VIX9D、VIX3M
  *
- * Dates are formatted as MM/DD/YYYY. We convert to ISO YYYY-MM-DD.
+ * 日期格式为 MM/DD/YYYY,这里统一转换成 ISO 的 YYYY-MM-DD。
  */
 
 import type { QuoteRow } from '../storage/repository';
@@ -45,7 +45,7 @@ export function defaultCboeIndexClient(opts?: { fetch?: FetchFn }): CboeIndexCli
   };
 }
 
-/** Parses both single-value and OHLC CBOE index CSVs. */
+/** 同时解析单值和 OHLC 两种格式的 CBOE 指数 CSV。 */
 export function parseCboeIndexCsv(text: string): CboeIndexRow[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
@@ -94,15 +94,15 @@ function parseNullable(s: string | undefined): number | null {
 type FetchToRowsOpts = {
   cboeSymbol: string;
   storedSymbol: string;
-  /** Only rows STRICTLY after this date. Takes precedence over the default HISTORY_START_DATE floor. */
+  /** 只返回严格晚于该日期的行。优先级高于默认的 HISTORY_START_DATE 下限。 */
   afterDate?: string;
   client?: CboeIndexClient;
 };
 
 /**
- * Fetch a CBOE index and return QuoteRow[] ready to insert into quote_eod.
- * Always floored at HISTORY_START_DATE. For incremental updates, pass
- * `afterDate: latestStoredDate` to fetch only newer rows.
+ * 抓取一个 CBOE 指数,返回可直接插入 quote_eod 的 QuoteRow[]。
+ * 起始日期始终以 HISTORY_START_DATE 为下限。做增量更新时,传入
+ * `afterDate: latestStoredDate` 即可只抓取更新的行。
  */
 export async function fetchCboeIndexAsQuotes(opts: FetchToRowsOpts): Promise<QuoteRow[]> {
   const client = opts.client ?? defaultCboeIndexClient();

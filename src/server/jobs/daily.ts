@@ -30,7 +30,7 @@ type RunDailyJobOpts = {
   fred: { fetchSeries(seriesId: string, since: string): Promise<MacroRow[]> };
   historyDays: number;
   cboeIndices?: CboeIndexSpec[];
-  /** Underlyings to snapshot options for (e.g. ['SPY']). Requires optionsClient. */
+  /** 需要做期权快照的标的(如 ['SPY'])。需配合 optionsClient 使用。 */
   optionsUnderlyings?: string[];
   optionsClient?: OptionsChainClient;
   riskFreeRate?: number;
@@ -42,7 +42,7 @@ function daysAgo(n: number): Date {
 }
 
 export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
-  // quotes group
+  // quotes 分组
   if (opts.quoteSymbols.length > 0) {
     const runId = startJobRun(opts.db, 'quotes');
     const failures: string[] = [];
@@ -67,7 +67,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     }
   }
 
-  // cboe_indices group (VIX family, SKEW, RXM — direct from CBOE CDN, 1990+ history)
+  // cboe_indices 分组(VIX 系列、SKEW、RXM —— 直接取自 CBOE CDN,含 1990 年至今的历史)
   if (opts.cboeIndices && opts.cboeIndices.length > 0) {
     const runId = startJobRun(opts.db, 'cboe_indices');
     const failures: string[] = [];
@@ -95,7 +95,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     }
   }
 
-  // macro group
+  // macro 分组
   if (opts.macroSeries.length > 0) {
     const runId = startJobRun(opts.db, 'macro');
     const failures: string[] = [];
@@ -120,7 +120,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     }
   }
 
-  // options group (via moomoo OpenD)
+  // options 分组(通过 moomoo OpenD)
   if (opts.optionsUnderlyings && opts.optionsUnderlyings.length > 0 && opts.optionsClient) {
     const runId = startJobRun(opts.db, 'options');
     try {
@@ -139,12 +139,12 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     }
   }
 
-  // vx_futures group (CBOE VIX futures front-month series, stored as quote_eod symbol='VX1')
+  // vx_futures 分组(CBOE VIX 期货近月连续序列,以 quote_eod symbol='VX1' 存储)
   if (opts.fetchVxFutures) {
     const runId = startJobRun(opts.db, 'vx_futures');
     try {
-      // Only re-fetch contracts that haven't expired more than 7 days ago. Their
-      // history doesn't change, but we want to catch any late settlement edits.
+      // 只重新拉取到期未超过 7 天的合约。它们的历史数据不会变,
+      // 但我们想捕捉到任何延迟的结算修正。
       const lookbackStart = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
       const rows = await fetchVxFrontMonthSeries({ freshSince: lookbackStart });
       insertQuotes(opts.db, rows, 'cboe');
@@ -155,7 +155,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   }
 }
 
-// CLI entry
+// CLI 入口
 if (import.meta.main) {
   const db = openDb();
   migrate(db);

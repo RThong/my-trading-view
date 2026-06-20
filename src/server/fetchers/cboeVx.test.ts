@@ -41,24 +41,24 @@ describe('computeFrontMonth', () => {
   test('picks contract with earliest expire_date strictly after trade_date', () => {
     const series = computeFrontMonth([
       {
-        expireDate: '2026-02-18', // G6 — back month for Jan
+        expireDate: '2026-02-18', // G6 —— 1 月的远月合约
         rows: [
           { tradeDate: '2026-01-15', settle: 18.0 },
           { tradeDate: '2026-01-16', settle: 18.5 },
-          { tradeDate: '2026-01-21', settle: 19.0 }, // after F6 expired, G6 becomes front
+          { tradeDate: '2026-01-21', settle: 19.0 }, // F6 到期后,G6 成为近月
         ],
       },
       {
-        expireDate: '2026-01-21', // F6 — front month while still alive
+        expireDate: '2026-01-21', // F6 —— 仍在交易时是近月合约
         rows: [
           { tradeDate: '2026-01-15', settle: 17.5 },
           { tradeDate: '2026-01-16', settle: 17.8 },
-          { tradeDate: '2026-01-21', settle: 18.2 }, // last day, but expireDate == tradeDate so skipped
+          { tradeDate: '2026-01-21', settle: 18.2 }, // 最后一天,但 expireDate == tradeDate 故被跳过
         ],
       },
     ]);
     const byDate = Object.fromEntries(series.map((s) => [s.tradeDate, s.settle]));
-    // On 1/15 and 1/16, F6 (expire 1/21) is front; on 1/21, F6 is excluded so G6 takes over.
+    // 1/15 和 1/16 时,F6(1/21 到期)是近月;到了 1/21,F6 被排除,改由 G6 接替。
     expect(byDate['2026-01-15']).toBe(17.5);
     expect(byDate['2026-01-16']).toBe(17.8);
     expect(byDate['2026-01-21']).toBe(19.0);

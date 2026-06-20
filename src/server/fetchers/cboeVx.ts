@@ -1,24 +1,22 @@
 /**
- * CBOE VIX futures (VX) historical EOD settlement fetcher.
+ * CBOE VIX 期货(VX)历史每日结算价(EOD settlement)抓取器。
  *
- * The CBOE futures historical-data page is a JS SPA, but the data behind it
- * is served via two stable, unauthenticated endpoints we discovered by
- * inspecting the page's network traffic:
+ * CBOE 的期货历史数据页面是一个 JS SPA,但页面背后的数据是通过两个稳定、
+ * 无需鉴权的接口提供的——这两个接口是我们查看页面网络请求时发现的:
  *
- *   1. List of all VX contracts:
+ *   1. 所有 VX 合约列表:
  *      GET https://www-api.cboe.com/us/futures/market_statistics/historical_data/product/list/VX/
- *      Returns JSON keyed by year, each value an array of contract metadata
- *      (expire_date, product_display, path to its CSV).
+ *      返回按年份分组的 JSON,每个值是一组合约元数据
+ *      (expire_date、product_display、CSV 文件的 path)。
  *
- *   2. Per-contract daily settlement CSV:
+ *   2. 单个合约的每日结算价 CSV:
  *      GET https://cdn.cboe.com/{path-from-API}
- *      Columns: Trade Date, Futures, Open, High, Low, Close, Settle, Change,
- *      Total Volume, EFP, Open Interest. Each CSV covers one contract's whole
- *      life (~6–9 months from listing to expiry).
+ *      列依次为:Trade Date、Futures、Open、High、Low、Close、Settle、Change、
+ *      Total Volume、EFP、Open Interest。每个 CSV 覆盖一份合约的完整生命周期
+ *      (从挂牌到到期约 6–9 个月)。
  *
- * This fetcher computes the "front-month" VIX future for each trading day:
- * for every trade date present across all contracts' CSVs, pick the contract
- * with the earliest expire_date that is still in the future on that date.
+ * 本抓取器为每个交易日计算 front-month(近月)VIX 期货:对所有合约 CSV 中
+ * 出现过的每个交易日,选取那份 expire_date 最早、且当天尚未到期的合约。
  */
 
 import type { QuoteRow } from '../storage/repository';
@@ -32,8 +30,8 @@ const CDN_BASE = 'https://cdn.cboe.com/';
 const UA = 'Mozilla/5.0 (compatible; my-trading-view/0.1)';
 
 export type CboeContract = {
-  symbol: string;       // 'VX+VXT/F6'
-  expireDate: string;   // 'YYYY-MM-DD'
+  symbol: string;       // 形如 'VX+VXT/F6'
+  expireDate: string;   // 形如 'YYYY-MM-DD'
   csvUrl: string;
 };
 
@@ -87,7 +85,7 @@ export function parseSettleCsv(text: string): CboeSettleRow[] {
   const out: CboeSettleRow[] = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split(',');
-    // Trade Date, Futures, Open, High, Low, Close, Settle, Change, Total Volume, EFP, OI
+    // 列依次为:Trade Date, Futures, Open, High, Low, Close, Settle, Change, Total Volume, EFP, OI
     const tradeDate = cols[0]?.trim();
     const settle = Number(cols[6]?.trim());
     if (!tradeDate || !Number.isFinite(settle) || settle <= 0) continue;
@@ -97,9 +95,9 @@ export function parseSettleCsv(text: string): CboeSettleRow[] {
 }
 
 /**
- * For each trade date, pick the contract whose expire_date is the *earliest*
- * date strictly after the trade date — that's the conventional "front month".
- * Returns rows sorted ascending by trade date.
+ * 对每个交易日,选取 expire_date 严格晚于该交易日、且日期*最早*的合约——
+ * 这就是约定俗成的 front month(近月合约)。
+ * 返回按交易日升序排列的数据行。
  */
 export function computeFrontMonth(
   contractRows: Array<{ expireDate: string; rows: CboeSettleRow[] }>,
@@ -107,7 +105,7 @@ export function computeFrontMonth(
   const byDate = new Map<string, { settle: number; expireDate: string }>();
   for (const c of contractRows) {
     for (const r of c.rows) {
-      if (c.expireDate <= r.tradeDate) continue; // skip post-expiry rows defensively
+      if (c.expireDate <= r.tradeDate) continue; // 防御性地跳过到期之后的数据行
       const existing = byDate.get(r.tradeDate);
       if (!existing || c.expireDate < existing.expireDate) {
         byDate.set(r.tradeDate, { settle: r.settle, expireDate: c.expireDate });
@@ -121,17 +119,16 @@ export function computeFrontMonth(
 
 type FetchAllOpts = {
   client?: CboeVxClient;
-  /** Only fetch contracts that have not yet expired by this date (YYYY-MM-DD). Defaults to today. Set to '1900-01-01' to fetch everything (full backfill). */
+  /** 只抓取到该日期(YYYY-MM-DD)仍未到期的合约。默认为今天。设为 '1900-01-01' 可抓取全部合约(全量回填)。 */
   freshSince?: string;
   concurrency?: number;
   onProgress?: (done: number, total: number) => void;
 };
 
 /**
- * High-level entry: download contracts, parse, return front-month series as
- * QuoteRow[]. Pass `freshSince: '1900-01-01'` for a full backfill; for daily
- * refresh pass a recent date so we only touch live + recently-expired
- * contracts (most history doesn't change).
+ * 上层入口:下载合约、解析,并以 QuoteRow[] 形式返回 front-month 序列。
+ * 全量回填时传 `freshSince: '1900-01-01'`;日常刷新时传一个较近的日期,
+ * 这样就只处理仍在交易的合约和近期刚到期的合约(绝大部分历史数据不会变)。
  */
 export async function fetchVxFrontMonthSeries(opts: FetchAllOpts = {}): Promise<QuoteRow[]> {
   const client = opts.client ?? defaultCboeVxClient();

@@ -1,4 +1,4 @@
-// Standard normal CDF — Abramowitz-Stegun approximation, error < 7.5e-8.
+// 标准正态分布 CDF —— 采用 Abramowitz-Stegun 近似,误差 < 7.5e-8。
 export function normCdf(x: number): number {
   const a1 =  0.254829592;
   const a2 = -0.284496736;
@@ -14,11 +14,11 @@ export function normCdf(x: number): number {
 }
 
 export type BsInputs = {
-  spot: number;          // S, underlying price
+  spot: number;          // S,标的价格
   strike: number;        // K
-  yearsToExpiry: number; // T in years (e.g. 30/365)
-  iv: number;            // σ as decimal (0.20 = 20%)
-  rate: number;          // r as decimal (0.045 = 4.5%)
+  yearsToExpiry: number; // T,以年为单位(如 30/365)
+  iv: number;            // σ,小数形式(0.20 = 20%)
+  rate: number;          // r,小数形式(0.045 = 4.5%)
 };
 
 export function callDelta({ spot, strike, yearsToExpiry, iv, rate }: BsInputs): number {
