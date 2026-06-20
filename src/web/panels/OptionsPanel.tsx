@@ -7,12 +7,9 @@ type LinePoint = { time: string; value: number };
 type MetricKey = 'callIv' | 'putIv' | 'skew';
 
 const COLORS = {
-  spxCall: '#22c55e',
-  spxPut:  '#ec4899',
-  vixCall: '#f87171',
-  vixPut:  '#a3a3a3',
-  spxSkew: '#be123c',
-  vixSkew: '#3b82f6',
+  spyCall: '#22c55e',
+  spyPut:  '#ec4899',
+  spySkew: '#be123c',
 };
 
 const CHART_OPTIONS = {
@@ -60,8 +57,7 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
-  const [spx, setSpx] = useState<RawPoint[]>([]);
-  const [vix, setVix] = useState<RawPoint[]>([]);
+  const [spy, setSpy] = useState<RawPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,11 +65,9 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    Promise.all([
-      fetch(`/api/options/25delta/SPX?days=${HISTORY_DAYS}`).then(r => r.json() as Promise<RawPoint[]>),
-      fetch(`/api/options/25delta/VIX?days=${HISTORY_DAYS}`).then(r => r.json() as Promise<RawPoint[]>),
-    ])
-      .then(([s, v]) => { if (!cancelled) { setSpx(s); setVix(v); } })
+    fetch(`/api/options/25delta/SPY?days=${HISTORY_DAYS}`)
+      .then(r => r.json() as Promise<RawPoint[]>)
+      .then(s => { if (!cancelled) setSpy(s); })
       .catch(e => { if (!cancelled) setError((e as Error).message); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -83,7 +77,7 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, CHART_OPTIONS);
     chartRef.current = chart;
-    for (let i = 1; i < 4; i++) chart.addPane();
+    chart.addPane(); // pane 1 for skew
     chart.panes().forEach(p => p.setStretchFactor(1));
     return () => {
       chart.remove();
@@ -97,12 +91,11 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
     if (!chart) return;
 
     const specs = [
-      { key: 'spx-call', pane: 0, color: COLORS.spxCall, title: 'SPX Call IV',  data: aggregate(toLinePoints(spx, 'callIv'), interval) },
-      { key: 'spx-put',  pane: 0, color: COLORS.spxPut,  title: 'SPX Put IV',   data: aggregate(toLinePoints(spx, 'putIv'),  interval) },
-      { key: 'vix-call', pane: 1, color: COLORS.vixCall, title: 'VIX Call IV',  data: aggregate(toLinePoints(vix, 'callIv'), interval) },
-      { key: 'vix-put',  pane: 1, color: COLORS.vixPut,  title: 'VIX Put IV',   data: aggregate(toLinePoints(vix, 'putIv'),  interval) },
-      { key: 'spx-skew', pane: 2, color: COLORS.spxSkew, title: 'SPX 25Δ Skew', data: aggregate(toLinePoints(spx, 'skew'),   interval) },
-      { key: 'vix-skew', pane: 3, color: COLORS.vixSkew, title: 'VIX 25Δ Skew', data: aggregate(toLinePoints(vix, 'skew'),   interval) },
+      // Pane 0: SPY 25Δ call + put IV
+      { key: 'spy-call', pane: 0, color: COLORS.spyCall, title: 'SPY 25Δ Call IV', data: aggregate(toLinePoints(spy, 'callIv'), interval) },
+      { key: 'spy-put',  pane: 0, color: COLORS.spyPut,  title: 'SPY 25Δ Put IV',  data: aggregate(toLinePoints(spy, 'putIv'),  interval) },
+      // Pane 1: SPY 25Δ skew (put IV − call IV)
+      { key: 'spy-skew', pane: 1, color: COLORS.spySkew, title: 'SPY 25Δ Skew',    data: aggregate(toLinePoints(spy, 'skew'),   interval) },
     ];
 
     const keysNow = new Set(specs.map(s => s.key));
@@ -125,7 +118,7 @@ export function OptionsPanel({ interval }: { interval: Interval }) {
       line.setData(spec.data);
     }
     chart.timeScale().fitContent();
-  }, [spx, vix, interval]);
+  }, [spy, interval]);
 
   return (
     <div className="relative h-full w-full">

@@ -31,7 +31,7 @@ describe('repository: quote_eod', () => {
       { symbol: 'TEST', tradeDate: '2026-05-11', open: 1.5, high: 2.5, low: 1, close: 2, volume: 1100 },
     ];
     insertQuotes(db, rows, 'yahoo');
-    const out = getQuotes(db, 'TEST', 30);
+    const out = getQuotes(db, 'TEST', 36500);
     expect(out).toHaveLength(2);
     expect(out[0].date).toBe('2026-05-10');
     expect(out[1].close).toBe(2);
@@ -41,7 +41,7 @@ describe('repository: quote_eod', () => {
     const row: QuoteRow = { symbol: 'TEST', tradeDate: '2026-05-10', open: 1, high: 2, low: 0.5, close: 1.5, volume: 1000 };
     insertQuotes(db, [row], 'yahoo');
     insertQuotes(db, [{ ...row, close: 99 }], 'yahoo');
-    const out = getQuotes(db, 'TEST', 30);
+    const out = getQuotes(db, 'TEST', 36500);
     expect(out).toHaveLength(1);
     expect(out[0].close).toBe(99);
   });
@@ -70,7 +70,7 @@ describe('repository: macro_series', () => {
       { seriesId: 'DGS10', obsDate: '2026-05-11', value: 4.25 },
     ];
     insertMacro(db, rows);
-    const out = getMacroSeries(db, 'DGS10', 30);
+    const out = getMacroSeries(db, 'DGS10', 36500);
     expect(out).toHaveLength(2);
     expect(out[0].value).toBe(4.20);
   });
@@ -78,7 +78,7 @@ describe('repository: macro_series', () => {
   test('insertMacro is idempotent', () => {
     insertMacro(db, [{ seriesId: 'DGS10', obsDate: '2026-05-10', value: 4.20 }]);
     insertMacro(db, [{ seriesId: 'DGS10', obsDate: '2026-05-10', value: 4.99 }]);
-    const out = getMacroSeries(db, 'DGS10', 30);
+    const out = getMacroSeries(db, 'DGS10', 36500);
     expect(out).toHaveLength(1);
     expect(out[0].value).toBe(4.99);
   });

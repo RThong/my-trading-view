@@ -35,6 +35,10 @@ export const CBOE_INDEX_SYMBOLS = [
   { symbol: '^RXM',    cboeSymbol: 'RXM',    label: 'RXM',   group: 'strategy'   as const },
 ];
 
+// Underlyings to snapshot options for via moomoo; stored verbatim as the
+// `underlying` key. SPY only for now, expand later.
+export const OPTIONS_UNDERLYINGS = ['SPY'];
+
 export const MACRO_SERIES = [
   { id: 'DGS10',     label: 'UST 10Y',  unit: '%' },
   { id: 'DGS2',      label: 'UST 2Y',   unit: '%' },

@@ -28,7 +28,7 @@ describe('daily job', () => {
       historyDays: 30,
     });
 
-    expect(getQuotes(db, 'AAA', 30)).toHaveLength(1);
+    expect(getQuotes(db, 'AAA', 36500)).toHaveLength(1);
     const health = getJobHealth(db);
     expect(health.find(h => h.name === 'quotes')?.status).toBe('success');
   });
@@ -52,8 +52,8 @@ describe('daily job', () => {
       historyDays: 30,
     });
 
-    expect(getQuotes(db, 'GOOD', 30)).toHaveLength(1);
-    expect(getQuotes(db, 'BAD', 30)).toHaveLength(0);
+    expect(getQuotes(db, 'GOOD', 36500)).toHaveLength(1);
+    expect(getQuotes(db, 'BAD', 36500)).toHaveLength(0);
     const health = getJobHealth(db).find(h => h.name === 'quotes')!;
     expect(health.status).toBe('partial');
     expect(health.error).toContain('BAD');
@@ -71,7 +71,7 @@ describe('daily job', () => {
       historyDays: 30,
     });
 
-    expect(getMacroSeries(db, 'DGS10', 30)).toHaveLength(1);
+    expect(getMacroSeries(db, 'DGS10', 36500)).toHaveLength(1);
     expect(getJobHealth(db).find(h => h.name === 'macro')?.status).toBe('success');
   });
 });

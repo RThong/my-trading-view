@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite';
 import type { QuoteBar, MacroPoint, JobStatus } from '../../shared/types';
 
 export type Options25DeltaRow = {
-  underlying: 'SPX' | 'VIX';
+  underlying: string;
   snapshotDate: string;
   callIv: number;
   putIv: number;
@@ -165,7 +165,7 @@ export function insertOptions25Delta(db: Database, rows: Options25DeltaRow[]): v
 
 export function getOptions25Delta(
   db: Database,
-  underlying: 'SPX' | 'VIX',
+  underlying: string,
   days: number,
 ): Options25DeltaRow[] {
   const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
@@ -183,7 +183,7 @@ export function getOptions25Delta(
     is_mock: number;
   }>;
   return rows.map(r => ({
-    underlying: r.underlying as 'SPX' | 'VIX',
+    underlying: r.underlying,
     snapshotDate: r.snapshot_date,
     callIv: r.call_iv,
     putIv: r.put_iv,

@@ -2,8 +2,8 @@ import { describe, test, expect, beforeEach } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
 import { getOptions25Delta } from '../storage/repository';
-import { select25Delta, runOptionsSnapshot } from './optionsSnapshot';
-import type { OptionChainSnapshot, YahooOptionsClient } from '../fetchers/yahooOptions';
+import { select25Delta, runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
+import type { OptionChainSnapshot } from '../fetchers/yahooOptions';
 
 function freshDb(): Database {
   const db = new Database(':memory:');
@@ -44,18 +44,18 @@ describe('runOptionsSnapshot', () => {
   beforeEach(() => { db = freshDb(); });
 
   test('writes one row per underlying with is_mock=0', async () => {
-    const mock: YahooOptionsClient = {
+    const mock: OptionsChainClient = {
       fetchChain: async () => SAMPLE_CHAIN,
     };
     const written = await runOptionsSnapshot({
       db,
-      underlyings: ['SPX', 'VIX'],
-      yahooOptions: mock,
+      underlyings: ['SPY'],
+      client: mock,
       riskFreeRate: 0.045,
     });
-    expect(written).toHaveLength(2);
-    const spxRows = getOptions25Delta(db, 'SPX', 7);
-    expect(spxRows).toHaveLength(1);
-    expect(spxRows[0].isMock).toBe(false);
+    expect(written).toHaveLength(1);
+    const spyRows = getOptions25Delta(db, 'SPY', 7);
+    expect(spyRows).toHaveLength(1);
+    expect(spyRows[0].isMock).toBe(false);
   });
 });

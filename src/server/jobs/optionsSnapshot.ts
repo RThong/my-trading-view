@@ -1,13 +1,13 @@
 import type { Database } from 'bun:sqlite';
 import { insertOptions25Delta, insertOptionChainRaw, type Options25DeltaRow, type OptionChainRawRow } from '../storage/repository';
 import { callDelta } from '../analytics/greeks';
-import type { OptionChainSnapshot, YahooOptionsClient } from '../fetchers/yahooOptions';
+import type { OptionChainSnapshot } from '../fetchers/yahooOptions';
 import { lastClosedTradingDate } from './tradingCalendar';
 
-// NOTE: VIX option pricing here uses plain Black-Scholes with VIX *spot* as
-// the underlying. Real VIX options are priced off VIX *futures*, so our 25Δ
-// strike selection may be off by 1-2 strikes vs the "true" 25Δ. For the
-// purpose of tracking IV trends this is acceptable.
+// We compute 25Δ selection from each strike's IV via Black-Scholes delta.
+// moomoo also returns its own pre-computed delta per contract; we keep using
+// our BS delta for consistency across sources, but the moomoo delta is
+// available in the archived chain if we ever want to cross-check.
 
 const TARGET_DTE = 30;
 const DEFAULT_RATE = 0.045;
@@ -61,44 +61,43 @@ function pickClosest<T>(arr: T[], distance: (x: T) => number): T {
   return best;
 }
 
+/** Minimal client shape both Yahoo and moomoo fetchers satisfy. */
+export type OptionsChainClient = {
+  fetchChain(symbol: string, targetDte: number): Promise<OptionChainSnapshot>;
+};
+
 type RunOpts = {
   db: Database;
-  underlyings: Array<'SPX' | 'VIX'>;
-  yahooOptions: YahooOptionsClient;
+  /** Underlyings to snapshot, e.g. ['SPY']. Stored verbatim as the `underlying` key. */
+  underlyings: string[];
+  client: OptionsChainClient;
   riskFreeRate: number;
 };
 
-const TICKER: Record<'SPX' | 'VIX', string> = { SPX: '^SPX', VIX: '^VIX' };
-
 export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaRow[]> {
-  // Yahoo's option chain serves the most recent close on weekends/after-hours,
-  // so stamp the snapshot with the last *closed* US trading day rather than
-  // wall-clock today. Idempotent under upsert: a weekend run and the actual
-  // Friday-evening run will write to the same row.
+  // Stamp with the last *closed* US trading day rather than wall-clock today,
+  // so weekend/after-hours runs collapse onto the right Friday row (idempotent
+  // under upsert).
   const today = lastClosedTradingDate();
   const rows: Options25DeltaRow[] = [];
   const rawRows: OptionChainRawRow[] = [];
   for (const u of opts.underlyings) {
-    const chain = await opts.yahooOptions.fetchChain(TICKER[u], TARGET_DTE);
+    const chain = await opts.client.fetchChain(u, TARGET_DTE);
     const sel = select25Delta(chain, opts.riskFreeRate);
 
-    // Scale convention must match seedMockOptions.ts:
-    //   SPX mock stores values like 17.0 (17% IV) — so Yahoo's 0.17 must be * 100.
-    //   VIX mock stores values like 0.32 (ratio scale) — Yahoo returns 0.x already,
-    //   so no scaling needed. Note: real VIX IVs may be 0.7-1.2 range (70-120%),
-    //   which will look different from the mock's 0.30-0.34 on the same chart.
-    //   That's expected — real and mock series are different things.
-    const scale = u === 'SPX' ? 100 : 1;
+    // Store IV as percent (e.g. 16.63) for readable chart axes.
     rows.push({
       underlying: u,
       snapshotDate: today,
-      callIv: sel.callIv * scale,
-      putIv: sel.putIv * scale,
-      skew: sel.skew * scale,
+      callIv: sel.callIv * 100,
+      putIv: sel.putIv * 100,
+      skew: sel.skew * 100,
       isMock: false,
     });
 
-    // Archive the full chain (gzipped) for future analyses (max pain, OI distribution, GEX, etc.)
+    // Archive the full chain (gzipped) for future analyses (max pain, OI
+    // distribution, GEX, etc.). moomoo chains carry Greeks, so GEX is derivable
+    // straight from the archive without re-pricing.
     const chainJson = JSON.stringify({ calls: chain.calls, puts: chain.puts });
     const gz = Bun.gzipSync(new TextEncoder().encode(chainJson));
     rawRows.push({
@@ -114,5 +113,4 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<Options25DeltaR
   return rows;
 }
 
-export const TICKERS = TICKER;
 export { TARGET_DTE, DEFAULT_RATE };

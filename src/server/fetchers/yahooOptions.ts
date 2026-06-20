@@ -12,6 +12,9 @@ export type OptionContract = {
   openInterest: number | null;
   inTheMoney: boolean;
   lastTradeDate: string | null;   // ISO datetime, may be null on stale strikes
+  // Greeks — present when the source provides them (moomoo); null for Yahoo.
+  delta?: number | null;
+  gamma?: number | null;
 };
 
 export type OptionChainSnapshot = {

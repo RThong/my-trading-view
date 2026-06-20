@@ -1,12 +1,13 @@
 import { Hono } from 'hono';
 import { openDb } from '../storage/db';
 import { getOptions25Delta } from '../storage/repository';
+import { OPTIONS_UNDERLYINGS } from '../config';
 import type { OptionIVPoint } from '../../shared/types';
 
 export const optionsRoute = new Hono()
   .get('/25delta/:underlying', (c) => {
     const u = c.req.param('underlying').toUpperCase();
-    if (u !== 'SPX' && u !== 'VIX') {
+    if (!OPTIONS_UNDERLYINGS.includes(u)) {
       return c.json({ error: `unknown underlying: ${u}` }, 400);
     }
     const daysStr = c.req.query('days') ?? '1825';

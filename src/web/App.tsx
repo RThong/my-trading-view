@@ -13,7 +13,7 @@ const TABS = [
   { id: 'macro',      label: 'Macro / Rates' },
   { id: 'indices',    label: 'Indices' },
   { id: 'assets',     label: 'Other Assets' },
-  { id: 'options',    label: 'Options (25Δ)' },
+  { id: 'options',    label: 'SPY Options (25Δ)' },
 ];
 
 export function App() {

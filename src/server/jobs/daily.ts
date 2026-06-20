@@ -12,10 +12,9 @@ import {
 } from '../storage/repository';
 import { createYahooFetcher } from '../fetchers/yahoo';
 import { createFredFetcher } from '../fetchers/fred';
-import { QUOTE_SYMBOLS, MACRO_SERIES, CBOE_INDEX_SYMBOLS } from '../config';
-import type { YahooOptionsClient } from '../fetchers/yahooOptions';
-import { defaultYahooOptionsClient } from '../fetchers/yahooOptions';
-import { runOptionsSnapshot, DEFAULT_RATE } from './optionsSnapshot';
+import { QUOTE_SYMBOLS, MACRO_SERIES, CBOE_INDEX_SYMBOLS, OPTIONS_UNDERLYINGS } from '../config';
+import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
+import { runOptionsSnapshot, DEFAULT_RATE, type OptionsChainClient } from './optionsSnapshot';
 import { fetchVxFrontMonthSeries } from '../fetchers/cboeVx';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 
@@ -31,8 +30,9 @@ type RunDailyJobOpts = {
   fred: { fetchSeries(seriesId: string, since: string): Promise<MacroRow[]> };
   historyDays: number;
   cboeIndices?: CboeIndexSpec[];
-  optionsUnderlyings?: Array<'SPX' | 'VIX'>;
-  yahooOptions?: YahooOptionsClient;
+  /** Underlyings to snapshot options for (e.g. ['SPY']). Requires optionsClient. */
+  optionsUnderlyings?: string[];
+  optionsClient?: OptionsChainClient;
   riskFreeRate?: number;
   fetchVxFutures?: boolean;
 };
@@ -120,14 +120,14 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     }
   }
 
-  // options group
-  if (opts.optionsUnderlyings && opts.optionsUnderlyings.length > 0 && opts.yahooOptions) {
+  // options group (via moomoo OpenD)
+  if (opts.optionsUnderlyings && opts.optionsUnderlyings.length > 0 && opts.optionsClient) {
     const runId = startJobRun(opts.db, 'options');
     try {
       const rows = await runOptionsSnapshot({
         db: opts.db,
         underlyings: opts.optionsUnderlyings,
-        yahooOptions: opts.yahooOptions,
+        client: opts.optionsClient,
         riskFreeRate: opts.riskFreeRate ?? DEFAULT_RATE,
       });
       finishJobRun(opts.db, runId, { status: 'success', recordsWritten: rows.length });
@@ -172,8 +172,8 @@ if (import.meta.main) {
     yahoo: createYahooFetcher(),
     fred: createFredFetcher({ apiKey: fredKey }),
     historyDays: 180,
-    optionsUnderlyings: ['SPX', 'VIX'],
-    yahooOptions: defaultYahooOptionsClient(),
+    optionsUnderlyings: OPTIONS_UNDERLYINGS,
+    optionsClient: defaultMoomooOptionsClient(),
     riskFreeRate,
     fetchVxFutures: true,
   });
