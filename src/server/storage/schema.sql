@@ -30,13 +30,16 @@ CREATE TABLE IF NOT EXISTS schema_version (
     applied_at    TEXT    NOT NULL
 );
 
+-- source:数据来源(moomoo / deribit)。普通列,作 provenance(记录实际跑的 fetcher),
+-- 不进主键——今天一标的=一源,(underlying, snapshot_date) 已唯一。真要同标的多源
+-- 交叉验证时,届时再做一次「source 进主键」的重建迁移。
 CREATE TABLE IF NOT EXISTS option_snapshot_25delta (
     underlying       TEXT    NOT NULL,
+    source           TEXT    NOT NULL,
     snapshot_date    TEXT    NOT NULL,
     call_iv          REAL    NOT NULL,
     put_iv           REAL    NOT NULL,
     skew             REAL    NOT NULL,
-    is_mock          INTEGER NOT NULL DEFAULT 0,
     fetched_at       TEXT    NOT NULL,
     PRIMARY KEY (underlying, snapshot_date)
 );
@@ -44,6 +47,7 @@ CREATE INDEX IF NOT EXISTS idx_opt25_date ON option_snapshot_25delta(snapshot_da
 
 CREATE TABLE IF NOT EXISTS option_chain_raw (
     underlying       TEXT    NOT NULL,
+    source           TEXT    NOT NULL,
     snapshot_date    TEXT    NOT NULL,
     expiry           TEXT    NOT NULL,
     underlying_price REAL,

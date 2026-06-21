@@ -15,5 +15,4 @@ export type OptionIVPoint = {
   callIv: number;
   putIv: number;
   skew: number;
-  isMock: boolean;
 };

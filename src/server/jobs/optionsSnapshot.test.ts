@@ -43,13 +43,14 @@ describe('runOptionsSnapshot', () => {
   let db: Database;
   beforeEach(() => { db = freshDb(); });
 
-  test('writes one row per underlying with is_mock=0', async () => {
+  test('writes one row per underlying, stamped with the source', async () => {
     const mock: OptionsChainClient = {
       fetchChain: async () => SAMPLE_CHAIN,
     };
 
     const { rows: written } = await runOptionsSnapshot({
       db,
+      source: 'moomoo',
       underlyings: ['SPY'],
       client: mock,
     });
@@ -58,7 +59,22 @@ describe('runOptionsSnapshot', () => {
 
     const spyRows = getOptions25Delta(db, 'SPY', 7);
     expect(spyRows).toHaveLength(1);
-    expect(spyRows[0].isMock).toBe(false);
+    expect(spyRows[0].source).toBe('moomoo');
+
+    // 归档表 option_chain_raw 也要带上同一 source(无 getter,直接查)。
+    const raw = db.query(`SELECT source FROM option_chain_raw WHERE underlying = 'SPY'`).all() as Array<{ source: string }>;
+    expect(raw).toHaveLength(1);
+    expect(raw[0].source).toBe('moomoo');
+  });
+
+  test('source 原样落库:deribit 组写 deribit', async () => {
+    const mock: OptionsChainClient = { fetchChain: async () => SAMPLE_CHAIN };
+
+    await runOptionsSnapshot({ db, source: 'deribit', underlyings: ['BTC'], client: mock });
+
+    expect(getOptions25Delta(db, 'BTC', 7)[0].source).toBe('deribit');
+    const raw = db.query(`SELECT source FROM option_chain_raw WHERE underlying = 'BTC'`).all() as Array<{ source: string }>;
+    expect(raw[0].source).toBe('deribit');
   });
 
   test('一个标的失败不连累另一个:成功的照常落库,失败的进 failures', async () => {
@@ -72,6 +88,7 @@ describe('runOptionsSnapshot', () => {
 
     const { rows, failures } = await runOptionsSnapshot({
       db,
+      source: 'moomoo',
       underlyings: ['SPY', '.VIX'],
       client: mock,
     });

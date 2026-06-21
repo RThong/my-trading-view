@@ -3,11 +3,11 @@ import type { JobStatus } from '../../shared/types';
 
 export type Options25DeltaRow = {
   underlying: string;
+  source: string;          // 'moomoo' | 'deribit'(provenance,不进主键)
   snapshotDate: string;
   callIv: number;
   putIv: number;
   skew: number;
-  isMock: boolean;
 };
 
 // QuoteRow / MacroRow:数据源 fetcher 的返回类型,保留备用(非期权抓取逻辑暂留)。
@@ -87,11 +87,11 @@ export function insertOptions25Delta(db: Database, rows: Options25DeltaRow[]): v
   if (rows.length === 0) return;
   const stmt = db.prepare(`
     INSERT INTO option_snapshot_25delta
-      (underlying, snapshot_date, call_iv, put_iv, skew, is_mock, fetched_at)
-    VALUES ($u, $d, $c, $p, $s, $m, $f)
+      (underlying, source, snapshot_date, call_iv, put_iv, skew, fetched_at)
+    VALUES ($u, $src, $d, $c, $p, $s, $f)
     ON CONFLICT(underlying, snapshot_date) DO UPDATE SET
-      call_iv=excluded.call_iv, put_iv=excluded.put_iv, skew=excluded.skew,
-      is_mock=excluded.is_mock, fetched_at=excluded.fetched_at
+      source=excluded.source, call_iv=excluded.call_iv, put_iv=excluded.put_iv, skew=excluded.skew,
+      fetched_at=excluded.fetched_at
   `);
 
   const fetched = new Date().toISOString();
@@ -99,11 +99,11 @@ export function insertOptions25Delta(db: Database, rows: Options25DeltaRow[]): v
     for (const r of batch) {
       stmt.run({
         $u: r.underlying,
+        $src: r.source,
         $d: r.snapshotDate,
         $c: r.callIv,
         $p: r.putIv,
         $s: r.skew,
-        $m: r.isMock ? 1 : 0,
         $f: fetched,
       });
     }
@@ -119,31 +119,33 @@ export function getOptions25Delta(
 ): Options25DeltaRow[] {
   const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10);
 
+  // 每 (underlying, snapshot_date) 唯一,source 只是 provenance,故按 underlying 取即可。
   const rows = db.query(`
-    SELECT underlying, snapshot_date, call_iv, put_iv, skew, is_mock
+    SELECT underlying, source, snapshot_date, call_iv, put_iv, skew
     FROM option_snapshot_25delta
     WHERE underlying = $u AND snapshot_date >= $since
     ORDER BY snapshot_date ASC
   `).all({ $u: underlying, $since: since }) as Array<{
     underlying: string;
+    source: string;
     snapshot_date: string;
     call_iv: number;
     put_iv: number;
     skew: number;
-    is_mock: number;
   }>;
   return rows.map(r => ({
     underlying: r.underlying,
+    source: r.source,
     snapshotDate: r.snapshot_date,
     callIv: r.call_iv,
     putIv: r.put_iv,
     skew: r.skew,
-    isMock: r.is_mock === 1,
   }));
 }
 
 export type OptionChainRawRow = {
   underlying: string;
+  source: string;          // 'moomoo' | 'deribit'
   snapshotDate: string;
   expiry: string;
   underlyingPrice: number | null;
@@ -154,9 +156,10 @@ export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[]): v
   if (rows.length === 0) return;
   const stmt = db.prepare(`
     INSERT INTO option_chain_raw
-      (underlying, snapshot_date, expiry, underlying_price, chain_json_gz, fetched_at)
-    VALUES ($u, $d, $e, $price, $gz, $f)
+      (underlying, source, snapshot_date, expiry, underlying_price, chain_json_gz, fetched_at)
+    VALUES ($u, $src, $d, $e, $price, $gz, $f)
     ON CONFLICT(underlying, snapshot_date, expiry) DO UPDATE SET
+      source           = excluded.source,
       underlying_price = excluded.underlying_price,
       chain_json_gz    = excluded.chain_json_gz,
       fetched_at       = excluded.fetched_at
@@ -167,6 +170,7 @@ export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[]): v
     for (const r of batch) {
       stmt.run({
         $u: r.underlying,
+        $src: r.source,
         $d: r.snapshotDate,
         $e: r.expiry,
         $price: r.underlyingPrice,

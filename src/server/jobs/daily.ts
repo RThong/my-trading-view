@@ -23,12 +23,13 @@ type RunDailyJobOpts = {
 async function runOptionsGroup(
   db: Database,
   jobName: string,
+  source: string,
   underlyings: string[],
   client: OptionsChainClient,
 ): Promise<void> {
   const runId = startJobRun(db, jobName);
   try {
-    const { rows, failures } = await runOptionsSnapshot({ db, underlyings, client });
+    const { rows, failures } = await runOptionsSnapshot({ db, source, underlyings, client });
     if (failures.length === 0) {
       finishJobRun(db, runId, { status: 'success', recordsWritten: rows.length });
     } else if (rows.length === 0) {
@@ -44,10 +45,10 @@ async function runOptionsGroup(
 export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   // 期权快照:moomoo(股票/ETF/指数)与 Deribit(加密)各记一个 job,互不连累。
   if (opts.optionsUnderlyings?.length && opts.optionsClient) {
-    await runOptionsGroup(opts.db, 'options', opts.optionsUnderlyings, opts.optionsClient);
+    await runOptionsGroup(opts.db, 'options', 'moomoo', opts.optionsUnderlyings, opts.optionsClient);
   }
   if (opts.cryptoOptionsUnderlyings?.length && opts.cryptoOptionsClient) {
-    await runOptionsGroup(opts.db, 'options_crypto', opts.cryptoOptionsUnderlyings, opts.cryptoOptionsClient);
+    await runOptionsGroup(opts.db, 'options_crypto', 'deribit', opts.cryptoOptionsUnderlyings, opts.cryptoOptionsClient);
   }
 
   // vrp_inputs 分组:增量更新 VIX/SPX/BTC/DVOL(VRP 的隐含腿与 RV 腿)。

@@ -20,7 +20,6 @@ export const optionsRoute = new Hono()
         callIv: r.callIv,
         putIv: r.putIv,
         skew: r.skew,
-        isMock: r.isMock,
       }));
       return c.json(out);
     } finally {

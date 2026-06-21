@@ -76,6 +76,8 @@ export type OptionsChainClient = {
 
 type RunOpts = {
   db: Database;
+  /** 数据来源,存入两张表的 source 列('moomoo' | 'deribit')。 */
+  source: string;
   /** 要做快照的标的,例如 ['SPY']。原样存储为 `underlying` 键。 */
   underlyings: string[];
   client: OptionsChainClient;
@@ -105,11 +107,11 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
       // IV 以百分数存储(例如 16.63),方便图表坐标轴显示。
       rows.push({
         underlying: u,
+        source: opts.source,
         snapshotDate: today,
         callIv: sel.callIv * 100,
         putIv: sel.putIv * 100,
         skew: sel.skew * 100,
-        isMock: false,
       });
 
       // 归档完整的 chain(gzip 压缩),供日后分析使用(max pain、OI 分布、
@@ -119,6 +121,7 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
       const gz = Bun.gzipSync(new TextEncoder().encode(chainJson));
       rawRows.push({
         underlying: u,
+        source: opts.source,
         snapshotDate: today,
         expiry: chain.expirationDate,
         underlyingPrice: chain.underlyingPrice,
