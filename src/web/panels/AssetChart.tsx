@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import useSWR from 'swr';
 import { createChart, LineSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import type { Interval } from '../hooks/interval';
 import { CHART_OPTIONS, aggregate, type LinePoint } from '../lib/chart';
@@ -14,6 +15,19 @@ const COLORS = {
   iv: '#3b82f6', rv: '#f59e0b', vrp: '#22c55e',
 };
 const HISTORY_DAYS = 3650;
+
+// 稳定空引用:data 未就绪时避免每次 render 都新建 [] 触发图表 effect。
+const NO_OPT: OptRow[] = [];
+const NO_VRP: VrpRow[] = [];
+
+// EOD 数据一会话内视为不变:关掉全部自动重验。模块级常量,引用稳定。
+const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
+
+async function getJson<T>(url: string): Promise<T> {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(String(r.status));
+  return r.json() as Promise<T>;
+}
 
 export function AssetChart({
   interval,
@@ -34,10 +48,16 @@ export function AssetChart({
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
-  const [opt, setOpt] = useState<OptRow[]>([]);
-  const [vrp, setVrp] = useState<VrpRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  // SWR:按 url 缓存,切 tab 回来命中缓存不重复请求(重验开关见 SWR_OPTS)。
+  // vrpUrl 为 null 时 SWR 原生跳过该请求(SOXX/IGV/VIX 无 VRP)。
+  const optUrl = `/api/options/25delta/${encodeURIComponent(underlying)}?days=${HISTORY_DAYS}`;
+  const vrpUrl = vrpUnderlying ? `/api/vrp/${encodeURIComponent(vrpUnderlying)}` : null;
+  const { data: opt = NO_OPT, error: oe, isLoading: optLoading } = useSWR(optUrl, getJson<OptRow[]>, SWR_OPTS);
+  const { data: vrp = NO_VRP, error: ve, isLoading: vrpLoading } = useSWR(vrpUrl, getJson<VrpRow[]>, SWR_OPTS);
+  const error = oe ?? ve;
+  // VRP key 为 null 时 vrpLoading 恒为 false;有 VRP 时须等两个请求都完成才算加载好。
+  const isLoading = optLoading || vrpLoading;
   // pane 用稳定 key 标识(换位后下标会变,折叠/标签必须按 key 而非下标)。
   // PANE_DEFS 的顺序 = series 创建时的 pane 下标;order 为当前显示顺序。
   const PANE_DEFS = vrpUnderlying
@@ -62,23 +82,6 @@ export function AssetChart({
     setOrder(PANE_DEFS.map((d) => d.key));
     setCollapsed(new Set());
   }, [underlying, vrpUnderlying]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const optP = fetch(`/api/options/25delta/${encodeURIComponent(underlying)}?days=${HISTORY_DAYS}`)
-      .then((r) => { if (!r.ok) throw new Error(`${label} 期权数据 ${r.status}`); return r.json() as Promise<OptRow[]>; });
-    const vrpP = vrpUnderlying
-      ? fetch(`/api/vrp/${encodeURIComponent(vrpUnderlying)}`)
-          .then((r) => { if (!r.ok) throw new Error(`${label} VRP ${r.status}`); return r.json() as Promise<VrpRow[]>; })
-      : Promise.resolve<VrpRow[]>([]);
-    Promise.all([optP, vrpP])
-      .then(([o, v]) => { if (!cancelled) { setOpt(o); setVrp(v); } })
-      .catch((e) => { if (!cancelled) setError((e as Error).message); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [underlying, vrpUnderlying, label]);
 
   const paneCount = vrpUnderlying ? 4 : 2;
 
@@ -250,8 +253,8 @@ export function AssetChart({
             </div>
           );
         })}
-        {loading && <p className="absolute left-2 top-2 text-xs text-neutral-500">Loading…</p>}
-        {error && <p className="absolute left-2 top-2 text-xs text-red-400">Error: {error}</p>}
+        {isLoading && <p className="absolute left-2 top-2 text-xs text-neutral-500">Loading…</p>}
+        {error && <p className="absolute left-2 top-2 text-xs text-red-400">Error: {label} {(error as Error).message}</p>}
       </div>
     </div>
   );
