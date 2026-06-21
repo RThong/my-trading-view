@@ -25,6 +25,12 @@ export function AssetChart({
   vrpUnderlying?: string;
 }) {
   const label = underlying.replace(/^\./, '');
+  // series 短名:既作右轴 tag 的 title,也作左上图例的名字(单一命名源)。
+  const ivName = vrpUnderlying === 'BTC' ? 'DVOL' : 'VIX';
+  const SERIES_NAME: Record<string, string> = {
+    call: 'Call IV', put: 'Put IV', skew: 'Skew',
+    iv: `隐含 (${ivName})`, rv: '已实现 RV', vrp: 'VRP',
+  };
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
@@ -47,6 +53,8 @@ export function AssetChart({
       ];
   const [order, setOrder] = useState<string[]>(() => PANE_DEFS.map((d) => d.key));
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [vals, setVals] = useState<Record<string, number>>({}); // 竖线(crosshair)处各 series 值
+  const [tops, setTops] = useState<number[]>([]); // 各显示 pane 顶部像素偏移,用于定位图例
 
   // 标的变化(pane 集合可能 2↔4)时把顺序/折叠归位,避免残留旧 tab 的 key
   // 导致 order.indexOf 得 -1、panes()[-1].moveTo 崩溃。其余 effect 也都按 props 变化响应。
@@ -96,15 +104,14 @@ export function AssetChart({
     const toLine = (rows: Array<Record<string, unknown>>, key: string): LinePoint[] =>
       rows.map((r) => ({ time: r.date as string, value: r[key] as number }));
 
-    const ivLabel = vrpUnderlying === 'BTC' ? 'DVOL' : 'VIX';
     const specs = [
-      { key: 'call', pane: 0, color: COLORS.call, title: `${label} 25Δ Call IV`, data: aggregate(toLine(opt, 'callIv'), interval) },
-      { key: 'put',  pane: 0, color: COLORS.put,  title: `${label} 25Δ Put IV`,  data: aggregate(toLine(opt, 'putIv'),  interval) },
-      { key: 'skew', pane: 1, color: COLORS.skew, title: `${label} 25Δ Skew`,    data: aggregate(toLine(opt, 'skew'),   interval) },
+      { key: 'call', pane: 0, color: COLORS.call, title: SERIES_NAME.call, data: aggregate(toLine(opt, 'callIv'), interval) },
+      { key: 'put',  pane: 0, color: COLORS.put,  title: SERIES_NAME.put,  data: aggregate(toLine(opt, 'putIv'),  interval) },
+      { key: 'skew', pane: 1, color: COLORS.skew, title: SERIES_NAME.skew, data: aggregate(toLine(opt, 'skew'),   interval) },
       ...(vrpUnderlying ? [
-        { key: 'iv',  pane: 2, color: COLORS.iv,  title: `隐含 (${ivLabel})`, data: aggregate(toLine(vrp, 'iv'),  interval) },
-        { key: 'rv',  pane: 2, color: COLORS.rv,  title: `已实现 RV`,         data: aggregate(toLine(vrp, 'rv'),  interval) },
-        { key: 'vrp', pane: 3, color: COLORS.vrp, title: `VRP (IV−RV)`,       data: aggregate(toLine(vrp, 'vrp'), interval) },
+        { key: 'iv',  pane: 2, color: COLORS.iv,  title: SERIES_NAME.iv,  data: aggregate(toLine(vrp, 'iv'),  interval) },
+        { key: 'rv',  pane: 2, color: COLORS.rv,  title: SERIES_NAME.rv,  data: aggregate(toLine(vrp, 'rv'),  interval) },
+        { key: 'vrp', pane: 3, color: COLORS.vrp, title: SERIES_NAME.vrp, data: aggregate(toLine(vrp, 'vrp'), interval) },
       ] : []),
     ];
 
@@ -136,6 +143,39 @@ export function AssetChart({
     }
   }, [collapsed, order, paneCount, opt, vrp]);
 
+  // 竖线滑动:从 crosshair 读各 series 在该时间点的值;不悬停时 vals 清空,图例回落到末值。
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const handler = (param: { seriesData: Map<unknown, unknown> }) => {
+      const next: Record<string, number> = {};
+      for (const [key, s] of seriesRef.current) {
+        const d = param.seriesData.get(s) as { value?: number } | undefined;
+        if (d && typeof d.value === 'number') next[key] = d.value;
+      }
+      setVals(next);
+    };
+    chart.subscribeCrosshairMove(handler);
+    return () => chart.unsubscribeCrosshairMove(handler);
+  }, [paneCount, underlying, vrpUnderlying]);
+
+  // 各 pane 顶部偏移(用于把图例定位到对应 pane);布局变化后用 rAF 读取已重排的高度。
+  useEffect(() => {
+    const recompute = () =>
+      requestAnimationFrame(() => {
+        const chart = chartRef.current;
+        if (!chart) return;
+        const t: number[] = [];
+        let acc = 0;
+        for (const p of chart.panes()) { t.push(acc); acc += p.getHeight() + 1; }
+        setTops(t);
+      });
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, [order, collapsed, opt, vrp, paneCount, underlying, vrpUnderlying]);
+
   const toggle = (key: string) =>
     setCollapsed((prev) => {
       const n = new Set(prev);
@@ -165,6 +205,8 @@ export function AssetChart({
     });
   };
 
+  const hovering = Object.keys(vals).length > 0; // 鼠标在图内、crosshair 有值
+
   return (
     <div className="relative flex h-full w-full flex-col">
       {/* 工具条按固定顺序排列(便于查找);↑↓ 只改 chart 里 pane 的显示位置,不改本行顺序。 */}
@@ -189,6 +231,25 @@ export function AssetChart({
       </div>
       <div className="relative min-h-0 flex-1">
         <div ref={containerRef} className="h-full w-full" />
+        {/* 每个 pane 顶部图例:指标名 + 竖线对应值。仅悬停时显示,不悬停不挡线
+            (最新值看右轴原生 tag)。 */}
+        {hovering && order.map((key, i) => {
+          if (collapsed.has(key)) return null;
+          const def = PANE_DEFS.find((d) => d.key === key);
+          if (!def) return null;
+          return (
+            <div key={key} className="pointer-events-none absolute left-2 z-10 text-xs leading-tight" style={{ top: (tops[i] ?? 0) + 2 }}>
+              {def.series.map((sk) => {
+                const v = vals[sk];
+                return (
+                  <div key={sk} style={{ color: COLORS[sk as keyof typeof COLORS] }}>
+                    {SERIES_NAME[sk]} {v == null ? '—' : v.toFixed(2)}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
         {loading && <p className="absolute left-2 top-2 text-xs text-neutral-500">Loading…</p>}
         {error && <p className="absolute left-2 top-2 text-xs text-red-400">Error: {error}</p>}
       </div>
