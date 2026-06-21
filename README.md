@@ -83,9 +83,9 @@ src/
 │   ├── storage/             bun:sqlite schema, migrations, repository
 │   └── jobs/                daily.ts (snapshot orchestrator) + optionsSnapshot.ts
 └── web/
-    ├── App.tsx              top-level layout (SPY / VIX / BTC tabs)
+    ├── App.tsx              top-level layout (SPY / VIX / BTC / SOXX / IGV tabs)
     ├── components/          Header, StatusLight, TabBar
-    └── panels/OptionsPanel  parametrized by underlying
+    └── panels/AssetChart    per-underlying multi-pane chart (25Δ + optional VRP)
 ```
 
 ## Tabs

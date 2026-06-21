@@ -3,11 +3,23 @@ import type { Interval } from '../hooks/interval';
 
 export type LinePoint = { time: string; value: number };
 
+/** 把 lightweight-charts 的 Time(BusinessDay 对象 / 字符串 / 时间戳)统一格式化成 YYYY-MM-DD。 */
+function fmtDate(time: unknown): string {
+  if (typeof time === 'string') return time; // 已是 'YYYY-MM-DD'
+  if (time && typeof time === 'object' && 'year' in time) {
+    const t = time as { year: number; month: number; day: number };
+    return `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}`;
+  }
+  return new Date((time as number) * 1000).toISOString().slice(0, 10);
+}
+
 export const CHART_OPTIONS = {
   layout: { background: { color: '#0a0a0a' }, textColor: '#a1a1aa' },
   grid: { vertLines: { color: '#1f1f1f' }, horzLines: { color: '#1f1f1f' } },
   rightPriceScale: { borderColor: '#262626' },
   timeScale: { borderColor: '#262626', timeVisible: false },
+  // 鼠标悬停时浮动的时间标签(crosshair)统一成 YYYY-MM-DD,覆盖默认中文 locale。
+  localization: { timeFormatter: fmtDate },
   autoSize: true,
 };
 
