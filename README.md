@@ -1,9 +1,10 @@
 # my-trading-view
 
 A personal, local-only options dashboard. Captures a daily 25-delta snapshot of
-SPY / VIX (via moomoo OpenD) and BTC (via Deribit), stores it in SQLite, and
-renders the call/put IV + skew history as React charts. Built to track 25Δ
-skew that TradingView doesn't expose well.
+SPY / QQQ / VIX / TLT / GLD / USO (via moomoo OpenD) and BTC (via Deribit),
+stores it in SQLite, and renders the call/put IV + skew history as React charts.
+Built to track 25Δ skew that TradingView doesn't expose well. Underlyings with a
+free volatility index (SPY/QQQ/GLD/USO/BTC) also get a VRP pane.
 
 > **Status:** Options-only. The earlier multi-panel build (quotes / macro /
 > indices / volatility) has been stripped out; see git history if you need it.
@@ -56,7 +57,7 @@ bun run dev:web
 ## Collect data
 
 ```bash
-bun run job:daily               # snapshots SPY/.VIX (moomoo) + BTC (Deribit)
+bun run job:daily               # snapshots SPY/QQQ/.VIX/TLT/GLD/USO (moomoo) + BTC (Deribit)
 ```
 
 OpenD must be running for the moomoo leg; if it's down, that job group fails and
@@ -83,18 +84,25 @@ src/
 │   ├── storage/             bun:sqlite schema, migrations, repository
 │   └── jobs/                daily.ts (snapshot orchestrator) + optionsSnapshot.ts
 └── web/
-    ├── App.tsx              top-level layout (SPY / VIX / BTC / SOXX / IGV tabs)
+    ├── App.tsx              top-level layout (SPY / QQQ / VIX / TLT / GLD / USO / BTC tabs)
     ├── components/          Header, StatusLight, TabBar
     └── panels/AssetChart    per-underlying multi-pane chart (25Δ + optional VRP)
 ```
 
 ## Tabs
 
-| Tab | Underlying | Source |
-|---|---|---|
-| SPY Options (25Δ) | `SPY` | moomoo OpenD |
-| VIX Options (25Δ) | `.VIX` | moomoo OpenD |
-| BTC Options (25Δ) | `BTC` | Deribit |
+Each tab shows the 25Δ IV + skew panes; underlyings with a free volatility
+index also get implied-vs-realized and VRP panes.
+
+| Tab | Underlying | Source | VRP (implied / realized) |
+|---|---|---|---|
+| SPY | `SPY`  | moomoo OpenD | VIX / SPX |
+| QQQ | `QQQ`  | moomoo OpenD | VXN / NDX |
+| VIX | `.VIX` | moomoo OpenD | — |
+| TLT | `TLT`  | moomoo OpenD | — |
+| GLD | `GLD`  | moomoo OpenD | GVZ / GLD |
+| USO | `USO`  | moomoo OpenD | OVX / USO |
+| BTC | `BTC`  | Deribit | DVOL / BTC |
 
 ## License
 

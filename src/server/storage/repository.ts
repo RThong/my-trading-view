@@ -27,7 +27,7 @@ export type MacroRow = {
   value: number;
 };
 
-// ── market_series(VRP 输入:VIX / ^GSPC / BTC-USD / DVOL)────────────────────
+// ── market_series(VRP 输入:隐含 VIX/VXN/GVZ/OVX/DVOL + RV 现货 SPX/NDX/GLD/USO/BTC)──
 
 export type MarketSeriesRow = { seriesId: string; obsDate: string; value: number };
 

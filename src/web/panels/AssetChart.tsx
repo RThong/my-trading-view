@@ -6,7 +6,8 @@ import {
 
 // 一个资产的全部期权指标,放进同一个 chart 的多个 pane(共享时间轴):
 //   pane0 25Δ call/put IV · pane1 skew · pane2 隐含vs已实现RV · pane3 VRP
-// VRP 仅 SPY/BTC 有(vrpUnderlying 给定时);VIX/SOXX/IGV 只有前两个 pane。
+// VRP 仅有免费波动率指数的标的有(SPY/QQQ/GLD/USO/BTC,vrpUnderlying 给定时,4 pane);
+// 无对应指数的(.VIX/TLT)只有前两个 pane。
 // 各横向功能(取数/引擎/布局/图例)拆进 ./assetChart.hooks,本组件只拼装 + JSX。
 // 实例与标的绑定一辈子(App keep-alive),故无需按标的 reset。
 export function AssetChart({

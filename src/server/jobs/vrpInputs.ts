@@ -1,9 +1,9 @@
 /**
- * 更新 VRP 输入序列到 market_series:
- *   VIX  (CBOE)      — SPY VRP 的隐含腿
- *   SPX  (^GSPC)     — SPY VRP 的 RV 腿(SPY≈SPX)
- *   BTC  (BTC-USD)   — BTC VRP 的 RV 腿
- *   DVOL (Deribit)   — BTC VRP 的隐含腿
+ * 更新 VRP 输入序列到 market_series。隐含腿 = 免费波动率指数,RV 腿 = 对应基准现货:
+ *   VIX/VXN/GVZ/OVX (CBOE)  — 隐含腿(SPX/NDX/GLD/USO 的 30D IV)
+ *   SPX(^GSPC)/NDX(^NDX)/GLD/USO/BTC(BTC-USD) (Yahoo) — RV 腿(各指数的标的基准)
+ *   DVOL (Deribit)          — BTC 的隐含腿
+ * 基准匹配:VIX↔SPX、VXN↔NDX、GVZ↔GLD、OVX↔USO、DVOL↔BTC(隐含与 RV 同基准才可比)。
  *
  * `updateVrpInputs` 增量更新(按各序列已存最新日期续抓),既用于 daily job,
  * 也用于首次全量回填(库空时自动从 HISTORY_START_DATE / DVOL 上线日拉起)。
@@ -48,15 +48,17 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
     }
   };
 
-  // VIX(CBOE 指数 CSV)
-  await run('VIX', async () => {
-    const vix = await fetchCboeIndexAsQuotes({ cboeSymbol: 'VIX', storedSymbol: 'VIX', afterDate: getLatestMarketDate(db, 'VIX') ?? undefined });
-    add('VIX', vix.map((r) => ({ obsDate: r.tradeDate, value: r.close })));
-  });
+  // 隐含腿:CBOE 免费波动率指数 CSV(VIX=SPX, VXN=NDX, GVZ=GLD, OVX=USO)
+  for (const sym of ['VIX', 'VXN', 'GVZ', 'OVX'] as const) {
+    await run(sym, async () => {
+      const rows = await fetchCboeIndexAsQuotes({ cboeSymbol: sym, storedSymbol: sym, afterDate: getLatestMarketDate(db, sym) ?? undefined });
+      add(sym, rows.map((r) => ({ obsDate: r.tradeDate, value: r.close })));
+    });
+  }
 
-  // SPX(^GSPC)、BTC(BTC-USD):Yahoo EOD,取 close
+  // RV 腿:各指数的标的基准现货 EOD(Yahoo,取 close)
   const yahoo = createYahooFetcher();
-  for (const [id, sym] of [['SPX', '^GSPC'], ['BTC', 'BTC-USD']] as const) {
+  for (const [id, sym] of [['SPX', '^GSPC'], ['NDX', '^NDX'], ['GLD', 'GLD'], ['USO', 'USO'], ['BTC', 'BTC-USD']] as const) {
     await run(id, async () => {
       const latest = getLatestMarketDate(db, id);
       const since = latest ? new Date(latest + 'T00:00:00Z') : new Date(HISTORY_START_DATE);

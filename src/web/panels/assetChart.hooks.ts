@@ -31,8 +31,13 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 /** pane 元数据 + series 短名(右轴 tag / 左上图例同一命名源)。按 vrpUnderlying 决定 2 或 4 个 pane。 */
+// 各标的 VRP 隐含腿用的波动率指数名(图例显示「隐含 (VXN)」等)。
+// ponytail: 与 server/routes/vrp.ts 的 RECIPE.iv 是同一份映射,改一处必同步另一处
+// (跨 client/server,5 条目不值得抽 shared/ 常量,但别只改一边——否则图例名和数据腿对不上)。
+const IV_INDEX: Record<string, string> = { SPY: 'VIX', QQQ: 'VXN', GLD: 'GVZ', USO: 'OVX', BTC: 'DVOL' };
+
 export function paneConfig(vrpUnderlying?: string) {
-  const ivName = vrpUnderlying === 'BTC' ? 'DVOL' : 'VIX';
+  const ivName = vrpUnderlying ? (IV_INDEX[vrpUnderlying] ?? 'IV') : 'IV';
   const seriesName: Record<string, string> = {
     call: 'Call IV', put: 'Put IV', skew: 'Skew',
     iv: `隐含 (${ivName})`, rv: '已实现 RV', vrp: 'VRP',
@@ -73,7 +78,7 @@ export function buildSpecs(
 
 // ── 数据维度 ──────────────────────────────────────────────────────────────
 export function useAssetData(underlying: string, vrpUnderlying?: string) {
-  // vrpUrl 为 null 时 SWR 原生跳过请求(SOXX/IGV/VIX 无 VRP)。
+  // vrpUrl 为 null 时 SWR 原生跳过请求(.VIX 无 VRP)。
   const optUrl = `/api/options/25delta/${encodeURIComponent(underlying)}?days=${HISTORY_DAYS}`;
   const vrpUrl = vrpUnderlying ? `/api/vrp/${encodeURIComponent(vrpUnderlying)}` : null;
   const { data: opt = NO_OPT, error: oe, isLoading: optLoading } = useSWR(optUrl, getJson<OptRow[]>, SWR_OPTS);

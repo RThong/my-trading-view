@@ -7,11 +7,12 @@ import type { Interval } from './hooks/interval';
 // 一个资产一个 tab,tab 名即资产名;该资产的所有期权指标都在这个 tab 内。
 const TABS = [
   { id: 'spy', label: 'SPY', underlying: 'SPY', vrpUnderlying: 'SPY' },
+  { id: 'qqq', label: 'QQQ', underlying: 'QQQ', vrpUnderlying: 'QQQ' },
   { id: 'vix', label: 'VIX', underlying: '.VIX' },
+  { id: 'tlt', label: 'TLT', underlying: 'TLT' }, // 无免费波动率指数,只 2-pane
+  { id: 'gld', label: 'GLD', underlying: 'GLD', vrpUnderlying: 'GLD' },
+  { id: 'uso', label: 'USO', underlying: 'USO', vrpUnderlying: 'USO' },
   { id: 'btc', label: 'BTC', underlying: 'BTC', vrpUnderlying: 'BTC' },
-  // SOXX/IGV 只做 25Δ(无 VIX 式隐含波动率指数,不做 VRP)
-  { id: 'soxx', label: 'SOXX', underlying: 'SOXX' },
-  { id: 'igv', label: 'IGV', underlying: 'IGV' },
 ];
 
 export function App() {
