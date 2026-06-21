@@ -43,6 +43,11 @@
 - **option chain 的 start~end 跨度 ≤ 30 天**,超了报 ret=-1。
 - **OpenD 必须本机在跑**:不能放 VPS(moomoo 把远程 IP 登录判为风险)。所以期权数据只在
   你的 Mac + OpenD 开着时才更新;OpenD 没开,options 这组 job 失败,其它组不受影响。
+- **headless OpenD(免 GUI)**:macOS 二进制在 `OpenD.app/Contents/MacOS/OpenD`,CLI 参数
+  `-login_account -login_pwd_md5 -lang -log_level=no -console=0 -no_monitor=1`(`-no_monitor=1`
+  关守护进程,否则杀掉后会被重新拉起)。websocket 端口/key 可留在 OpenD.xml。**新设备首次登录
+  要手机验证码,headless 给不了 → 先 GUI 登一次注册本机**。一条龙脚本见 `scripts/daily-with-opend.sh`
+  (起 OpenD → 等端口就绪 → 跑 job → 收尾),命令配在 `.env` 的 `OPEND_CMD`。
 - **`moomoo-api` npm 包没有类型声明**,import 处需要 `@ts-expect-error`。
 - **扩标的时的限制**:GetOptionChain 限频约 60次/30s,快照每次最多 **400 个合约**
   (`SNAPSHOT_BATCH=400` 已压线)。当前 `fetchChain` **每个标的开一条 WebSocket**——

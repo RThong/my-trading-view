@@ -13,3 +13,6 @@ data/logs/
 *.log
 .vite/
 .bun/
+
+# 本地运行依赖:moomoo 命令行 OpenD(56MB,含登录配置,不进 git)
+vendor/

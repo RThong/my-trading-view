@@ -9,6 +9,8 @@ const TABS = [
   { id: 'spy', label: 'SPY' },
   { id: 'vix', label: 'VIX' },
   { id: 'btc', label: 'BTC' },
+  { id: 'soxx', label: 'SOXX' },
+  { id: 'igv', label: 'IGV' },
 ];
 
 export function App() {
@@ -24,6 +26,9 @@ export function App() {
           {tab === 'spy' && <AssetView interval={interval} underlying="SPY" vrpUnderlying="SPY" />}
           {tab === 'vix' && <AssetView interval={interval} underlying=".VIX" />}
           {tab === 'btc' && <AssetView interval={interval} underlying="BTC" vrpUnderlying="BTC" />}
+          {/* SOXX/IGV 只做 25Δ(无 VIX 式隐含波动率指数,不做 VRP) */}
+          {tab === 'soxx' && <AssetView interval={interval} underlying="SOXX" />}
+          {tab === 'igv' && <AssetView interval={interval} underlying="IGV" />}
         </div>
       </main>
     </div>
