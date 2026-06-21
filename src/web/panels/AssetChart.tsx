@@ -32,10 +32,28 @@ export function AssetChart({
   const [vrp, setVrp] = useState<VrpRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  // pane 用稳定 key 标识(换位后下标会变,折叠/标签必须按 key 而非下标)。
+  // PANE_DEFS 的顺序 = series 创建时的 pane 下标;order 为当前显示顺序。
+  const PANE_DEFS = vrpUnderlying
+    ? [
+        { key: 'iv', label: 'IV', series: ['call', 'put'] },
+        { key: 'skew', label: 'Skew', series: ['skew'] },
+        { key: 'ivrv', label: '隐含/RV', series: ['iv', 'rv'] },
+        { key: 'vrp', label: 'VRP', series: ['vrp'] },
+      ]
+    : [
+        { key: 'iv', label: 'IV', series: ['call', 'put'] },
+        { key: 'skew', label: 'Skew', series: ['skew'] },
+      ];
+  const [order, setOrder] = useState<string[]>(() => PANE_DEFS.map((d) => d.key));
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  // 每个 pane 一个折叠开关;下标即 pane 序号。
-  const paneLabels = vrpUnderlying ? ['IV', 'Skew', '隐含/RV', 'VRP'] : ['IV', 'Skew'];
+  // 标的变化(pane 集合可能 2↔4)时把顺序/折叠归位,避免残留旧 tab 的 key
+  // 导致 order.indexOf 得 -1、panes()[-1].moveTo 崩溃。其余 effect 也都按 props 变化响应。
+  useEffect(() => {
+    setOrder(PANE_DEFS.map((d) => d.key));
+    setCollapsed(new Set());
+  }, [underlying, vrpUnderlying]);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,7 +85,9 @@ export function AssetChart({
       chartRef.current = null;
       seriesRef.current.clear();
     };
-  }, [paneCount]);
+    // 依赖 underlying/vrpUnderlying:标的一变就重建 chart,物理 pane 回到规范顺序,
+    // 与 order/collapsed 归位对齐(否则同 paneCount 切标的时物理 pane 顺序会残留)。
+  }, [paneCount, underlying, vrpUnderlying]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -104,48 +124,66 @@ export function AssetChart({
   }, [opt, vrp, interval, underlying, vrpUnderlying, label]);
 
   // 折叠:收起的 pane 给极小 stretch(near-0),其余为 1,布局按权重重分配高度。
+  // 按显示顺序 order[i] 对应 chart.panes()[i],换位后仍一致。
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    chart.panes().forEach((p, i) => p.setStretchFactor(collapsed.has(i) ? 0.0001 : 1));
-  }, [collapsed, paneCount]);
+    chart.panes().forEach((p, i) => p.setStretchFactor(collapsed.has(order[i]) ? 0.0001 : 1));
+    // 同时隐藏收起 pane 的线,否则薄条里仍会画线。
+    for (const d of PANE_DEFS) {
+      const visible = !collapsed.has(d.key);
+      d.series.forEach((sk) => seriesRef.current.get(sk)?.applyOptions({ visible }));
+    }
+  }, [collapsed, order, paneCount, opt, vrp]);
 
-  const toggle = (i: number) =>
+  const toggle = (key: string) =>
     setCollapsed((prev) => {
       const n = new Set(prev);
-      if (n.has(i)) {
-        n.delete(i);
+      if (n.has(key)) {
+        n.delete(key);
       } else if (n.size + 1 >= paneCount) {
         return prev; // 至少留一个展开:全收起时权重都=0.0001 会被均分,等于没收起
       } else {
-        n.add(i);
+        n.add(key);
       }
       return n;
     });
 
+  // 上下换位:移动整个 pane(连同其纵轴),不合并。chart 与 order 同步交换。
+  const move = (key: string, dir: -1 | 1) => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const i = order.indexOf(key);
+    if (i < 0) return; // key 不在当前 order 里(理论上不会),别让 panes()[-1] 崩
+    const j = i + dir;
+    if (j < 0 || j >= order.length) return;
+    chart.panes()[i].moveTo(j);
+    setOrder((prev) => {
+      const n = [...prev];
+      [n[i], n[j]] = [n[j], n[i]];
+      return n;
+    });
+  };
+
   return (
     <div className="relative flex h-full w-full flex-col">
-      <div className="mb-2 flex gap-1.5">
-        {paneLabels.map((pl, i) => {
-          const isCollapsed = collapsed.has(i);
-          // 唯一展开的那个不能再收(收了全员等权=没收起),按钮置灰禁用。
+      {/* 工具条按固定顺序排列(便于查找);↑↓ 只改 chart 里 pane 的显示位置,不改本行顺序。 */}
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {PANE_DEFS.map(({ key, label: pl }) => {
+          const pos = order.indexOf(key); // 该 pane 当前在图中的位置
+          const isCollapsed = collapsed.has(key);
+          // 唯一展开的那个不能再收(收了全员等权=没收起)。
           const lastExpanded = !isCollapsed && collapsed.size === paneCount - 1;
+          const btn = 'px-1 text-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-700';
           return (
-            <button
-              key={i}
-              onClick={() => toggle(i)}
-              disabled={lastExpanded}
-              title={lastExpanded ? '至少保留一个' : isCollapsed ? '展开' : '收起'}
-              className={`rounded border px-2 py-0.5 text-xs ${
-                lastExpanded
-                  ? 'cursor-not-allowed border-neutral-800 text-neutral-700'
-                  : isCollapsed
-                    ? 'border-neutral-700 text-neutral-600'
-                    : 'border-neutral-600 text-neutral-300'
-              }`}
-            >
-              {isCollapsed ? '▸' : '▾'} {pl}
-            </button>
+            <div key={key} className="flex items-center gap-0.5 rounded border border-neutral-700 px-1 py-0.5 text-xs">
+              <button onClick={() => move(key, -1)} disabled={pos === 0} title="上移" className={btn}>↑</button>
+              <button onClick={() => move(key, 1)} disabled={pos === order.length - 1} title="下移" className={btn}>↓</button>
+              <button onClick={() => toggle(key)} disabled={lastExpanded} title={lastExpanded ? '至少保留一个' : isCollapsed ? '展开' : '收起'} className={btn}>
+                {isCollapsed ? '▸' : '▾'}
+              </button>
+              <span className={isCollapsed ? 'text-neutral-600' : 'text-neutral-300'}>{pl}</span>
+            </div>
           );
         })}
       </div>
