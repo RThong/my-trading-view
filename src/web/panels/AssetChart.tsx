@@ -32,6 +32,10 @@ export function AssetChart({
   const [vrp, setVrp] = useState<VrpRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+
+  // 每个 pane 一个折叠开关;下标即 pane 序号。
+  const paneLabels = vrpUnderlying ? ['IV', 'Skew', '隐含/RV', 'VRP'] : ['IV', 'Skew'];
 
   useEffect(() => {
     let cancelled = false;
@@ -99,11 +103,57 @@ export function AssetChart({
     chart.timeScale().fitContent();
   }, [opt, vrp, interval, underlying, vrpUnderlying, label]);
 
+  // 折叠:收起的 pane 给极小 stretch(near-0),其余为 1,布局按权重重分配高度。
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    chart.panes().forEach((p, i) => p.setStretchFactor(collapsed.has(i) ? 0.0001 : 1));
+  }, [collapsed, paneCount]);
+
+  const toggle = (i: number) =>
+    setCollapsed((prev) => {
+      const n = new Set(prev);
+      if (n.has(i)) {
+        n.delete(i);
+      } else if (n.size + 1 >= paneCount) {
+        return prev; // 至少留一个展开:全收起时权重都=0.0001 会被均分,等于没收起
+      } else {
+        n.add(i);
+      }
+      return n;
+    });
+
   return (
-    <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full" />
-      {loading && <p className="absolute left-2 top-2 text-xs text-neutral-500">Loading…</p>}
-      {error && <p className="absolute left-2 top-2 text-xs text-red-400">Error: {error}</p>}
+    <div className="relative flex h-full w-full flex-col">
+      <div className="mb-2 flex gap-1.5">
+        {paneLabels.map((pl, i) => {
+          const isCollapsed = collapsed.has(i);
+          // 唯一展开的那个不能再收(收了全员等权=没收起),按钮置灰禁用。
+          const lastExpanded = !isCollapsed && collapsed.size === paneCount - 1;
+          return (
+            <button
+              key={i}
+              onClick={() => toggle(i)}
+              disabled={lastExpanded}
+              title={lastExpanded ? '至少保留一个' : isCollapsed ? '展开' : '收起'}
+              className={`rounded border px-2 py-0.5 text-xs ${
+                lastExpanded
+                  ? 'cursor-not-allowed border-neutral-800 text-neutral-700'
+                  : isCollapsed
+                    ? 'border-neutral-700 text-neutral-600'
+                    : 'border-neutral-600 text-neutral-300'
+              }`}
+            >
+              {isCollapsed ? '▸' : '▾'} {pl}
+            </button>
+          );
+        })}
+      </div>
+      <div className="relative min-h-0 flex-1">
+        <div ref={containerRef} className="h-full w-full" />
+        {loading && <p className="absolute left-2 top-2 text-xs text-neutral-500">Loading…</p>}
+        {error && <p className="absolute left-2 top-2 text-xs text-red-400">Error: {error}</p>}
+      </div>
     </div>
   );
 }
