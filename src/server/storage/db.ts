@@ -3,7 +3,7 @@ import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DB_PATH } from '../config';
 
-const CURRENT_SCHEMA_VERSION = 3; // v3:期权两表加 source 列(provenance,不进主键)、删掉 25Δ 的 is_mock
+const CURRENT_SCHEMA_VERSION = 4; // v4:新增 price_eod(标的 OHLC),market_series 收敛为只放波动率指数
 
 export function openDb(path: string = DB_PATH): Database {
   mkdirSync(dirname(path), { recursive: true });
@@ -37,6 +37,27 @@ function migrateOptionSource(db: Database): void {
   }
 }
 
+// v4:market_series 收敛为「只放波动率指数」,标的现货价挪到 price_eod。
+// 旧库的 market_series 里混着指数(VIX/VXN/GVZ/OVX/DVOL,留下)和现货
+// (SPY/QQQ/GLD/USO/BTC/SPX/NDX 等)。把有读取方的现货按 close 播种进 price_eod
+// (open/high/low 留空,下次 job 抓全 OHLC 时 upsert 覆盖),再从 market_series 删掉非指数序列。
+// 这样旧库迁完即满足不变式,且 VRP 的 RV 腿(只用 close)无需等回填就能算。
+// 须在 schema.sql 建出 price_eod 之后调用。幂等:INSERT OR IGNORE 不覆盖已抓的真 OHLC,
+// DELETE 只动现货 id;新库/已迁库再跑都是 no-op。
+const VOL_INDICES = ['VIX', 'VXN', 'GVZ', 'OVX', 'DVOL'];
+function migrateSpotToPriceEod(db: Database): void {
+  // VIX 既是指数又是 .VIX tab 的现货:播种进 price_eod,但保留在 market_series(IV 腿)。
+  // SPX/NDX 已无读取方,不播种,仅随 DELETE 清走。
+  db.run(
+    `INSERT OR IGNORE INTO price_eod (underlying, obs_date, open, high, low, close, source, fetched_at)
+     SELECT series_id, obs_date, NULL, NULL, NULL, value, 'migrated', ?
+     FROM market_series WHERE series_id IN ('SPY', 'QQQ', 'GLD', 'USO', 'BTC', 'VIX')`,
+    [new Date().toISOString()],
+  );
+  const keep = VOL_INDICES.map((s) => `'${s}'`).join(', ');
+  db.run(`DELETE FROM market_series WHERE series_id NOT IN (${keep})`);
+}
+
 export function migrate(db: Database): void {
   // 先就地改造旧表(列探测;新库或已是新结构则跳过),再跑 schema.sql 补建缺失表/索引。
   migrateOptionSource(db);
@@ -44,6 +65,9 @@ export function migrate(db: Database): void {
   const schemaPath = resolve(import.meta.dirname, 'schema.sql');
   const sql = readFileSync(schemaPath, 'utf-8');
   db.exec(sql);
+
+  // schema.sql 已建出 price_eod,再把旧库 market_series 里的现货价迁过去并清理。
+  migrateSpotToPriceEod(db);
 
   const row = db.query('SELECT MAX(version) AS v FROM schema_version').get() as { v: number | null };
   if ((row?.v ?? 0) < CURRENT_SCHEMA_VERSION) {

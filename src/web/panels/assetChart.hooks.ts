@@ -3,16 +3,21 @@
 // 切 tab 不卸载),所以这里所有 effect 都是「挂载建/卸载销」,不再按标的 reset。
 import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
-import { createChart, LineSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
+import { createChart, LineSeries, CandlestickSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import type { Interval } from '../hooks/interval';
-import { CHART_OPTIONS, aggregate, type LinePoint } from '../lib/chart';
+import { CHART_OPTIONS, aggregate, aggregateBars, type LinePoint, type Bar } from '../lib/chart';
 
 export type OptRow = { date: string; callIv: number; putIv: number; skew: number };
 export type VrpRow = { date: string; iv: number; rv: number; vrp: number };
+export type PriceBar = { date: string; open: number | null; high: number | null; low: number | null; close: number };
 export type PaneDef = { key: string; label: string; series: string[] };
-export type Spec = { key: string; pane: number; color: string; title: string; data: LinePoint[] };
+export type LineSpec = { key: string; pane: number; kind: 'line'; color: string; title: string; data: LinePoint[] };
+export type CandleSpec = { key: string; pane: number; kind: 'candle'; title: string; data: Bar[] };
+export type Spec = LineSpec | CandleSpec;
+type AnySeries = ISeriesApi<'Line' | 'Candlestick'>;
 
 export const COLORS = {
+  price: '#d4d4d8', // 现货图例文字(蜡烛本身用涨绿跌红)
   call: '#22c55e', put: '#ec4899', skew: '#3b82f6',
   iv: '#3b82f6', rv: '#f59e0b', vrp: '#22c55e',
 };
@@ -21,6 +26,7 @@ const HISTORY_DAYS = 3650;
 // 稳定空引用:data 未就绪时避免每次 render 新建 [] 触发图表 effect。
 const NO_OPT: OptRow[] = [];
 const NO_VRP: VrpRow[] = [];
+const NO_PRICE: PriceBar[] = [];
 // EOD 数据一会话内视为不变:关掉全部自动重验。模块级常量,引用稳定。
 const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
 
@@ -30,7 +36,8 @@ async function getJson<T>(url: string): Promise<T> {
   return r.json() as Promise<T>;
 }
 
-/** pane 元数据 + series 短名(右轴 tag / 左上图例同一命名源)。按 vrpUnderlying 决定 2 或 4 个 pane。 */
+/** pane 元数据 + series 短名(右轴 tag / 左上图例同一命名源)。所有 tab 顶部都有现货 pane;
+ *  有 vrpUnderlying 的再加 隐含/RV + VRP 两个 pane。 */
 // 各标的 VRP 隐含腿用的波动率指数名(图例显示「隐含 (VXN)」等)。
 // ponytail: 与 server/routes/vrp.ts 的 RECIPE.iv 是同一份映射,改一处必同步另一处
 // (跨 client/server,5 条目不值得抽 shared/ 常量,但别只改一边——否则图例名和数据腿对不上)。
@@ -39,39 +46,44 @@ const IV_INDEX: Record<string, string> = { SPY: 'VIX', QQQ: 'VXN', GLD: 'GVZ', U
 export function paneConfig(vrpUnderlying?: string) {
   const ivName = vrpUnderlying ? (IV_INDEX[vrpUnderlying] ?? 'IV') : 'IV';
   const seriesName: Record<string, string> = {
-    call: 'Call IV', put: 'Put IV', skew: 'Skew',
+    price: '现货', call: 'Call IV', put: 'Put IV', skew: 'Skew',
     iv: `隐含 (${ivName})`, rv: '已实现 RV', vrp: 'VRP',
   };
-  const paneDefs: PaneDef[] = vrpUnderlying
-    ? [
-        { key: 'iv', label: 'IV', series: ['call', 'put'] },
-        { key: 'skew', label: 'Skew', series: ['skew'] },
-        { key: 'ivrv', label: '隐含/RV', series: ['iv', 'rv'] },
-        { key: 'vrp', label: 'VRP', series: ['vrp'] },
-      ]
-    : [
-        { key: 'iv', label: 'IV', series: ['call', 'put'] },
-        { key: 'skew', label: 'Skew', series: ['skew'] },
-      ];
-  return { seriesName, paneDefs, paneCount: paneDefs.length === 4 ? 4 : 2 };
+  const paneDefs: PaneDef[] = [
+    { key: 'price', label: '现货', series: ['price'] },
+    { key: 'iv', label: 'IV', series: ['call', 'put'] },
+    { key: 'skew', label: 'Skew', series: ['skew'] },
+    ...(vrpUnderlying ? [
+      { key: 'ivrv', label: '隐含/RV', series: ['iv', 'rv'] },
+      { key: 'vrp', label: 'VRP', series: ['vrp'] },
+    ] : []),
+  ];
+  return { seriesName, paneDefs, paneCount: paneDefs.length };
 }
 
 const toLine = (rows: Array<Record<string, unknown>>, key: string): LinePoint[] =>
   rows.map((r) => ({ time: r.date as string, value: r[key] as number }));
+// OHLC 缺失(个别源)时退化成 close 的一字蜡烛,避免 setData 报错。
+const toBars = (rows: PriceBar[]): Bar[] =>
+  rows.map((r) => ({ time: r.date, open: r.open ?? r.close, high: r.high ?? r.close, low: r.low ?? r.close, close: r.close }));
 
-/** 把数据按 interval 聚合成各 series 的 LinePoint;pane 下标 = series 创建顺序。 */
+/** 把数据按 interval 聚合成各 series 的 spec;pane 下标从 paneDefs 派生(谁含此 series)。 */
 export function buildSpecs(
-  opt: OptRow[], vrp: VrpRow[], interval: Interval,
-  vrpUnderlying: string | undefined, seriesName: Record<string, string>,
+  opt: OptRow[], vrp: VrpRow[], price: PriceBar[], interval: Interval,
+  vrpUnderlying: string | undefined, paneDefs: PaneDef[], seriesName: Record<string, string>,
 ): Spec[] {
+  const paneOf = (key: string) => paneDefs.findIndex((d) => d.series.includes(key));
+  const line = (key: string, rows: Array<Record<string, unknown>>, field: string, color: string): LineSpec =>
+    ({ key, pane: paneOf(key), kind: 'line', color, title: seriesName[key], data: aggregate(toLine(rows, field), interval) });
   return [
-    { key: 'call', pane: 0, color: COLORS.call, title: seriesName.call, data: aggregate(toLine(opt, 'callIv'), interval) },
-    { key: 'put',  pane: 0, color: COLORS.put,  title: seriesName.put,  data: aggregate(toLine(opt, 'putIv'),  interval) },
-    { key: 'skew', pane: 1, color: COLORS.skew, title: seriesName.skew, data: aggregate(toLine(opt, 'skew'),   interval) },
+    { key: 'price', pane: paneOf('price'), kind: 'candle', title: seriesName.price, data: aggregateBars(toBars(price), interval) },
+    line('call', opt, 'callIv', COLORS.call),
+    line('put', opt, 'putIv', COLORS.put),
+    line('skew', opt, 'skew', COLORS.skew),
     ...(vrpUnderlying ? [
-      { key: 'iv',  pane: 2, color: COLORS.iv,  title: seriesName.iv,  data: aggregate(toLine(vrp, 'iv'),  interval) },
-      { key: 'rv',  pane: 2, color: COLORS.rv,  title: seriesName.rv,  data: aggregate(toLine(vrp, 'rv'),  interval) },
-      { key: 'vrp', pane: 3, color: COLORS.vrp, title: seriesName.vrp, data: aggregate(toLine(vrp, 'vrp'), interval) },
+      line('iv', vrp, 'iv', COLORS.iv),
+      line('rv', vrp, 'rv', COLORS.rv),
+      line('vrp', vrp, 'vrp', COLORS.vrp),
     ] : []),
   ];
 }
@@ -81,9 +93,12 @@ export function useAssetData(underlying: string, vrpUnderlying?: string) {
   // vrpUrl 为 null 时 SWR 原生跳过请求(.VIX 无 VRP)。
   const optUrl = `/api/options/25delta/${encodeURIComponent(underlying)}?days=${HISTORY_DAYS}`;
   const vrpUrl = vrpUnderlying ? `/api/vrp/${encodeURIComponent(vrpUnderlying)}` : null;
+  const priceUrl = `/api/price/${encodeURIComponent(underlying)}`;
   const { data: opt = NO_OPT, error: oe, isLoading: optLoading } = useSWR(optUrl, getJson<OptRow[]>, SWR_OPTS);
   const { data: vrp = NO_VRP, error: ve, isLoading: vrpLoading } = useSWR(vrpUrl, getJson<VrpRow[]>, SWR_OPTS);
-  return { opt, vrp, error: (oe ?? ve) as Error | undefined, isLoading: optLoading || vrpLoading };
+  const { data: price = NO_PRICE, error: pe, isLoading: priceLoading } = useSWR(priceUrl, getJson<PriceBar[]>, SWR_OPTS);
+  // 现货 pane 是每个 tab 的 pane0,加载态须等它(连同 opt/vrp)一起完成。
+  return { opt, vrp, price, error: (oe ?? ve ?? pe) as Error | undefined, isLoading: optLoading || vrpLoading || priceLoading };
 }
 
 // ── 图表引擎维度:持有 chart + series 句柄,负责建图与 series 同步 ──────────────
@@ -91,7 +106,7 @@ export function usePaneChart(
   containerRef: React.RefObject<HTMLDivElement | null>, paneCount: number, specs: Spec[],
 ) {
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  const seriesRef = useRef<Map<string, AnySeries>>(new Map());
 
   // 建图 + 加 pane。paneCount 每实例固定,等价于挂载建一次、卸载销毁。
   useEffect(() => {
@@ -112,12 +127,14 @@ export function usePaneChart(
       if (!keysNow.has(k)) { chart.removeSeries(s); seriesRef.current.delete(k); }
     }
     for (const spec of specs) {
-      let line = seriesRef.current.get(spec.key);
-      if (!line) {
-        line = chart.addSeries(LineSeries, { color: spec.color, title: spec.title, lineWidth: 2 }, spec.pane);
-        seriesRef.current.set(spec.key, line);
+      let s = seriesRef.current.get(spec.key);
+      if (!s) {
+        s = spec.kind === 'candle'
+          ? chart.addSeries(CandlestickSeries, { title: spec.title, upColor: '#22c55e', downColor: '#ef4444', borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444', priceLineVisible: false }, spec.pane)
+          : chart.addSeries(LineSeries, { color: spec.color, title: spec.title, lineWidth: 2 }, spec.pane);
+        seriesRef.current.set(spec.key, s);
       }
-      line.setData(spec.data);
+      s.setData(spec.data as any);
     }
     chart.timeScale().fitContent();
   }, [specs]);
@@ -129,7 +146,7 @@ export function usePaneChart(
 export function usePaneLayout(
   paneDefs: PaneDef[], paneCount: number,
   chartRef: React.RefObject<IChartApi | null>,
-  seriesRef: React.RefObject<Map<string, ISeriesApi<'Line'>>>,
+  seriesRef: React.RefObject<Map<string, AnySeries>>,
 ) {
   const [order, setOrder] = useState<string[]>(() => paneDefs.map((d) => d.key));
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -182,22 +199,23 @@ export function usePaneLayout(
 // ── 图例维度:crosshair 取值 + 各 pane 顶部偏移(定位图例)──────────────────────
 export function useCrosshairLegend(
   chartRef: React.RefObject<IChartApi | null>,
-  seriesRef: React.RefObject<Map<string, ISeriesApi<'Line'>>>,
+  seriesRef: React.RefObject<Map<string, AnySeries>>,
   containerRef: React.RefObject<HTMLDivElement | null>,
   order: string[], collapsed: Set<string>,
 ) {
   const [vals, setVals] = useState<Record<string, number>>({}); // 竖线处各 series 值
   const [tops, setTops] = useState<number[]>([]);                // 各 pane 顶部像素偏移
 
-  // 竖线滑动:从 crosshair 读各 series 在该时间点的值;不悬停时清空,图例回落末值。
+  // 竖线滑动:从 crosshair 读各 series 在该时间点的值;蜡烛取 close。不悬停时清空。
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     const handler = (param: { seriesData: Map<unknown, unknown> }) => {
       const next: Record<string, number> = {};
       for (const [key, s] of seriesRef.current) {
-        const d = param.seriesData.get(s) as { value?: number } | undefined;
-        if (d && typeof d.value === 'number') next[key] = d.value;
+        const d = param.seriesData.get(s) as { value?: number; close?: number } | undefined;
+        const v = d?.value ?? d?.close;
+        if (typeof v === 'number') next[key] = v;
       }
       setVals(next);
     };

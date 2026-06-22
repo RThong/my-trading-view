@@ -56,6 +56,46 @@ export function getLatestMarketDate(db: Database, seriesId: string): string | nu
   return row?.d ?? null;
 }
 
+// ── price_eod(标的日 OHLC:现货蜡烛图 + VRP 的 RV 腿来源)──────────────────────
+
+export type PriceEodRow = {
+  underlying: string;
+  obsDate: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number;
+  source: string;
+};
+
+export function insertPriceEod(db: Database, rows: PriceEodRow[]): void {
+  if (rows.length === 0) return;
+  const stmt = db.prepare(`
+    INSERT INTO price_eod (underlying, obs_date, open, high, low, close, source, fetched_at)
+    VALUES ($u, $d, $o, $h, $l, $c, $src, $f)
+    ON CONFLICT(underlying, obs_date) DO UPDATE SET
+      open=excluded.open, high=excluded.high, low=excluded.low, close=excluded.close,
+      source=excluded.source, fetched_at=excluded.fetched_at
+  `);
+  const fetched = new Date().toISOString();
+  const tx = db.transaction((batch: PriceEodRow[]) => {
+    for (const r of batch) stmt.run({ $u: r.underlying, $d: r.obsDate, $o: r.open, $h: r.high, $l: r.low, $c: r.close, $src: r.source, $f: fetched });
+  });
+  tx(rows);
+}
+
+/** 现货蜡烛图用:OHLC bars,升序。 */
+export function getPriceBars(db: Database, underlying: string): Array<{ date: string; open: number | null; high: number | null; low: number | null; close: number }> {
+  return db.query(`
+    SELECT obs_date AS date, open, high, low, close FROM price_eod WHERE underlying = $u ORDER BY obs_date ASC
+  `).all({ $u: underlying }) as Array<{ date: string; open: number | null; high: number | null; low: number | null; close: number }>;
+}
+
+export function getLatestPriceDate(db: Database, underlying: string): string | null {
+  const row = db.query(`SELECT MAX(obs_date) AS d FROM price_eod WHERE underlying = $u`).get({ $u: underlying }) as { d: string | null };
+  return row?.d ?? null;
+}
+
 // ── job_run ───────────────────────────────────────────────────────────────────
 
 export function startJobRun(db: Database, jobName: string): number {

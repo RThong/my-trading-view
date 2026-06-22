@@ -1,28 +1,27 @@
 /**
- * 更新 VRP 输入序列到 market_series。隐含腿 = 免费波动率指数,RV 腿 = 对应基准现货:
- *   隐含腿:VIX/VXN/GVZ/OVX (CBOE CSV) + DVOL (Deribit)
- *   RV 腿(日线 close):SPY/QQQ/GLD/USO + BTC
- *     - ETF(SPY/QQQ/GLD/USO):moomoo 历史 K 线为主源(准、前复权),Yahoo 为降级
- *     - BTC:Deribit(BTC-PERPETUAL)为主源,Yahoo(BTC-USD)为降级
- *     - 指数 moomoo 取不到,故 RV 统一用 ETF:SPY≈SPX、QQQ≈NDX,对 RV(百分比收益)可忽略
- *   基准对应:VIX↔SPY、VXN↔QQQ、GVZ↔GLD、OVX↔USO、DVOL↔BTC。
- *   moomoo 主源需 OpenD;OpenD 没起时 ETF 腿整体回退 Yahoo,管线仍跑通。
+ * 更新 VRP 输入 + 标的现货到库:
+ *   隐含腿 → market_series(close):VIX/VXN/GVZ/OVX(CBOE)+ DVOL(Deribit)
+ *   标的现货 → price_eod(OHLC):SPY/QQQ/GLD/USO/TLT/BTC + VIX
+ *     - ETF(SPY/QQQ/GLD/USO/TLT):moomoo 历史 K 线为主源(准、前复权),Yahoo 降级
+ *     - BTC:Deribit(BTC-PERPETUAL)主源,Yahoo(BTC-USD)降级
+ *     - VIX:CBOE(它既是 SPY 的 IV 腿,又是 .VIX tab 的现货,故两表都写)
+ *   VRP 的 RV 腿读 price_eod 的 close;基准对应 VIX↔SPY、VXN↔QQQ、GVZ↔GLD、OVX↔USO、DVOL↔BTC。
+ *   moomoo 主源需 OpenD;没起时 ETF 腿整体回退 Yahoo,管线仍跑通。
  *
- * `updateVrpInputs` 增量更新(按各序列已存最新日期续抓),既用于 daily job,
- * 也用于首次全量回填(库空时自动从 HISTORY_START_DATE / DVOL 上线日拉起)。
- * upsert 幂等,可重复跑。
+ * `updateVrpInputs` 增量更新(按各序列已存最新日期续抓),库空时自动从 HISTORY_START_DATE
+ * / DVOL 上线日全量回填。upsert 幂等,可重复跑。
  *
  * 直接运行 = 立即更新一次:bun run src/server/jobs/vrpInputs.ts
  */
 import type { Database } from 'bun:sqlite';
 import { openDb, migrate } from '../storage/db';
-import { insertMarketSeries, getLatestMarketDate } from '../storage/repository';
+import { insertMarketSeries, getLatestMarketDate, insertPriceEod, getLatestPriceDate } from '../storage/repository';
 import { createYahooFetcher } from '../fetchers/yahoo';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 import { fetchDvolHistory } from '../fetchers/deribitDvol';
-import { fetchBtcDailyClose } from '../fetchers/deribitBtcPrice';
+import { fetchBtcDailyBars } from '../fetchers/deribitBtcPrice';
 import { connect, disconnect, envConfig } from '../fetchers/moomooClient';
-import { fetchDailyClose } from '../fetchers/moomooHistoryKL';
+import { fetchDailyBars, type Bar } from '../fetchers/moomooHistoryKL';
 import { HISTORY_START_DATE } from '../config';
 
 const DVOL_START = '2021-01-01'; // DVOL(BTC)上线约 2021 年
@@ -43,75 +42,69 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
     insertMarketSeries(db, rows.map((r) => ({ seriesId: id, obsDate: r.obsDate, value: r.value })));
     total += rows.length;
   };
-
   // 每个源独立容错:一个源失败(抓取/解析出错)只记下来,不中断其它源。
   const run = async (name: string, fn: () => Promise<void>) => {
-    try {
-      await fn();
-      succeeded++;
-    } catch (err) {
-      failures.push(`${name}: ${(err as Error).message}`);
-    }
+    try { await fn(); succeeded++; }
+    catch (err) { failures.push(`${name}: ${(err as Error).message}`); }
   };
 
-  // 隐含腿:CBOE 免费波动率指数 CSV(VIX=SPX, VXN=NDX, GVZ=GLD, OVX=USO)
-  for (const sym of ['VIX', 'VXN', 'GVZ', 'OVX'] as const) {
+  const yahoo = createYahooFetcher();
+  const yahooBars = async (sym: string, since: Date): Promise<Bar[]> =>
+    (await yahoo.fetchDailyBars(sym, since)).map((r) => ({ date: r.tradeDate, open: r.open, high: r.high, low: r.low, close: r.close }));
+  const sincePrice = (u: string): Date => {
+    const latest = getLatestPriceDate(db, u);
+    return latest ? new Date(latest + 'T00:00:00Z') : new Date(HISTORY_START_DATE);
+  };
+  const writePrice = (u: string, bars: Bar[], source: string) => {
+    insertPriceEod(db, bars.map((b) => ({ underlying: u, obsDate: b.date, open: b.open, high: b.high, low: b.low, close: b.close, source })));
+    total += bars.length;
+  };
+  // 标的现货:主源(moomoo/deribit)失败 → 降级 Yahoo,各自标 source。
+  const priceLeg = (u: string, primary: (since: Date) => Promise<Bar[]>, primarySrc: string, fbSym: string) =>
+    run(u, async () => {
+      const since = sincePrice(u);
+      try { writePrice(u, await primary(since), primarySrc); }
+      catch (e) {
+        console.warn(`[vrpInputs] ${u} 主源失败,降级 Yahoo: ${(e as Error).message}`);
+        writePrice(u, await yahooBars(fbSym, since), 'yahoo');
+      }
+    });
+
+  // ── 隐含腿 → market_series ──
+  for (const sym of ['VXN', 'GVZ', 'OVX'] as const) {
     await run(sym, async () => {
       const rows = await fetchCboeIndexAsQuotes({ cboeSymbol: sym, storedSymbol: sym, afterDate: getLatestMarketDate(db, sym) ?? undefined });
       add(sym, rows.map((r) => ({ obsDate: r.tradeDate, value: r.close })));
     });
   }
-
-  // RV 腿:基准现货日线 close。ETF 走 moomoo 主 + Yahoo 降级;BTC 走 Deribit 主 + Yahoo 降级。
-  const yahoo = createYahooFetcher();
-  const sinceFor = (id: string): Date => {
-    const latest = getLatestMarketDate(db, id);
-    return latest ? new Date(latest + 'T00:00:00Z') : new Date(HISTORY_START_DATE);
-  };
-  type Pt = { obsDate: string; value: number };
-  const yahooClose = async (sym: string, since: Date): Promise<Pt[]> =>
-    (await yahoo.fetchDailyBars(sym, since)).map((r) => ({ obsDate: r.tradeDate, value: r.close }));
-  // 主源失败就降级 Yahoo:ETF/BTC 同形,收口到一处。
-  const close = async (id: string, primary: () => Promise<Pt[]>, fbSym: string, since: Date): Promise<Pt[]> => {
-    try { return await primary(); }
-    catch (e) {
-      console.warn(`[vrpInputs] ${id} 主源失败,降级 Yahoo: ${(e as Error).message}`);
-      return yahooClose(fbSym, since);
-    }
-  };
-
-  // moomoo 连接:连不上(OpenD 没起)→ mooWs=null,ETF 腿整体回退 Yahoo;单标的失败也各自回退。
-  let mooWs: any = null;
-  try { mooWs = await connect(envConfig()); } catch { /* OpenD 不可用,留 null */ }
-  try {
-    for (const id of ['SPY', 'QQQ', 'GLD', 'USO'] as const) {
-      await run(id, async () => {
-        const since = sinceFor(id);
-        add(id, await close(id, async () => {
-          if (!mooWs) throw new Error('OpenD unavailable');
-          return (await fetchDailyClose(mooWs, id, since)).map((k) => ({ obsDate: k.date, value: k.close }));
-        }, id, since));
-      });
-    }
-  } finally {
-    if (mooWs) disconnect(mooWs);
-  }
-
-  // BTC:Deribit(BTC-PERPETUAL)主 + Yahoo(BTC-USD)降级
-  await run('BTC', async () => {
-    const since = sinceFor('BTC');
-    add('BTC', await close('BTC', async () =>
-      (await fetchBtcDailyClose(since.getTime(), Date.now())).map((k) => ({ obsDate: k.date, value: k.close })),
-      'BTC-USD', since));
+  // VIX:既是 SPY 的 IV 腿(market_series close),又是 .VIX 的现货(price_eod OHLC),两表都写。
+  await run('VIX', async () => {
+    const mkt = await fetchCboeIndexAsQuotes({ cboeSymbol: 'VIX', storedSymbol: 'VIX', afterDate: getLatestMarketDate(db, 'VIX') ?? undefined });
+    add('VIX', mkt.map((r) => ({ obsDate: r.tradeDate, value: r.close })));
+    const px = await fetchCboeIndexAsQuotes({ cboeSymbol: 'VIX', storedSymbol: 'VIX', afterDate: getLatestPriceDate(db, 'VIX') ?? undefined });
+    writePrice('VIX', px.map((r) => ({ date: r.tradeDate, open: r.open, high: r.high, low: r.low, close: r.close })), 'cboe');
   });
-
-  // DVOL(Deribit 波动率指数)
   await run('DVOL', async () => {
     const dvolLatest = getLatestMarketDate(db, 'DVOL');
     const dvolStart = dvolLatest ? new Date(dvolLatest + 'T00:00:00Z').getTime() : new Date(DVOL_START).getTime();
     const dvol = await fetchDvolHistory('BTC', dvolStart, Date.now());
     add('DVOL', dvol.map((d) => ({ obsDate: d.date, value: d.value })));
   });
+
+  // ── 标的现货 OHLC → price_eod ──
+  let mooWs: any = null;
+  try { mooWs = await connect(envConfig()); } catch { /* OpenD 不可用,ETF 腿整体回退 Yahoo */ }
+  try {
+    for (const u of ['SPY', 'QQQ', 'GLD', 'USO', 'TLT'] as const) {
+      await priceLeg(u, (since) => {
+        if (!mooWs) throw new Error('OpenD unavailable');
+        return fetchDailyBars(mooWs, u, since);
+      }, 'moomoo', u);
+    }
+  } finally {
+    if (mooWs) disconnect(mooWs);
+  }
+  await priceLeg('BTC', (since) => fetchBtcDailyBars(since.getTime(), Date.now()), 'deribit', 'BTC-USD');
 
   return { total, succeeded, failures };
 }

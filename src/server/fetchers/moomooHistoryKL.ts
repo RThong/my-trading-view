@@ -11,15 +11,17 @@ const REHAB_FORWARD = 1;
 const MAX_KL_PER_REQ = 1000;
 const MAX_PAGES = 40; // 40×1000 远超 ~2200 根/标的的需要;纯属死循环兜底
 
-/** 取某 ETF 自 `since` 起的日线收盘(前复权),按 nextReqKey 翻页,升序返回。 */
-export async function fetchDailyClose(
+export type Bar = { date: string; open: number | null; high: number | null; low: number | null; close: number };
+
+/** 取某 ETF 自 `since` 起的日线 OHLC(前复权),按 nextReqKey 翻页,升序返回。 */
+export async function fetchDailyBars(
   ws: any,
   code: string,
   since: Date,
-): Promise<Array<{ date: string; close: number }>> {
+): Promise<Bar[]> {
   const begin = since.toISOString().slice(0, 10);
   const end = new Date().toISOString().slice(0, 10);
-  const byDate = new Map<string, number>();
+  const byDate = new Map<string, Bar>();
   let nextReqKey: unknown;
 
   // 终止靠「这一页不满 MAX_KL_PER_REQ = 最后一页」,而不是判 nextReqKey:
@@ -43,14 +45,15 @@ export async function fetchDailyClose(
     for (const k of kl) {
       const date = String(k.time ?? '').slice(0, 10); // "YYYY-MM-DD 00:00:00" → 日期
       if (/^\d{4}-\d{2}-\d{2}$/.test(date) && typeof k.closePrice === 'number') {
-        byDate.set(date, k.closePrice);
+        const num = (v: unknown) => (typeof v === 'number' ? v : null);
+        byDate.set(date, { date, open: num(k.openPrice), high: num(k.highPrice), low: num(k.lowPrice), close: k.closePrice });
       }
     }
     nextReqKey = res?.s2c?.nextReqKey;
     if (kl.length < MAX_KL_PER_REQ) break; // 不满一页(含空页)即最后一页
   }
 
-  return [...byDate.entries()].map(([date, close]) => ({ date, close })).sort((a, b) => a.date.localeCompare(b.date));
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
 const TRADE_DATE_MARKET_US = 2; // 注意:TradeDateMarket 枚举(US=2),不是 QotMarket(US=11)

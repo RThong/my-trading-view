@@ -4,10 +4,10 @@ import {
   COLORS, buildSpecs, paneConfig, useAssetData, usePaneChart, usePaneLayout, useCrosshairLegend,
 } from './assetChart.hooks';
 
-// 一个资产的全部期权指标,放进同一个 chart 的多个 pane(共享时间轴):
-//   pane0 25Δ call/put IV · pane1 skew · pane2 隐含vs已实现RV · pane3 VRP
-// VRP 仅有免费波动率指数的标的有(SPY/QQQ/GLD/USO/BTC,vrpUnderlying 给定时,4 pane);
-// 无对应指数的(.VIX/TLT)只有前两个 pane。
+// 一个资产的指标放进同一个 chart 的多个 pane(共享时间轴),顶部恒为现货蜡烛:
+//   pane0 现货(OHLC)· pane1 25Δ call/put IV · pane2 skew · [pane3 隐含vs已实现RV · pane4 VRP]
+// 后两个 pane 仅有免费波动率指数的标的有(SPY/QQQ/GLD/USO/BTC,vrpUnderlying 给定时);
+// 无对应指数的(.VIX/TLT)只到 skew(3 pane)。pane 集合由 paneConfig 决定。
 // 各横向功能(取数/引擎/布局/图例)拆进 ./assetChart.hooks,本组件只拼装 + JSX。
 // 实例与标的绑定一辈子(App keep-alive),故无需按标的 reset。
 export function AssetChart({
@@ -24,10 +24,10 @@ export function AssetChart({
   const { seriesName, paneDefs, paneCount } = useMemo(() => paneConfig(vrpUnderlying), [vrpUnderlying]);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { opt, vrp, error, isLoading } = useAssetData(underlying, vrpUnderlying);
+  const { opt, vrp, price, error, isLoading } = useAssetData(underlying, vrpUnderlying);
   const specs = useMemo(
-    () => buildSpecs(opt, vrp, interval, vrpUnderlying, seriesName),
-    [opt, vrp, interval, vrpUnderlying, seriesName],
+    () => buildSpecs(opt, vrp, price, interval, vrpUnderlying, paneDefs, seriesName),
+    [opt, vrp, price, interval, vrpUnderlying, paneDefs, seriesName],
   );
   const { chartRef, seriesRef } = usePaneChart(containerRef, paneCount, specs);
   const { order, collapsed, move, toggle } = usePaneLayout(paneDefs, paneCount, chartRef, seriesRef);

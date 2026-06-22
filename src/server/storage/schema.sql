@@ -3,8 +3,8 @@
 DROP TABLE IF EXISTS quote_eod;
 DROP TABLE IF EXISTS macro_series;
 
--- VRP 计算的输入序列:隐含腿(VIX/VXN/GVZ/OVX/DVOL)+ 现货 RV 腿(SPX/NDX/GLD/USO/BTC)。
--- 通用 (series_id, obs_date, value);RV、VRP 在读取时按窗口现算,不预存。
+-- 波动率指数序列(VRP 的隐含腿):VIX/VXN/GVZ/OVX/DVOL。单值 (series_id, obs_date, value)。
+-- 标的现货价不再放这(已挪到 price_eod);RV/VRP 读取时按窗口现算,不预存。
 CREATE TABLE IF NOT EXISTS market_series (
     series_id   TEXT NOT NULL,
     obs_date    TEXT NOT NULL,
@@ -13,6 +13,21 @@ CREATE TABLE IF NOT EXISTS market_series (
     PRIMARY KEY (series_id, obs_date)
 );
 CREATE INDEX IF NOT EXISTS idx_market_series_date ON market_series(obs_date);
+
+-- 标的日 OHLC:各 tab 的现货(SPY/QQQ/GLD/USO/TLT/BTC/VIX)。供前端现货蜡烛图,
+-- 同时作 VRP 的 RV 腿来源(读 close)。source 记实际 fetcher(moomoo/deribit/yahoo/cboe)。
+CREATE TABLE IF NOT EXISTS price_eod (
+    underlying  TEXT NOT NULL,
+    obs_date    TEXT NOT NULL,
+    open        REAL,
+    high        REAL,
+    low         REAL,
+    close       REAL NOT NULL,
+    source      TEXT NOT NULL,
+    fetched_at  TEXT NOT NULL,
+    PRIMARY KEY (underlying, obs_date)
+);
+CREATE INDEX IF NOT EXISTS idx_price_eod_date ON price_eod(obs_date);
 
 CREATE TABLE IF NOT EXISTS job_run (
     run_id            INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { openDb } from '../storage/db';
-import { getMarketSeries } from '../storage/repository';
+import { getMarketSeries, getPriceBars } from '../storage/repository';
 import { realizedVol, computeVrp } from '../analytics/vrp';
 
 // 各标的的 VRP 配方:隐含腿、RV 腿(基准现货)、RV 窗口、年化周期数。
@@ -23,8 +23,8 @@ export const vrpRoute = new Hono()
 
     const db = openDb();
     try {
-      const iv = getMarketSeries(db, r.iv);
-      const rv = realizedVol(getMarketSeries(db, r.spot), r.window, r.periodsPerYear);
+      const iv = getMarketSeries(db, r.iv);                 // 隐含腿:波动率指数
+      const rv = realizedVol(getPriceBars(db, r.spot).map((b) => ({ date: b.date, value: b.close })), r.window, r.periodsPerYear); // RV 腿:标的现货 close
       return c.json(computeVrp(iv, rv));
     } finally {
       db.close();

@@ -2,6 +2,7 @@
 import type { Interval } from '../hooks/interval';
 
 export type LinePoint = { time: string; value: number };
+export type Bar = { time: string; open: number; high: number; low: number; close: number };
 
 /** 把 lightweight-charts 的 Time(BusinessDay 对象 / 字符串 / 时间戳)统一格式化成 YYYY-MM-DD。 */
 function fmtDate(time: unknown): string {
@@ -52,5 +53,22 @@ export function aggregate(points: LinePoint[], interval: Interval): LinePoint[] 
       return [key, { time: key, value: p.value }] as const;
     }),
   );
+  return Array.from(byKey.values()).sort((a, b) => a.time.localeCompare(b.time));
+}
+
+/** OHLC 按周期聚合:open=首根、close=尾根、high/low=区间极值。输入须按时间升序。 */
+export function aggregateBars(bars: Bar[], interval: Interval): Bar[] {
+  if (interval === '1D') return bars;
+  const byKey = new Map<string, Bar>();
+  for (const b of bars) {
+    const key = periodKey(b.time, interval);
+    const cur = byKey.get(key);
+    if (!cur) byKey.set(key, { time: key, open: b.open, high: b.high, low: b.low, close: b.close });
+    else {
+      cur.high = Math.max(cur.high, b.high);
+      cur.low = Math.min(cur.low, b.low);
+      cur.close = b.close; // 升序输入 → 最后一根即收盘
+    }
+  }
   return Array.from(byKey.values()).sort((a, b) => a.time.localeCompare(b.time));
 }
