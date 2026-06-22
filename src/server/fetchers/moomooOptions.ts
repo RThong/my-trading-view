@@ -14,29 +14,10 @@
  * 鉴权 key。详见 .env:MOOMOO_WS_HOST / MOOMOO_WS_PORT / MOOMOO_WS_KEY。
  */
 
-// @ts-expect-error — moomoo-api 没有附带类型声明
-import mmWebsocket from 'moomoo-api';
 import type { OptionContract, OptionsChainClient } from '../jobs/optionsSnapshot';
+import { QOT_MARKET_US, envConfig, withConnection } from './moomooClient';
 
-const QOT_MARKET_US = 11;
 const SNAPSHOT_BATCH = 400;
-const LOGIN_TIMEOUT_MS = 10_000;
-
-type MoomooConfig = {
-  host: string;
-  port: number;
-  key: string;
-};
-
-function envConfig(): MoomooConfig {
-  const key = process.env.MOOMOO_WS_KEY ?? '';
-  if (!key) throw new Error('MOOMOO_WS_KEY not set');
-  return {
-    host: process.env.MOOMOO_WS_HOST ?? '127.0.0.1',
-    port: Number(process.env.MOOMOO_WS_PORT ?? '33333'),
-    key,
-  };
-}
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -54,31 +35,6 @@ function expiryDate(raw: unknown): string {
     throw new Error(`Unexpected moomoo strikeTime format: ${JSON.stringify(raw)}`);
   }
   return s;
-}
-
-/** 建立连接,执行 `fn`,然后无论如何都关闭 socket。 */
-async function withConnection<T>(
-  cfg: MoomooConfig,
-  fn: (ws: any) => Promise<T>,
-): Promise<T> {
-  const ws = new mmWebsocket();
-  ws.start(cfg.host, cfg.port, false, cfg.key);
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('OpenD login timeout')), LOGIN_TIMEOUT_MS);
-      ws.onlogin = (ret: boolean, msg: string) => {
-        clearTimeout(timer);
-        ret ? resolve() : reject(new Error(`OpenD login failed: ${msg}`));
-      };
-    });
-    return await fn(ws);
-  } finally {
-    // stop() 只是注销推送回调。底层 socket 及其重连定时器挂在 ws.websock 上
-    // —— close() 会把这两者一起关掉,否则这个句柄会让事件循环一直存活,
-    // daily CLI 永远退不出去。
-    ws.stop();
-    ws.websock?.close();
-  }
 }
 
 type StaticContract = { code: string; strikePrice: number };

@@ -8,8 +8,8 @@ import { realizedVol, computeVrp } from '../analytics/vrp';
 // periodsPerYear 按交易时段:美股 ETF/指数一律 252(USO 是 NYSE 时段 ETF,不是 24/7
 // 商品,也用 252);只有 BTC(24/7)用 365。
 const RECIPE: Record<string, { iv: string; spot: string; window: number; periodsPerYear: number }> = {
-  SPY: { iv: 'VIX',  spot: 'SPX', window: 21, periodsPerYear: 252 },
-  QQQ: { iv: 'VXN',  spot: 'NDX', window: 21, periodsPerYear: 252 },
+  SPY: { iv: 'VIX',  spot: 'SPY', window: 21, periodsPerYear: 252 },
+  QQQ: { iv: 'VXN',  spot: 'QQQ', window: 21, periodsPerYear: 252 },
   GLD: { iv: 'GVZ',  spot: 'GLD', window: 21, periodsPerYear: 252 },
   USO: { iv: 'OVX',  spot: 'USO', window: 21, periodsPerYear: 252 },
   BTC: { iv: 'DVOL', spot: 'BTC', window: 30, periodsPerYear: 365 },
