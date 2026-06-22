@@ -1,3 +1,7 @@
+// ponytail: 静音 moomoo-api SDK 的 console.debug 噪音(每次断开/异常都 dump 整个 WebSocket Event)。
+// 我们自己不用 console.debug。改用打补丁会被 bun install 冲掉,这里一行覆盖最省。
+console.debug = () => {};
+
 import type { Database } from 'bun:sqlite';
 import { openDb, migrate } from '../storage/db';
 import { startJobRun, finishJobRun } from '../storage/repository';

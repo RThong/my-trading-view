@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# 一条龙:headless 启动 OpenD → 等 WebSocket 就绪 → 跑 daily job → 收尾杀掉 OpenD。
-# 这样不用单独开 OpenD GUI。OpenD 的启动命令由 .env 的 OPEND_CMD 提供
+# 一条龙:确保 headless OpenD 在跑 → 等 WebSocket 就绪 → 跑 daily job。**不杀 OpenD**:
+# 起完留着常驻,供下次复用。OpenD 的启动命令由 .env 的 OPEND_CMD 提供
 # (你的账号/登录参数因人而异,不硬编码)。
 #
+# 为何不收尾杀掉:headless OpenD 每次被 SIGTERM/KILL 都会喂长它的崩溃上报(crashpad)
+# 循环,下次启动越来越慢直至超时(实测 3→9 分钟,得重启机器才能治)。所以常驻、只起一次。
+#
 # 行为:
-#   - 若 OpenD 已在跑(WS 端口已监听,比如你开着 GUI)→ 不启动也不杀,直接跑 job。
-#   - 否则用 OPEND_CMD 后台拉起 OpenD,等端口就绪 + 预热,跑完 job 再杀掉(只杀自己起的)。
+#   - 若 OpenD 已在跑(WS 端口已监听)→ 直接跑 job(理想稳态:OpenD 由 launchd 常驻)。
+#   - 否则用 OPEND_CMD 后台拉起 OpenD(nohup,脚本退出后继续活),等就绪 + 预热,跑 job,留着。
 #   - 没配 OPEND_CMD 且 OpenD 没在跑 → 警告后照样跑 job(期权组会失败,BTC/VRP 组照常)。
 set -euo pipefail
 
@@ -24,22 +27,12 @@ mkdir -p "$LOG_DIR"
 
 port_open() { nc -z "$HOST" "$PORT" 2>/dev/null; }
 
-OPEND_PID=""
-cleanup() {
-  if [[ -n "$OPEND_PID" ]] && kill -0 "$OPEND_PID" 2>/dev/null; then
-    echo "停止 OpenD (pid $OPEND_PID)…"
-    kill "$OPEND_PID" 2>/dev/null || true
-    for _ in 1 2 3; do kill -0 "$OPEND_PID" 2>/dev/null || break; sleep 1; done
-    kill -9 "$OPEND_PID" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT
-
 if port_open; then
-  echo "OpenD 已在 $HOST:$PORT 运行,直接跑 job(不接管、不杀)。"
+  echo "OpenD 已在 $HOST:$PORT 运行,直接跑 job。"
 elif [[ -n "${OPEND_CMD:-}" ]]; then
-  echo "启动 OpenD(headless)…"
-  # exec 让后台进程直接 *是* OpenD,$! 即其 PID,收尾时能精确杀掉。
+  echo "启动 OpenD(headless,起完常驻不杀)…"
+  # exec 让后台进程直接 *是* OpenD,$! 即其 PID(仅用于启动期存活检测);
+  # nohup 忽略 SIGHUP,脚本退出后 OpenD 成孤儿继续运行。
   nohup bash -c "exec $OPEND_CMD" >> "$LOG_DIR/opend.log" 2>&1 &
   OPEND_PID=$!
 
