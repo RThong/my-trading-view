@@ -69,9 +69,12 @@ function pickClosestDelta(arr: OptionContract[], target: number): OptionContract
   );
 }
 
-/** 抓取器满足的最小 client 接口(目前由 moomoo 实现)。 */
+/** 抓取器满足的最小 client 接口。 */
 export type OptionsChainClient = {
   fetchChain(symbol: string, targetDte: number): Promise<OptionChainSnapshot>;
+  /** 权威「最近已收盘交易日」,给快照打戳用。moomoo 实现(Qot_RequestTradeDate);
+   *  不实现(如 Deribit)或返回 null 时,上层回退 lastClosedTradingDate。 */
+  getTradingDate?(): Promise<string | null>;
 };
 
 type RunOpts = {
@@ -90,9 +93,15 @@ export type OptionsSnapshotResult = {
 };
 
 export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshotResult> {
-  // 用最近一个*已收盘*的美股交易日打戳,而不是用本地时钟的今天,
-  // 这样周末/盘后运行都会归并到正确的那个周五行上(在 upsert 下保持幂等)。
-  const today = lastClosedTradingDate();
+  // 打戳日期:优先用 client 的权威交易日(moomoo Qot_RequestTradeDate,认假期);
+  // 取不到(Deribit 无此方法 / 调用失败)则回退本地推算(只跳周末、不认假期)。
+  // 整批一个日期(同一市场同一交易日)。
+  let snapshotDate: string;
+  try {
+    snapshotDate = (await opts.client.getTradingDate?.()) ?? lastClosedTradingDate();
+  } catch {
+    snapshotDate = lastClosedTradingDate();
+  }
   const rows: Options25DeltaRow[] = [];
   const rawRows: OptionChainRawRow[] = [];
   const failures: string[] = [];
@@ -108,7 +117,7 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
       rows.push({
         underlying: u,
         source: opts.source,
-        snapshotDate: today,
+        snapshotDate,
         callIv: sel.callIv * 100,
         putIv: sel.putIv * 100,
         skew: sel.skew * 100,
@@ -122,7 +131,7 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
       rawRows.push({
         underlying: u,
         source: opts.source,
-        snapshotDate: today,
+        snapshotDate,
         expiry: chain.expirationDate,
         underlyingPrice: chain.underlyingPrice,
         chainJsonGz: gz,

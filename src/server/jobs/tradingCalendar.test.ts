@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { lastClosedTradingDate } from './tradingCalendar';
+import { lastClosedTradingDate, lastClosedFrom } from './tradingCalendar';
 
 describe('lastClosedTradingDate', () => {
   test('Sunday rolls back to Friday', () => {
@@ -42,5 +42,28 @@ describe('lastClosedTradingDate', () => {
   test('JST 8 AM Mon = Sunday 7 PM ET → Friday', () => {
     // 周一 JST 上午 8 点 2026-05-18 = 周日 23:00 UTC = 周日 ET 晚 7 点
     expect(lastClosedTradingDate(new Date('2026-05-17T23:00:00Z'))).toBe('2026-05-15');
+  });
+});
+
+describe('lastClosedFrom(权威交易日列表)', () => {
+  // 06-19 是 Juneteenth 休市,所以不在权威列表里。
+  const days = ['2026-06-16', '2026-06-17', '2026-06-18']; // 二/三/四
+
+  test('跳过休市日:周日 → 06-18(而非按日历猜的周五 06-19)', () => {
+    expect(lastClosedFrom(days, new Date('2026-06-21T12:00:00Z'))).toBe('2026-06-18');
+  });
+
+  test('今日在列表且已收盘(ET≥16:00)→ 今日', () => {
+    // 06-18 20:30Z = 16:30 ET,已收盘
+    expect(lastClosedFrom(days, new Date('2026-06-18T20:30:00Z'))).toBe('2026-06-18');
+  });
+
+  test('今日在列表但未收盘(ET<16:00)→ 前一交易日', () => {
+    // 06-18 14:00Z = 10:00 ET,未收盘
+    expect(lastClosedFrom(days, new Date('2026-06-18T14:00:00Z'))).toBe('2026-06-17');
+  });
+
+  test('空列表 → null(上层回退本地推算)', () => {
+    expect(lastClosedFrom([], new Date('2026-06-21T12:00:00Z'))).toBeNull();
   });
 });

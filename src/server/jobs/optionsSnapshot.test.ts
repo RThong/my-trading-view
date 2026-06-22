@@ -67,6 +67,15 @@ describe('runOptionsSnapshot', () => {
     expect(raw[0].source).toBe('moomoo');
   });
 
+  test('用 client 的权威交易日打戳(getTradingDate)', async () => {
+    const mock: OptionsChainClient = {
+      fetchChain: async () => SAMPLE_CHAIN,
+      getTradingDate: async () => '2026-06-18', // 权威日历(假期已扣)
+    };
+    await runOptionsSnapshot({ db, source: 'moomoo', underlyings: ['SPY'], client: mock });
+    expect(getOptions25Delta(db, 'SPY', 3650)[0].snapshotDate).toBe('2026-06-18');
+  });
+
   test('source 原样落库:deribit 组写 deribit', async () => {
     const mock: OptionsChainClient = { fetchChain: async () => SAMPLE_CHAIN };
 

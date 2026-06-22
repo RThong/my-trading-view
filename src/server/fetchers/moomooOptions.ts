@@ -16,6 +16,8 @@
 
 import type { OptionContract, OptionsChainClient } from '../jobs/optionsSnapshot';
 import { QOT_MARKET_US, envConfig, withConnection } from './moomooClient';
+import { fetchUsTradingDates } from './moomooHistoryKL';
+import { lastClosedFrom } from '../jobs/tradingCalendar';
 
 const SNAPSHOT_BATCH = 400;
 
@@ -112,6 +114,12 @@ function toContract(staticC: StaticContract, snap: any): OptionContract | null {
 
 export function defaultMoomooOptionsClient(): OptionsChainClient {
   return {
+    // 权威美股交易日(Qot_RequestTradeDate),给快照打戳用;自开短连接,失败由上层兜底。
+    async getTradingDate() {
+      const days = await withConnection(envConfig(), (ws) => fetchUsTradingDates(ws));
+      return lastClosedFrom(days);
+    },
+
     async fetchChain(symbol, targetDte) {
       // 延迟读取配置:这样即便缺少 MOOMOO_WS_KEY,异常也会在 options group
       // 的 try/catch 里浮现(经 finishJobRun 记录),而不是在构造时就抛出、
