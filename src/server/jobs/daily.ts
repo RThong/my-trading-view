@@ -10,6 +10,7 @@ import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
 import { defaultDeribitOptionsClient } from '../fetchers/deribitOptions';
 import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
 import { updateVrpInputs } from './vrpInputs';
+import { updateVxTermStructure } from './vxTermStructure';
 
 type RunDailyJobOpts = {
   db: Database;
@@ -21,6 +22,8 @@ type RunDailyJobOpts = {
   cryptoOptionsClient?: OptionsChainClient;
   /** VRP 输入序列更新器(注入式;CLI 传 updateVrpInputs,测试省略以免联网)。 */
   vrpInputsUpdater?: (db: Database) => Promise<{ total: number; succeeded: number; failures: string[] }>;
+  /** VX 期限结构(VX1/VX3)更新器(注入式;CLI 传 updateVxTermStructure,测试省略以免联网)。 */
+  vxUpdater?: (db: Database) => Promise<{ total: number }>;
 };
 
 /** 跑一组期权快照并记一个 job_run(单标的失败 → partial,全失败 → failed)。 */
@@ -73,6 +76,17 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       finishJobRun(opts.db, vrpRun, { status: 'failed', error: (err as Error).message });
     }
   }
+
+  // vx_term_structure 分组:增量更新 VX1/VX3 期货序列(单一 CBOE 源,成功/失败两态)。
+  if (opts.vxUpdater) {
+    const vxRun = startJobRun(opts.db, 'vx_term_structure');
+    try {
+      const { total } = await opts.vxUpdater(opts.db);
+      finishJobRun(opts.db, vxRun, { status: 'success', recordsWritten: total });
+    } catch (err) {
+      finishJobRun(opts.db, vxRun, { status: 'failed', error: (err as Error).message });
+    }
+  }
 }
 
 // CLI 入口
@@ -87,6 +101,7 @@ if (import.meta.main) {
     cryptoOptionsUnderlyings: DERIBIT_UNDERLYINGS,
     cryptoOptionsClient: defaultDeribitOptionsClient(),
     vrpInputsUpdater: updateVrpInputs,
+    vxUpdater: updateVxTermStructure,
   });
 
   db.close();

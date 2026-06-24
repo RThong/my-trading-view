@@ -10,8 +10,9 @@ import { CHART_OPTIONS, aggregate, aggregateBars, type LinePoint, type Bar } fro
 export type OptRow = { date: string; callIv: number; putIv: number; skew: number };
 export type VrpRow = { date: string; iv: number; rv: number; vrp: number };
 export type PriceBar = { date: string; open: number | null; high: number | null; low: number | null; close: number };
+export type TsRow = { date: string; vx1: number; vx3: number; spread: number };
 export type PaneDef = { key: string; label: string; series: string[] };
-export type LineSpec = { key: string; pane: number; kind: 'line'; color: string; title: string; data: LinePoint[] };
+export type LineSpec = { key: string; pane: number; kind: 'line'; color: string; title: string; data: LinePoint[]; baseline?: number };
 export type CandleSpec = { key: string; pane: number; kind: 'candle'; title: string; data: Bar[] };
 export type Spec = LineSpec | CandleSpec;
 type AnySeries = ISeriesApi<'Line' | 'Candlestick'>;
@@ -20,6 +21,7 @@ export const COLORS = {
   price: '#d4d4d8', // 现货图例文字(蜡烛本身用涨绿跌红)
   call: '#22c55e', put: '#ec4899', skew: '#3b82f6',
   iv: '#3b82f6', rv: '#f59e0b', vrp: '#22c55e',
+  v1v3: '#a855f7',
 };
 const HISTORY_DAYS = 3650;
 
@@ -27,6 +29,7 @@ const HISTORY_DAYS = 3650;
 const NO_OPT: OptRow[] = [];
 const NO_VRP: VrpRow[] = [];
 const NO_PRICE: PriceBar[] = [];
+const NO_TS: TsRow[] = [];
 // EOD 数据一会话内视为不变:关掉全部自动重验。模块级常量,引用稳定。
 const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
 
@@ -43,11 +46,13 @@ async function getJson<T>(url: string): Promise<T> {
 // (跨 client/server,5 条目不值得抽 shared/ 常量,但别只改一边——否则图例名和数据腿对不上)。
 const IV_INDEX: Record<string, string> = { SPY: 'VIX', QQQ: 'VXN', GLD: 'GVZ', USO: 'OVX', BTC: 'DVOL' };
 
-export function paneConfig(vrpUnderlying?: string) {
+export function paneConfig(underlying: string, vrpUnderlying?: string) {
   const ivName = vrpUnderlying ? (IV_INDEX[vrpUnderlying] ?? 'IV') : 'IV';
+  const isVix = underlying === '.VIX';
   const seriesName: Record<string, string> = {
     price: '现货', call: 'Call IV', put: 'Put IV', skew: 'Skew',
     iv: `隐含 (${ivName})`, rv: '已实现 RV', vrp: 'VRP',
+    v1v3: 'V1−V3 ·到期前数日有 roll 噪音',
   };
   const paneDefs: PaneDef[] = [
     { key: 'price', label: '现货', series: ['price'] },
@@ -57,6 +62,7 @@ export function paneConfig(vrpUnderlying?: string) {
       { key: 'ivrv', label: '隐含/RV', series: ['iv', 'rv'] },
       { key: 'vrp', label: 'VRP', series: ['vrp'] },
     ] : []),
+    ...(isVix ? [{ key: 'term', label: '期限结构 V1−V3', series: ['v1v3'] }] : []),
   ];
   return { seriesName, paneDefs, paneCount: paneDefs.length };
 }
@@ -69,7 +75,7 @@ const toBars = (rows: PriceBar[]): Bar[] =>
 
 /** 把数据按 interval 聚合成各 series 的 spec;pane 下标从 paneDefs 派生(谁含此 series)。 */
 export function buildSpecs(
-  opt: OptRow[], vrp: VrpRow[], price: PriceBar[], interval: Interval,
+  opt: OptRow[], vrp: VrpRow[], price: PriceBar[], ts: TsRow[], interval: Interval,
   vrpUnderlying: string | undefined, paneDefs: PaneDef[], seriesName: Record<string, string>,
 ): Spec[] {
   const paneOf = (key: string) => paneDefs.findIndex((d) => d.series.includes(key));
@@ -85,20 +91,26 @@ export function buildSpecs(
       line('rv', vrp, 'rv', COLORS.rv),
       line('vrp', vrp, 'vrp', COLORS.vrp),
     ] : []),
+    ...(paneOf('v1v3') >= 0 ? [{ ...line('v1v3', ts, 'spread', COLORS.v1v3), baseline: 0 }] : []),
   ];
 }
 
 // ── 数据维度 ──────────────────────────────────────────────────────────────
 export function useAssetData(underlying: string, vrpUnderlying?: string) {
-  // vrpUrl 为 null 时 SWR 原生跳过请求(.VIX 无 VRP)。
+  // vrpUrl / tsUrl 为 null 时 SWR 原生跳过请求(.VIX 无 VRP;非 .VIX 无期限结构)。
   const optUrl = `/api/options/25delta/${encodeURIComponent(underlying)}?days=${HISTORY_DAYS}`;
   const vrpUrl = vrpUnderlying ? `/api/vrp/${encodeURIComponent(vrpUnderlying)}` : null;
   const priceUrl = `/api/price/${encodeURIComponent(underlying)}`;
+  const tsUrl = underlying === '.VIX' ? '/api/term-structure/vix' : null;
   const { data: opt = NO_OPT, error: oe, isLoading: optLoading } = useSWR(optUrl, getJson<OptRow[]>, SWR_OPTS);
   const { data: vrp = NO_VRP, error: ve, isLoading: vrpLoading } = useSWR(vrpUrl, getJson<VrpRow[]>, SWR_OPTS);
   const { data: price = NO_PRICE, error: pe, isLoading: priceLoading } = useSWR(priceUrl, getJson<PriceBar[]>, SWR_OPTS);
-  // 现货 pane 是每个 tab 的 pane0,加载态须等它(连同 opt/vrp)一起完成。
-  return { opt, vrp, price, error: (oe ?? ve ?? pe) as Error | undefined, isLoading: optLoading || vrpLoading || priceLoading };
+  const { data: ts = NO_TS, error: te, isLoading: tsLoading } = useSWR(tsUrl, getJson<TsRow[]>, SWR_OPTS);
+  return {
+    opt, vrp, price, ts,
+    error: (oe ?? ve ?? pe ?? te) as Error | undefined,
+    isLoading: optLoading || vrpLoading || priceLoading || tsLoading,
+  };
 }
 
 // ── 图表引擎维度:持有 chart + series 句柄,负责建图与 series 同步 ──────────────
@@ -132,6 +144,9 @@ export function usePaneChart(
         s = spec.kind === 'candle'
           ? chart.addSeries(CandlestickSeries, { title: spec.title, upColor: '#22c55e', downColor: '#ef4444', borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444', priceLineVisible: false }, spec.pane)
           : chart.addSeries(LineSeries, { color: spec.color, title: spec.title, lineWidth: 2 }, spec.pane);
+        if (spec.kind === 'line' && spec.baseline !== undefined) {
+          s.createPriceLine({ price: spec.baseline, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '0' });
+        }
         seriesRef.current.set(spec.key, s);
       }
       s.setData(spec.data as any);

@@ -42,4 +42,23 @@ describe('daily job (options-only)', () => {
     expect(h.status).toBe('partial');
     expect(h.error).toContain('.VIX');
   });
+
+  test('vx_term_structure: 注入的 updater 跑完记一条 success', async () => {
+    await runDailyJob({
+      db,
+      vxUpdater: async () => ({ total: 7 }),
+    });
+    const h = getJobHealth(db).find((h) => h.name === 'vx_term_structure');
+    expect(h?.status).toBe('success');
+  });
+
+  test('vx_term_structure: updater 抛错记 failed', async () => {
+    await runDailyJob({
+      db,
+      vxUpdater: async () => { throw new Error('CBOE down'); },
+    });
+    const h = getJobHealth(db).find((h) => h.name === 'vx_term_structure');
+    expect(h?.status).toBe('failed');
+    expect(h?.error).toContain('CBOE down');
+  });
 });

@@ -44,7 +44,10 @@ function migrateOptionSource(db: Database): void {
 // 这样旧库迁完即满足不变式,且 VRP 的 RV 腿(只用 close)无需等回填就能算。
 // 须在 schema.sql 建出 price_eod 之后调用。幂等:INSERT OR IGNORE 不覆盖已抓的真 OHLC,
 // DELETE 只动现货 id;新库/已迁库再跑都是 no-op。
-const VOL_INDICES = ['VIX', 'VXN', 'GVZ', 'OVX', 'DVOL'];
+// market_series 的保留名单:波动率指数 + VX 期货期限结构序列。
+// ⚠️ migrateSpotToPriceEod 里的 DELETE 是「每次 migrate() 都跑的全量删除」(daily job 每天启动即 migrate),
+//    任何写进 market_series 的新 series_id 不进此名单 = 每日被无条件清掉,且增量抓取永不补回。
+const VOL_INDICES = ['VIX', 'VXN', 'GVZ', 'OVX', 'DVOL', 'VX1', 'VX3'];
 function migrateSpotToPriceEod(db: Database): void {
   // VIX 既是指数又是 .VIX tab 的现货:播种进 price_eod,但保留在 market_series(IV 腿)。
   // SPX/NDX 已无读取方,不播种,仅随 DELETE 清走。

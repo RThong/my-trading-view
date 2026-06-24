@@ -21,13 +21,13 @@ export function AssetChart({
 }) {
   const label = underlying.replace(/^\./, '');
   // 引用稳定(只随 vrpUnderlying 变,而它每实例固定),供下游 effect/memo 依赖。
-  const { seriesName, paneDefs, paneCount } = useMemo(() => paneConfig(vrpUnderlying), [vrpUnderlying]);
+  const { seriesName, paneDefs, paneCount } = useMemo(() => paneConfig(underlying, vrpUnderlying), [underlying, vrpUnderlying]);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { opt, vrp, price, error, isLoading } = useAssetData(underlying, vrpUnderlying);
+  const { opt, vrp, price, ts, error, isLoading } = useAssetData(underlying, vrpUnderlying);
   const specs = useMemo(
-    () => buildSpecs(opt, vrp, price, interval, vrpUnderlying, paneDefs, seriesName),
-    [opt, vrp, price, interval, vrpUnderlying, paneDefs, seriesName],
+    () => buildSpecs(opt, vrp, price, ts, interval, vrpUnderlying, paneDefs, seriesName),
+    [opt, vrp, price, ts, interval, vrpUnderlying, paneDefs, seriesName],
   );
   const { chartRef, seriesRef } = usePaneChart(containerRef, paneCount, specs);
   const { order, collapsed, move, toggle } = usePaneLayout(paneDefs, paneCount, chartRef, seriesRef);
