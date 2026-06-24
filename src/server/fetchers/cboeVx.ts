@@ -91,31 +91,30 @@ export function parseSettleCsv(text: string): CboeSettleRow[] {
 }
 
 /**
- * 对每个交易日,选取 expire_date 严格晚于该交易日、且日期*最早*的合约——
- * 这就是约定俗成的 front month(近月合约)。
+ * 对每个交易日,在 expire_date 严格晚于该交易日的合约里,按到期日升序取**第 n 近**。
+ * n=1 即约定俗成的 front month(近月)。合约数不足 n 的交易日被略过(不补零)。
  * 返回按交易日升序排列的数据行。
  */
-export function computeFrontMonth(
+export function computeNthMonth(
   contractRows: Array<{ expireDate: string; rows: CboeSettleRow[] }>,
+  n: number,
 ): Array<{ tradeDate: string; settle: number; expireDate: string }> {
-  // 先扁平化成 {交易日, 结算价, 到期日} 候选行(防御性地跳过到期之后的数据行),
-  // 再按交易日归并,每个交易日保留到期日最早的那条(即近月)。
-  const candidates = contractRows.flatMap((c) =>
-    c.rows
-      .filter((r) => c.expireDate > r.tradeDate)
-      .map((r) => ({ tradeDate: r.tradeDate, settle: r.settle, expireDate: c.expireDate })),
-  );
-
-  const byDate = new Map<string, { settle: number; expireDate: string }>();
-  for (const r of candidates) {
-    const existing = byDate.get(r.tradeDate);
-    if (!existing || r.expireDate < existing.expireDate) {
-      byDate.set(r.tradeDate, { settle: r.settle, expireDate: r.expireDate });
+  // 按交易日分组所有未到期候选(同一交易日天然有近月/次月/三月多份合约)。
+  const byDate = new Map<string, Array<{ settle: number; expireDate: string }>>();
+  for (const c of contractRows) {
+    for (const r of c.rows) {
+      if (c.expireDate <= r.tradeDate) continue; // 跳过到期当天及之后
+      const g = byDate.get(r.tradeDate) ?? [];
+      g.push({ settle: r.settle, expireDate: c.expireDate });
+      byDate.set(r.tradeDate, g);
     }
   }
-
+  // 组内按到期日升序 → 取第 n 近(index n-1);不足则该日无结果。
   return Array.from(byDate.entries())
-    .map(([tradeDate, v]) => ({ tradeDate, settle: v.settle, expireDate: v.expireDate }))
+    .flatMap(([tradeDate, g]) => {
+      const pick = g.sort((a, b) => a.expireDate.localeCompare(b.expireDate))[n - 1];
+      return pick ? [{ tradeDate, settle: pick.settle, expireDate: pick.expireDate }] : [];
+    })
     .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
 }
 
@@ -127,12 +126,10 @@ type FetchAllOpts = {
   onProgress?: (done: number, total: number) => void;
 };
 
-/**
- * 上层入口:下载合约、解析,并以 QuoteRow[] 形式返回 front-month 序列。
- * 全量回填时传 `freshSince: '1900-01-01'`;日常刷新时传一个较近的日期,
- * 这样就只处理仍在交易的合约和近期刚到期的合约(绝大部分历史数据不会变)。
- */
-export async function fetchVxFrontMonthSeries(opts: FetchAllOpts = {}): Promise<QuoteRow[]> {
+/** 下载合约列表 + 各合约 CSV,返回 {expireDate, rows} 数组(供 computeNthMonth 消费)。 */
+async function downloadContractRows(
+  opts: FetchAllOpts,
+): Promise<Array<{ expireDate: string; rows: CboeSettleRow[] }>> {
   const client = opts.client ?? defaultCboeVxClient();
   const freshSince = opts.freshSince ?? new Date().toISOString().slice(0, 10);
   const concurrency = opts.concurrency ?? 12;
@@ -144,9 +141,7 @@ export async function fetchVxFrontMonthSeries(opts: FetchAllOpts = {}): Promise<
   let done = 0;
   for (let i = 0; i < contracts.length; i += concurrency) {
     const batch = contracts.slice(i, i + concurrency);
-    const results = await Promise.allSettled(
-      batch.map((c) => client.fetchContractCsv(c)),
-    );
+    const results = await Promise.allSettled(batch.map((c) => client.fetchContractCsv(c)));
     results.forEach((res, idx) => {
       if (res.status === 'fulfilled') {
         contractRows.push({ expireDate: batch[idx].expireDate, rows: res.value });
@@ -155,12 +150,18 @@ export async function fetchVxFrontMonthSeries(opts: FetchAllOpts = {}): Promise<
       opts.onProgress?.(done, contracts.length);
     });
   }
+  return contractRows;
+}
 
-  const fm = computeFrontMonth(contractRows);
-  return fm
+/** 把第 n 近合约序列映射成 QuoteRow[](symbol='VX{n}'),套 HISTORY_START_DATE 过滤。 */
+function toQuoteRows(
+  contractRows: Array<{ expireDate: string; rows: CboeSettleRow[] }>,
+  n: number,
+): QuoteRow[] {
+  return computeNthMonth(contractRows, n)
     .filter((r) => r.tradeDate >= HISTORY_START_DATE)
     .map((r) => ({
-      symbol: 'VX1',
+      symbol: `VX${n}`,
       tradeDate: r.tradeDate,
       open: null,
       high: null,
@@ -169,3 +170,15 @@ export async function fetchVxFrontMonthSeries(opts: FetchAllOpts = {}): Promise<
       volume: null,
     }));
 }
+
+/**
+ * 上层入口:一次下载,产出 VX1(近月)与 VX3(第三近)两条序列。
+ * 全量回填传 `freshSince: '1900-01-01'`;日常刷新传较近日期(只处理仍在交易/近期到期的合约)。
+ */
+export async function fetchVxTermStructure(
+  opts: FetchAllOpts = {},
+): Promise<{ vx1: QuoteRow[]; vx3: QuoteRow[] }> {
+  const contractRows = await downloadContractRows(opts);
+  return { vx1: toQuoteRows(contractRows, 1), vx3: toQuoteRows(contractRows, 3) };
+}
+
