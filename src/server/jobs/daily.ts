@@ -4,7 +4,7 @@ console.debug = () => {};
 
 import type { Database } from 'bun:sqlite';
 import { openDb, migrate } from '../storage/db';
-import { startJobRun, finishJobRun } from '../storage/repository';
+import { startJobRun, finishJobRun, getTodaySucceededJobs } from '../storage/repository';
 import { OPTIONS_UNDERLYINGS, DERIBIT_UNDERLYINGS } from '../config';
 import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
 import { defaultDeribitOptionsClient } from '../fetchers/deribitOptions';
@@ -89,21 +89,29 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   }
 }
 
+// 一天多触发点(08/11/14/17/20)的「成功即止」守卫:这 4 组当天全部 success 过 → 跳过本次。
+// 任一组当天还没成功(含失败/部分)→ 照常跑,直到跑出一次全绿。
+const REQUIRED_JOBS = ['options', 'options_crypto', 'vrp_inputs', 'vx_term_structure'];
+
 // CLI 入口
 if (import.meta.main) {
   const db = openDb();
   migrate(db);
 
-  await runDailyJob({
-    db,
-    optionsUnderlyings: OPTIONS_UNDERLYINGS,
-    optionsClient: defaultMoomooOptionsClient(),
-    cryptoOptionsUnderlyings: DERIBIT_UNDERLYINGS,
-    cryptoOptionsClient: defaultDeribitOptionsClient(),
-    vrpInputsUpdater: updateVrpInputs,
-    vxUpdater: updateVxTermStructure,
-  });
-
+  const done = getTodaySucceededJobs(db);
+  if (REQUIRED_JOBS.every((j) => done.includes(j))) {
+    console.log(`今天 4 组已全部成功(${done.join(', ')}),跳过本次运行。`);
+  } else {
+    await runDailyJob({
+      db,
+      optionsUnderlyings: OPTIONS_UNDERLYINGS,
+      optionsClient: defaultMoomooOptionsClient(),
+      cryptoOptionsUnderlyings: DERIBIT_UNDERLYINGS,
+      cryptoOptionsClient: defaultDeribitOptionsClient(),
+      vrpInputsUpdater: updateVrpInputs,
+      vxUpdater: updateVxTermStructure,
+    });
+    console.log('Daily job complete.');
+  }
   db.close();
-  console.log('Daily job complete.');
 }

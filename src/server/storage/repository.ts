@@ -123,6 +123,19 @@ export function finishJobRun(db: Database, runId: number, params: FinishParams):
   );
 }
 
+/**
+ * 今天(本地日)已成功(status='success')的 job 名列表,去重。
+ * 「当天 4 组全部成功就跳过后续运行」守卫用:started_at 存 UTC ISO,
+ * 按 localtime 折算成本地日再和「今天」比较,只认 success(failed/partial 不算)。
+ */
+export function getTodaySucceededJobs(db: Database): string[] {
+  const rows = db.query(
+    `SELECT DISTINCT job_name FROM job_run
+     WHERE status = 'success' AND date(started_at, 'localtime') = date('now', 'localtime')`,
+  ).all() as Array<{ job_name: string }>;
+  return rows.map((r) => r.job_name);
+}
+
 export function insertOptions25Delta(db: Database, rows: Options25DeltaRow[]): void {
   if (rows.length === 0) return;
   const stmt = db.prepare(`
