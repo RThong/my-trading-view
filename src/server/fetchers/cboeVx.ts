@@ -135,7 +135,12 @@ async function downloadContractRows(
   const concurrency = opts.concurrency ?? 12;
 
   const allContracts = await client.fetchContractList();
-  const contracts = allContracts.filter((c) => c.expireDate >= freshSince);
+  // 只保留标准月度 VX 合约(VX1/VX2/VX3 期限结构的口径);剔除周度合约
+  // (symbol 形如 VX+VXT26/、VXT27/,VXT 后紧跟数字)。周度到期夹在月度之间、
+  // 结算价常与近月相同,混进来会让"第 N 近"取到周度而非第 N 月 —— 实测使近年 VX1≡VX3、价差恒 0。
+  // 标准月度 symbol 形如 VX+VXT/<月码><年>(VXT 后直接是 '/')。
+  const isStandardMonthly = (symbol: string) => !/VXT\d/.test(symbol);
+  const contracts = allContracts.filter((c) => isStandardMonthly(c.symbol) && c.expireDate >= freshSince);
 
   const contractRows: Array<{ expireDate: string; rows: CboeSettleRow[] }> = [];
   let done = 0;

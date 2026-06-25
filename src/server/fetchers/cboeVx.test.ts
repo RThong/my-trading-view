@@ -131,4 +131,25 @@ describe('fetchVxTermStructure', () => {
     expect(vx1[0]).toMatchObject({ symbol: 'VX1', tradeDate: '2025-01-02', close: 17.5 });
     expect(vx3[0]).toMatchObject({ symbol: 'VX3', tradeDate: '2025-01-02', close: 19.0 });
   });
+
+  test('ignores weekly VX futures — only ranks standard monthlies', async () => {
+    // 周度合约(symbol 形如 VXT26/、VXT27/,VXT 后带数字)到期夹在月度之间、结算价常与近月相同。
+    // 不剔除会污染"第 N 近"排序:VX3 会误取到周度(=18)而非真正的第三月(=20)。
+    const withWeeklies: CboeVxClient = {
+      fetchContractList: async () => [
+        { symbol: 'VX+VXT/N6', expireDate: '2025-07-22', csvUrl: 'm1' },   // 月度近月
+        { symbol: 'VX+VXT/Q6', expireDate: '2025-08-19', csvUrl: 'm2' },   // 月度次月
+        { symbol: 'VX+VXT/U6', expireDate: '2025-09-16', csvUrl: 'm3' },   // 月度三月
+        { symbol: 'VX+VXT26/N6', expireDate: '2025-07-01', csvUrl: 'w1' }, // 周度
+        { symbol: 'VX+VXT27/N6', expireDate: '2025-07-08', csvUrl: 'w2' }, // 周度
+      ],
+      fetchContractCsv: async (c) => {
+        const settle = { m1: 18, m2: 19, m3: 20, w1: 18, w2: 18 }[c.csvUrl]!;
+        return [{ tradeDate: '2025-06-25', settle }];
+      },
+    };
+    const { vx1, vx3 } = await fetchVxTermStructure({ client: withWeeklies, freshSince: '1900-01-01' });
+    expect(vx1[0].close).toBe(18); // 月度近月 N6
+    expect(vx3[0].close).toBe(20); // 月度第三月 U6,而非周度的 18
+  });
 });
