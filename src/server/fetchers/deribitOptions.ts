@@ -106,5 +106,9 @@ export function defaultDeribitOptionsClient(): OptionsChainClient {
         puts,
       };
     },
+    // BTC 24/7:按当前 UTC 日打戳(不跳周末、不认假期),区别于美股的 lastClosedTradingDate。
+    async getTradingDate(): Promise<string> {
+      return new Date().toISOString().slice(0, 10);
+    },
   };
 }
