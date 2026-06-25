@@ -22,7 +22,8 @@ case "${1:-status}" in
            launchctl bootstrap "gui/$(id -u)" "$PLIST" && echo "已重载 $PLIST" ;;
   logs)    tail -f "$LOG" ;;
   history) [[ -f "$DB" ]] || { echo "数据库不存在: $DB(还没跑过 job?)" >&2; exit 1; }
-           d="${2:-2}"; [[ "$d" =~ ^[0-9]+$ ]] || { echo "天数须为正整数,实得: $d" >&2; exit 1; }
+           # 须为正整数:≥1、无前导零(挡掉 0 → '--1 day' 静默空;挡掉 08/09 → $((d-1)) 八进制报错)。
+           d="${2:-2}"; [[ "$d" =~ ^[1-9][0-9]*$ ]] || { echo "天数须为正整数(≥1,无前导零),实得: $d" >&2; exit 1; }
            # 最近 d 个本地日(含今天):d=2 → 今天+昨天。
            sqlite3 -readonly -header -column "$DB" "
              SELECT datetime(started_at,'localtime') AS 本地时间, job_name AS 任务,
