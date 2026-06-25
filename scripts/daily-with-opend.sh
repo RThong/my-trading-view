@@ -60,3 +60,7 @@ fi
 
 echo "跑 daily job…"
 bun run job:daily
+
+# 跑完导出最近一月的期权/现货 CSV 到 reports/(固定文件名,供外部分析读同一路径)。
+echo "导出 CSV 报表…"
+scripts/export-csv.sh
