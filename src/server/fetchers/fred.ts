@@ -1,4 +1,5 @@
 import type { MacroRow } from '../storage/repository';
+import { fetchWithTimeout } from './http';
 
 type FetchFn = (url: string) => Promise<Response>;
 
@@ -8,7 +9,7 @@ type FredOpts = {
 };
 
 export function createFredFetcher(opts: FredOpts) {
-  const doFetch = opts.fetch ?? globalThis.fetch;
+  const doFetch = opts.fetch ?? fetchWithTimeout;
   const base = 'https://api.stlouisfed.org/fred/series/observations';
 
   return {

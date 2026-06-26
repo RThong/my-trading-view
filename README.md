@@ -57,11 +57,13 @@ bun run dev:web
 ## Collect data
 
 ```bash
-bun run job:daily               # snapshots SPY/QQQ/.VIX/TLT/GLD/USO (moomoo) + BTC (Deribit)
+bun run job:daily               # stocks: SPY/QQQ/.VIX/TLT/GLD/USO options (moomoo) + VRP inputs + VX term structure
+bun run job:crypto              # BTC options (Deribit) — separate, no OpenD needed
 ```
 
-OpenD must be running for the moomoo leg; if it's down, that job group fails and
-the Deribit (crypto) group still runs. Each underlying is independent.
+`job:daily` needs OpenD running for the moomoo leg; if it's down that group fails
+and the others still run. `job:crypto` is decoupled (Deribit public REST, runs
+every day incl. weekends). Each underlying is independent.
 
 ## Schedule the daily job (macOS)
 

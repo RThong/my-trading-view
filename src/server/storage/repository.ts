@@ -237,12 +237,15 @@ export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[]): v
 }
 
 export function getJobHealth(db: Database): JobStatus[] {
+  // 取每个 job 的「最新一条」run —— 不再过滤 finished_at IS NOT NULL,
+  // 否则正在 running(含卡死)的最新 run 会被隐藏,状态灯还亮着上次的 success。
+  // last_success_at 仍单独取最近一次 success,保留「上次绿是什么时候」。
   const rows = db.query(`
     SELECT job_name AS name, status, finished_at, error_message,
            (SELECT MAX(finished_at) FROM job_run jr2
             WHERE jr2.job_name = jr.job_name AND jr2.status = 'success') AS last_success_at
     FROM job_run jr
-    WHERE run_id = (SELECT MAX(run_id) FROM job_run jr3 WHERE jr3.job_name = jr.job_name AND jr3.finished_at IS NOT NULL)
+    WHERE run_id = (SELECT MAX(run_id) FROM job_run jr3 WHERE jr3.job_name = jr.job_name)
     ORDER BY name
   `).all() as Array<{
     name: string;

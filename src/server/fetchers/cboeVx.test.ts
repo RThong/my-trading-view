@@ -150,6 +150,20 @@ describe('fetchVxTermStructure', () => {
     expect(vx1.map((r) => r.tradeDate)).toEqual(['2026-06-24']); // 旧日期 2025-12-10 不应出现
   });
 
+  test('任一合约 CSV 下载失败 → 抛错,不用残缺集计算', async () => {
+    const oneFails: CboeVxClient = {
+      fetchContractList: async () => [
+        { symbol: 'VX+VXT/N6', expireDate: '2026-07-15', csvUrl: 'ok' },
+        { symbol: 'VX+VXT/Q6', expireDate: '2026-08-19', csvUrl: 'boom' },
+      ],
+      fetchContractCsv: async (c) => {
+        if (c.csvUrl === 'boom') throw new Error('HTTP 503');
+        return [{ tradeDate: '2026-06-24', settle: 19.0 }];
+      },
+    };
+    await expect(fetchVxTermStructure({ client: oneFails, freshSince: '1900-01-01' })).rejects.toThrow(/缺失/);
+  });
+
   test('ignores weekly VX futures — only ranks standard monthlies', async () => {
     // 周度合约(symbol 形如 VXT26/、VXT27/,VXT 后带数字)到期夹在月度之间、结算价常与近月相同。
     // 不剔除会污染"第 N 近"排序:VX3 会误取到周度(=18)而非真正的第三月(=20)。

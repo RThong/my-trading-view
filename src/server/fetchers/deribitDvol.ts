@@ -6,6 +6,8 @@
  * DVOL 是百分点(40 = 40%),与 VIX 同口径,直接存。
  * 分窗口分页:单次请求时间跨度过长可能被服务端截断,这里按 ~180 天滚动窗口拉全。
  */
+import { fetchWithTimeout } from './http';
+
 const BASE = 'https://www.deribit.com/api/v2/public';
 const WINDOW_DAYS = 180;
 
@@ -18,7 +20,7 @@ export async function fetchDvolHistory(
   for (let from = startMs; from < endMs; from += WINDOW_DAYS * 86400_000) {
     const to = Math.min(from + WINDOW_DAYS * 86400_000, endMs);
     const url = `${BASE}/get_volatility_index_data?currency=${currency}&start_timestamp=${from}&end_timestamp=${to}&resolution=1D`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) throw new Error(`Deribit DVOL → HTTP ${res.status}`);
     const j = (await res.json()) as { result?: { data?: number[][] }; error?: unknown };
     if (j.error) throw new Error(`Deribit DVOL → ${JSON.stringify(j.error)}`);

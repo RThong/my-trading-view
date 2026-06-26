@@ -10,6 +10,7 @@
     "build:web": "vite build",
     "job:daily": "bun run src/server/jobs/daily.ts",
     "job:daily:opend": "scripts/daily-with-opend.sh",
+    "job:crypto": "bun run src/server/jobs/cryptoDaily.ts",
     "db:migrate": "bun run src/server/storage/db.ts migrate",
     "test": "bun test"
   },

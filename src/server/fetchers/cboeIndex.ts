@@ -13,6 +13,7 @@
 
 import type { QuoteRow } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
+import { fetchWithTimeout } from './http';
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -32,7 +33,7 @@ export type CboeIndexClient = {
 };
 
 export function defaultCboeIndexClient(opts?: { fetch?: FetchFn }): CboeIndexClient {
-  const doFetch = opts?.fetch ?? (globalThis.fetch as FetchFn);
+  const doFetch = opts?.fetch ?? (fetchWithTimeout as FetchFn);
   return {
     async fetchHistory(cboeSymbol) {
       const url = `${CSV_BASE}${cboeSymbol}_History.csv`;

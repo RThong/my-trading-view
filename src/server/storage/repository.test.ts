@@ -36,6 +36,18 @@ describe('repository: job_run', () => {
     expect(after.error).toBe('boom');
     expect(after.lastSuccessAt).toBe(successAt);
   });
+
+  test('running 的最新 run 不被隐藏,lastSuccessAt 仍保留上次成功', () => {
+    const id1 = startJobRun(db, 'options');
+    finishJobRun(db, id1, { status: 'success', recordsWritten: 5 });
+    const successAt = getJobHealth(db).find(j => j.name === 'options')!.lastSuccessAt;
+
+    startJobRun(db, 'options'); // 新一轮开跑、尚未 finish(模拟卡死中的 running)
+
+    const job = getJobHealth(db).find(j => j.name === 'options')!;
+    expect(job.status).toBe('running');        // 不再显示成上次的 success
+    expect(job.lastSuccessAt).toBe(successAt);  // 上次绿是什么时候仍可见
+  });
 });
 
 describe('getTodaySucceededJobs', () => {

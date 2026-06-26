@@ -21,6 +21,7 @@
 
 import type { QuoteRow } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
+import { fetchWithTimeout } from './http';
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -46,7 +47,7 @@ export type CboeVxClient = {
 };
 
 export function defaultCboeVxClient(opts?: { fetch?: FetchFn }): CboeVxClient {
-  const doFetch = opts?.fetch ?? (globalThis.fetch as FetchFn);
+  const doFetch = opts?.fetch ?? (fetchWithTimeout as FetchFn);
   return {
     async fetchContractList() {
       const res = await doFetch(API_URL, { headers: { 'User-Agent': UA } });
@@ -143,6 +144,7 @@ async function downloadContractRows(
   const contracts = allContracts.filter((c) => isStandardMonthly(c.symbol) && c.expireDate >= freshSince);
 
   const contractRows: Array<{ expireDate: string; rows: CboeSettleRow[] }> = [];
+  const failed: string[] = [];
   let done = 0;
   for (let i = 0; i < contracts.length; i += concurrency) {
     const batch = contracts.slice(i, i + concurrency);
@@ -150,10 +152,18 @@ async function downloadContractRows(
     results.forEach((res, idx) => {
       if (res.status === 'fulfilled') {
         contractRows.push({ expireDate: batch[idx].expireDate, rows: res.value });
+      } else {
+        failed.push(batch[idx].symbol);
       }
       done++;
       opts.onProgress?.(done, contracts.length);
     });
+  }
+  // 任一合约缺失就抛错让 job 记 failed:computeNthMonth 在残缺合约集上排名会把
+  // 远月误当近月(近月 CSV 没下来时尤甚),宁可整次失败、靠多触发守卫重试,
+  // 也不要用不完整的合约宇宙 upsert 出系统性错误的期限结构。
+  if (failed.length > 0) {
+    throw new Error(`CBOE VX 合约 CSV 缺失 ${failed.length} 份,拒绝用残缺集计算:${failed.join(', ')}`);
   }
   return contractRows;
 }

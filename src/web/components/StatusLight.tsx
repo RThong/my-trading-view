@@ -23,7 +23,11 @@ export function StatusLight() {
   const [jobs, setJobs] = useState<JobStatus[]>([]);
 
   useEffect(() => {
-    api.api.health.$get().then(r => r.json()).then(data => setJobs(data.jobs));
+    // 低频轮询:dashboard 开着一整天,cron 跑完后状态灯能自动转绿,不必手动刷页面。
+    const load = () => api.api.health.$get().then(r => r.json()).then(data => setJobs(data.jobs));
+    load();
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
   }, []);
 
   const tone = overallTone(jobs);
