@@ -129,9 +129,9 @@ type FetchAllOpts = {
 /** 下载合约列表 + 各合约 CSV,返回 {expireDate, rows} 数组(供 computeNthMonth 消费)。 */
 async function downloadContractRows(
   opts: FetchAllOpts,
+  freshSince: string,
 ): Promise<Array<{ expireDate: string; rows: CboeSettleRow[] }>> {
   const client = opts.client ?? defaultCboeVxClient();
-  const freshSince = opts.freshSince ?? new Date().toISOString().slice(0, 10);
   const concurrency = opts.concurrency ?? 12;
 
   const allContracts = await client.fetchContractList();
@@ -158,13 +158,20 @@ async function downloadContractRows(
   return contractRows;
 }
 
-/** 把第 n 近合约序列映射成 QuoteRow[](symbol='VX{n}'),套 HISTORY_START_DATE 过滤。 */
+/**
+ * 把第 n 近合约序列映射成 QuoteRow[](symbol='VX{n}')。
+ * 下界取 max(HISTORY_START_DATE, freshSince):增量时下载集只剩远月合约,
+ * 对 freshSince 之前的交易日会把远月误算成近月 —— 故只产出 >= freshSince 的新行,
+ * 旧日期保留全量回填时的正确值。全量回填(freshSince='1900-01-01')→ 退化为 HISTORY_START_DATE。
+ */
 function toQuoteRows(
   contractRows: Array<{ expireDate: string; rows: CboeSettleRow[] }>,
   n: number,
+  freshSince: string,
 ): QuoteRow[] {
+  const minDate = freshSince > HISTORY_START_DATE ? freshSince : HISTORY_START_DATE;
   return computeNthMonth(contractRows, n)
-    .filter((r) => r.tradeDate >= HISTORY_START_DATE)
+    .filter((r) => r.tradeDate >= minDate)
     .map((r) => ({
       symbol: `VX${n}`,
       tradeDate: r.tradeDate,
@@ -183,7 +190,8 @@ function toQuoteRows(
 export async function fetchVxTermStructure(
   opts: FetchAllOpts = {},
 ): Promise<{ vx1: QuoteRow[]; vx3: QuoteRow[] }> {
-  const contractRows = await downloadContractRows(opts);
-  return { vx1: toQuoteRows(contractRows, 1), vx3: toQuoteRows(contractRows, 3) };
+  const freshSince = opts.freshSince ?? new Date().toISOString().slice(0, 10);
+  const contractRows = await downloadContractRows(opts, freshSince);
+  return { vx1: toQuoteRows(contractRows, 1, freshSince), vx3: toQuoteRows(contractRows, 3, freshSince) };
 }
 

@@ -132,6 +132,24 @@ describe('fetchVxTermStructure', () => {
     expect(vx3[0]).toMatchObject({ symbol: 'VX3', tradeDate: '2025-01-02', close: 19.0 });
   });
 
+  test('增量刷新不污染旧日期:freshSince 之前的交易日不产出', async () => {
+    // 增量时 freshSince ≈ 今天,下载集只剩远月合约(近月已到期被排除)。
+    // 这份远月合约的 CSV 仍覆盖几个月前的交易日 —— 若按所有历史日产出,
+    // 就会把"过去那天的近月"错算成这份远月(值偏高、几乎不动),覆盖掉正确历史。
+    // 增量只应产出 tradeDate >= freshSince 的新行(那些日期下载集里确有真近月)。
+    const farOnly: CboeVxClient = {
+      fetchContractList: async () => [
+        { symbol: 'VX+VXT/N6', expireDate: '2026-07-15', csvUrl: 'far' }, // 远月,>= freshSince 被保留
+      ],
+      fetchContractCsv: async () => [
+        { tradeDate: '2025-12-10', settle: 21.0 }, // 旧日期:这天它是 7 个月后的远月,不是近月
+        { tradeDate: '2026-06-24', settle: 19.0 }, // freshSince 之后:这天它确是近月
+      ],
+    };
+    const { vx1 } = await fetchVxTermStructure({ client: farOnly, freshSince: '2026-06-01' });
+    expect(vx1.map((r) => r.tradeDate)).toEqual(['2026-06-24']); // 旧日期 2025-12-10 不应出现
+  });
+
   test('ignores weekly VX futures — only ranks standard monthlies', async () => {
     // 周度合约(symbol 形如 VXT26/、VXT27/,VXT 后带数字)到期夹在月度之间、结算价常与近月相同。
     // 不剔除会污染"第 N 近"排序:VX3 会误取到周度(=18)而非真正的第三月(=20)。
