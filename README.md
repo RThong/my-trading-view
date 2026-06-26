@@ -65,12 +65,15 @@ the Deribit (crypto) group still runs. Each underlying is independent.
 
 ## Schedule the daily job (macOS)
 
-```bash
-./scripts/install-launchd.sh
-```
+Two hand-managed `launchd` agents (plists in `~/Library/LaunchAgents`, not in git):
 
-Installs a `launchd` agent that runs `bun run job:daily` daily at 08:00 local
-time. Logs go to `data/logs/`. Uninstall instructions are printed by the installer.
+- `com.mtv.daily` — stocks via OpenD, Tue–Sat at 10/13/16/19/22 local.
+- `com.mtv.crypto` — BTC via Deribit (no OpenD), every day at the same hours.
+
+Each runs 5×/day; the job's own "succeed once, then skip" guard means it stops
+after the first all-green run. Logs go to `data/logs/`. After editing a plist,
+reload with `launchctl bootout gui/$(id -u)/<label>` then `bootstrap gui/$(id -u) <plist>`.
+Check recent runs with `./scripts/cron.sh history`.
 
 ## Layout
 
