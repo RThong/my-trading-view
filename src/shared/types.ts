@@ -16,3 +16,20 @@ export type OptionIVPoint = {
   putIv: number;
   skew: number;
 };
+
+export type Position = {
+  code: string;
+  name: string;
+  qty: number | null;
+  costPrice: number | null;
+  price: number | null;      // 现价
+  marketVal: number | null;  // 市值(proto val)
+  plVal: number | null;      // 浮动盈亏(proto plVal)
+  plRatio: number | null;    // 盈亏比例(proto plRatio)
+};
+
+export type PositionsResponse = {
+  accId: number;
+  asOf: string;              // ISO 时间戳
+  positions: Position[];
+};
