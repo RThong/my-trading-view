@@ -13,7 +13,6 @@ const app = new Hono()
   .route('/price', priceRoute)
   .route('/term-structure', termStructureRoute);
 
-export type AppType = typeof app;
 export default {
   port: 3000,
   fetch: app.fetch,

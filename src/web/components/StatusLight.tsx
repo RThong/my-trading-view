@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../lib/client';
-import type { JobStatus } from '../../shared/types';
+import type { JobStatus, HealthResponse } from '../../shared/types';
 
 type Tone = 'green' | 'yellow' | 'red' | 'gray';
 
@@ -24,7 +23,7 @@ export function StatusLight() {
 
   useEffect(() => {
     // 低频轮询:dashboard 开着一整天,cron 跑完后状态灯能自动转绿,不必手动刷页面。
-    const load = () => api.api.health.$get().then(r => r.json()).then(data => setJobs(data.jobs));
+    const load = () => fetch('/api/health').then(r => r.json() as Promise<HealthResponse>).then(data => setJobs(data.jobs));
     load();
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
