@@ -11,18 +11,21 @@ import { getTodaySucceededJobs } from '../storage/repository';
 import { runDailyJob } from './daily';
 import { DERIBIT_UNDERLYINGS } from '../config';
 import { defaultDeribitOptionsClient } from '../fetchers/deribitOptions';
+import { updateBtcPrice } from './btcPrice';
 
 if (import.meta.main) {
   const db = openDb();
   migrate(db);
 
-  if (getTodaySucceededJobs(db).includes('options_crypto')) {
-    console.log('今天 options_crypto 已成功,跳过本次运行。');
+  const REQUIRED = ['options_crypto', 'btc_price'];
+  if (REQUIRED.every((j) => getTodaySucceededJobs(db).includes(j))) {
+    console.log('今天 加密期权 + BTC 现货 均已成功,跳过本次运行。');
   } else {
     await runDailyJob({
       db,
       cryptoOptionsUnderlyings: DERIBIT_UNDERLYINGS,
       cryptoOptionsClient: defaultDeribitOptionsClient(),
+      btcPriceUpdater: updateBtcPrice,
     });
     console.log('Crypto job complete.');
   }
