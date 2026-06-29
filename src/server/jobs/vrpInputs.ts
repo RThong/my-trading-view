@@ -1,11 +1,12 @@
 /**
  * 更新 VRP 输入 + 标的现货到库:
  *   隐含腿 → market_series(close):VIX/VXN/GVZ/OVX(CBOE)+ DVOL(Deribit)
- *   标的现货 → price_eod(OHLC):SPY/QQQ/GLD/USO/TLT/BTC + VIX
+ *   标的现货 → price_eod(OHLC):SPY/QQQ/GLD/USO/TLT + VIX
  *     - ETF(SPY/QQQ/GLD/USO/TLT):moomoo 历史 K 线为主源(准、前复权),Yahoo 降级
- *     - BTC:Deribit(BTC-PERPETUAL)主源,Yahoo(BTC-USD)降级
  *     - VIX:CBOE(它既是 SPY 的 IV 腿,又是 .VIX tab 的现货,故两表都写)
- *   VRP 的 RV 腿读 price_eod 的 close;基准对应 VIX↔SPY、VXN↔QQQ、GVZ↔GLD、OVX↔USO、DVOL↔BTC。
+ *     - BTC 现货:已移出本 job → cryptoDaily 的 btc_price 组(7 天跑,含周末)。
+ *   VRP 的 RV 腿读 price_eod 的 close;基准对应 VIX↔SPY、VXN↔QQQ、GVZ↔GLD、OVX↔USO、DVOL↔BTC
+ *   (BTC 的 price_eod 由 cryptoDaily 填,本 job 仍只负责读时无关的隐含腿/ETF 现货)。
  *   moomoo 主源需 OpenD;没起时 ETF 腿整体回退 Yahoo,管线仍跑通。
  *
  * `updateVrpInputs` 增量更新(按各序列已存最新日期续抓),库空时自动从 HISTORY_START_DATE
@@ -19,7 +20,6 @@ import { insertMarketSeries, getLatestMarketDate, insertPriceEod, getLatestPrice
 import { createYahooFetcher } from '../fetchers/yahoo';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 import { fetchDvolHistory } from '../fetchers/deribitDvol';
-import { fetchBtcDailyBars } from '../fetchers/deribitBtcPrice';
 import { connect, disconnect, envConfig } from '../fetchers/moomooClient';
 import { fetchDailyBars, type Bar } from '../fetchers/moomooHistoryKL';
 import { HISTORY_START_DATE } from '../config';
@@ -104,7 +104,6 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
   } finally {
     if (mooWs) disconnect(mooWs);
   }
-  await priceLeg('BTC', (since) => fetchBtcDailyBars(since.getTime(), Date.now()), 'deribit', 'BTC-USD');
 
   return { total, succeeded, failures };
 }

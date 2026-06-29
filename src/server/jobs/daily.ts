@@ -23,6 +23,8 @@ type RunDailyJobOpts = {
   vrpInputsUpdater?: (db: Database) => Promise<{ total: number; succeeded: number; failures: string[] }>;
   /** VX 期限结构(VX1/VX3)更新器(注入式;CLI 传 updateVxTermStructure,测试省略以免联网)。 */
   vxUpdater?: (db: Database) => Promise<{ total: number }>;
+  /** BTC 现货日 bar 更新器(注入式;cryptoDaily 传 updateBtcPrice,测试省略以免联网)。返回写入行数。 */
+  btcPriceUpdater?: (db: Database) => Promise<number>;
 };
 
 /** 跑一组期权快照并记一个 job_run(单标的失败 → partial,全失败 → failed)。 */
@@ -84,6 +86,17 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       finishJobRun(opts.db, vxRun, { status: 'success', recordsWritten: total });
     } catch (err) {
       finishJobRun(opts.db, vxRun, { status: 'failed', error: (err as Error).message });
+    }
+  }
+
+  // btc_price 分组:BTC 现货日 bar(Deribit 主源 / Yahoo 降级;成功/失败两态)。
+  if (opts.btcPriceUpdater) {
+    const btcRun = startJobRun(opts.db, 'btc_price');
+    try {
+      const total = await opts.btcPriceUpdater(opts.db);
+      finishJobRun(opts.db, btcRun, { status: 'success', recordsWritten: total });
+    } catch (err) {
+      finishJobRun(opts.db, btcRun, { status: 'failed', error: (err as Error).message });
     }
   }
 }
