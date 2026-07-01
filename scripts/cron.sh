@@ -27,9 +27,19 @@ case "${1:-status}" in
            # 最近 d 个本地日(含今天):d=2 → 今天+昨天。
            # 成功即止:一天里每个 job 可能跑多次(失败重试到成功),只显示每(本地日, job)
            # 的最后一次(run_id 最大)= 当天该组的最终结果,省得翻一堆失败尝试。
-           sqlite3 -readonly -header -column "$DB" "
-             SELECT datetime(started_at,'localtime') AS 本地时间, job_name AS 任务,
-                    status AS 状态, records_written AS 写入, error_message AS 错误
+           # 品类中文 + 结果 ✅/⚠️/❌ + 时间,box 边框表格。
+           sqlite3 -readonly -box "$DB" "
+             SELECT
+               CASE job_name
+                 WHEN 'options'           THEN '美股期权'
+                 WHEN 'options_crypto'    THEN 'BTC 期权'
+                 WHEN 'vrp_inputs'        THEN 'VRP 输入'
+                 WHEN 'vx_term_structure' THEN 'VX 期限结构'
+                 WHEN 'btc_price'         THEN 'BTC 现货'
+                 ELSE job_name
+               END AS 品类,
+               CASE status WHEN 'success' THEN '✅' WHEN 'partial' THEN '⚠️' ELSE '❌' END AS 结果,
+               datetime(started_at,'localtime') AS 时间
              FROM job_run
              WHERE run_id IN (
                SELECT MAX(run_id) FROM job_run
