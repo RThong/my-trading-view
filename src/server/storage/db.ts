@@ -9,6 +9,11 @@ export function openDb(path: string = DB_PATH): Database {
   mkdirSync(dirname(path), { recursive: true });
 
   const db = new Database(path);
+  // 必须**第一个**设:股票(com.mtv.daily)与加密(com.mtv.crypto)是两个独立 job、同点触发,
+  // 会并发开/写同一个库。连 journal_mode=WAL / WAL 恢复(实测见过 SQLITE_BUSY_RECOVERY)本身
+  // 都要抢锁 —— busy_timeout 若设在它们之后就兜不住,open 期就会 0ms 崩。放最前,让后续所有
+  // 操作(含建表/迁移/批量 upsert)撞锁时等待而非瞬崩。
+  db.exec('PRAGMA busy_timeout = 30000;');
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
 
