@@ -4,6 +4,14 @@ import type { Interval } from '../hooks/interval';
 export type LinePoint = { time: string; value: number };
 export type Bar = { time: string; open: number; high: number; low: number; close: number };
 
+/** 竖线处相对前一根/点的变化。prev 无(第一根)→ null;prev=0 → 有 delta 无 pct(除零)。
+ *  pct 用 |prev| 做分母,保证符号跟随 delta(本盘有会穿零的序列:skew / VRP / V1−V3)。 */
+export function changeStats(cur: number, prev: number | undefined): { delta: number; pct: number | null } | null {
+  if (prev === undefined) return null;
+  const delta = cur - prev;
+  return { delta, pct: prev === 0 ? null : (delta / Math.abs(prev)) * 100 };
+}
+
 /** 把 lightweight-charts 的 Time(BusinessDay 对象 / 字符串 / 时间戳)统一格式化成 YYYY-MM-DD。 */
 function fmtDate(time: unknown): string {
   if (typeof time === 'string') return time; // 已是 'YYYY-MM-DD'

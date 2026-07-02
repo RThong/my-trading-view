@@ -31,7 +31,7 @@ export function AssetChart({
   );
   const { chartRef, seriesRef } = usePaneChart(containerRef, paneCount, specs);
   const { order, collapsed, move, toggle } = usePaneLayout(paneDefs, paneCount, chartRef, seriesRef);
-  const { vals, hovering, tops } = useCrosshairLegend(chartRef, seriesRef, containerRef, order, collapsed);
+  const { cells, hovering, tops } = useCrosshairLegend(chartRef, seriesRef, containerRef, order, collapsed);
 
   return (
     <div className="relative flex h-full w-full flex-col">
@@ -66,10 +66,21 @@ export function AssetChart({
           return (
             <div key={key} className="pointer-events-none absolute left-2 z-10 text-xs leading-tight" style={{ top: (tops[i] ?? 0) + 2 }}>
               {def.series.map((sk) => {
-                const v = vals[sk];
+                const c = cells[sk];
+                const color = COLORS[sk as keyof typeof COLORS];
+                if (!c) return <div key={sk} style={{ color }}>{seriesName[sk]} —</div>;
+                const dColor = c.delta == null ? undefined : c.delta > 0 ? '#22c55e' : c.delta < 0 ? '#ef4444' : undefined;
+                const dTxt = c.delta == null ? null
+                  : `${c.delta >= 0 ? '+' : ''}${c.delta.toFixed(2)}${c.pct == null ? '' : ` (${c.pct >= 0 ? '+' : ''}${c.pct.toFixed(2)}%)`}`;
+                // O/H/L/C 字母保持中性,只有数字按涨跌上色(对齐 TradingView);线的值保持 series 原色。
+                const num = (n: number) => <span style={{ color: dColor }}>{n.toFixed(2)}</span>;
                 return (
-                  <div key={sk} style={{ color: COLORS[sk as keyof typeof COLORS] }}>
-                    {seriesName[sk]} {v == null ? '—' : v.toFixed(2)}
+                  <div key={sk} style={{ color }}>
+                    {seriesName[sk]}{' '}
+                    {c.kind === 'candle'
+                      ? <>O {num(c.open)} H {num(c.high)} L {num(c.low)} C {num(c.close)}</>
+                      : c.value.toFixed(2)}
+                    {dTxt && <span style={{ color: dColor }}> {dTxt}</span>}
                   </div>
                 );
               })}
