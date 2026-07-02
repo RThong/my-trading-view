@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { createChart, LineSeries, CandlestickSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import type { Interval } from '../hooks/interval';
-import { CHART_OPTIONS, aggregate, aggregateBars, type LinePoint, type Bar } from '../lib/chart';
+import { CHART_OPTIONS, aggregate, aggregateBars, changeStats, type LinePoint, type Bar } from '../lib/chart';
 
 export type OptRow = { date: string; callIv: number; putIv: number; skew: number };
 export type VrpRow = { date: string; iv: number; rv: number; vrp: number };
@@ -15,6 +15,9 @@ export type PaneDef = { key: string; label: string; series: string[] };
 export type LineSpec = { key: string; pane: number; kind: 'line'; color: string; title: string; data: LinePoint[]; baseline?: number };
 export type CandleSpec = { key: string; pane: number; kind: 'candle'; title: string; data: Bar[] };
 export type Spec = LineSpec | CandleSpec;
+export type LegendCell =
+  | { kind: 'candle'; open: number; high: number; low: number; close: number; delta: number | null; pct: number | null }
+  | { kind: 'line'; value: number; delta: number | null; pct: number | null };
 type AnySeries = ISeriesApi<'Line' | 'Candlestick'>;
 
 export const COLORS = {
@@ -218,21 +221,31 @@ export function useCrosshairLegend(
   containerRef: React.RefObject<HTMLDivElement | null>,
   order: string[], collapsed: Set<string>,
 ) {
-  const [vals, setVals] = useState<Record<string, number>>({}); // 竖线处各 series 值
-  const [tops, setTops] = useState<number[]>([]);                // 各 pane 顶部像素偏移
+  const [cells, setCells] = useState<Record<string, LegendCell>>({}); // 竖线处各 series 的图例格
+  const [tops, setTops] = useState<number[]>([]);                      // 各 pane 顶部像素偏移
 
-  // 竖线滑动:从 crosshair 读各 series 在该时间点的值;蜡烛取 close。不悬停时清空。
+  // 竖线滑动:读各 series 当前点(蜡烛 OHLC / 线 value)+ 用 logical-1 取前值算 Δ/Δ%。不悬停 → 空。
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    const handler = (param: { seriesData: Map<unknown, unknown> }) => {
-      const next: Record<string, number> = {};
+    const handler = (param: { seriesData: Map<unknown, unknown>; logical?: number }) => {
+      const next: Record<string, LegendCell> = {};
+      const prevIdx = param.logical == null ? undefined : param.logical - 1;
       for (const [key, s] of seriesRef.current) {
-        const d = param.seriesData.get(s) as { value?: number; close?: number } | undefined;
-        const v = d?.value ?? d?.close;
-        if (typeof v === 'number') next[key] = v;
+        const d = param.seriesData.get(s) as
+          { value?: number; open?: number; high?: number; low?: number; close?: number } | undefined;
+        if (!d) continue;
+        const prev = prevIdx == null ? undefined
+          : (s.dataByIndex(prevIdx) as { value?: number; close?: number } | null);
+        if (typeof d.open === 'number' && typeof d.close === 'number') {
+          const st = changeStats(d.close, typeof prev?.close === 'number' ? prev.close : undefined);
+          next[key] = { kind: 'candle', open: d.open, high: d.high!, low: d.low!, close: d.close, delta: st?.delta ?? null, pct: st?.pct ?? null };
+        } else if (typeof d.value === 'number') {
+          const st = changeStats(d.value, typeof prev?.value === 'number' ? prev.value : undefined);
+          next[key] = { kind: 'line', value: d.value, delta: st?.delta ?? null, pct: st?.pct ?? null };
+        }
       }
-      setVals(next);
+      setCells(next);
     };
     chart.subscribeCrosshairMove(handler);
     return () => chart.unsubscribeCrosshairMove(handler);
@@ -256,6 +269,6 @@ export function useCrosshairLegend(
     return () => ro.disconnect();
   }, [order, collapsed, chartRef, containerRef]);
 
-  const hovering = Object.keys(vals).length > 0; // 鼠标在图内、crosshair 有值
-  return { vals, hovering, tops };
+  const hovering = Object.keys(cells).length > 0; // 鼠标在图内、crosshair 有值
+  return { cells, hovering, tops };
 }
