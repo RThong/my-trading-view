@@ -4,7 +4,7 @@
 #   ./scripts/cron.sh run      立刻手动跑一次(测试用)
 #   ./scripts/cron.sh reload   改完 plist 后重载生效
 #   ./scripts/cron.sh logs     跟踪日志(Ctrl-C 退出)
-#   ./scripts/cron.sh history [天数]  看最近 N 天运行记录(默认 2 天;每天每组只显示最终结果)
+#   ./scripts/cron.sh history  各品类一行:结果 + 最近运行时间 + 最近成功时间
 #   ./scripts/cron.sh on|off   永久开启/关闭自动跑
 set -euo pipefail
 
@@ -22,31 +22,30 @@ case "${1:-status}" in
            launchctl bootstrap "gui/$(id -u)" "$PLIST" && echo "已重载 $PLIST" ;;
   logs)    tail -f "$LOG" ;;
   history) [[ -f "$DB" ]] || { echo "数据库不存在: $DB(还没跑过 job?)" >&2; exit 1; }
-           # 须为正整数:≥1、无前导零(挡掉 0 → '--1 day' 静默空;挡掉 08/09 → $((d-1)) 八进制报错)。
-           d="${2:-2}"; [[ "$d" =~ ^[1-9][0-9]*$ ]] || { echo "天数须为正整数(≥1,无前导零),实得: $d" >&2; exit 1; }
-           # 最近 d 个本地日(含今天):d=2 → 今天+昨天。
-           # 成功即止:一天里每个 job 可能跑多次(失败重试到成功),只显示每(本地日, job)
-           # 的最后一次(run_id 最大)= 当天该组的最终结果,省得翻一堆失败尝试。
-           # 品类中文 + 结果 ✅/⚠️/❌ + 时间,box 边框表格。
+           # 一类一行(跨全部历史去重):结果=最近一次运行的状态;两列时间——
+           # 「最近运行」=该组最后一次跑的时刻(不论成败);「最近成功」=最后一次 success 的时刻
+           # (从没成过显示 —)。失败时一眼看出「上次好的数据到哪一刻」。box 边框表格。
            sqlite3 -readonly -box "$DB" "
              SELECT
-               CASE job_name
+               CASE last.job_name
                  WHEN 'options'           THEN '美股期权'
                  WHEN 'options_crypto'    THEN 'BTC 期权'
                  WHEN 'vrp_inputs'        THEN 'VRP 输入'
                  WHEN 'vx_term_structure' THEN 'VX 期限结构'
                  WHEN 'btc_price'         THEN 'BTC 现货'
-                 ELSE job_name
+                 ELSE last.job_name
                END AS 品类,
-               CASE status WHEN 'success' THEN '✅' WHEN 'partial' THEN '⚠️' ELSE '❌' END AS 结果,
-               datetime(started_at,'localtime') AS 时间
-             FROM job_run
-             WHERE run_id IN (
-               SELECT MAX(run_id) FROM job_run
-               WHERE date(started_at,'localtime') >= date('now','localtime','-$((d-1)) day')
-               GROUP BY date(started_at,'localtime'), job_name
-             )
-             ORDER BY started_at DESC, run_id DESC;" ;;
+               CASE last.status WHEN 'success' THEN '✅' WHEN 'partial' THEN '⚠️' ELSE '❌' END AS 结果,
+               datetime(last.started_at,'localtime') AS 最近运行,
+               COALESCE(datetime(succ.t,'localtime'), '—') AS 最近成功
+             FROM (
+               SELECT job_name, started_at, status FROM job_run
+               WHERE run_id IN (SELECT MAX(run_id) FROM job_run GROUP BY job_name)
+             ) last
+             LEFT JOIN (
+               SELECT job_name, MAX(started_at) t FROM job_run WHERE status='success' GROUP BY job_name
+             ) succ ON succ.job_name = last.job_name
+             ORDER BY last.started_at DESC;" ;;
   on)      launchctl enable "$TARGET" && echo "已启用自动跑" ;;
   off)     launchctl disable "$TARGET" && echo "已关闭自动跑(重启也不会再跑)" ;;
   *)       echo "用法: $0 {status|run|reload|logs|history|on|off}" >&2; exit 1 ;;
