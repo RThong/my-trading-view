@@ -3,7 +3,7 @@
 // 切 tab 不卸载),所以这里所有 effect 都是「挂载建/卸载销」,不再按标的 reset。
 import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
-import { createChart, LineSeries, CandlestickSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
+import { createChart, LineSeries, CandlestickSeries, HistogramSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import type { Interval } from '../hooks/interval';
 import { CHART_OPTIONS, aggregate, aggregateBars, changeStats, type LinePoint, type Bar } from '../lib/chart';
 
@@ -14,17 +14,20 @@ export type TsRow = { date: string; vx1: number; vx3: number; spread: number };
 export type PaneDef = { key: string; label: string; series: string[] };
 export type LineSpec = { key: string; pane: number; kind: 'line'; color: string; title: string; data: LinePoint[]; baseline?: number };
 export type CandleSpec = { key: string; pane: number; kind: 'candle'; title: string; data: Bar[] };
-export type Spec = LineSpec | CandleSpec;
+export type HistoPoint = { time: string; value: number; color: string };
+export type HistoSpec = { key: string; pane: number; kind: 'histogram'; title: string; data: HistoPoint[]; baseline?: number };
+export type Spec = LineSpec | CandleSpec | HistoSpec;
 export type LegendCell =
   | { kind: 'candle'; open: number; high: number; low: number; close: number; delta: number | null; pct: number | null }
   | { kind: 'line'; value: number; delta: number | null; pct: number | null };
-type AnySeries = ISeriesApi<'Line' | 'Candlestick'>;
+type AnySeries = ISeriesApi<'Line' | 'Candlestick' | 'Histogram'>;
 
 export const COLORS = {
   price: '#d4d4d8', // 现货图例文字(蜡烛本身用涨绿跌红)
   call: '#22c55e', put: '#ec4899', skew: '#3b82f6',
   iv: '#3b82f6', rv: '#f59e0b', vrp: '#22c55e',
-  v1v3: '#a855f7',
+  v1v3: '#a855f7',                       // 图例文字用(柱身按符号上色,见下)
+  back: '#22c55e', contango: '#ef4444', // V1−V3 柱:正=backwardation 绿,负=contango 红
 };
 const HISTORY_DAYS = 3650;
 
@@ -94,7 +97,11 @@ export function buildSpecs(
       line('rv', vrp, 'rv', COLORS.rv),
       line('vrp', vrp, 'vrp', COLORS.vrp),
     ] : []),
-    ...(paneOf('v1v3') >= 0 ? [{ ...line('v1v3', ts, 'spread', COLORS.v1v3), baseline: 0 }] : []),
+    // V1−V3 柱状图:每根按符号上色(正=backwardation 绿,负=contango 红),0 轴分界。
+    ...(paneOf('v1v3') >= 0 ? [{
+      key: 'v1v3', pane: paneOf('v1v3'), kind: 'histogram' as const, title: seriesName.v1v3, baseline: 0,
+      data: aggregate(toLine(ts, 'spread'), interval).map((p) => ({ ...p, color: p.value >= 0 ? COLORS.back : COLORS.contango })),
+    }] : []),
   ];
 }
 
@@ -146,8 +153,10 @@ export function usePaneChart(
       if (!s) {
         s = spec.kind === 'candle'
           ? chart.addSeries(CandlestickSeries, { title: spec.title, upColor: '#22c55e', downColor: '#ef4444', borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444', priceLineVisible: false }, spec.pane)
+          : spec.kind === 'histogram'
+          ? chart.addSeries(HistogramSeries, { title: spec.title, base: 0, priceLineVisible: false }, spec.pane)
           : chart.addSeries(LineSeries, { color: spec.color, title: spec.title, lineWidth: 2 }, spec.pane);
-        if (spec.kind === 'line' && spec.baseline !== undefined) {
+        if (spec.kind !== 'candle' && spec.baseline !== undefined) {
           s.createPriceLine({ price: spec.baseline, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '0' });
         }
         seriesRef.current.set(spec.key, s);
