@@ -22,7 +22,7 @@ in one local page.
 - **Data sources:**
   - moomoo OpenD (local WebSocket) — stock/ETF/index options
   - [Deribit](https://docs.deribit.com) public REST — crypto options + BTC spot
-  - CBOE public CSV — VIX/VXN/GVZ/OVX, COR1M/VIXEQ, VX1/VX3 futures
+  - CBOE public CSV — VIX/VXN/GVZ/OVX, COR1M/VIXEQ, VX1/VX3 futures, RXM (PutWrite) + SPX
   - [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) — credit spread, net liquidity, repo (needs a free API key)
   - CNN — Fear & Greed index
   - Yahoo — price fallback
@@ -128,7 +128,7 @@ IV + skew, plus implied-vs-realized + VRP where a free vol index exists:
 |---|---|---|
 | 信用 Credit | HY OAS credit spread | FRED |
 | 流动性 Liquidity | net liquidity (WALCL−TGA−RRP) · reverse repo · repo usage · repo stress (IORB−SOFR) | FRED |
-| 情绪 Sentiment | Fear&Greed · COR1M · VIXEQ · VIX · VXN · VX1−V3 term structure | CNN / CBOE / DB |
+| 情绪 Sentiment | Fear&Greed · COR1M · VIXEQ · VIX · VXN · VX1−V3 term structure · RXM/SPX (PutWrite vs SPX) | CNN / CBOE / DB |
 
 Sentiment panes carry P5/P95 percentile bands + a current-percentile badge, and shade
 extreme periods red (risk end) / green (opportunity end) per each series' direction.
