@@ -3,7 +3,6 @@ import { healthRoute } from './routes/health';
 import { optionsRoute } from './routes/options';
 import { vrpRoute } from './routes/vrp';
 import { priceRoute } from './routes/price';
-import { termStructureRoute } from './routes/termStructure';
 import { regimeRoute } from './routes/regime';
 
 const app = new Hono()
@@ -12,7 +11,6 @@ const app = new Hono()
   .route('/options', optionsRoute)
   .route('/vrp', vrpRoute)
   .route('/price', priceRoute)
-  .route('/term-structure', termStructureRoute)
   .route('/regime', regimeRoute);
 
 export default {

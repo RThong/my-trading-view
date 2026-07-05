@@ -1,6 +1,6 @@
 /**
  * 更新 VIX 期限结构原料到库:VX1(近月)/ VX3(第三近)CBOE 期货结算价 → market_series。
- * 价差 VX1−VX3 由 /api/term-structure/vix 读时算(本 job 不算 derived)。
+ * 价差 VX1−VX3 由 /api/regime 读时算(computeSpread;本 job 不算 derived)。
  *
  * 增量:按已存最新日期续抓(freshSince 只下未到期 + 近期到期的合约);库空 → 全量回填。
  * upsert 幂等,可重复跑。直接运行 = 立即更新一次(库空即全量回填):

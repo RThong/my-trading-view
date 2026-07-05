@@ -19,11 +19,12 @@ type Props = {
   error?: Error;
   errorLabel?: string; // error 前缀(期权用标的名);宏观省略
   note?: string;       // 右上角提示(宏观用来标"某序列暂不可用")
+  badges?: Record<string, string>; // paneKey → 常显徽标(情绪用当前分位 Pxx)
 };
 
 export function PaneChartView({
   containerRef, paneDefs, paneCount, order, collapsed, move, toggle,
-  cells, hovering, tops, seriesName, colors, isLoading, error, errorLabel, note,
+  cells, hovering, tops, seriesName, colors, isLoading, error, errorLabel, note, badges,
 }: Props) {
   return (
     <div className="relative flex h-full w-full flex-col">
@@ -76,6 +77,17 @@ export function PaneChartView({
                   </div>
                 );
               })}
+            </div>
+          );
+        })}
+        {/* 每 pane 右上角常显徽标(如当前分位 Pxx)——始终可见,不同于悬停才显示的图例。 */}
+        {badges && order.map((key, i) => {
+          if (collapsed.has(key)) return null;
+          const b = badges[key];
+          if (!b) return null;
+          return (
+            <div key={key} className="pointer-events-none absolute right-14 z-10 text-xs text-neutral-400" style={{ top: (tops[i] ?? 0) + 2 }}>
+              {b}
             </div>
           );
         })}

@@ -3,6 +3,9 @@ import { createFredFetcher } from '../fetchers/fred';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 import { fetchFearGreed } from '../fetchers/cnnFearGreed';
 import { subtractAligned, type Point } from '../analytics/regime';
+import { computeSpread } from '../analytics/termStructure';
+import { openDb } from '../storage/db';
+import { getMarketSeries } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
 
 /**
@@ -48,6 +51,22 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   else unavailable.push('netLiquidity');
   if (raw.iorb && raw.sofr) series.repoStress = subtractAligned([raw.iorb, raw.sofr]);
   else unavailable.push('repoStress');
+
+  // VIX / VXN 已在库里(market_series,daily job 维护)→ 直接读,不外拉。
+  const db = openDb();
+  try {
+    for (const [out, sym] of [['vix', 'VIX'], ['vxn', 'VXN']] as const) {
+      const rows = getMarketSeries(db, sym);
+      if (rows.length) series[out] = rows;
+      else unavailable.push(out);
+    }
+    // VX1−V3 期限结构价差(读 VX1/VX3 现算),给情绪视角画符号柱状图。
+    const spread = computeSpread(getMarketSeries(db, 'VX1'), getMarketSeries(db, 'VX3'));
+    if (spread.length) series.vxTermSpread = spread.map((r) => ({ date: r.date, value: r.spread }));
+    else unavailable.push('vxTermSpread');
+  } finally {
+    db.close();
+  }
 
   return c.json({ series, unavailable });
 });
