@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Header } from './components/Header';
 import { TabBar } from './components/TabBar';
 import { AssetChart } from './panels/AssetChart';
 import type { Interval } from './hooks/interval';
 
-// 一个资产一个 tab,tab 名即资产名;该资产的所有期权指标都在这个 tab 内。
-const TABS = [
+// 一个资产一个横 tab,tab 名即资产名;该资产的所有期权指标都在这个 tab 内。
+const ASSET_TABS = [
   { id: 'spy', label: 'SPY', underlying: 'SPY', vrpUnderlying: 'SPY' },
   { id: 'qqq', label: 'QQQ', underlying: 'QQQ', vrpUnderlying: 'QQQ' },
   { id: 'vix', label: 'VIX', underlying: '.VIX' },
@@ -15,30 +15,77 @@ const TABS = [
   { id: 'btc', label: 'BTC', underlying: 'BTC', vrpUnderlying: 'BTC' },
 ];
 
+// 竖 tab = 视角;每个视角自带自己的横 tab 列表和渲染方式(各视角内容异构)。
+// 目前只有「期权」视角有真内容;流动性/拥挤度等视角等数据到位后按同样形状 push 一条。
+type Perspective = {
+  id: string;
+  label: string;
+  tabs: { id: string; label: string }[];
+  render: (tabId: string, interval: Interval) => ReactNode;
+};
+
+const PERSPECTIVES: Perspective[] = [
+  {
+    id: 'options',
+    label: '期权',
+    tabs: ASSET_TABS,
+    render: (tabId, interval) => {
+      const a = ASSET_TABS.find((t) => t.id === tabId)!;
+      return <AssetChart interval={interval} underlying={a.underlying} vrpUnderlying={a.vrpUnderlying} />;
+    },
+  },
+];
+
 export function App() {
   const [interval, setInterval] = useState<Interval>('1D');
-  const [tab, setTab] = useState('spy');
-  // keep-alive:访问过的 tab 各挂一个 AssetChart 不再卸载,切回来保留显隐/顺序/缩放等内存状态。
-  const [seen, setSeen] = useState<Set<string>>(() => new Set(['spy']));
-  const selectTab = (t: string) => {
-    setTab(t);
-    setSeen((s) => (s.has(t) ? s : new Set(s).add(t)));
+  const [perspId, setPerspId] = useState(PERSPECTIVES[0].id);
+  // 每个视角记住自己上次停在的横 tab,切回来不跳回第一个。
+  const [tabByPersp, setTabByPersp] = useState<Record<string, string>>(() => ({
+    [PERSPECTIVES[0].id]: PERSPECTIVES[0].tabs[0].id,
+  }));
+  // keep-alive:访问过的 `${视角}:${tab}` 各挂一个实例不再卸载,切回来保留显隐/缩放等内存状态。
+  const [seen, setSeen] = useState<Set<string>>(() => new Set([`${PERSPECTIVES[0].id}:${PERSPECTIVES[0].tabs[0].id}`]));
+
+  const persp = PERSPECTIVES.find((p) => p.id === perspId)!;
+  const activeTab = tabByPersp[perspId] ?? persp.tabs[0].id;
+
+  const selectPersp = (id: string) => {
+    const p = PERSPECTIVES.find((x) => x.id === id)!;
+    const tab = tabByPersp[id] ?? p.tabs[0].id;
+    setPerspId(id);
+    setSeen((s) => (s.has(`${id}:${tab}`) ? s : new Set(s).add(`${id}:${tab}`)));
+  };
+  const selectTab = (tab: string) => {
+    setTabByPersp((m) => ({ ...m, [perspId]: tab }));
+    setSeen((s) => (s.has(`${perspId}:${tab}`) ? s : new Set(s).add(`${perspId}:${tab}`)));
   };
 
   return (
     <div className="flex h-screen flex-col">
       <Header interval={interval} onIntervalChange={setInterval} />
-      <TabBar tabs={TABS} active={tab} onChange={selectTab} />
-      <main className="flex-1 p-4 min-h-0">
-        <div className="h-full w-full rounded border border-neutral-800 p-3">
-          {TABS.filter((t) => seen.has(t.id)).map((t) => (
-            // 非活跃 tab 用 hidden 藏起来(实例和状态都还在,只是不渲染像素)。
-            <div key={t.id} className={t.id === tab ? 'h-full' : 'hidden'}>
-              <AssetChart interval={interval} underlying={t.underlying} vrpUnderlying={t.vrpUnderlying} />
+      <div className="flex flex-1 min-h-0">
+        <TabBar tabs={PERSPECTIVES} active={perspId} onChange={selectPersp} vertical />
+        <div className="flex flex-1 flex-col min-h-0">
+          <TabBar tabs={persp.tabs} active={activeTab} onChange={selectTab} />
+          <main className="flex-1 p-4 min-h-0">
+            <div className="h-full w-full rounded border border-neutral-800 p-3">
+              {PERSPECTIVES.flatMap((p) =>
+                p.tabs
+                  .filter((t) => seen.has(`${p.id}:${t.id}`))
+                  .map((t) => {
+                    const key = `${p.id}:${t.id}`;
+                    // 非活跃的用 hidden 藏起来(实例和状态都还在,只是不渲染像素)。
+                    return (
+                      <div key={key} className={key === `${perspId}:${activeTab}` ? 'h-full' : 'hidden'}>
+                        {p.render(t.id, interval)}
+                      </div>
+                    );
+                  })
+              )}
             </div>
-          ))}
+          </main>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

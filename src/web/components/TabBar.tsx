@@ -4,11 +4,18 @@ type Props = {
   tabs: Tab[];
   active: string;
   onChange: (id: string) => void;
+  vertical?: boolean;
 };
 
-export function TabBar({ tabs, active, onChange }: Props) {
+export function TabBar({ tabs, active, onChange, vertical }: Props) {
   return (
-    <nav className="flex gap-1 border-b border-neutral-800 px-6 py-2">
+    <nav
+      className={
+        vertical
+          ? 'flex flex-col gap-1 border-r border-neutral-800 px-2 py-3'
+          : 'flex gap-1 border-b border-neutral-800 px-6 py-2'
+      }
+    >
       {tabs.map(t => (
         <button
           key={t.id}
