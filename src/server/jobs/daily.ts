@@ -4,7 +4,7 @@ console.debug = () => {};
 
 import type { Database } from 'bun:sqlite';
 import { openDb, migrate } from '../storage/db';
-import { startJobRun, finishJobRun, getTodaySucceededJobs } from '../storage/repository';
+import { startJobRun, finishJobRun, getTodaySucceededJobs, type FinishParams } from '../storage/repository';
 import { OPTIONS_UNDERLYINGS } from '../config';
 import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
 import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
@@ -27,27 +27,33 @@ type RunDailyJobOpts = {
   btcPriceUpdater?: (db: Database) => Promise<number>;
 };
 
-/** 跑一组期权快照并记一个 job_run(单标的失败 → partial,全失败 → failed)。 */
-async function runOptionsGroup(
-  db: Database,
-  jobName: string,
-  source: string,
-  underlyings: string[],
-  client: OptionsChainClient,
+/** 包一次 job_run:开跑 → 按 fn 结果落终态;fn 抛异常记 failed。所有分组共用,免去 4 处重复 try/catch。 */
+async function withJobRun(
+  db: Database, jobName: string, fn: () => Promise<FinishParams>,
 ): Promise<void> {
   const runId = startJobRun(db, jobName);
   try {
-    const { rows, failures } = await runOptionsSnapshot({ db, source, underlyings, client });
-    if (failures.length === 0) {
-      finishJobRun(db, runId, { status: 'success', recordsWritten: rows.length });
-    } else if (rows.length === 0) {
-      finishJobRun(db, runId, { status: 'failed', error: failures.join('; ') });
-    } else {
-      finishJobRun(db, runId, { status: 'partial', recordsWritten: rows.length, error: failures.join('; ') });
-    }
+    finishJobRun(db, runId, await fn());
   } catch (err) {
     finishJobRun(db, runId, { status: 'failed', error: (err as Error).message });
   }
+}
+
+/** total/succeeded/failures → 三态终态:无失败 success,零成功 failed,其余 partial。 */
+function threeState(total: number, succeeded: number, failures: string[]): FinishParams {
+  if (failures.length === 0) return { status: 'success', recordsWritten: total };
+  if (succeeded === 0) return { status: 'failed', error: failures.join('; ') };
+  return { status: 'partial', recordsWritten: total, error: failures.join('; ') };
+}
+
+/** 跑一组期权快照并记一个 job_run(单标的失败 → partial,全失败 → failed)。 */
+async function runOptionsGroup(
+  db: Database, jobName: string, source: string, underlyings: string[], client: OptionsChainClient,
+): Promise<void> {
+  await withJobRun(db, jobName, async () => {
+    const { rows, failures } = await runOptionsSnapshot({ db, source, underlyings, client });
+    return threeState(rows.length, rows.length, failures); // rows==0 即无成功 → failed
+  });
 }
 
 export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
@@ -63,41 +69,26 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   // (隐含 VIX/VXN/GVZ/OVX/DVOL,RV 现货 SPX/NDX/GLD/USO/BTC)。
   // 每源独立容错:全成功 → success,部分源失败 → partial,全失败 → failed。
   if (opts.vrpInputsUpdater) {
-    const vrpRun = startJobRun(opts.db, 'vrp_inputs');
-    try {
-      const { total, succeeded, failures } = await opts.vrpInputsUpdater(opts.db);
-      if (failures.length === 0) {
-        finishJobRun(opts.db, vrpRun, { status: 'success', recordsWritten: total });
-      } else if (succeeded === 0) {
-        finishJobRun(opts.db, vrpRun, { status: 'failed', error: failures.join('; ') });
-      } else {
-        finishJobRun(opts.db, vrpRun, { status: 'partial', recordsWritten: total, error: failures.join('; ') });
-      }
-    } catch (err) {
-      finishJobRun(opts.db, vrpRun, { status: 'failed', error: (err as Error).message });
-    }
+    await withJobRun(opts.db, 'vrp_inputs', async () => {
+      const { total, succeeded, failures } = await opts.vrpInputsUpdater!(opts.db);
+      return threeState(total, succeeded, failures);
+    });
   }
 
   // vx_term_structure 分组:增量更新 VX1/VX3 期货序列(单一 CBOE 源,成功/失败两态)。
   if (opts.vxUpdater) {
-    const vxRun = startJobRun(opts.db, 'vx_term_structure');
-    try {
-      const { total } = await opts.vxUpdater(opts.db);
-      finishJobRun(opts.db, vxRun, { status: 'success', recordsWritten: total });
-    } catch (err) {
-      finishJobRun(opts.db, vxRun, { status: 'failed', error: (err as Error).message });
-    }
+    await withJobRun(opts.db, 'vx_term_structure', async () => {
+      const { total } = await opts.vxUpdater!(opts.db);
+      return { status: 'success', recordsWritten: total };
+    });
   }
 
   // btc_price 分组:BTC 现货日 bar(Deribit 主源 / Yahoo 降级;成功/失败两态)。
   if (opts.btcPriceUpdater) {
-    const btcRun = startJobRun(opts.db, 'btc_price');
-    try {
-      const total = await opts.btcPriceUpdater(opts.db);
-      finishJobRun(opts.db, btcRun, { status: 'success', recordsWritten: total });
-    } catch (err) {
-      finishJobRun(opts.db, btcRun, { status: 'failed', error: (err as Error).message });
-    }
+    await withJobRun(opts.db, 'btc_price', async () => {
+      const total = await opts.btcPriceUpdater!(opts.db);
+      return { status: 'success', recordsWritten: total };
+    });
   }
 }
 

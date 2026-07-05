@@ -106,7 +106,7 @@ export function startJobRun(db: Database, jobName: string): number {
   return Number(result.lastInsertRowid);
 }
 
-type FinishParams =
+export type FinishParams =
   | { status: 'success' | 'partial'; recordsWritten: number; error?: string }
   | { status: 'failed'; error: string; recordsWritten?: number };
 
