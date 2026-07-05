@@ -1,6 +1,9 @@
 import type { Database } from 'bun:sqlite';
 import type { JobStatus } from '../../shared/types';
 
+// bun:sqlite 的具名参数值域(标量,非递归),与其 SQLQueryBindings 的 Record 分支一致。
+type NamedParams = Record<string, string | bigint | NodeJS.TypedArray | number | boolean | null>;
+
 export type Options25DeltaRow = {
   underlying: string;
   source: string;          // 'moomoo' | 'deribit'(provenance,不进主键)
@@ -31,18 +34,25 @@ export type MacroRow = {
 
 export type MarketSeriesRow = { seriesId: string; obsDate: string; value: number };
 
-export function insertMarketSeries(db: Database, rows: MarketSeriesRow[]): void {
+/** 批量 upsert 骨架:空跳过、prepare 一次、同批共用一个 fetched_at、单事务逐行写。
+ *  各表只提供 SQL 与「行 → 具名参数」绑定;重复的事务/时间戳样板收敛在此。 */
+function bulkUpsert<T>(
+  db: Database, sql: string, rows: T[], bind: (row: T, fetched: string) => NamedParams,
+): void {
   if (rows.length === 0) return;
-  const stmt = db.prepare(`
+  const stmt = db.prepare<unknown, [NamedParams]>(sql);
+  const fetched = new Date().toISOString();
+  db.transaction((batch: T[]) => {
+    for (const r of batch) stmt.run(bind(r, fetched)); // 逐行写库,副作用循环保留
+  })(rows);
+}
+
+export function insertMarketSeries(db: Database, rows: MarketSeriesRow[]): void {
+  bulkUpsert(db, `
     INSERT INTO market_series (series_id, obs_date, value, fetched_at)
     VALUES ($id, $date, $value, $fetched)
     ON CONFLICT(series_id, obs_date) DO UPDATE SET value=excluded.value, fetched_at=excluded.fetched_at
-  `);
-  const fetched = new Date().toISOString();
-  const tx = db.transaction((batch: MarketSeriesRow[]) => {
-    for (const r of batch) stmt.run({ $id: r.seriesId, $date: r.obsDate, $value: r.value, $fetched: fetched });
-  });
-  tx(rows);
+  `, rows, (r, f) => ({ $id: r.seriesId, $date: r.obsDate, $value: r.value, $fetched: f }));
 }
 
 export function getMarketSeries(db: Database, seriesId: string): Array<{ date: string; value: number }> {
@@ -69,19 +79,13 @@ export type PriceEodRow = {
 };
 
 export function insertPriceEod(db: Database, rows: PriceEodRow[]): void {
-  if (rows.length === 0) return;
-  const stmt = db.prepare(`
+  bulkUpsert(db, `
     INSERT INTO price_eod (underlying, obs_date, open, high, low, close, source, fetched_at)
     VALUES ($u, $d, $o, $h, $l, $c, $src, $f)
     ON CONFLICT(underlying, obs_date) DO UPDATE SET
       open=excluded.open, high=excluded.high, low=excluded.low, close=excluded.close,
       source=excluded.source, fetched_at=excluded.fetched_at
-  `);
-  const fetched = new Date().toISOString();
-  const tx = db.transaction((batch: PriceEodRow[]) => {
-    for (const r of batch) stmt.run({ $u: r.underlying, $d: r.obsDate, $o: r.open, $h: r.high, $l: r.low, $c: r.close, $src: r.source, $f: fetched });
-  });
-  tx(rows);
+  `, rows, (r, f) => ({ $u: r.underlying, $d: r.obsDate, $o: r.open, $h: r.high, $l: r.low, $c: r.close, $src: r.source, $f: f }));
 }
 
 /** 现货蜡烛图用:OHLC bars,升序。 */
@@ -137,32 +141,14 @@ export function getTodaySucceededJobs(db: Database): string[] {
 }
 
 export function insertOptions25Delta(db: Database, rows: Options25DeltaRow[]): void {
-  if (rows.length === 0) return;
-  const stmt = db.prepare(`
+  bulkUpsert(db, `
     INSERT INTO option_snapshot_25delta
       (underlying, source, snapshot_date, call_iv, put_iv, skew, fetched_at)
     VALUES ($u, $src, $d, $c, $p, $s, $f)
     ON CONFLICT(underlying, snapshot_date) DO UPDATE SET
       source=excluded.source, call_iv=excluded.call_iv, put_iv=excluded.put_iv, skew=excluded.skew,
       fetched_at=excluded.fetched_at
-  `);
-
-  const fetched = new Date().toISOString();
-  const tx = db.transaction((batch: Options25DeltaRow[]) => {
-    for (const r of batch) {
-      stmt.run({
-        $u: r.underlying,
-        $src: r.source,
-        $d: r.snapshotDate,
-        $c: r.callIv,
-        $p: r.putIv,
-        $s: r.skew,
-        $f: fetched,
-      });
-    }
-  });
-
-  tx(rows);
+  `, rows, (r, f) => ({ $u: r.underlying, $src: r.source, $d: r.snapshotDate, $c: r.callIv, $p: r.putIv, $s: r.skew, $f: f }));
 }
 
 export function getOptions25Delta(
@@ -206,8 +192,7 @@ export type OptionChainRawRow = {
 };
 
 export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[]): void {
-  if (rows.length === 0) return;
-  const stmt = db.prepare(`
+  bulkUpsert(db, `
     INSERT INTO option_chain_raw
       (underlying, source, snapshot_date, expiry, underlying_price, chain_json_gz, fetched_at)
     VALUES ($u, $src, $d, $e, $price, $gz, $f)
@@ -216,24 +201,7 @@ export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[]): v
       underlying_price = excluded.underlying_price,
       chain_json_gz    = excluded.chain_json_gz,
       fetched_at       = excluded.fetched_at
-  `);
-
-  const fetched = new Date().toISOString();
-  const tx = db.transaction((batch: OptionChainRawRow[]) => {
-    for (const r of batch) {
-      stmt.run({
-        $u: r.underlying,
-        $src: r.source,
-        $d: r.snapshotDate,
-        $e: r.expiry,
-        $price: r.underlyingPrice,
-        $gz: r.chainJsonGz,
-        $f: fetched,
-      });
-    }
-  });
-
-  tx(rows);
+  `, rows, (r, f) => ({ $u: r.underlying, $src: r.source, $d: r.snapshotDate, $e: r.expiry, $price: r.underlyingPrice, $gz: r.chainJsonGz, $f: f }));
 }
 
 export function getJobHealth(db: Database): JobStatus[] {
