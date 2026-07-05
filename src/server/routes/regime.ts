@@ -1,0 +1,53 @@
+import { Hono } from 'hono';
+import { createFredFetcher } from '../fetchers/fred';
+import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
+import { fetchFearGreed } from '../fetchers/cnnFearGreed';
+import { subtractAligned, type Point } from '../analytics/regime';
+import { HISTORY_START_DATE } from '../config';
+
+/**
+ * 宏观 / regime 指标:现拉外部源(零存储,见 spec),并行 + 优雅降级。
+ * 单源失败(FRED key 缺 / CBOE 符号 404 / CNN 反爬)→ 归入 unavailable,其余照常返回,不整体 500。
+ * 净流动性 / 回购利差为读时派生(前向填充对齐后线性组合)。
+ */
+export const regimeRoute = new Hono().get('/', async (c) => {
+  const fred = createFredFetcher({ apiKey: process.env.FRED_API_KEY ?? '' });
+  const fredSeries = (id: string): Promise<Point[]> =>
+    fred.fetchSeries(id, HISTORY_START_DATE).then((rows) => rows.map((r) => ({ date: r.obsDate, value: r.value })));
+  const cboeSeries = (sym: string): Promise<Point[]> =>
+    fetchCboeIndexAsQuotes({ cboeSymbol: sym, storedSymbol: sym }).then((rows) => rows.map((r) => ({ date: r.tradeDate, value: r.close })));
+
+  // 并行拉全部原始源。key 为内部名,后面映射到对外序列名。
+  const src = {
+    walcl: fredSeries('WALCL'), wtregen: fredSeries('WTREGEN'), rrp: fredSeries('RRPONTSYD'),
+    rpo: fredSeries('RPONTSYD'), sofr: fredSeries('SOFR'), iorb: fredSeries('IORB'),
+    hyOas: fredSeries('BAMLH0A0HYM2'),
+    cor1m: cboeSeries('COR1M'), vixeq: cboeSeries('VIXEQ'),
+    fng: fetchFearGreed(),
+  };
+  const names = Object.keys(src) as (keyof typeof src)[];
+  const settled = await Promise.allSettled(Object.values(src));
+  const raw: Partial<Record<keyof typeof src, Point[]>> = {};
+  settled.forEach((s, i) => { if (s.status === 'fulfilled') raw[names[i]] = s.value; });
+
+  const series: Record<string, Point[]> = {};
+  const unavailable: string[] = [];
+
+  // 直接对外的序列(对外名 → 原始源名)。
+  const direct: Record<string, keyof typeof src> = {
+    hyOas: 'hyOas', cor1m: 'cor1m', vixeq: 'vixeq', fng: 'fng',
+    reverseRepo: 'rrp', repoUsage: 'rpo',
+  };
+  for (const [out, s] of Object.entries(direct)) {
+    if (raw[s]) series[out] = raw[s]!;
+    else unavailable.push(out);
+  }
+
+  // 派生:分量齐才算,缺则整条进 unavailable。
+  if (raw.walcl && raw.wtregen && raw.rrp) series.netLiquidity = subtractAligned([raw.walcl, raw.wtregen, raw.rrp]);
+  else unavailable.push('netLiquidity');
+  if (raw.iorb && raw.sofr) series.repoStress = subtractAligned([raw.iorb, raw.sofr]);
+  else unavailable.push('repoStress');
+
+  return c.json({ series, unavailable });
+});
