@@ -2,7 +2,7 @@
 // 图表引擎(usePaneChart/usePaneLayout/useCrosshairLegend)与展示壳(PaneChartView)全复用期权侧。
 import useSWR from 'swr';
 import { aggregate, type LinePoint } from '../lib/chart';
-import { percentile, percentileRank } from '../lib/stats';
+import { percentile, percentileRank } from '../../shared/stats';
 import type { Interval } from '../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from './assetChart.hooks';
 

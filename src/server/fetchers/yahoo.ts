@@ -7,6 +7,7 @@ type YahooQuote = {
   high: number | null;
   low: number | null;
   close: number | null;
+  adjclose?: number | null; // 拆股+分红复权收盘(回测用;蜡烛图仍用未复权 close)
   volume: number | null;
 };
 
@@ -26,6 +27,8 @@ function toIsoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+export type AdjBar = { date: string; adjClose: number };
+
 export function createYahooFetcher(client: YahooClient = defaultYahooClient()) {
   return {
     async fetchDailyBars(symbol: string, since: Date): Promise<QuoteRow[]> {
@@ -41,6 +44,14 @@ export function createYahooFetcher(client: YahooClient = defaultYahooClient()) {
           close: q.close as number,
           volume: q.volume ?? null,
         }));
+    },
+
+    /** 复权收盘日线(回测用):adjclose 缺失的行丢弃。 */
+    async fetchAdjDailyBars(symbol: string, since: Date): Promise<AdjBar[]> {
+      const result = await client.chart(symbol, { period1: since, interval: '1d' });
+      return result.quotes
+        .filter(q => q.adjclose !== null && q.adjclose !== undefined)
+        .map(q => ({ date: toIsoDate(q.date), adjClose: q.adjclose as number }));
     },
   };
 }
