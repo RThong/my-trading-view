@@ -2,6 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { Header } from './components/Header';
 import { TabBar } from './components/TabBar';
 import { AssetChart } from './panels/AssetChart';
+import { RegimeChart } from './panels/RegimeChart';
+import type { RegimeDim } from './panels/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
 
 // 一个资产一个横 tab,tab 名即资产名;该资产的所有期权指标都在这个 tab 内。
@@ -24,6 +26,13 @@ type Perspective = {
   render: (tabId: string, interval: Interval) => ReactNode;
 };
 
+// 宏观 regime 视角:每个维度一个竖视角,单视图(无横 tab)。
+const regimePersp = (id: RegimeDim, label: string): Perspective => ({
+  id, label,
+  tabs: [{ id, label }],
+  render: (_tabId, interval) => <RegimeChart dim={id} interval={interval} />,
+});
+
 const PERSPECTIVES: Perspective[] = [
   {
     id: 'options',
@@ -34,6 +43,9 @@ const PERSPECTIVES: Perspective[] = [
       return <AssetChart interval={interval} underlying={a.underlying} vrpUnderlying={a.vrpUnderlying} />;
     },
   },
+  regimePersp('credit', '信用'),
+  regimePersp('liquidity', '流动性'),
+  regimePersp('sentiment', '情绪'),
 ];
 
 export function App() {

@@ -281,3 +281,13 @@ export function useCrosshairLegend(
   const hovering = Object.keys(cells).length > 0; // 鼠标在图内、crosshair 有值
   return { cells, hovering, tops };
 }
+
+// ── 组合:引擎 + 布局 + 图例 一处接线,供 AssetChart / RegimeChart 共用(避免两处接线漂移)。
+export function usePaneChartStack(
+  containerRef: React.RefObject<HTMLDivElement | null>, paneDefs: PaneDef[], paneCount: number, specs: Spec[],
+) {
+  const { chartRef, seriesRef } = usePaneChart(containerRef, paneCount, specs);
+  const { order, collapsed, move, toggle } = usePaneLayout(paneDefs, paneCount, chartRef, seriesRef);
+  const { cells, hovering, tops } = useCrosshairLegend(chartRef, seriesRef, containerRef, order, collapsed);
+  return { order, collapsed, move, toggle, cells, hovering, tops };
+}

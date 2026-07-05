@@ -8,6 +8,8 @@ type Props = {
 };
 
 export function TabBar({ tabs, active, onChange, vertical }: Props) {
+  // 单视图视角:横排只有 ≤1 个 tab 时不渲染(不显示孤零零一个横 tab)。竖排不受此限。
+  if (!vertical && tabs.length <= 1) return null;
   return (
     <nav
       className={
