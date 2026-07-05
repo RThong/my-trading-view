@@ -46,34 +46,34 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
 
+  // 有值 → 落对外序列;否则记入 unavailable。收敛 5 处「存在性分支」,读时一目了然。
+  // (传 undefined 表示该序列缺失/为空;直接源用存在性、派生/库源用长度决定是否传值。)
+  const put = (name: string, value: Point[] | undefined) => {
+    if (value) series[name] = value;
+    else unavailable.push(name);
+  };
+
   // 直接对外的序列(对外名 → 原始源名)。
   const direct: Record<string, keyof typeof src> = {
     hyOas: 'hyOas', cor1m: 'cor1m', vixeq: 'vixeq', fng: 'fng',
     reverseRepo: 'rrp', repoUsage: 'rpo',
   };
-  for (const [out, s] of Object.entries(direct)) {
-    if (raw[s]) series[out] = raw[s]!;
-    else unavailable.push(out);
-  }
+  for (const [out, s] of Object.entries(direct)) put(out, raw[s]);
 
   // 派生:分量齐才算,缺则整条进 unavailable。
-  if (raw.walcl && raw.wtregen && raw.rrp) series.netLiquidity = subtractAligned([raw.walcl, raw.wtregen, raw.rrp]);
-  else unavailable.push('netLiquidity');
-  if (raw.iorb && raw.sofr) series.repoStress = subtractAligned([raw.iorb, raw.sofr]);
-  else unavailable.push('repoStress');
+  put('netLiquidity', raw.walcl && raw.wtregen && raw.rrp ? subtractAligned([raw.walcl, raw.wtregen, raw.rrp]) : undefined);
+  put('repoStress', raw.iorb && raw.sofr ? subtractAligned([raw.iorb, raw.sofr]) : undefined);
 
   // VIX / VXN 已在库里(market_series,daily job 维护)→ 直接读,不外拉。
   const db = openDb();
   try {
     for (const [out, sym] of [['vix', 'VIX'], ['vxn', 'VXN']] as const) {
       const rows = getMarketSeries(db, sym);
-      if (rows.length) series[out] = rows;
-      else unavailable.push(out);
+      put(out, rows.length ? rows : undefined);
     }
     // VX1−V3 期限结构价差(读 VX1/VX3 现算),给情绪视角画符号柱状图。
     const spread = computeSpread(getMarketSeries(db, 'VX1'), getMarketSeries(db, 'VX3'));
-    if (spread.length) series.vxTermSpread = spread.map((r) => ({ date: r.date, value: r.spread }));
-    else unavailable.push('vxTermSpread');
+    put('vxTermSpread', spread.length ? spread.map((r) => ({ date: r.date, value: r.spread })) : undefined);
   } finally {
     db.close();
   }
