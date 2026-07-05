@@ -9,6 +9,15 @@
  */
 export type Point = { date: string; value: number };
 
+/** 逐日相除 num/den(按日期 inner join,缺日或 den=0 跳过)。用于 RXM/SPX 这类同频比值。 */
+export function divideAligned(num: Point[], den: Point[]): Point[] {
+  const dMap = new Map(den.map((p) => [p.date, p.value]));
+  return num.flatMap((p) => {
+    const d = dMap.get(p.date);
+    return d ? [{ date: p.date, value: p.value / d }] : [];
+  });
+}
+
 export function subtractAligned(series: Point[][]): Point[] {
   const maps = series.map((s) => new Map(s.map((p) => [p.date, p.value])));
   const dates = [...new Set(series.flatMap((s) => s.map((p) => p.date)))].sort();

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { createFredFetcher } from '../fetchers/fred';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 import { fetchFearGreed } from '../fetchers/cnnFearGreed';
-import { subtractAligned, type Point } from '../analytics/regime';
+import { subtractAligned, divideAligned, type Point } from '../analytics/regime';
 import { computeSpread } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
@@ -36,6 +36,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     rpo: fredSeries('RPONTSYD'), sofr: fredSeries('SOFR'), iorb: fredSeries('IORB'),
     hyOas: fredSeries('BAMLH0A0HYM2'),
     cor1m: cboeSeries('COR1M'), vixeq: cboeSeries('VIXEQ'),
+    rxm: cboeSeries('RXM'), spx: cboeSeries('SPX'),
     fng: fetchFearGreed(),
   };
   const names = Object.keys(src) as (keyof typeof src)[];
@@ -63,6 +64,8 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 派生:分量齐才算,缺则整条进 unavailable。
   put('netLiquidity', raw.walcl && raw.wtregen && raw.rrp ? subtractAligned([raw.walcl, raw.wtregen, raw.rrp]) : undefined);
   put('repoStress', raw.iorb && raw.sofr ? subtractAligned([raw.iorb, raw.sofr]) : undefined);
+  // RXM(PutWrite 指数)/ SPX:期权情绪/周期成熟度,低=melt-up/自满。
+  put('rxmSpx', raw.rxm && raw.spx ? divideAligned(raw.rxm, raw.spx) : undefined);
 
   // VIX / VXN 已在库里(market_series,daily job 维护)→ 直接读,不外拉。
   const db = openDb();

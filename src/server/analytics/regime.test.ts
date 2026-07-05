@@ -1,5 +1,11 @@
 import { test, expect } from 'bun:test';
-import { subtractAligned } from './regime';
+import { subtractAligned, divideAligned } from './regime';
+
+test('divideAligned:逐日 num/den,den=0 跳过', () => {
+  const num = [{ date: '2020-01-01', value: 10 }, { date: '2020-01-02', value: 12 }];
+  const den = [{ date: '2020-01-01', value: 5 }, { date: '2020-01-02', value: 0 }];
+  expect(divideAligned(num, den)).toEqual([{ date: '2020-01-01', value: 2 }]); // 01-02 den=0 跳过
+});
 
 test('日频相减:逐日 A - B', () => {
   const a = [{ date: '2020-01-01', value: 10 }, { date: '2020-01-02', value: 12 }];
