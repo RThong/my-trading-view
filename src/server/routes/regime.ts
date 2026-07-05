@@ -8,12 +8,22 @@ import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
 
+type RegimeBody = { series: Record<string, Point[]>; unavailable: string[] };
+
+// 内存 TTL 缓存:现拉全部外部源约 1.3s,重复打开走缓存瞬时返回。
+// 只缓存全成功的响应(降级响应不缓存,下次刷新重试),避免瞬时反爬失败被粘住。
+// EOD 日频数据盘中不变,TTL 取 6h 安全。进程级单例,dev/prod 长驻进程共享。
+const TTL_MS = 6 * 60 * 60 * 1000;
+let cache: { at: number; body: RegimeBody } | null = null;
+
 /**
- * 宏观 / regime 指标:现拉外部源(零存储,见 spec),并行 + 优雅降级。
+ * 宏观 / regime 指标:现拉外部源(零存储,见 spec),并行 + 优雅降级 + 内存 TTL 缓存。
  * 单源失败(FRED key 缺 / CBOE 符号 404 / CNN 反爬)→ 归入 unavailable,其余照常返回,不整体 500。
  * 净流动性 / 回购利差为读时派生(前向填充对齐后线性组合)。
  */
 export const regimeRoute = new Hono().get('/', async (c) => {
+  if (cache && Date.now() - cache.at < TTL_MS) return c.json(cache.body);
+
   const fred = createFredFetcher({ apiKey: process.env.FRED_API_KEY ?? '' });
   const fredSeries = (id: string): Promise<Point[]> =>
     fred.fetchSeries(id, HISTORY_START_DATE).then((rows) => rows.map((r) => ({ date: r.obsDate, value: r.value })));
@@ -68,5 +78,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     db.close();
   }
 
-  return c.json({ series, unavailable });
+  const body: RegimeBody = { series, unavailable };
+  if (unavailable.length === 0) cache = { at: Date.now(), body }; // 只缓存全成功
+  return c.json(body);
 });
