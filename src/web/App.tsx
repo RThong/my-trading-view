@@ -3,6 +3,7 @@ import { Header } from './components/Header';
 import { TabBar } from './components/TabBar';
 import { AssetChart } from './panels/AssetChart';
 import { RegimeChart } from './panels/RegimeChart';
+import { YieldCurvePanel } from './panels/YieldCurvePanel';
 import type { RegimeDim } from './panels/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
 
@@ -46,6 +47,11 @@ const PERSPECTIVES: Perspective[] = [
   regimePersp('credit', '信用'),
   regimePersp('liquidity', '流动性'),
   regimePersp('sentiment', '情绪'),
+  {
+    id: 'rates', label: '利率',
+    tabs: [{ id: 'yieldCurve', label: '收益曲线' }],
+    render: () => <YieldCurvePanel />,
+  },
 ];
 
 export function App() {

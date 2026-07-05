@@ -1,1 +1,28 @@
 @import "tailwindcss";
+@import "react-day-picker/style.css";
+
+/* react-day-picker 深色主题:改 --rdp-* 变量最省,配合仪表盘 neutral 色系。 */
+.rdp-root {
+  color-scheme: dark; /* 让年月下拉的原生 select 弹窗跟深色 */
+  --rdp-accent-color: #3b82f6;
+  --rdp-accent-background-color: #1e3a5f;
+  --rdp-today-color: #3b82f6;
+  --rdp-day-width: 2rem;
+  --rdp-day-height: 2rem;
+  --rdp-day_button-width: 2rem;
+  --rdp-day_button-height: 2rem;
+  color: #e5e5e5;
+  font-size: 0.8rem;
+}
+.rdp-root .rdp-day_button:hover { background: #262626; }
+.rdp-root .rdp-weekday { color: #737373; }
+.rdp-root .rdp-day.rdp-disabled { opacity: 0.3; }
+.rdp-root .rdp-month { min-width: 15rem; } /* 固定月宽,避免月名长短撑得弹窗宽度跳变 */
+
+/* 顶部年月:字号收小,右侧留出导航箭头的位置(nav 绝对定位在右上),避免和年份重叠 */
+.rdp-root .rdp-month_caption { height: 2rem; align-items: center; padding-right: 3.5rem; }
+.rdp-root .rdp-caption_label { font-size: 0.9rem; font-weight: 600; white-space: nowrap; }
+.rdp-root .rdp-dropdowns { gap: 0.4rem; }
+.rdp-root .rdp-dropdown { background: #171717; color: #e5e5e5; border: 1px solid #404040; border-radius: 4px; padding: 2px 4px; font-size: 0.85rem; }
+.rdp-root .rdp-nav { gap: 0.25rem; }
+.rdp-root .rdp-chevron { width: 1rem; height: 1rem; fill: #a3a3a3; }

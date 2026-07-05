@@ -15,10 +15,13 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@radix-ui/react-popover": "^1.1.18",
     "hono": "^4.6.0",
     "lightweight-charts": "^5.0.0",
+    "lucide-react": "^1.23.0",
     "moomoo-api": "^10.7.6708",
     "react": "^19.0.0",
+    "react-day-picker": "^10.0.1",
     "react-dom": "^19.0.0",
     "swr": "^2.4.1",
     "yahoo-finance2": "^3"
