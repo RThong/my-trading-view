@@ -50,8 +50,8 @@ function migrateOptionSource(db: Database): void {
 // 须在 schema.sql 建出 price_eod 之后调用。幂等:INSERT OR IGNORE 不覆盖已抓的真 OHLC,
 // DELETE 只动现货 id;新库/已迁库再跑都是 no-op。
 // market_series 的保留名单:波动率指数 + VX 期货期限结构序列。
-// ⚠️ migrateSpotToPriceEod 里的 DELETE 是「每次 migrate() 都跑的全量删除」(daily job 每天启动即 migrate),
-//    任何写进 market_series 的新 series_id 不进此名单 = 每日被无条件清掉,且增量抓取永不补回。
+// ⚠️ 这里的 DELETE 会清掉不在名单里的 series_id。已 gate 在 migrate() 的 version<4 分支,
+//    只在旧库升级时跑一次(不再每日重跑),但重建/迁移旧库时新 series_id 仍须先进此名单。
 const VOL_INDICES = ['VIX', 'VXN', 'GVZ', 'OVX', 'DVOL', 'VX1', 'VX3'];
 function migrateSpotToPriceEod(db: Database): void {
   // VIX 既是指数又是 .VIX tab 的现货:播种进 price_eod,但保留在 market_series(IV 腿)。
@@ -66,19 +66,28 @@ function migrateSpotToPriceEod(db: Database): void {
   db.run(`DELETE FROM market_series WHERE series_id NOT IN (${keep})`);
 }
 
-export function migrate(db: Database): void {
-  // 先就地改造旧表(列探测;新库或已是新结构则跳过),再跑 schema.sql 补建缺失表/索引。
-  migrateOptionSource(db);
+// 库当前 schema 版本;schema_version 表尚不存在(全新库)时按 0。
+function currentVersion(db: Database): number {
+  const exists = db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_version'").get();
+  if (!exists) return 0;
+  const row = db.query('SELECT MAX(version) AS v FROM schema_version').get() as { v: number | null };
+  return row?.v ?? 0;
+}
 
+export function migrate(db: Database): void {
+  const prior = currentVersion(db);
+
+  // 建表/索引:幂等(CREATE IF NOT EXISTS),新库老库每次都跑。
   const schemaPath = resolve(import.meta.dirname, 'schema.sql');
   const sql = readFileSync(schemaPath, 'utf-8');
   db.exec(sql);
 
-  // schema.sql 已建出 price_eod,再把旧库 market_series 里的现货价迁过去并清理。
-  migrateSpotToPriceEod(db);
-
-  const row = db.query('SELECT MAX(version) AS v FROM schema_version').get() as { v: number | null };
-  if ((row?.v ?? 0) < CURRENT_SCHEMA_VERSION) {
+  // 一次性历史迁移:只在从 v4 之前的旧库升级时跑一次。尤其 migrateSpotToPriceEod
+  // 里有全量 DELETE —— gate 住版本,别让它挂在每天的 daily job 上无条件重跑。
+  // (须在 schema.sql 建出 price_eod 之后;两个迁移自身也都幂等,gate 只是省掉每日空转。)
+  if (prior < CURRENT_SCHEMA_VERSION) {
+    migrateOptionSource(db);
+    migrateSpotToPriceEod(db);
     db.run(
       'INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)',
       [CURRENT_SCHEMA_VERSION, new Date().toISOString()],

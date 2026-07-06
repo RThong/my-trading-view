@@ -45,17 +45,15 @@ describe('openDb', () => {
   });
 });
 
-describe('migrate 保留 VX 期限结构序列', () => {
-  test('每次 migrate 的全量 DELETE 不清掉 VX1/VX3', () => {
+describe('migrate 的历史迁移 gate 在版本上,不每日重跑', () => {
+  test('库到 v4 后重跑 migrate 不再执行 DELETE(名单外的序列也存活)', () => {
     const db = new Database(':memory:');
-    migrate(db);
-    insertMarketSeries(db, [
-      { seriesId: 'VX1', obsDate: '2026-06-01', value: 18.5 },
-      { seriesId: 'VX3', obsDate: '2026-06-01', value: 19.2 },
-    ]);
-    migrate(db); // daily job 每次启动都会再跑一次 migrate
+    migrate(db); // 首跑:建表 + 一次性迁移,库升到 v4
 
-    expect(getMarketSeries(db, 'VX1')).toHaveLength(1);
-    expect(getMarketSeries(db, 'VX3')).toHaveLength(1);
+    // 写入一个不在 VOL_INDICES 名单里的序列(daily job 抓取写库的常态)。
+    insertMarketSeries(db, [{ seriesId: 'VX2', obsDate: '2026-06-01', value: 18.9 }]);
+    migrate(db); // 每天 daily job 启动都再跑一次 —— gate 后不再触发全量 DELETE
+
+    expect(getMarketSeries(db, 'VX2')).toHaveLength(1);
   });
 });
