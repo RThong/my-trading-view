@@ -23,8 +23,9 @@ export function parseErisHistorical(csv: string): ErisCurve[] {
     const date = c[0]?.trim();
     if (!date) return [];
     const points = tenors.flatMap((tenor, i) => {
-      const rate = Number(c[i + 1]);
-      return Number.isFinite(rate) ? [{ tenor, rate }] : [];
+      const raw = c[i + 1]?.trim();
+      const rate = Number(raw);
+      return raw && Number.isFinite(rate) ? [{ tenor, rate }] : [];
     });
     return points.length ? [{ date, points }] : [];
   });

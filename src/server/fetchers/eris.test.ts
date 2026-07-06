@@ -43,4 +43,9 @@ describe('parseErisHistorical(宽表全历史)', () => {
     expect(rows[0].points.find((p) => p.tenor === '3M')!.rate).toBeCloseTo(3.719, 3);
     expect(rows[1].points.find((p) => p.tenor === '10Y')!.rate).toBeCloseTo(4.067, 3);
   });
+  it('空格子跳过(不产生 rate=0 假点)', () => {
+    const csv = `Evaluation Date,SOFR1W,SOFR3M\n2021-01-04,,0.05`;
+    const c = parseErisHistorical(csv);
+    expect(c[0].points).toEqual([{ tenor: '3M', rate: 0.05 }]); // 1W 空 → 不出现
+  });
 });
