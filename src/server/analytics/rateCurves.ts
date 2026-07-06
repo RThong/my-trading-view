@@ -1,5 +1,4 @@
 // SOFR OIS / Fed 路径两条曲线的期限映射 + 值转换(纯函数,便于单测)。
-
 // Eris ParCouponCurve 的 24 档期限(顺序即曲线 x 轴)。存库 series_id = ERIS_OIS_{tenor}。
 export const ERIS_OIS_TENORS: string[] = [
   '1D', '1W', '1M', '3M', '6M', '9M', '12M', '18M', '2Y', '3Y', '4Y', '5Y',

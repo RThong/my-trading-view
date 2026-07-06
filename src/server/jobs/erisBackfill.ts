@@ -17,7 +17,8 @@ export async function backfillEris(
     const curve = await fetchForDate(iso);
     if (!curve) continue;
     insertMarketSeries(db, curve.points.map((p) => ({ seriesId: `ERIS_OIS_${p.tenor}`, obsDate: curve.date, value: p.rate })));
-    days += 1; total += curve.points.length;
+    days += 1;
+    total += curve.points.length;
   }
   return { days, total };
 }

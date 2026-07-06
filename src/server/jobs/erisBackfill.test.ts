@@ -13,7 +13,7 @@ describe('backfillEris', () => {
       date === '2026-07-03' || date === '2026-07-06'
         ? { date, points: [{ tenor: '3M', rate: 3.7 }] }
         : null;
-    const { days } = await backfillEris(db, '2026-07-03', fake);
+    const { days } = await backfillEris(db, '2026-07-03', fake, '2026-07-06');
     expect(days).toBe(2); // 只有两天有数据
     expect(getMarketSeries(db, 'ERIS_OIS_3M').map((r) => r.date)).toEqual(['2026-07-03', '2026-07-06']);
     db.close();
