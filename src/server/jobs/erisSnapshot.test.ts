@@ -13,6 +13,12 @@ describe('updateErisSnapshot', () => {
     expect(total).toBe(2);
     const r = getMarketSeries(db, 'ERIS_OIS_3M');
     expect(r).toEqual([{ date: '2026-07-02', value: 3.7194 }]);
+
+    // 同日重跑:幂等,不产生重复
+    await updateErisSnapshot(db, async () => curve);
+    expect(getMarketSeries(db, 'ERIS_OIS_3M')).toEqual([{ date: '2026-07-02', value: 3.7194 }]);
+    expect(getMarketSeries(db, 'ERIS_OIS_10Y')).toEqual([{ date: '2026-07-02', value: 4.0647 }]);
+
     db.close();
   });
 });

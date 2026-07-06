@@ -13,7 +13,10 @@ export async function updateErisSnapshot(
   fetchCurve: () => Promise<ErisCurve> = fetchLatestEris,
 ): Promise<{ total: number }> {
   const curve = await fetchCurve();
-  insertMarketSeries(db, curve.points.map((p) => ({ seriesId: `ERIS_OIS_${p.tenor}`, obsDate: curve.date, value: p.rate })));
+  insertMarketSeries(
+    db,
+    curve.points.map((p) => ({ seriesId: `ERIS_OIS_${p.tenor}`, obsDate: curve.date, value: p.rate })),
+  );
   return { total: curve.points.length };
 }
 
