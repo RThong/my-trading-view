@@ -25,7 +25,7 @@ export function parseErisParCoupon(csv: string): ErisCurve {
   for (const line of lines.slice(1)) {
     const c = line.split(',');
     const sym = c[iSym]?.trim();
-    const rate = Number(c[iFair]);
+    const rate = Number(c[iFair]?.trim());
     if (!sym?.startsWith('SOFR') || !Number.isFinite(rate)) continue;
     if (!date) { const [m, d, y] = c[iDate].trim().split('/'); date = `${y}-${m}-${d}`; }
     points.push({ tenor: sym.slice(4), rate }); // 去 'SOFR' 前缀
@@ -36,7 +36,7 @@ export function parseErisParCoupon(csv: string): ErisCurve {
 
 function fileName(ymd: string): string { return `Eris_${ymd}_EOD_ParCouponCurve_SOFR.csv`; }
 
-// date=YYYY-MM-DD。先试 archives(历史),再试 root(近月);都 404 → null(非交易日)。
+// date=YYYY-MM-DD。先试 archives(历史),再试 root(近月);都 404 → null(非交易日);其他错误抛出。
 export async function fetchErisForDate(date: string, doFetch = doFetch0): Promise<ErisCurve | null> {
   const [y, m, d] = date.split('-');
   const ymd = `${y}${m}${d}`;
@@ -44,6 +44,7 @@ export async function fetchErisForDate(date: string, doFetch = doFetch0): Promis
   for (const url of urls) {
     const res = await doFetch(url);
     if (res.ok) return parseErisParCoupon(await res.text());
+    if (res.status !== 404) throw new Error(`Eris 请求失败 ${res.status}: ${url}`);
   }
   return null;
 }
