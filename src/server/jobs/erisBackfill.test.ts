@@ -18,4 +18,18 @@ describe('backfillEris', () => {
     expect(getMarketSeries(db, 'ERIS_OIS_3M').map((r) => r.date)).toEqual(['2026-07-03', '2026-07-06']);
     db.close();
   });
+
+  it('单日抛错(如早年 LIBOR 格式解析失败)跳过,不中断整段', async () => {
+    const db = new Database(':memory:');
+    migrate(db);
+    // 07-04 抛错(模拟老格式解析失败),07-03/07-05 有数据 → 应跳 1、存 2,不整段崩
+    const fake = async (date: string) => {
+      if (date === '2026-07-04') throw new Error('Eris CSV: 无有效数据行');
+      return { date, points: [{ tenor: '3M', rate: 3.7 }] };
+    };
+    const { days, skipped } = await backfillEris(db, '2026-07-03', fake, '2026-07-05');
+    expect(days).toBe(2);
+    expect(skipped).toBe(1);
+    db.close();
+  });
 });
