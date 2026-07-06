@@ -15,4 +15,15 @@ describe('parsePensfordXml', () => {
     expect(snap.quotes.find((q) => q.symbol === 'SOFRSWAP Y5')?.value).toBe(0.039389);
     expect(snap.quotes.find((q) => q.symbol === 'FF2_Comdty')?.value).toBe(96.315);
   });
+  it('日期按美式 MM/DD/YYYY 解析(月日不对称验证方向)', () => {
+    const xml = `<TFCrecords timeStamp="01/15/2026 06:00:01 PM"><record><symbol>SOFR</symbol><quoteDate>01/15/2026</quoteDate><quote>0.03</quote></record></TFCrecords>`;
+    expect(parsePensfordXml(xml).quoteDate).toBe('2026-01-15');
+  });
+  it('畸形记录(缺 symbol 或 quote)被跳过', () => {
+    const xml = `<TFCrecords timeStamp="01/15/2026 06:00:01 PM"><record><quote>0.03</quote></record><record><symbol>SOFR</symbol><quote>0.03</quote></record></TFCrecords>`;
+    expect(parsePensfordXml(xml).quotes.map((q) => q.symbol)).toEqual(['SOFR']);
+  });
+  it('无 timeStamp 抛错', () => {
+    expect(() => parsePensfordXml('<TFCrecords></TFCrecords>')).toThrow();
+  });
 });
