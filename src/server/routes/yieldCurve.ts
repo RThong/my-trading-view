@@ -4,7 +4,7 @@ import type { Point } from '../analytics/regime';
 import { HISTORY_START_DATE } from '../config';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
-import { OIS_TENORS, FF_CONTRACTS, ffLabel, toPercent, impliedFedRate } from '../analytics/rateCurves';
+import { ERIS_OIS_TENORS, FF_CONTRACTS, ffLabel, impliedFedRate } from '../analytics/rateCurves';
 
 // 期限 → FRED 国债不变期限收益率 series id。数组顺序即曲线 x 轴顺序。
 const TENORS: [string, string][] = [
@@ -52,7 +52,9 @@ function buildFromDb(pairs: { label: string; symbol: string }[], xform: (v: numb
   }
 }
 
-const buildOis = (): CurveBody => buildFromDb(OIS_TENORS.map((t) => ({ label: t.tenor, symbol: t.symbol })), toPercent);
+// Eris 的 FairCoupon 已是百分点 → 恒等 xform。
+const buildOis = (): CurveBody =>
+  buildFromDb(ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })), (v) => v);
 const buildFedPath = (): CurveBody =>
   buildFromDb(FF_CONTRACTS.map((n) => ({ label: ffLabel(n), symbol: `FF${n}_Comdty` })), impliedFedRate);
 

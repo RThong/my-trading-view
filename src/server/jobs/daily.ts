@@ -11,6 +11,7 @@ import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
 import { updateVrpInputs } from './vrpInputs';
 import { updateVxTermStructure } from './vxTermStructure';
 import { updatePensfordSnapshot } from './pensfordSnapshot';
+import { updateErisSnapshot } from './erisSnapshot';
 
 type RunDailyJobOpts = {
   db: Database;
@@ -28,6 +29,8 @@ type RunDailyJobOpts = {
   pensfordUpdater?: (db: Database) => Promise<{ total: number }>;
   /** BTC 现货日 bar 更新器(注入式;cryptoDaily 传 updateBtcPrice,测试省略以免联网)。返回写入行数。 */
   btcPriceUpdater?: (db: Database) => Promise<number>;
+  /** Eris SOFR OIS 曲线更新器(注入式;CLI 传 updateErisSnapshot,测试省略以免联网)。 */
+  erisUpdater?: (db: Database) => Promise<{ total: number }>;
 };
 
 /** 包一次 job_run:开跑 → 按 fn 结果落终态;fn 抛异常记 failed。所有分组共用,免去 4 处重复 try/catch。 */
@@ -94,6 +97,14 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     });
   }
 
+  // eris_snapshot 分组:Eris SOFR OIS 曲线(24 档,成功/失败两态)。
+  if (opts.erisUpdater) {
+    await withJobRun(opts.db, 'eris_snapshot', async () => {
+      const { total } = await opts.erisUpdater!(opts.db);
+      return threeState(total, total, []);
+    });
+  }
+
   // btc_price 分组:BTC 现货日 bar(Deribit 主源 / Yahoo 降级;成功/失败两态)。
   if (opts.btcPriceUpdater) {
     await withJobRun(opts.db, 'btc_price', async () => {
@@ -124,6 +135,7 @@ if (import.meta.main) {
       vrpInputsUpdater: updateVrpInputs,
       vxUpdater: updateVxTermStructure,
       pensfordUpdater: updatePensfordSnapshot,
+      erisUpdater: updateErisSnapshot,
     });
     console.log('Daily job complete.');
   }
