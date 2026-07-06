@@ -20,5 +20,6 @@ describe('rateCurves 纯转换', () => {
   it('IG 信用期限结构映射', () => {
     expect(CREDIT_TERM[0]).toEqual({ tenor: '1-3Y', series: 'BAMLC1A0C13Y' });
     expect(CREDIT_TERM.at(-1)!.tenor).toBe('15Y+');
+    expect(CREDIT_TERM.at(-1)!.series).toBe('BAMLC8A0C15PY');
   });
 });

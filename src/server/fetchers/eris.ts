@@ -3,8 +3,6 @@ import { fetchWithTimeout } from './http';
 // Eris(并入 CME)公开的免费 SOFR 结算曲线:官方已 bootstrap 的 par OIS 曲线,24 档含短端。
 // 每日 EOD 在 root,历史在 archives/{年}/{MM-月名}/。ParCoupon 的 FairCoupon(%) 即 par OIS 利率。
 const ROOT = 'https://files.erisfutures.com/ftp';
-const MONTHS = ['01-January', '02-February', '03-March', '04-April', '05-May', '06-June',
-  '07-July', '08-August', '09-September', '10-October', '11-November', '12-December'];
 const HISTORY_URL = `${ROOT}/Eris_Historical_ParCouponCurve_SOFR.csv`;
 const LATEST_URL = `${ROOT}/Eris_Latest_EOD_ParCouponCurve_SOFR.csv`;
 
@@ -52,21 +50,6 @@ export function parseErisParCoupon(csv: string): ErisCurve {
   }
   if (!date) throw new Error('Eris CSV: 无有效数据行');
   return { date, points };
-}
-
-function fileName(ymd: string): string { return `Eris_${ymd}_EOD_ParCouponCurve_SOFR.csv`; }
-
-// date=YYYY-MM-DD。先试 archives(历史),再试 root(近月);都 404 → null(非交易日);其他错误抛出。
-export async function fetchErisForDate(date: string, doFetch = doFetch0): Promise<ErisCurve | null> {
-  const [y, m, d] = date.split('-');
-  const ymd = `${y}${m}${d}`;
-  const urls = [`${ROOT}/archives/${y}/${MONTHS[Number(m) - 1]}/${fileName(ymd)}`, `${ROOT}/${fileName(ymd)}`];
-  for (const url of urls) {
-    const res = await doFetch(url);
-    if (res.ok) return parseErisParCoupon(await res.text());
-    if (res.status !== 404) throw new Error(`Eris 请求失败 ${res.status}: ${url}`);
-  }
-  return null;
 }
 
 export async function fetchErisHistory(doFetch = doFetch0): Promise<ErisCurve[]> {

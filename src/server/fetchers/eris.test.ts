@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseErisParCoupon, fetchErisForDate, parseErisHistorical } from './eris';
+import { parseErisParCoupon, parseErisHistorical } from './eris';
 
 const SAMPLE = `Symbol,EvaluationDate,FirstTradeDate,ErisPAIDate,EffectiveDate,CashFlowAlignmentDate,MaturityDate,NPV (A),FixedNPV,FloatingNPV,Coupon (%),FairCoupon (%),Nominal,Spread (Bps),Index
 SOFR1D,07/02/2026,07/02/2026,07/02/2026,07/07/2026,07/08/2026,07/10/2026,0,0.01,-0.01,3.6357,3.6357215934,100,0,SOFRON Actual/360
@@ -13,21 +13,6 @@ describe('parseErisParCoupon', () => {
   it('取 FairCoupon(%) 作 rate(已是百分点)', () => {
     expect(c.points.find((p) => p.tenor === '3M')!.rate).toBeCloseTo(3.7193568, 5);
     expect(c.points.find((p) => p.tenor === '10Y')!.rate).toBeCloseTo(4.0647448, 5);
-  });
-});
-
-const resp = (status: number, body = '') => new Response(body, { status });
-describe('fetchErisForDate', () => {
-  it('两处都 404 → null(非交易日)', async () => {
-    expect(await fetchErisForDate('2026-07-04', async () => resp(404))).toBeNull();
-  });
-  it('archives 404 → 回退 root 命中并解析', async () => {
-    let n = 0;
-    const f = async () => (n++ === 0 ? resp(404) : resp(200, SAMPLE));
-    expect((await fetchErisForDate('2026-07-02', f))?.points.length).toBe(3);
-  });
-  it('非 404 错误(500)→ 抛出,不静默当非交易日', async () => {
-    expect(fetchErisForDate('2026-07-02', async () => resp(500))).rejects.toThrow();
   });
 });
 
