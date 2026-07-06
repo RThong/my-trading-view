@@ -10,6 +10,7 @@ import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
 import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
 import { updateVrpInputs } from './vrpInputs';
 import { updateVxTermStructure } from './vxTermStructure';
+import { updatePensfordSnapshot } from './pensfordSnapshot';
 
 type RunDailyJobOpts = {
   db: Database;
@@ -82,6 +83,12 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       return { status: 'success', recordsWritten: total };
     });
   }
+
+  // pensford_snapshot 分组:Pensford 当天快照(OIS/FF/Term SOFR/美债/SOFR 均值,成功/失败两态)。
+  await withJobRun(opts.db, 'pensford_snapshot', async () => {
+    const { total } = await updatePensfordSnapshot(opts.db);
+    return threeState(total, total, []);
+  });
 
   // btc_price 分组:BTC 现货日 bar(Deribit 主源 / Yahoo 降级;成功/失败两态)。
   if (opts.btcPriceUpdater) {
