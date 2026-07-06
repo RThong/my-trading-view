@@ -56,6 +56,14 @@ const PERSPECTIVES: Perspective[] = [
     ],
     render: (tabId) => <YieldCurvePanel source={tabId} />,
   },
+  {
+    id: 'creditCurve', label: '信用曲线',
+    tabs: [
+      { id: 'credit_rating', label: '评级利差' },
+      { id: 'credit_term', label: '期限结构' },
+    ],
+    render: (tabId) => <YieldCurvePanel source={tabId} />,
+  },
 ];
 
 export function App() {
