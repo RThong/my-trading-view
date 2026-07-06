@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseErisParCoupon, fetchErisForDate } from './eris';
+import { parseErisParCoupon, parseErisHistorical } from './eris';
 
 const SAMPLE = `Symbol,EvaluationDate,FirstTradeDate,ErisPAIDate,EffectiveDate,CashFlowAlignmentDate,MaturityDate,NPV (A),FixedNPV,FloatingNPV,Coupon (%),FairCoupon (%),Nominal,Spread (Bps),Index
 SOFR1D,07/02/2026,07/02/2026,07/02/2026,07/07/2026,07/08/2026,07/10/2026,0,0.01,-0.01,3.6357,3.6357215934,100,0,SOFRON Actual/360
@@ -16,17 +16,21 @@ describe('parseErisParCoupon', () => {
   });
 });
 
-const resp = (status: number, body = '') => new Response(body, { status });
-describe('fetchErisForDate', () => {
-  it('两处都 404 → null(非交易日)', async () => {
-    expect(await fetchErisForDate('2026-07-04', async () => resp(404))).toBeNull();
+const WIDE = `Evaluation Date,SOFR1W,SOFR3M,SOFR10Y
+2026-07-02,3.638,3.719,4.065
+2026-07-01,3.634,3.739,4.067`;
+
+describe('parseErisHistorical(宽表全历史)', () => {
+  const rows = parseErisHistorical(WIDE);
+  it('每行一个 curve', () => expect(rows.length).toBe(2));
+  it('date 直接取(已是 YYYY-MM-DD)', () => expect(rows[0].date).toBe('2026-07-02'));
+  it('列头去 SOFR 前缀成 tenor + 取值', () => {
+    expect(rows[0].points.find((p) => p.tenor === '3M')!.rate).toBeCloseTo(3.719, 3);
+    expect(rows[1].points.find((p) => p.tenor === '10Y')!.rate).toBeCloseTo(4.067, 3);
   });
-  it('archives 404 → 回退 root 命中并解析', async () => {
-    let n = 0;
-    const f = async () => (n++ === 0 ? resp(404) : resp(200, SAMPLE));
-    expect((await fetchErisForDate('2026-07-02', f))?.points.length).toBe(3);
-  });
-  it('非 404 错误(500)→ 抛出,不静默当非交易日', async () => {
-    expect(fetchErisForDate('2026-07-02', async () => resp(500))).rejects.toThrow();
+  it('空格子跳过(不产生 rate=0 假点)', () => {
+    const csv = `Evaluation Date,SOFR1W,SOFR3M\n2021-01-04,,0.05`;
+    const c = parseErisHistorical(csv);
+    expect(c[0].points).toEqual([{ tenor: '3M', rate: 0.05 }]); // 1W 空 → 不出现
   });
 });
