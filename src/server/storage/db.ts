@@ -49,10 +49,10 @@ function migrateOptionSource(db: Database): void {
 // 这样旧库迁完即满足不变式,且 VRP 的 RV 腿(只用 close)无需等回填就能算。
 // 须在 schema.sql 建出 price_eod 之后调用。幂等:INSERT OR IGNORE 不覆盖已抓的真 OHLC,
 // DELETE 只动现货 id;新库/已迁库再跑都是 no-op。
-// market_series 的保留名单:波动率指数 + VX 期货期限结构序列。
-// ⚠️ 这里的 DELETE 会清掉不在名单里的 series_id。已 gate 在 migrate() 的 version<4 分支,
-//    只在旧库升级时跑一次(不再每日重跑),但重建/迁移旧库时新 series_id 仍须先进此名单。
-const VOL_INDICES = ['VIX', 'VXN', 'GVZ', 'OVX', 'DVOL', 'VX1', 'VX3'];
+// v4 要清出 market_series 的「现货序列」白名单(只删这几个,而非"删非指数")。
+// 反转成删除名单而非保留名单:这样迁移只精确清掉已知现货,指数 + 未来新增序列
+// (如 Pensford 的 SOFRSWAP*/FF*/SOFR,不能回填的历史)一律不受影响,避免静默误删。
+const SPOT_TO_DROP = ['SPY', 'QQQ', 'GLD', 'USO', 'BTC', 'SPX', 'NDX'];
 function migrateSpotToPriceEod(db: Database): void {
   // VIX 既是指数又是 .VIX tab 的现货:播种进 price_eod,但保留在 market_series(IV 腿)。
   // SPX/NDX 已无读取方,不播种,仅随 DELETE 清走。
@@ -62,8 +62,8 @@ function migrateSpotToPriceEod(db: Database): void {
      FROM market_series WHERE series_id IN ('SPY', 'QQQ', 'GLD', 'USO', 'BTC', 'VIX')`,
     [new Date().toISOString()],
   );
-  const keep = VOL_INDICES.map((s) => `'${s}'`).join(', ');
-  db.run(`DELETE FROM market_series WHERE series_id NOT IN (${keep})`);
+  const drop = SPOT_TO_DROP.map((s) => `'${s}'`).join(', ');
+  db.run(`DELETE FROM market_series WHERE series_id IN (${drop})`);
 }
 
 // 库当前 schema 版本;schema_version 表尚不存在(全新库)时按 0。

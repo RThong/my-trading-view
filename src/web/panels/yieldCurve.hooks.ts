@@ -79,8 +79,8 @@ export function presetDates(maxDate: string, datesAsc: string[]): { label: strin
 
 // ── Hook ──────────────────────────────────────────────────────────
 
-export function useYieldCurve() {
-  const { data = NO_DATA, error, isLoading } = useSWR('/api/yield-curve', getJson<YieldCurveData>, SWR_OPTS);
+export function useYieldCurve(source: string) {
+  const { data = NO_DATA, error, isLoading } = useSWR(`/api/yield-curve?source=${source}`, getJson<YieldCurveData>, SWR_OPTS);
   const datesAsc = unionDatesAsc(data.series);
   const maxDate = datesAsc[datesAsc.length - 1];
   return {

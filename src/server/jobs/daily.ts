@@ -10,6 +10,7 @@ import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
 import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
 import { updateVrpInputs } from './vrpInputs';
 import { updateVxTermStructure } from './vxTermStructure';
+import { updatePensfordSnapshot } from './pensfordSnapshot';
 
 type RunDailyJobOpts = {
   db: Database;
@@ -23,6 +24,8 @@ type RunDailyJobOpts = {
   vrpInputsUpdater?: (db: Database) => Promise<{ total: number; succeeded: number; failures: string[] }>;
   /** VX 期限结构(VX1/VX3)更新器(注入式;CLI 传 updateVxTermStructure,测试省略以免联网)。 */
   vxUpdater?: (db: Database) => Promise<{ total: number }>;
+  /** Pensford 快照更新器(注入式;CLI 传 updatePensfordSnapshot,测试省略以免联网)。 */
+  pensfordUpdater?: (db: Database) => Promise<{ total: number }>;
   /** BTC 现货日 bar 更新器(注入式;cryptoDaily 传 updateBtcPrice,测试省略以免联网)。返回写入行数。 */
   btcPriceUpdater?: (db: Database) => Promise<number>;
 };
@@ -83,6 +86,14 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     });
   }
 
+  // pensford_snapshot 分组:Pensford 当天快照(OIS/FF/Term SOFR/美债/SOFR 均值,成功/失败两态)。
+  if (opts.pensfordUpdater) {
+    await withJobRun(opts.db, 'pensford_snapshot', async () => {
+      const { total } = await opts.pensfordUpdater!(opts.db);
+      return threeState(total, total, []);
+    });
+  }
+
   // btc_price 分组:BTC 现货日 bar(Deribit 主源 / Yahoo 降级;成功/失败两态)。
   if (opts.btcPriceUpdater) {
     await withJobRun(opts.db, 'btc_price', async () => {
@@ -94,6 +105,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
 
 // 一天多触发点(08/11/14/17/20)的「成功即止」守卫:这 3 组当天全部 success 过 → 跳过本次。
 // 任一组当天还没成功(含失败/部分)→ 照常跑,直到跑出一次全绿。
+// pensford_snapshot / btc_price 不列入:源脆弱(无 SLA)/低频,失败不该阻断"当天必需组已全绿则跳过"的逻辑。
 const REQUIRED_JOBS = ['options', 'vrp_inputs', 'vx_term_structure'];
 
 // CLI 入口
@@ -111,6 +123,7 @@ if (import.meta.main) {
       optionsClient: defaultMoomooOptionsClient(),
       vrpInputsUpdater: updateVrpInputs,
       vxUpdater: updateVxTermStructure,
+      pensfordUpdater: updatePensfordSnapshot,
     });
     console.log('Daily job complete.');
   }
