@@ -9,8 +9,8 @@ const DEFAULT_LABELS = ['Current', '1 month ago', '1 year ago'];
 
 type Row = { id: number; date: string; visible: boolean };
 
-export function YieldCurvePanel() {
-  const { data, isLoading, error, datesAsc, maxDate, presets } = useYieldCurve();
+export function YieldCurvePanel({ source }: { source: string }) {
+  const { data, isLoading, error, datesAsc, maxDate, presets } = useYieldCurve(source);
   const [rows, setRows] = useState<Row[]>([]);
   const idRef = useRef(0);
   const nextId = () => ++idRef.current;

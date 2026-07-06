@@ -49,8 +49,12 @@ const PERSPECTIVES: Perspective[] = [
   regimePersp('sentiment', '情绪'),
   {
     id: 'rates', label: '利率',
-    tabs: [{ id: 'yieldCurve', label: '收益曲线' }],
-    render: () => <YieldCurvePanel />,
+    tabs: [
+      { id: 'treasury', label: '收益曲线' },
+      { id: 'sofr_ois', label: 'SOFR OIS' },
+      { id: 'fed_path', label: 'Fed 路径' },
+    ],
+    render: (tabId) => <YieldCurvePanel source={tabId} />,
   },
 ];
 
