@@ -17,3 +17,6 @@ data/logs/
 # 本地运行依赖:moomoo 命令行 OpenD(56MB,含登录配置,不进 git)
 vendor/
 reports/
+
+# 数据源清单(端点/URL,不进公共仓库)
+DATA_SOURCES.md
