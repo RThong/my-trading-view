@@ -40,13 +40,12 @@ async function buildTreasury(): Promise<CurveBody> {
 function buildFromDb(pairs: { label: string; symbol: string }[], xform: (v: number) => number): CurveBody {
   const db = openDb();
   try {
-    const series: Record<string, Point[]> = {};
-    const unavailable: string[] = [];
-    for (const { label, symbol } of pairs) {
-      const rows = getMarketSeries(db, symbol);
-      if (rows.length) series[label] = rows.map((r) => ({ date: r.date, value: xform(r.value) }));
-      else unavailable.push(label);
-    }
+    // 一次查库,再声明式拆成 series(有数据)/ unavailable(缺数据)两组。
+    const fetched = pairs.map((p) => ({ label: p.label, rows: getMarketSeries(db, p.symbol) }));
+    const series = Object.fromEntries(
+      fetched.filter((f) => f.rows.length).map((f) => [f.label, f.rows.map((r) => ({ date: r.date, value: xform(r.value) }))]),
+    );
+    const unavailable = fetched.filter((f) => !f.rows.length).map((f) => f.label);
     return { tenors: pairs.map((p) => p.label), series, unavailable };
   } finally {
     db.close();

@@ -8,4 +8,5 @@ describe('rateCurves 纯转换', () => {
   it('OIS 期限映射到 Pensford symbol', () =>
     expect(OIS_TENORS.find((t) => t.tenor === '5Y')?.symbol).toBe('SOFRSWAP Y5'));
   it('FF 合约从 2 起', () => expect(FF_CONTRACTS[0]).toBe(2));
+  it('FF 合约到 25 共 24 个', () => { expect(FF_CONTRACTS.length).toBe(24); expect(FF_CONTRACTS.at(-1)).toBe(25); });
 });
