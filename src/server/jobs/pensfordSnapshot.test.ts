@@ -20,6 +20,10 @@ describe('updatePensfordSnapshot', () => {
     const ois = getMarketSeries(db, 'SOFRSWAP Y5');
     expect(ois.map((r) => r.date)).toEqual(['2026-07-02', '2026-07-03']); // 逐日攒
     expect(ois[1].value).toBe(0.039);
+
+    // 幂等检验:同日重跑
+    await updatePensfordSnapshot(db, async () => new Response(xml('07/03/2026')));
+    expect(getMarketSeries(db, 'SOFRSWAP Y5').length).toBe(2); // 幂等:仍是 2 天,不重复
     db.close();
   });
 });
