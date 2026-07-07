@@ -58,8 +58,6 @@ export function useTenorChart(
       if (!s) {
         s = chart.addSeries(LineSeries, { color: spec.color, title: spec.tenor, lineWidth: 2, priceLineVisible: false });
         seriesRef.current.set(spec.tenor, s);
-      } else {
-        s.applyOptions({ color: spec.color }); // 颜色按 tenor 固定,理论不变;防御性同步
       }
       s.setData(spec.data);
     }
