@@ -25,14 +25,6 @@ export function TenorHistoryPanel({ source, interval }: { source: string; interv
 
   useTenorChart(containerRef, specs);
 
-  if (error) return <div className="flex h-full items-center justify-center text-red-400">加载失败:{error.message}</div>;
-  if (isLoading) return <div className="flex h-full items-center justify-center text-neutral-500">加载中…</div>;
-  if (!maxDate) return (
-    <div className="flex h-full items-center justify-center text-amber-500">
-      暂无收益率数据{data.unavailable.length ? `(全部期限缺失:${data.unavailable.join(', ')})` : ''}
-    </div>
-  );
-
   const toggle = (t: string) =>
     setSelected((prev) => {
       const n = new Set(prev);
@@ -40,6 +32,8 @@ export function TenorHistoryPanel({ source, interval }: { source: string; interv
       return n;
     });
 
+  // 容器必须常驻:三态若提前 return 会卸载 containerRef,建图 effect 首帧拿不到节点、
+  // 数据到位后依赖没变又不重跑 → 图永远建不出。故 loading/error/无数据一律作浮层,对齐 PaneChartView。
   return (
     <div className="flex h-full flex-col gap-3">
       {/* 期限 chip 多选:颜色 = 线色 */}
@@ -58,7 +52,16 @@ export function TenorHistoryPanel({ source, interval }: { source: string; interv
           );
         })}
       </div>
-      <div ref={containerRef} className="min-h-0 flex-1" />
+      <div className="relative min-h-0 flex-1">
+        <div ref={containerRef} className="h-full w-full" />
+        {error && <p className="absolute left-2 top-2 text-xs text-red-400">加载失败:{error.message}</p>}
+        {isLoading && <p className="absolute left-2 top-2 text-xs text-neutral-500">加载中…</p>}
+        {!isLoading && !error && !maxDate && (
+          <p className="absolute left-2 top-2 text-xs text-amber-500">
+            暂无收益率数据{data.unavailable.length ? `(全部期限缺失:${data.unavailable.join(', ')})` : ''}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
