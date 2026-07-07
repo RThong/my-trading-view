@@ -4,6 +4,7 @@ import { TabBar } from './components/TabBar';
 import { AssetChart } from './panels/AssetChart';
 import { RegimeChart } from './panels/RegimeChart';
 import { YieldCurvePanel } from './panels/YieldCurvePanel';
+import { TenorHistoryPanel } from './panels/TenorHistoryPanel';
 import type { RegimeDim } from './panels/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
 
@@ -51,10 +52,14 @@ const PERSPECTIVES: Perspective[] = [
     id: 'rates', label: '利率',
     tabs: [
       { id: 'treasury', label: '收益曲线' },
+      { id: 'tenor_history', label: '期限走势' },
       { id: 'sofr_ois', label: 'SOFR OIS' },
       { id: 'fed_path', label: 'Fed 路径' },
     ],
-    render: (tabId) => <YieldCurvePanel source={tabId} />,
+    render: (tabId, interval) =>
+      tabId === 'tenor_history'
+        ? <TenorHistoryPanel source="treasury" interval={interval} />
+        : <YieldCurvePanel source={tabId} />,
   },
   {
     id: 'creditCurve', label: '信用曲线',

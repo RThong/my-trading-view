@@ -1,6 +1,8 @@
 // 期限走势图数据层:把某一期限的历史序列喂给图,按全局 interval 聚合。
 // 纯函数在此,图表实例管理见下方 useTenorChart。
-import { aggregate, type LinePoint } from '../lib/chart';
+import { useEffect, useRef } from 'react';
+import { createChart, LineSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
+import { aggregate, CHART_OPTIONS, type LinePoint } from '../lib/chart';
 import type { YPoint } from './yieldCurve.hooks';
 import type { Interval } from '../hooks/interval';
 
@@ -22,4 +24,45 @@ export function pickDefaultTenors(source: string, available: string[]): string[]
   const table = DEFAULT_TENORS[source];
   if (!table) return available.slice(0, 4);
   return table.filter((t) => available.includes(t));
+}
+
+// ── 图表实例:单图,每个选中期限一条线 ────────────────────────────
+export type TenorSpec = { tenor: string; color: string; data: LinePoint[] };
+
+/** 建图挂 containerRef;specs 变化时同步 line series(缺的删、没有的建、有的 setData)。 */
+export function useTenorChart(
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  specs: TenorSpec[],
+) {
+  const chartRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+
+  // 挂载建一次,卸载销毁。
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const chart = createChart(containerRef.current, CHART_OPTIONS);
+    chartRef.current = chart;
+    return () => { chart.remove(); chartRef.current = null; seriesRef.current.clear(); };
+  }, [containerRef]);
+
+  // specs 变化时增删/更新线。
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const keysNow = new Set(specs.map((s) => s.tenor));
+    for (const [k, s] of seriesRef.current) {
+      if (!keysNow.has(k)) { chart.removeSeries(s); seriesRef.current.delete(k); }
+    }
+    for (const spec of specs) {
+      let s = seriesRef.current.get(spec.tenor);
+      if (!s) {
+        s = chart.addSeries(LineSeries, { color: spec.color, title: spec.tenor, lineWidth: 2, priceLineVisible: false });
+        seriesRef.current.set(spec.tenor, s);
+      } else {
+        s.applyOptions({ color: spec.color }); // 颜色按 tenor 固定,理论不变;防御性同步
+      }
+      s.setData(spec.data);
+    }
+    chart.timeScale().fitContent();
+  }, [specs]);
 }
