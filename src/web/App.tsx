@@ -54,7 +54,6 @@ const PERSPECTIVES: Perspective[] = [
       { id: 'treasury', label: '收益曲线' },
       { id: 'tenor_history', label: '期限走势' },
       { id: 'sofr_ois', label: 'SOFR OIS' },
-      { id: 'fed_path', label: 'Fed 路径' },
     ],
     render: (tabId, interval) =>
       tabId === 'tenor_history'

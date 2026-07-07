@@ -4,7 +4,7 @@ import type { Point } from '../analytics/regime';
 import { HISTORY_START_DATE } from '../config';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
-import { ERIS_OIS_TENORS, FF_CONTRACTS, ffLabel, impliedFedRate, CREDIT_RATING, CREDIT_TERM } from '../analytics/rateCurves';
+import { ERIS_OIS_TENORS, CREDIT_RATING, CREDIT_TERM } from '../analytics/rateCurves';
 
 // 期限 → FRED 国债不变期限收益率 series id。数组顺序即曲线 x 轴顺序。
 const TENORS: [string, string][] = [
@@ -63,13 +63,10 @@ function buildFromDb(pairs: { label: string; symbol: string }[], xform: (v: numb
 // Eris 的 FairCoupon 已是百分点 → 恒等 xform。
 const buildOis = (): CurveBody =>
   buildFromDb(ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })), (v) => v);
-const buildFedPath = (): CurveBody =>
-  buildFromDb(FF_CONTRACTS.map((n) => ({ label: ffLabel(n), symbol: `FF${n}_Comdty` })), impliedFedRate);
 
 export const yieldCurveRoute = new Hono().get('/', async (c) => {
   const source = c.req.query('source') ?? 'treasury';
   if (source === 'sofr_ois') return c.json(buildOis());
-  if (source === 'fed_path') return c.json(buildFedPath());
   if (source === 'credit_rating') return c.json(await buildFredCurve(CREDIT_RATING));
   if (source === 'credit_term') return c.json(await buildFredCurve(CREDIT_TERM));
   return c.json(await buildTreasury()); // 默认国债(FRED 现拉)

@@ -51,7 +51,7 @@ function migrateOptionSource(db: Database): void {
 // DELETE 只动现货 id;新库/已迁库再跑都是 no-op。
 // v4 要清出 market_series 的「现货序列」白名单(只删这几个,而非"删非指数")。
 // 反转成删除名单而非保留名单:这样迁移只精确清掉已知现货,指数 + 未来新增序列
-// (如 Pensford 的 SOFRSWAP*/FF*/SOFR,不能回填的历史)一律不受影响,避免静默误删。
+// (如 IV 腿 / Eris OIS 曲线等不能回填的历史)一律不受影响,避免静默误删。
 const SPOT_TO_DROP = ['SPY', 'QQQ', 'GLD', 'USO', 'BTC', 'SPX', 'NDX'];
 function migrateSpotToPriceEod(db: Database): void {
   // VIX 既是指数又是 .VIX tab 的现货:播种进 price_eod,但保留在 market_series(IV 腿)。
