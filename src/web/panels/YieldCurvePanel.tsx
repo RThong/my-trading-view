@@ -4,7 +4,7 @@ import { YieldCurveChart, type Curve } from './YieldCurveChart';
 import { DatePickerWithPresets } from '../components/DatePickerWithPresets';
 
 // 曲线配色,按行顺序循环。蓝/红/紫/绿… 呼应参考图。
-const PALETTE = ['#3b82f6', '#ef4444', '#a855f7', '#22c55e', '#eab308', '#f97316', '#14b8a6', '#ec4899'];
+export const PALETTE = ['#3b82f6', '#ef4444', '#a855f7', '#22c55e', '#eab308', '#f97316', '#14b8a6', '#ec4899'];
 const DEFAULT_LABELS = ['Current', '1 month ago', '1 year ago'];
 
 type Row = { id: number; date: string; visible: boolean };
