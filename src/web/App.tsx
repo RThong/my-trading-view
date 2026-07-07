@@ -5,6 +5,7 @@ import { AssetChart } from './panels/AssetChart';
 import { RegimeChart } from './panels/RegimeChart';
 import { YieldCurvePanel } from './panels/YieldCurvePanel';
 import { TenorHistoryPanel } from './panels/TenorHistoryPanel';
+import { RateSpreadPanel } from './panels/RateSpreadPanel';
 import type { RegimeDim } from './panels/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
 
@@ -55,10 +56,23 @@ const PERSPECTIVES: Perspective[] = [
       { id: 'tenor_history', label: '期限走势' },
       { id: 'sofr_ois', label: 'SOFR OIS' },
     ],
-    render: (tabId, interval) =>
-      tabId === 'tenor_history'
-        ? <TenorHistoryPanel source="treasury" interval={interval} />
-        : <YieldCurvePanel source={tabId} />,
+    render: (tabId, interval) => {
+      if (tabId === 'tenor_history') return <TenorHistoryPanel source="treasury" interval={interval} />;
+      // 曲线 tab(treasury/sofr_ois)在曲线图下方堆叠一张利差时序图。
+      const spread =
+        tabId === 'treasury' ? { long: '10Y', short: '3M', label: '10Y − 3M' }
+        : tabId === 'sofr_ois' ? { long: '12M', short: '3M', label: '1Y − 3M' }
+        : null;
+      if (!spread) return <YieldCurvePanel source={tabId} />;
+      return (
+        <div className="flex h-full flex-col gap-2">
+          <div className="min-h-0 flex-[2]"><YieldCurvePanel source={tabId} /></div>
+          <div className="min-h-0 flex-1">
+            <RateSpreadPanel source={tabId} long={spread.long} short={spread.short} label={spread.label} interval={interval} />
+          </div>
+        </div>
+      );
+    },
   },
   {
     id: 'creditCurve', label: '信用曲线',
