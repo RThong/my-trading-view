@@ -29,10 +29,12 @@ export function pickDefaultTenors(source: string, available: string[]): string[]
 // ── 图表实例:单图,每个选中期限一条线 ────────────────────────────
 export type TenorSpec = { tenor: string; color: string; data: LinePoint[] };
 
-/** 建图挂 containerRef;specs 变化时同步 line series(缺的删、没有的建、有的 setData)。 */
+/** 建图挂 containerRef;specs 变化时同步 line series(缺的删、没有的建、有的 setData)。
+ *  baseline 传数字时,在每条新建 series 上画一条该值的水平参考线(利差图传 0)。 */
 export function useTenorChart(
   containerRef: React.RefObject<HTMLDivElement | null>,
   specs: TenorSpec[],
+  baseline?: number,
 ) {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
@@ -57,10 +59,14 @@ export function useTenorChart(
       let s = seriesRef.current.get(spec.tenor);
       if (!s) {
         s = chart.addSeries(LineSeries, { color: spec.color, title: spec.tenor, lineWidth: 2, priceLineVisible: false });
+        // 利差图传 baseline=0:穿 0 = 倒挂。只在建线时加一次,免每次 setData 重复加。
+        if (baseline !== undefined) {
+          s.createPriceLine({ price: baseline, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
+        }
         seriesRef.current.set(spec.tenor, s);
       }
       s.setData(spec.data);
     }
     chart.timeScale().fitContent();
-  }, [specs]);
+  }, [specs, baseline]);
 }
