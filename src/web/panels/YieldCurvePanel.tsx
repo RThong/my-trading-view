@@ -2,9 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useYieldCurve, curveForDate, snapToTradingDay } from './yieldCurve.hooks';
 import { YieldCurveChart, type Curve } from './YieldCurveChart';
 import { DatePickerWithPresets } from '../components/DatePickerWithPresets';
-
-// 曲线配色,按行顺序循环。蓝/红/紫/绿… 呼应参考图。
-export const PALETTE = ['#3b82f6', '#ef4444', '#a855f7', '#22c55e', '#eab308', '#f97316', '#14b8a6', '#ec4899'];
+import { SERIES_COLORS } from '../lib/palette';
 const DEFAULT_LABELS = ['Current', '1 month ago', '1 year ago'];
 
 type Row = { id: number; date: string; visible: boolean };
@@ -39,7 +37,7 @@ export function YieldCurvePanel({ source }: { source: string }) {
 
   const presetLabelOf = (date: string) => presets.find((p) => p.date === date)?.label;
   const labelOf = (date: string) => (presetLabelOf(date) ? `${presetLabelOf(date)}: ${date}` : date);
-  const colorOf = (i: number) => PALETTE[i % PALETTE.length];
+  const colorOf = (i: number) => SERIES_COLORS[i % SERIES_COLORS.length];
 
   // 每行算好值 + 颜色(按行序,与显隐无关,勾掉再勾回颜色不变);图只画勾选的。
   const enriched = rows.map((r, i) => ({ row: r, color: colorOf(i), values: curveForDate(data.series, data.tenors, r.date) }));
