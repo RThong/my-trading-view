@@ -16,3 +16,6 @@ export const DERIBIT_UNDERLYINGS = ['BTC'];
 
 // 期权 API 路由的白名单(moomoo + deribit 两类合并)。
 export const ALL_OPTION_UNDERLYINGS = [...OPTIONS_UNDERLYINGS, ...DERIBIT_UNDERLYINGS];
+
+// 仅作价格序列(非期权标的),给 /api/price 白名单用。NOBL=股息贵族 ETF(攻防指标的防御腿)。
+export const PRICE_ONLY_UNDERLYINGS = ['NOBL'];

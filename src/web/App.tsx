@@ -6,6 +6,7 @@ import { RegimeChart } from './panels/RegimeChart';
 import { YieldCurvePanel } from './panels/YieldCurvePanel';
 import { TenorHistoryPanel } from './panels/TenorHistoryPanel';
 import { RateSpreadPanel } from './panels/RateSpreadPanel';
+import { AttackDefensePanel } from './panels/AttackDefensePanel';
 import type { RegimeDim } from './panels/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
 
@@ -85,6 +86,11 @@ const PERSPECTIVES: Perspective[] = [
       { id: 'credit_term', label: '期限结构' },
     ],
     render: (tabId) => <YieldCurvePanel source={tabId} />,
+  },
+  {
+    id: 'featured', label: '特色指标',
+    tabs: [{ id: 'attack_defense', label: '攻防' }],
+    render: () => <AttackDefensePanel />,
   },
 ];
 
