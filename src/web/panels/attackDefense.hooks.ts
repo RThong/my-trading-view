@@ -1,8 +1,8 @@
 // 攻防指标数据层:NOBL/QQQ 比值 + 均线迟滞 regime。纯函数,便于单测。
 import type { PriceBar } from './assetChart.hooks';
 
-export const MA_LEN = 100;   // trailing 均线长度(日),中期
-export const BAND = 0.05;    // 迟滞带 ±5%,滤小颠簸
+export const MA_LEN = 150;   // trailing 均线长度(日),中期
+export const BAND = 0.12;    // 迟滞带 ±12%,滤小颠簸
 
 export type Regime = 'defense' | 'offense' | 'neutral';
 
