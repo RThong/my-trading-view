@@ -3,7 +3,7 @@ import { useMemo, useRef } from 'react';
 import useSWR from 'swr';
 import { usePaneChartStack, type Spec, type PaneDef, type PriceBar } from './assetChart.hooks';
 import { PaneChartView } from './PaneChartView';
-import { ratioSeries, regimeZones, MA_LEN, BAND } from './attackDefense.hooks';
+import { ratioSeries, regimeZones, MA_LEN, BAND, type Regime } from './attackDefense.hooks';
 
 // 攻防:上 QQQ 蜡烛、下 NOBL/QQQ 比值 + 绿(防守)/红(进攻)背景区。恒日频,不吃全局 interval。
 const BG_GREEN = 'rgba(34,197,94,0.35)';
@@ -33,7 +33,7 @@ export function AttackDefensePanel() {
     const nobl = nb.data ?? [];
     const ratio = ratioSeries(nobl, qqq);
     const zones = regimeZones(ratio, MA_LEN, BAND);
-    const bgColor = (regime: string) => (regime === 'defense' ? BG_GREEN : regime === 'offense' ? BG_RED : BG_NONE);
+    const bgColor = (regime: Regime) => (regime === 'defense' ? BG_GREEN : regime === 'offense' ? BG_RED : BG_NONE);
     return [
       { key: 'qqq', pane: 0, kind: 'candle', title: 'QQQ',
         data: qqq.map((b) => ({ time: b.date, open: b.open ?? b.close, high: b.high ?? b.close, low: b.low ?? b.close, close: b.close })) },
