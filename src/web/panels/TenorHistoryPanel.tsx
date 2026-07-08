@@ -1,7 +1,7 @@
 // src/web/panels/TenorHistoryPanel.tsx
 import { useEffect, useRef, useState } from 'react';
 import { useYieldCurve } from './yieldCurve.hooks';
-import { PALETTE } from './YieldCurvePanel';
+import { SERIES_COLORS } from '../lib/palette';
 import { tenorSeriesData, pickDefaultTenors, useTenorChart, type TenorSpec } from './tenorHistory.hooks';
 import type { Interval } from '../hooks/interval';
 
@@ -17,7 +17,7 @@ export function TenorHistoryPanel({ source, interval }: { source: string; interv
   }, [maxDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 期限固定配色:按 tenors 序号取色(勾/取消不改色)。
-  const colorOf = (tenor: string) => PALETTE[data.tenors.indexOf(tenor) % PALETTE.length];
+  const colorOf = (tenor: string) => SERIES_COLORS[data.tenors.indexOf(tenor) % SERIES_COLORS.length];
 
   const specs: TenorSpec[] = data.tenors
     .filter((t) => selected.has(t))

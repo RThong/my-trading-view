@@ -1,7 +1,7 @@
 // src/web/panels/RateSpreadPanel.tsx
 import { useRef } from 'react';
 import { useYieldCurve } from './yieldCurve.hooks';
-import { PALETTE } from './YieldCurvePanel';
+import { SERIES_COLORS } from '../lib/palette';
 import { useTenorChart, type TenorSpec } from './tenorHistory.hooks';
 import { spreadSeries } from './rateSpread.hooks';
 import { aggregate } from '../lib/chart';
@@ -16,7 +16,7 @@ export function RateSpreadPanel({ source, long, short, label, interval }:
   const rows = spreadSeries(data.series[long], data.series[short]);
   const spec: TenorSpec = {
     tenor: label,
-    color: PALETTE[0],
+    color: SERIES_COLORS[0],
     data: aggregate(rows.map((p) => ({ time: p.date, value: p.value })), interval),
   };
   useTenorChart(containerRef, [spec], 0);
