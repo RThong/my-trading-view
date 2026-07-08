@@ -95,7 +95,7 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
   let mooWs: any = null;
   try { mooWs = await connect(envConfig()); } catch { /* OpenD 不可用,ETF 腿整体回退 Yahoo */ }
   try {
-    for (const u of ['SPY', 'QQQ', 'GLD', 'USO', 'TLT'] as const) {
+    for (const u of ['SPY', 'QQQ', 'GLD', 'USO', 'TLT', 'NOBL'] as const) {
       await priceLeg(u, (since) => {
         if (!mooWs) throw new Error('OpenD unavailable');
         return fetchDailyBars(mooWs, u, since);
