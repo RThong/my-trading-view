@@ -55,23 +55,27 @@ const PERSPECTIVES: Perspective[] = [
       { id: 'treasury', label: '收益曲线' },
       { id: 'tenor_history', label: '期限走势' },
       { id: 'sofr_ois', label: 'SOFR OIS' },
+      { id: 'ois_history', label: 'OIS 走势' },
     ],
     render: (tabId, interval) => {
-      if (tabId === 'tenor_history') return <TenorHistoryPanel source="treasury" interval={interval} />;
-      // 曲线 tab(treasury/sofr_ois)在曲线图下方堆叠一张利差时序图。
-      const spread =
-        tabId === 'treasury' ? { long: '10Y', short: '3M', label: '10Y − 3M' }
-        : tabId === 'sofr_ois' ? { long: '12M', short: '3M', label: '1Y − 3M' }
-        : null;
-      if (!spread) return <YieldCurvePanel source={tabId} />;
-      return (
+      // 走势 tab:上「期限随时间」+ 下「利差」纵向堆叠(2:1);曲线 tab 只画纯曲线。
+      const stacked = (top: ReactNode, bottom: ReactNode) => (
         <div className="flex h-full flex-col gap-2">
-          <div className="min-h-0 flex-[2]"><YieldCurvePanel source={tabId} /></div>
-          <div className="min-h-0 flex-1">
-            <RateSpreadPanel source={tabId} long={spread.long} short={spread.short} label={spread.label} interval={interval} />
-          </div>
+          <div className="min-h-0 flex-[2]">{top}</div>
+          <div className="min-h-0 flex-1">{bottom}</div>
         </div>
       );
+      if (tabId === 'tenor_history')
+        return stacked(
+          <TenorHistoryPanel source="treasury" interval={interval} />,
+          <RateSpreadPanel source="treasury" long="10Y" short="3M" label="10Y − 3M" interval={interval} />,
+        );
+      if (tabId === 'ois_history')
+        return stacked(
+          <TenorHistoryPanel source="sofr_ois" interval={interval} />,
+          <RateSpreadPanel source="sofr_ois" long="12M" short="3M" label="1Y − 3M" interval={interval} />,
+        );
+      return <YieldCurvePanel source={tabId} />; // treasury / sofr_ois 纯曲线
     },
   },
   {
