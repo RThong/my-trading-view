@@ -7,10 +7,10 @@ import type { YPoint } from './yieldCurve.hooks';
 import type { Interval } from '../hooks/interval';
 
 // 各 source 的默认勾选期限(短/前端/中/长各取锚点)。
-// treasury 前端用信息量更大的 2Y;OIS 档位较粗,前端用 1Y。
+// treasury 前端用信息量更大的 2Y;OIS 档位对齐 Eris 真实点,12M 而非 1Y。
 export const DEFAULT_TENORS: Record<string, string[]> = {
   treasury: ['3M', '1Y', '2Y', '5Y', '10Y', '30Y'],
-  sofr_ois: ['3M', '1Y', '10Y', '30Y'],
+  sofr_ois: ['1M', '3M', '6M', '12M', '2Y', '10Y'],
 };
 
 /** 某期限的 {date,value}[] → 图用的 {time,value}[],按 interval 聚合。缺该期限 → []。 */
