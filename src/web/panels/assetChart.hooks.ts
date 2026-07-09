@@ -77,6 +77,8 @@ const toBars = (rows: PriceBar[]): Bar[] =>
 // 递归深比较(primitives / 数组 / 普通对象)。用于 specs 稳定化;导出以便单测。
 export function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
+  // NaN===NaN 为 false,但含 NaN 的 specs 若每帧判不等会重新触发稳定化失效→渲染循环,故视 NaN 相等。
+  if (typeof a === 'number' && Number.isNaN(a) && Number.isNaN(b)) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
   const aArr = Array.isArray(a), bArr = Array.isArray(b);
   if (aArr !== bArr) return false;
