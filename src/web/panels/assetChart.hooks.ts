@@ -74,6 +74,34 @@ const toLine = (rows: Array<Record<string, unknown>>, key: string): LinePoint[] 
 const toBars = (rows: PriceBar[]): Bar[] =>
   rows.map((r) => ({ time: r.date, open: r.open ?? r.close, high: r.high ?? r.close, low: r.low ?? r.close, close: r.close }));
 
+// 递归深比较(primitives / 数组 / 普通对象)。用于 specs 稳定化;导出以便单测。
+export function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  const aArr = Array.isArray(a), bArr = Array.isArray(b);
+  if (aArr !== bArr) return false;
+  if (aArr) {
+    const x = a as unknown[], y = b as unknown[];
+    if (x.length !== y.length) return false;
+    for (let i = 0; i < x.length; i++) if (!deepEqual(x[i], y[i])) return false;
+    return true;
+  }
+  const x = a as Record<string, unknown>, y = b as Record<string, unknown>;
+  const kx = Object.keys(x), ky = Object.keys(y);
+  if (kx.length !== ky.length) return false;
+  for (const k of kx) if (!deepEqual(x[k], y[k])) return false;
+  return true;
+}
+
+// specs 稳定化:内容深比较,未变则复用上次引用。否则调用方每渲染传新数组 → [specs] effect
+// 每帧重跑 → addSeries/setData/fitContent 扰动布局 → ResizeObserver→setTops→重渲染 → 无限循环。
+// 收进 hook 后调用方无需为正确性 useMemo。渲染期读写 ref 是纯操作。
+function useStableSpecs(specs: Spec[]): Spec[] {
+  const ref = useRef(specs);
+  if (!deepEqual(ref.current, specs)) ref.current = specs;
+  return ref.current;
+}
+
 /** 把数据按 interval 聚合成各 series 的 spec;pane 下标从 paneDefs 派生(谁含此 series)。 */
 export function buildSpecs(
   opt: OptRow[], vrp: VrpRow[], price: PriceBar[], interval: Interval,
@@ -113,8 +141,9 @@ export function useAssetData(underlying: string, vrpUnderlying?: string) {
 
 // ── 图表引擎维度:持有 chart + series 句柄,负责建图与 series 同步 ──────────────
 export function usePaneChart(
-  containerRef: React.RefObject<HTMLDivElement | null>, paneCount: number, specs: Spec[],
+  containerRef: React.RefObject<HTMLDivElement | null>, paneCount: number, rawSpecs: Spec[],
 ) {
+  const specs = useStableSpecs(rawSpecs);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, AnySeries>>(new Map());
 
