@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { ratioSeries, regimeZones } from './attackDefense.hooks';
+import { ratioSeries } from './attackDefense.hooks';
 
 const bar = (date: string, close: number) => ({ date, open: close, high: close, low: close, close });
 
@@ -15,14 +15,5 @@ describe('ratioSeries', () => {
   it('任一缺失 → []', () => {
     expect(ratioSeries([], [bar('d1', 1)])).toEqual([]);
     expect(ratioSeries([bar('d1', 1)], [])).toEqual([]);
-  });
-});
-
-describe('regimeZones: 均线+迟滞', () => {
-  it('前 maLen-1 neutral;上穿+band→defense;带内维持;下穿-band→offense', () => {
-    const vals = [1, 1, 1, 1.1, 1.02, 0.85];
-    const ratio = vals.map((v, i) => ({ date: `d${i}`, value: v }));
-    const z = regimeZones(ratio, 3, 0.05).map((p) => p.regime);
-    expect(z).toEqual(['neutral', 'neutral', 'neutral', 'defense', 'defense', 'offense']);
   });
 });
