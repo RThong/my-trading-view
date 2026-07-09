@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useRef } from 'react';
 import type { Interval } from '../hooks/interval';
 import { usePaneChartStack } from './assetChart.hooks';
 import { useRegimeData, buildRegimeSpecs, regimePercentiles, REGIME_DIMS, type RegimeDim } from './regimeChart.hooks';
@@ -13,7 +13,7 @@ export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Inter
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { data, error, isLoading } = useRegimeData();
-  const specs = useMemo(() => buildRegimeSpecs(data, dim, interval), [data, dim, interval]);
+  const specs = buildRegimeSpecs(data, dim, interval);
   const { order, collapsed, move, toggle, cells, hovering, tops } = usePaneChartStack(containerRef, paneDefs, paneCount, specs);
 
   // 本维度里在 unavailable 中的序列 → 右上角提示。

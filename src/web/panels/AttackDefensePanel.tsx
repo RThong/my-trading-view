@@ -37,7 +37,7 @@ export function AttackDefensePanel() {
     regime === 'defense' ? (pending ? BG_GREEN_DIM : BG_GREEN)
     : regime === 'offense' ? (pending ? BG_RED_DIM : BG_RED)
     : BG_NONE;
-  // 故意不 useMemo:usePaneChart 已内部按内容稳定化 specs(deepEqual),无需调用方 memo 保正确。
+  // 故意不 useMemo:usePaneChart 已内部按内容稳定化 specs(useStable/isDeepEqual),无需调用方 memo 保正确。
   // (数据量小,每帧重算 sub-ms;不必仿 AssetChart/RegimeChart 的 memo。)
   const specs: Spec[] = [
     { key: 'qqq', pane: 0, kind: 'candle', title: 'QQQ',

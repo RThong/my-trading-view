@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { createChart, LineSeries, CandlestickSeries, HistogramSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
+import { isDeepEqual } from 'remeda';
 import type { Interval } from '../hooks/interval';
 import { CHART_OPTIONS, aggregate, aggregateBars, changeStats, type LinePoint, type Bar } from '../lib/chart';
 
@@ -74,33 +75,12 @@ const toLine = (rows: Array<Record<string, unknown>>, key: string): LinePoint[] 
 const toBars = (rows: PriceBar[]): Bar[] =>
   rows.map((r) => ({ time: r.date, open: r.open ?? r.close, high: r.high ?? r.close, low: r.low ?? r.close, close: r.close }));
 
-// 递归深比较(primitives / 数组 / 普通对象)。用于 specs 稳定化;导出以便单测。
-export function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  // NaN===NaN 为 false,但含 NaN 的 specs 若每帧判不等会重新触发稳定化失效→渲染循环,故视 NaN 相等。
-  if (typeof a === 'number' && Number.isNaN(a) && Number.isNaN(b)) return true;
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
-  const aArr = Array.isArray(a), bArr = Array.isArray(b);
-  if (aArr !== bArr) return false;
-  if (aArr) {
-    const x = a as unknown[], y = b as unknown[];
-    if (x.length !== y.length) return false;
-    for (let i = 0; i < x.length; i++) if (!deepEqual(x[i], y[i])) return false;
-    return true;
-  }
-  const x = a as Record<string, unknown>, y = b as Record<string, unknown>;
-  const kx = Object.keys(x), ky = Object.keys(y);
-  if (kx.length !== ky.length) return false;
-  for (const k of kx) if (!(k in y) || !deepEqual(x[k], y[k])) return false; // k in y:防键名不同但值都 undefined 误判相等
-  return true;
-}
-
-// specs 稳定化:内容深比较,未变则复用上次引用。否则调用方每渲染传新数组 → [specs] effect
-// 每帧重跑 → addSeries/setData/fitContent 扰动布局 → ResizeObserver→setTops→重渲染 → 无限循环。
-// 收进 hook 后调用方无需为正确性 useMemo。渲染期读写 ref 是纯操作。
-function useStableSpecs(specs: Spec[]): Spec[] {
-  const ref = useRef(specs);
-  if (!deepEqual(ref.current, specs)) ref.current = specs;
+// 通用引用稳定化(用于 specs 与 paneDefs):内容深比较(remeda)未变则复用旧引用,让依赖它的 effect 只在真变化时跑。
+// 缺了它:调用方每渲染传新数组 → 依赖它的 effect 每帧重跑;specs 那条会经
+// addSeries/setData/fitContent → ResizeObserver → setTops → 重渲染,连锁成无限循环。
+function useStable<T>(value: T): T {
+  const ref = useRef(value);
+  if (!isDeepEqual(ref.current, value)) ref.current = value;
   return ref.current;
 }
 
@@ -145,7 +125,7 @@ export function useAssetData(underlying: string, vrpUnderlying?: string) {
 export function usePaneChart(
   containerRef: React.RefObject<HTMLDivElement | null>, paneCount: number, rawSpecs: Spec[],
 ) {
-  const specs = useStableSpecs(rawSpecs);
+  const specs = useStable(rawSpecs);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, AnySeries>>(new Map());
 
@@ -203,10 +183,11 @@ export function usePaneChart(
 
 // ── 布局维度:pane 上下换位(order)+ 折叠显隐(collapsed)──────────────────────
 export function usePaneLayout(
-  paneDefs: PaneDef[], paneCount: number,
+  rawPaneDefs: PaneDef[], paneCount: number,
   chartRef: React.RefObject<IChartApi | null>,
   seriesRef: React.RefObject<Map<string, AnySeries>>,
 ) {
+  const paneDefs = useStable(rawPaneDefs);
   const [order, setOrder] = useState<string[]>(() => paneDefs.map((d) => d.key));
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 

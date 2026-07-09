@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useRef } from 'react';
 import type { Interval } from '../hooks/interval';
 import { COLORS, buildSpecs, paneConfig, useAssetData, usePaneChartStack } from './assetChart.hooks';
 import { PaneChartView } from './PaneChartView';
@@ -19,15 +19,12 @@ export function AssetChart({
   vrpUnderlying?: string;
 }) {
   const label = underlying.replace(/^\./, '');
-  // 引用稳定(只随 vrpUnderlying 变,而它每实例固定),供下游 effect/memo 依赖。
-  const { seriesName, paneDefs, paneCount } = useMemo(() => paneConfig(vrpUnderlying), [vrpUnderlying]);
+  // 每渲染直接算(paneConfig 是查表,便宜);paneDefs 的引用稳定由 usePaneLayout 内部 useStable 负责,无需在此 memo。
+  const { seriesName, paneDefs, paneCount } = paneConfig(vrpUnderlying);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { opt, vrp, price, error, isLoading } = useAssetData(underlying, vrpUnderlying);
-  const specs = useMemo(
-    () => buildSpecs(opt, vrp, price, interval, vrpUnderlying, paneDefs, seriesName),
-    [opt, vrp, price, interval, vrpUnderlying, paneDefs, seriesName],
-  );
+  const specs = buildSpecs(opt, vrp, price, interval, vrpUnderlying, paneDefs, seriesName);
   const { order, collapsed, move, toggle, cells, hovering, tops } = usePaneChartStack(containerRef, paneDefs, paneCount, specs);
 
   return (
