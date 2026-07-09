@@ -19,7 +19,7 @@ export function AssetChart({
   vrpUnderlying?: string;
 }) {
   const label = underlying.replace(/^\./, '');
-  // 引用稳定(只随 vrpUnderlying 变,而它每实例固定),供下游 effect/memo 依赖。
+  // 每渲染直接算(paneConfig 是查表,便宜);paneDefs 的引用稳定由 usePaneLayout 内部 useStable 负责,无需在此 memo。
   const { seriesName, paneDefs, paneCount } = paneConfig(vrpUnderlying);
   const containerRef = useRef<HTMLDivElement>(null);
 
