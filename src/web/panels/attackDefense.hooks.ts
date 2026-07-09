@@ -1,4 +1,4 @@
-// 攻防指标数据层:NOBL/QQQ 比值 + 均线迟滞 regime。纯函数,便于单测。
+// 攻防指标数据层:NOBL/QQQ 比值 + ZigZag 摆动 regime。纯函数,便于单测。
 import type { PriceBar } from './assetChart.hooks';
 
 export const SWING_PCT = 0.08;  // ZigZag 反转阈值:摆动 ≥8% 才算一次大级别攻防切换
