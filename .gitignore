@@ -20,3 +20,6 @@ reports/
 
 # 数据源清单(端点/URL,不进公共仓库)
 DATA_SOURCES.md
+
+# superpowers 流程脚手架(spec/plan):本地生成可看,不进 git(价值在代码/commit/memory)
+docs/superpowers/
