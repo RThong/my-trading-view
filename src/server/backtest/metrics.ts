@@ -1,4 +1,5 @@
 // 净值曲线 → 绩效指标;状态序列 → episode 计数。纯函数。
+import { mean } from 'remeda';
 import type { EquityPoint } from './engine';
 import type { DayState } from './signal';
 
@@ -7,8 +8,8 @@ export type Metrics = { cagr: number; mdd: number; sharpe: number; sortino: numb
 export function metrics(equity: EquityPoint[], periodsPerYear = 252): Metrics {
   const rets = equity.slice(1).map((e, i) => e.value / equity[i].value - 1);
   const n = rets.length;
-  const mean = rets.reduce((a, b) => a + b, 0) / n;
-  const std = Math.sqrt(rets.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+  const avg = mean(rets)!;
+  const std = Math.sqrt(rets.reduce((a, b) => a + (b - avg) ** 2, 0) / n);
   const downside = Math.sqrt(rets.filter((r) => r < 0).reduce((a, b) => a + b * b, 0) / n);
 
   const years = n / periodsPerYear;
@@ -22,8 +23,8 @@ export function metrics(equity: EquityPoint[], periodsPerYear = 252): Metrics {
     mdd = Math.min(mdd, e.value / peak - 1);
   }
 
-  const sharpe = std ? (mean / std) * Math.sqrt(periodsPerYear) : 0;
-  const sortino = downside ? (mean / downside) * Math.sqrt(periodsPerYear) : 0;
+  const sharpe = std ? (avg / std) * Math.sqrt(periodsPerYear) : 0;
+  const sortino = downside ? (avg / downside) * Math.sqrt(periodsPerYear) : 0;
   const calmar = mdd ? cagr / Math.abs(mdd) : 0;
   return { cagr, mdd, sharpe, sortino, calmar };
 }

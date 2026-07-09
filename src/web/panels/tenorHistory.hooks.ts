@@ -5,6 +5,7 @@ import { createChart, LineSeries, type IChartApi, type ISeriesApi } from 'lightw
 import { aggregate, CHART_OPTIONS, type LinePoint } from '../lib/chart';
 import type { YPoint } from './yieldCurve.hooks';
 import type { Interval } from '../hooks/interval';
+import { useStable } from '../hooks/useStable';
 
 // 各 source 的默认勾选期限(短/前端/中/长各取锚点)。
 // treasury 前端用信息量更大的 2Y;OIS 档位对齐 Eris 真实点,12M 而非 1Y。
@@ -33,9 +34,11 @@ export type TenorSpec = { tenor: string; color: string; data: LinePoint[] };
  *  baseline 传数字时,在每条新建 series 上画一条该值的水平参考线(利差图传 0)。 */
 export function useTenorChart(
   containerRef: React.RefObject<HTMLDivElement | null>,
-  specs: TenorSpec[],
+  rawSpecs: TenorSpec[],
   baseline?: number,
 ) {
+  // 引用稳定化在 hook 内部扛:调用方传新数组字面量不该让 sync effect 每帧重跑 fitContent。
+  const specs = useStable(rawSpecs);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
 

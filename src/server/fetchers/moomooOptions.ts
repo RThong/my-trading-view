@@ -18,6 +18,7 @@ import type { OptionContract, OptionsChainClient } from '../jobs/optionsSnapshot
 import { QOT_MARKET_US, envConfig, withConnection } from './moomooClient';
 import { fetchUsTradingDates } from './moomooHistoryKL';
 import { lastClosedFrom } from '../jobs/tradingCalendar';
+import { firstBy } from 'remeda';
 
 const SNAPSHOT_BATCH = 400;
 
@@ -138,9 +139,7 @@ export function defaultMoomooOptionsClient(): OptionsChainClient {
 
         // 选取与 targetDte 距离最近的那个到期日(每个到期日的距离只算一次)。
         const target = now + targetDte * 86400_000;
-        const best = expiries
-          .map((e) => ({ e, diff: Math.abs(new Date(e.expiry + 'T16:00:00Z').getTime() - target) }))
-          .reduce((a, b) => (b.diff < a.diff ? b : a)).e;
+        const best = firstBy(expiries, (e) => Math.abs(new Date(e.expiry + 'T16:00:00Z').getTime() - target))!;
 
         // 对选中到期日的所有行权价(看涨 + 看跌)拉取 snapshot。
         const allStatic = [...best.calls, ...best.puts];

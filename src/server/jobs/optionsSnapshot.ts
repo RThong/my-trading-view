@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite';
+import { firstBy } from 'remeda';
 import { insertOptions25Delta, insertOptionChainRaw, type Options25DeltaRow, type OptionChainRawRow } from '../storage/repository';
 import { lastClosedTradingDate } from './tradingCalendar';
 
@@ -64,9 +65,7 @@ export function select25Delta(chain: OptionChainSnapshot): Selection {
 function pickClosestDelta(arr: OptionContract[], target: number): OptionContract {
   const withDelta = arr.filter((c) => typeof c.delta === 'number');
   if (withDelta.length === 0) throw new Error('期权链缺少 delta,无法选取 25Δ');
-  return withDelta.reduce((best, cur) =>
-    Math.abs(cur.delta! - target) < Math.abs(best.delta! - target) ? cur : best,
-  );
+  return firstBy(withDelta, (c) => Math.abs(c.delta! - target))!;
 }
 
 /** 抓取器满足的最小 client 接口。 */

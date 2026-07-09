@@ -22,6 +22,7 @@
 import type { QuoteRow } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
 import { fetchWithTimeout } from './http';
+import { groupBy, sortBy } from 'remeda';
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -101,22 +102,21 @@ export function computeNthMonth(
   n: number,
 ): Array<{ tradeDate: string; settle: number; expireDate: string }> {
   // 按交易日分组所有未到期候选(同一交易日天然有近月/次月/三月多份合约)。
-  const byDate = new Map<string, Array<{ settle: number; expireDate: string }>>();
-  for (const c of contractRows) {
-    for (const r of c.rows) {
-      if (c.expireDate <= r.tradeDate) continue; // 跳过到期当天及之后
-      const g = byDate.get(r.tradeDate) ?? [];
-      g.push({ settle: r.settle, expireDate: c.expireDate });
-      byDate.set(r.tradeDate, g);
-    }
-  }
+  const candidates = contractRows.flatMap((c) =>
+    c.rows
+      .filter((r) => c.expireDate > r.tradeDate) // 跳过到期当天及之后
+      .map((r) => ({ tradeDate: r.tradeDate, settle: r.settle, expireDate: c.expireDate })),
+  );
+  const byDate = groupBy(candidates, (x) => x.tradeDate);
+
   // 组内按到期日升序 → 取第 n 近(index n-1);不足则该日无结果。
-  return Array.from(byDate.entries())
-    .flatMap(([tradeDate, g]) => {
-      const pick = g.sort((a, b) => a.expireDate.localeCompare(b.expireDate))[n - 1];
+  return sortBy(
+    Object.entries(byDate).flatMap(([tradeDate, g]) => {
+      const pick = sortBy(g, (x) => x.expireDate)[n - 1];
       return pick ? [{ tradeDate, settle: pick.settle, expireDate: pick.expireDate }] : [];
-    })
-    .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
+    }),
+    (r) => r.tradeDate,
+  );
 }
 
 type FetchAllOpts = {

@@ -4,8 +4,8 @@
 import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
 import { createChart, LineSeries, CandlestickSeries, HistogramSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
-import { isDeepEqual } from 'remeda';
 import type { Interval } from '../hooks/interval';
+import { useStable } from '../hooks/useStable';
 import { CHART_OPTIONS, aggregate, aggregateBars, changeStats, type LinePoint, type Bar } from '../lib/chart';
 
 export type OptRow = { date: string; callIv: number; putIv: number; skew: number };
@@ -75,15 +75,6 @@ const toLine = (rows: Array<Record<string, unknown>>, key: string): LinePoint[] 
 const toBars = (rows: PriceBar[]): Bar[] =>
   rows.map((r) => ({ time: r.date, open: r.open ?? r.close, high: r.high ?? r.close, low: r.low ?? r.close, close: r.close }));
 
-// 通用引用稳定化(用于 specs 与 paneDefs):内容深比较(remeda)未变则复用旧引用,让依赖它的 effect 只在真变化时跑。
-// 缺了它:调用方每渲染传新数组 → 依赖它的 effect 每帧重跑;specs 那条会经
-// addSeries/setData/fitContent → ResizeObserver → setTops → 重渲染,连锁成无限循环。
-function useStable<T>(value: T): T {
-  const ref = useRef(value);
-  if (!isDeepEqual(ref.current, value)) ref.current = value;
-  return ref.current;
-}
-
 /** 把数据按 interval 聚合成各 series 的 spec;pane 下标从 paneDefs 派生(谁含此 series)。 */
 export function buildSpecs(
   opt: OptRow[], vrp: VrpRow[], price: PriceBar[], interval: Interval,
@@ -121,6 +112,41 @@ export function useAssetData(underlying: string, vrpUnderlying?: string) {
   };
 }
 
+// 按 kind 建对应 series,并挂上各自的参考线/背景带。
+function addSeries(chart: IChartApi, spec: Spec): AnySeries {
+  if (spec.kind === 'candle') {
+    return chart.addSeries(CandlestickSeries, {
+      title: spec.title, upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
+      wickUpColor: '#22c55e', wickDownColor: '#ef4444', priceLineVisible: false,
+    }, spec.pane);
+  }
+
+  if (spec.kind === 'histogram') {
+    const s = chart.addSeries(HistogramSeries, {
+      title: spec.title, base: 0, priceLineVisible: false,
+      ...(spec.priceScaleId ? { priceScaleId: spec.priceScaleId, lastValueVisible: false } : {}),
+    }, spec.pane);
+    // overlay 背景带:独立轴去掉上下留白 → 柱子满 pane 高。
+    if (spec.priceScaleId) s.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
+    if (spec.baseline !== undefined) {
+      s.createPriceLine({ price: spec.baseline, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '0' });
+    }
+    return s;
+  }
+
+  const s = chart.addSeries(LineSeries, { color: spec.color, title: spec.title, lineWidth: 2 }, spec.pane);
+  if (spec.baseline !== undefined) {
+    s.createPriceLine({ price: spec.baseline, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '0' });
+  }
+  // 参考线(如情绪指标的 P10/P90 分位带);期权侧不传 refLines 即无。
+  if (spec.refLines) {
+    for (const rl of spec.refLines) {
+      s.createPriceLine({ price: rl.price, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: rl.title });
+    }
+  }
+  return s;
+}
+
 // ── 图表引擎维度:持有 chart + series 句柄,负责建图与 series 同步 ──────────────
 export function usePaneChart(
   containerRef: React.RefObject<HTMLDivElement | null>, paneCount: number, rawSpecs: Spec[],
@@ -143,38 +169,23 @@ export function usePaneChart(
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+
+    // specs 里已消失的 series:删掉。
     const keysNow = new Set(specs.map((s) => s.key));
     for (const [k, s] of seriesRef.current) {
       if (!keysNow.has(k)) { chart.removeSeries(s); seriesRef.current.delete(k); }
     }
+
+    // 缺的建,已有的直接 setData。
     for (const spec of specs) {
       let s = seriesRef.current.get(spec.key);
       if (!s) {
-        s = spec.kind === 'candle'
-          ? chart.addSeries(CandlestickSeries, { title: spec.title, upColor: '#22c55e', downColor: '#ef4444', borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444', priceLineVisible: false }, spec.pane)
-          : spec.kind === 'histogram'
-          ? chart.addSeries(HistogramSeries, {
-              title: spec.title, base: 0, priceLineVisible: false,
-              ...(spec.priceScaleId ? { priceScaleId: spec.priceScaleId, lastValueVisible: false } : {}),
-            }, spec.pane)
-          : chart.addSeries(LineSeries, { color: spec.color, title: spec.title, lineWidth: 2 }, spec.pane);
-        // overlay 背景带:独立轴去掉上下留白 → 柱子满 pane 高。
-        if (spec.kind === 'histogram' && spec.priceScaleId) {
-          s.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
-        }
-        if (spec.kind !== 'candle' && spec.baseline !== undefined) {
-          s.createPriceLine({ price: spec.baseline, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '0' });
-        }
-        // 参考线(如情绪指标的 P10/P90 分位带);期权侧不传 refLines 即无。
-        if (spec.kind === 'line' && spec.refLines) {
-          for (const rl of spec.refLines) {
-            s.createPriceLine({ price: rl.price, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: rl.title });
-          }
-        }
+        s = addSeries(chart, spec);
         seriesRef.current.set(spec.key, s);
       }
-      s.setData(spec.data as any);
+      s.setData(spec.data as Parameters<AnySeries['setData']>[0]);
     }
+
     chart.timeScale().fitContent();
   }, [specs]);
 

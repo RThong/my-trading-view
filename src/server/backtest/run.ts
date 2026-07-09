@@ -3,6 +3,7 @@
  * 抓 QQQ/TQQQ 复权价(内存,不落库)+ 读库里 VX1/VX3 算 spread → 对齐 → 打印对比表。
  *   bun run src/server/backtest/run.ts
  */
+import { mapToObj } from 'remeda';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
 import { computeSpread } from '../analytics/termStructure';
@@ -51,8 +52,7 @@ async function main() {
   const spread: SpreadPoint[] = aligned.map((a) => ({ date: a.date, value: a.spread }));
   const prices: AlignedRow[] = aligned.map((a) => ({ date: a.date, qqq: a.qqq, tqqq: a.tqqq }));
 
-  const statesBy: Record<PanicEntry, DayState[]> =
-    Object.fromEntries(VARIANTS.map((v) => [v, computeStates(spread, { ...DEFAULT_SIGNAL, panicEntry: v })])) as Record<PanicEntry, DayState[]>;
+  const statesBy = mapToObj(VARIANTS, (v) => [v, computeStates(spread, { ...DEFAULT_SIGNAL, panicEntry: v })]);
 
   // 组合:基准 / 仅现金(greed,与入场变体无关)/ 仅轮动 ×ABC / 两腿 ×ABC。
   const runs: Array<{ name: string; states: DayState[]; legs: EngineConfig['legs'] }> = [
