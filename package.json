@@ -24,6 +24,7 @@
     "react": "^19.0.0",
     "react-day-picker": "^10.0.1",
     "react-dom": "^19.0.0",
+    "remeda": "^2.39.0",
     "swr": "^2.4.1",
     "yahoo-finance2": "^3"
   },
