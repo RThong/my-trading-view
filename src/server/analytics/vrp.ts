@@ -8,6 +8,8 @@
  * - VRP = 隐含波动(VIX/DVOL)− RV,按日期 inner join(只保留两边都有的日)。
  *   这是"同期 VRP"(隐含 vs 过去已实现),状态盘的正确口径,非学术前瞻 VRP。
  */
+import { mean } from 'remeda';
+
 export type Point = { date: string; value: number };
 
 /** 滚动已实现波动率(年化、百分点)。 */
@@ -25,8 +27,8 @@ export function realizedVol(prices: Point[], window: number, periodsPerYear: num
   const ann = Math.sqrt(periodsPerYear) * 100;
   for (let i = window - 1; i < rets.length; i++) {
     const win = rets.slice(i - window + 1, i + 1).map((p) => p.value);
-    const mean = win.reduce((a, b) => a + b, 0) / win.length;
-    const variance = win.reduce((a, b) => a + (b - mean) ** 2, 0) / (win.length - 1); // 样本方差
+    const avg = mean(win)!;
+    const variance = win.reduce((a, b) => a + (b - avg) ** 2, 0) / (win.length - 1); // 样本方差
     out.push({ date: rets[i].date, value: Math.sqrt(variance) * ann });
   }
   return out;
@@ -37,10 +39,8 @@ export type VrpPoint = { date: string; iv: number; rv: number; vrp: number };
 /** VRP = iv − rv,按日期 inner join。iv 与 rv 均为百分点。 */
 export function computeVrp(iv: Point[], rv: Point[]): VrpPoint[] {
   const rvByDate = new Map(rv.map((p) => [p.date, p.value]));
-  const out: VrpPoint[] = [];
-  for (const i of iv) {
+  return iv.flatMap((i) => {
     const r = rvByDate.get(i.date);
-    if (r !== undefined) out.push({ date: i.date, iv: i.value, rv: r, vrp: i.value - r });
-  }
-  return out;
+    return r === undefined ? [] : [{ date: i.date, iv: i.value, rv: r, vrp: i.value - r }];
+  });
 }

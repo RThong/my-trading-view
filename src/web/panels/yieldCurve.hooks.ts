@@ -1,6 +1,7 @@
 // 收益曲线视角数据层:拉 11 期限 FRED 序列 + 纯粹的日期解析逻辑。
 // 图表(SVG)与展示壳在 YieldCurveChart/YieldCurvePanel;这里只管取数与"取某日的一条曲线"。
 import useSWR from 'swr';
+import { unique } from 'remeda';
 
 export type YPoint = { date: string; value: number };
 export type YieldCurveData = { tenors: string[]; series: Record<string, YPoint[]>; unavailable: string[] };
@@ -19,8 +20,7 @@ async function getJson<T>(url: string): Promise<T> {
 /** 序列里 date ≤ target 的最近一个值(FRED 周末/假日/滞后当天无值,一律往前贴)。无则 null。 */
 export function valueAt(rows: YPoint[] | undefined, target: string): number | null {
   if (!rows) return null;
-  for (let i = rows.length - 1; i >= 0; i--) if (rows[i].date <= target) return rows[i].value;
-  return null;
+  return rows.findLast((r) => r.date <= target)?.value ?? null;
 }
 
 /** 取某目标日期对应的一条曲线:逐期限往前贴。缺该期限的点则留 null(曲线在此断开)。 */
@@ -30,15 +30,12 @@ export function curveForDate(series: Record<string, YPoint[]>, tenors: string[],
 
 /** 所有期限观测日的并集,升序。用于把任意目标日期贴到一个真实交易日。 */
 export function unionDatesAsc(series: Record<string, YPoint[]>): string[] {
-  const set = new Set<string>();
-  for (const rows of Object.values(series)) for (const p of rows) set.add(p.date);
-  return [...set].sort();
+  return unique(Object.values(series).flatMap((rows) => rows.map((p) => p.date))).sort();
 }
 
 /** 把目标日期贴到 ≤ 它的最近一个真实交易日(datesAsc 升序)。无则 null。 */
 export function snapToTradingDay(datesAsc: string[], target: string): string | null {
-  for (let i = datesAsc.length - 1; i >= 0; i--) if (datesAsc[i] <= target) return datesAsc[i];
-  return null;
+  return datesAsc.findLast((d) => d <= target) ?? null;
 }
 
 /** 从基准日往前推:天/月/年。返回 YYYY-MM-DD。

@@ -133,15 +133,16 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
 export function regimePercentiles(data: RegimeData, dim: RegimeDim): Record<string, string> {
   const cfg = REGIME_DIMS[dim];
   if (!cfg.percentiles) return {};
-  const out: Record<string, string> = {};
-  for (const def of cfg.paneDefs) {
-    const key = def.series[0];
-    if (cfg.signed?.includes(key)) continue; // 符号柱状图无分位徽标
-    if (data.unavailable.includes(key)) continue;
-    const rows = data.series[key];
-    if (!rows?.length) continue;
-    const rank = percentileRank(rows.map((r) => r.value), rows[rows.length - 1].value);
-    if (!Number.isNaN(rank)) out[key] = `P${rank}`;
-  }
-  return out;
+
+  return Object.fromEntries(
+    cfg.paneDefs.flatMap((def) => {
+      const key = def.series[0];
+      if (cfg.signed?.includes(key)) return []; // 符号柱状图无分位徽标
+      if (data.unavailable.includes(key)) return [];
+      const rows = data.series[key];
+      if (!rows?.length) return [];
+      const rank = percentileRank(rows.map((r) => r.value), rows[rows.length - 1].value);
+      return Number.isNaN(rank) ? [] : [[key, `P${rank}`]];
+    }),
+  );
 }

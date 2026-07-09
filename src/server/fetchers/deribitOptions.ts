@@ -12,6 +12,7 @@
  * 期权价格以币本位计(如 0.018 BTC),归档原样保留。
  */
 import type { OptionContract, OptionChainSnapshot, OptionsChainClient } from '../jobs/optionsSnapshot';
+import { firstBy } from 'remeda';
 import { fetchWithTimeout } from './http';
 
 const BASE = 'https://www.deribit.com/api/v2/public';
@@ -79,7 +80,7 @@ export function defaultDeribitOptionsClient(): OptionsChainClient {
       // 选到期日最接近(今天 + targetDte)的那个
       const target = Date.now() + targetDte * 86400_000;
       const expiries = [...new Set(all.map((i) => i.expiration_timestamp))];
-      const bestExp = expiries.reduce((a, b) => (Math.abs(b - target) < Math.abs(a - target) ? b : a));
+      const bestExp = firstBy(expiries, (t) => Math.abs(t - target))!;
       const inExp = all.filter((i) => i.expiration_timestamp === bestExp);
 
       const withType = await mapLimit(inExp, TICKER_CONCURRENCY, async (i) => ({

@@ -1,4 +1,5 @@
 // 期权/VRP 面板共用的图表辅助:暗色主题选项 + 按 interval 的周期聚合。
+import { sortBy } from 'remeda';
 import type { Interval } from '../hooks/interval';
 
 export type LinePoint = { time: string; value: number };
@@ -61,7 +62,7 @@ export function aggregate(points: LinePoint[], interval: Interval): LinePoint[] 
       return [key, { time: key, value: p.value }] as const;
     }),
   );
-  return Array.from(byKey.values()).sort((a, b) => a.time.localeCompare(b.time));
+  return sortBy([...byKey.values()], (p) => p.time);
 }
 
 /** OHLC 按周期聚合:open=首根、close=尾根、high/low=区间极值。输入须按时间升序。 */
@@ -78,5 +79,5 @@ export function aggregateBars(bars: Bar[], interval: Interval): Bar[] {
       cur.close = b.close; // 升序输入 → 最后一根即收盘
     }
   }
-  return Array.from(byKey.values()).sort((a, b) => a.time.localeCompare(b.time));
+  return sortBy([...byKey.values()], (b) => b.time);
 }

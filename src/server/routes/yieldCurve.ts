@@ -64,10 +64,15 @@ function buildFromDb(pairs: { label: string; symbol: string }[], xform: (v: numb
 const buildOis = (): CurveBody =>
   buildFromDb(ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })), (v) => v);
 
+// source → 曲线构造器。await 对同步返回值也安全,新增曲线源只加一行。
+const BUILDERS: Record<string, () => CurveBody | Promise<CurveBody>> = {
+  treasury: buildTreasury, // 默认国债(FRED 现拉)
+  sofr_ois: buildOis,
+  credit_rating: () => buildFredCurve(CREDIT_RATING),
+  credit_term: () => buildFredCurve(CREDIT_TERM),
+};
+
 export const yieldCurveRoute = new Hono().get('/', async (c) => {
-  const source = c.req.query('source') ?? 'treasury';
-  if (source === 'sofr_ois') return c.json(buildOis());
-  if (source === 'credit_rating') return c.json(await buildFredCurve(CREDIT_RATING));
-  if (source === 'credit_term') return c.json(await buildFredCurve(CREDIT_TERM));
-  return c.json(await buildTreasury()); // 默认国债(FRED 现拉)
+  const build = BUILDERS[c.req.query('source') ?? 'treasury'] ?? buildTreasury;
+  return c.json(await build());
 });
