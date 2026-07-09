@@ -75,7 +75,7 @@ const toLine = (rows: Array<Record<string, unknown>>, key: string): LinePoint[] 
 const toBars = (rows: PriceBar[]): Bar[] =>
   rows.map((r) => ({ time: r.date, open: r.open ?? r.close, high: r.high ?? r.close, low: r.low ?? r.close, close: r.close }));
 
-// 通用引用稳定化:内容深比较(remeda)未变则复用旧引用,让依赖它的 effect 只在真变化时跑。
+// 通用引用稳定化(用于 specs 与 paneDefs):内容深比较(remeda)未变则复用旧引用,让依赖它的 effect 只在真变化时跑。
 // 缺了它:调用方每渲染传新数组 → 依赖它的 effect 每帧重跑;specs 那条会经
 // addSeries/setData/fitContent → ResizeObserver → setTops → 重渲染,连锁成无限循环。
 function useStable<T>(value: T): T {
