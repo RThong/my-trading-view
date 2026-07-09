@@ -3,7 +3,8 @@ import { useMemo, useRef } from 'react';
 import useSWR from 'swr';
 import { usePaneChartStack, type Spec, type PaneDef, type PriceBar } from './assetChart.hooks';
 import { PaneChartView } from './PaneChartView';
-import { ratioSeries, regimeZones, SWING_PCT, type Regime } from './attackDefense.hooks';
+import { ratioSeries, SWING_PCT } from './attackDefense.hooks';
+import { zigzagRegimes, type Regime } from '../lib/zigzag';
 
 // 攻防:上 QQQ 蜡烛、下 NOBL/QQQ 比值 + 绿(防守)/红(进攻)背景区。恒日频,不吃全局 interval。
 const BG_GREEN = 'rgba(34,197,94,0.35)';
@@ -34,7 +35,7 @@ export function AttackDefensePanel() {
     const qqq = qq.data ?? [];
     const nobl = nb.data ?? [];
     const ratio = ratioSeries(nobl, qqq);
-    const zones = regimeZones(ratio, SWING_PCT);
+    const zones = zigzagRegimes(ratio, SWING_PCT);
     const bgColor = (regime: Regime, pending: boolean) =>
       regime === 'defense' ? (pending ? BG_GREEN_DIM : BG_GREEN)
       : regime === 'offense' ? (pending ? BG_RED_DIM : BG_RED)
