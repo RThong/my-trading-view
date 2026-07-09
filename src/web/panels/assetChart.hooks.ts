@@ -89,7 +89,7 @@ export function deepEqual(a: unknown, b: unknown): boolean {
   const x = a as Record<string, unknown>, y = b as Record<string, unknown>;
   const kx = Object.keys(x), ky = Object.keys(y);
   if (kx.length !== ky.length) return false;
-  for (const k of kx) if (!deepEqual(x[k], y[k])) return false;
+  for (const k of kx) if (!(k in y) || !deepEqual(x[k], y[k])) return false; // k in y:防键名不同但值都 undefined 误判相等
   return true;
 }
 
