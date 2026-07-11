@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { createFredFetcher } from '../fetchers/fred';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 import { fetchFearGreed } from '../fetchers/cnnFearGreed';
+import { createYahooFetcher } from '../fetchers/yahoo';
 import { subtractAligned, divideAligned, type Point } from '../analytics/regime';
 import { computeSpread } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
@@ -38,6 +39,11 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     cor1m: cboeSeries('COR1M'), vixeq: cboeSeries('VIXEQ'),
     rxm: cboeSeries('RXM'), spx: cboeSeries('SPX'),
     fng: fetchFearGreed(),
+    // 美元指数 DXY(Yahoo DX-Y.NYB,真 ICE 指数;moomoo OpenD 无 FX 行情权限)。
+    usd: (async () => {
+      const bars = await createYahooFetcher().fetchDailyBars('DX-Y.NYB', new Date(HISTORY_START_DATE));
+      return bars.map((b) => ({ date: b.tradeDate, value: b.close }));
+    })(),
   };
   const names = Object.keys(src) as (keyof typeof src)[];
   const settled = await Promise.allSettled(Object.values(src));
@@ -57,7 +63,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 直接对外的序列(对外名 → 原始源名)。
   const direct: Record<string, keyof typeof src> = {
     hyOas: 'hyOas', cor1m: 'cor1m', vixeq: 'vixeq', fng: 'fng',
-    reverseRepo: 'rrp', repoUsage: 'rpo',
+    reverseRepo: 'rrp', repoUsage: 'rpo', usd: 'usd',
   };
   for (const [out, s] of Object.entries(direct)) put(out, raw[s]);
 

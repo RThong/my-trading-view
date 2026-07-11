@@ -35,7 +35,7 @@ export function useRegimeData() {
   return { data, error: error as Error | undefined, isLoading };
 }
 
-export type RegimeDim = 'credit' | 'liquidity' | 'sentiment';
+export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro';
 
 type DimConfig = {
   paneDefs: PaneDef[];               // 一序列一 pane;key = series key
@@ -83,6 +83,11 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     // F&G 高=贪婪=风险;COR1M 低=自满=风险;波动率类(VIXEQ/VIX/VXN)一律 低=压扁=自满=风险(逆向,恐慌飙高=机会);RXM/SPX 低=melt-up/晚周期=风险。
     riskTail: { fng: 'high', cor1m: 'low', vixeq: 'low', vix: 'low', vxn: 'low', rxmSpx: 'low' },
     signed: ['vxTermSpread'], // 期限结构:符号柱状图,不套分位带
+  },
+  macro: {
+    paneDefs: [{ key: 'usd', label: '美元 DXY', series: ['usd'] }],
+    seriesName: { usd: '美元指数 DXY' },
+    colors: { usd: '#38bdf8' },
   },
 };
 
