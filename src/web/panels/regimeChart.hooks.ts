@@ -35,7 +35,7 @@ export function useRegimeData() {
   return { data, error: error as Error | undefined, isLoading };
 }
 
-export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro';
+export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol';
 
 type DimConfig = {
   paneDefs: PaneDef[];               // 一序列一 pane;key = series key
@@ -67,22 +67,32 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     colors: { netLiquidity: '#22c55e', reverseRepo: '#14b8a6', repoUsage: '#ec4899', repoStress: '#a855f7' },
     baseline: { repoStress: 0 },
   },
+  vol: {
+    paneDefs: [
+      { key: 'vix', label: 'VIX', series: ['vix'] },
+      { key: 'vxn', label: 'VXN', series: ['vxn'] },
+      { key: 'vixeq', label: 'VIXEQ', series: ['vixeq'] },
+      { key: 'move', label: 'MOVE', series: ['move'] },
+      { key: 'vxTerm', label: 'VX1−V3', series: ['vxTermSpread'] },
+    ],
+    seriesName: { vix: 'VIX', vxn: 'VXN (纳指波动率)', vixeq: '成分股波动率 VIXEQ', move: 'MOVE (债市波动率)', vxTermSpread: 'VX1−V3 期限结构' },
+    colors: { vix: '#eab308', vxn: '#f97316', vixeq: '#ec4899', move: '#f43f5e' },
+    percentiles: true,
+    // 波动率类一律 低=压扁=自满=风险(逆向,恐慌飙高=机会);MOVE(债市波动率)同理。
+    riskTail: { vix: 'low', vxn: 'low', vixeq: 'low', move: 'low' },
+    signed: ['vxTermSpread'], // 期限结构:符号柱状图,不套分位带
+  },
   sentiment: {
     paneDefs: [
       { key: 'fng', label: 'Fear&Greed', series: ['fng'] },
       { key: 'cor1m', label: 'COR1M', series: ['cor1m'] },
-      { key: 'vixeq', label: 'VIXEQ', series: ['vixeq'] },
-      { key: 'vix', label: 'VIX', series: ['vix'] },
-      { key: 'vxn', label: 'VXN', series: ['vxn'] },
-      { key: 'vxTerm', label: 'VX1−V3', series: ['vxTermSpread'] },
       { key: 'rxmSpx', label: 'RXM/SPX', series: ['rxmSpx'] },
     ],
-    seriesName: { fng: 'Fear & Greed', cor1m: '隐含相关性 COR1M', vixeq: '成分股波动率 VIXEQ', vix: 'VIX', vxn: 'VXN (纳指波动率)', vxTermSpread: 'VX1−V3 期限结构', rxmSpx: 'RXM/SPX 期权情绪' },
-    colors: { fng: '#3b82f6', cor1m: '#22c55e', vixeq: '#ec4899', vix: '#eab308', vxn: '#f97316', rxmSpx: '#a855f7' },
+    seriesName: { fng: 'Fear & Greed', cor1m: '隐含相关性 COR1M', rxmSpx: 'RXM/SPX 期权情绪' },
+    colors: { fng: '#3b82f6', cor1m: '#22c55e', rxmSpx: '#a855f7' },
     percentiles: true,
-    // F&G 高=贪婪=风险;COR1M 低=自满=风险;波动率类(VIXEQ/VIX/VXN)一律 低=压扁=自满=风险(逆向,恐慌飙高=机会);RXM/SPX 低=melt-up/晚周期=风险。
-    riskTail: { fng: 'high', cor1m: 'low', vixeq: 'low', vix: 'low', vxn: 'low', rxmSpx: 'low' },
-    signed: ['vxTermSpread'], // 期限结构:符号柱状图,不套分位带
+    // F&G 高=贪婪=风险;COR1M 低=自满=风险;RXM/SPX 低=melt-up/晚周期=风险。
+    riskTail: { fng: 'high', cor1m: 'low', rxmSpx: 'low' },
   },
   macro: {
     paneDefs: [{ key: 'usd', label: '美元 DXY', series: ['usd'] }],
