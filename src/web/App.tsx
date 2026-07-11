@@ -58,6 +58,7 @@ const PERSPECTIVES: Perspective[] = [
   regimePersp('credit', '信用'),
   regimePersp('liquidity', '流动性'),
   regimePersp('sentiment', '情绪'),
+  regimePersp('macro', '宏观'),
   {
     id: 'rates', label: '利率',
     tabs: [
