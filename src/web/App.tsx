@@ -101,6 +101,7 @@ const PERSPECTIVES: Perspective[] = [
     tabs: [
       { id: 'bei', label: '通胀预期' },
       { id: 'bei_history', label: '通胀走势' },
+      { id: 'infl_source', label: '通胀来源' },
     ],
     render: (tabId, interval) => {
       if (tabId === 'bei_history')
@@ -108,6 +109,7 @@ const PERSPECTIVES: Perspective[] = [
           <TenorHistoryPanel source="bei" interval={interval} />,
           <RateSpreadPanel source="bei" long="10Y" short="5Y" label="10Y − 5Y" interval={interval} />,
         );
+      if (tabId === 'infl_source') return <RegimeChart dim="inflSource" interval={interval} />; // 薪资 + 服务黏性
       return <YieldCurvePanel source="bei" />; // BEI 纯曲线
     },
   },

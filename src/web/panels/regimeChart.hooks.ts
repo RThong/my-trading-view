@@ -35,7 +35,7 @@ export function useRegimeData() {
   return { data, error: error as Error | undefined, isLoading };
 }
 
-export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol' | 'ratesVol';
+export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol' | 'ratesVol' | 'inflSource';
 
 type DimConfig = {
   paneDefs: PaneDef[];               // 一序列一 pane;key = series key
@@ -108,6 +108,17 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     colors: { dgs10: '#22d3ee', move: '#f43f5e' },
     percentiles: true,
     riskTail: { move: 'low' }, // MOVE 压扁=自满=风险;10Y 收益率方向不单一,不设风险端
+  },
+  // 通胀来源(供给侧):薪资增速 + 服务黏性。与 BEI(市场前瞻预期)并读。高=通胀压力=风险。
+  inflSource: {
+    paneDefs: [
+      { key: 'wages', label: '薪资增速', series: ['wages'] },
+      { key: 'stickyCpi', label: '服务黏性', series: ['stickyCpi'] },
+    ],
+    seriesName: { wages: '薪资增速 (Atlanta Fed)', stickyCpi: 'Sticky CPI (服务黏性)' },
+    colors: { wages: '#f59e0b', stickyCpi: '#8b5cf6' },
+    percentiles: true,
+    riskTail: { wages: 'high', stickyCpi: 'high' }, // 高=通胀压力=风险(红);低=缓解=绿
   },
 };
 
