@@ -3,7 +3,6 @@ import { useYieldCurve, curveForDate, snapToTradingDay } from './yieldCurve.hook
 import { YieldCurveChart, type Curve } from './YieldCurveChart';
 import { DatePickerWithPresets } from '../components/DatePickerWithPresets';
 import { SERIES_COLORS } from '../lib/palette';
-const DEFAULT_LABELS = ['Current', '1 month ago', '1 year ago'];
 
 type Row = { id: number; date: string; visible: boolean };
 
@@ -13,11 +12,10 @@ export function YieldCurvePanel({ source }: { source: string }) {
   const idRef = useRef(0);
   const nextId = () => ++idRef.current;
 
-  // 数据到位后,首次种入默认三行(Current / 1月前 / 1年前),均勾选。
+  // 数据到位后,首次种入全部预设时间点(今天/昨天/前天/上周/上个月/半年前/一年前),均勾选。
   useEffect(() => {
     if (maxDate && rows.length === 0) {
-      const seed = presets.filter((p) => DEFAULT_LABELS.includes(p.label));
-      setRows(seed.map((p) => ({ id: nextId(), date: p.date, visible: true })));
+      setRows(presets.map((p) => ({ id: nextId(), date: p.date, visible: true })));
     }
   }, [maxDate]); // eslint-disable-line react-hooks/exhaustive-deps
 

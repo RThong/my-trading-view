@@ -59,11 +59,13 @@ export function shiftDate(iso: string, opt: { days?: number; months?: number; ye
 
 // 预置时间点(基于数据里最新那天,不是墙上时钟,避免踩周末/假日)。
 export const PRESETS: { label: string; shift: { days?: number; months?: number; years?: number } }[] = [
-  { label: 'Current', shift: {} },
-  { label: 'Yesterday', shift: { days: 1 } },
-  { label: '1 week ago', shift: { days: 7 } },
-  { label: '1 month ago', shift: { months: 1 } },
-  { label: '1 year ago', shift: { years: 1 } },
+  { label: '今天', shift: {} },
+  { label: '昨天', shift: { days: 1 } },
+  { label: '前天', shift: { days: 2 } },
+  { label: '上周', shift: { days: 7 } },
+  { label: '上个月', shift: { months: 1 } },
+  { label: '半年前', shift: { months: 6 } },
+  { label: '一年前', shift: { years: 1 } },
 ];
 
 /** 预置项 → 贴到真实交易日的日期(datesAsc 升序,maxDate 为最新数据日)。 */
