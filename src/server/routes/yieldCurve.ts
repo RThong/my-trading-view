@@ -89,6 +89,9 @@ const BUILDERS: Record<string, () => CurveBody | Promise<CurveBody>> = {
 };
 
 export const yieldCurveRoute = new Hono().get('/', async (c) => {
-  const build = BUILDERS[c.req.query('source') ?? 'treasury'] ?? buildTreasury;
+  // 缺 source → 默认 treasury;给了无效 source → 400(不静默兜底成国债,否则拼错的 source 会伪装成合理数据)。
+  const source = c.req.query('source') ?? 'treasury';
+  const build = BUILDERS[source];
+  if (!build) return c.json({ error: `unknown source: ${source}` }, 400);
   return c.json(await build());
 });
