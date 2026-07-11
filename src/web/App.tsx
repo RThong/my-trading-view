@@ -57,7 +57,11 @@ const PERSPECTIVES: Perspective[] = [
   },
   regimePersp('credit', '信用'),
   regimePersp('liquidity', '流动性'),
-  regimePersp('sentiment', '情绪'),
+  {
+    id: 'sentiment', label: '情绪',
+    tabs: [{ id: 'vol', label: '波动率' }, { id: 'sentiment', label: '情绪' }],
+    render: (tabId, interval) => <RegimeChart dim={tabId as RegimeDim} interval={interval} />,
+  },
   regimePersp('macro', '宏观'),
   {
     id: 'rates', label: '利率',
@@ -66,6 +70,7 @@ const PERSPECTIVES: Perspective[] = [
       { id: 'tenor_history', label: '期限走势' },
       { id: 'sofr_ois', label: 'SOFR OIS' },
       { id: 'ois_history', label: 'OIS 走势' },
+      { id: 'rates_vol', label: '利率波动率' },
     ],
     render: (tabId, interval) => {
       // 走势 tab:上「期限随时间」+ 下「利差」纵向堆叠;曲线 tab 只画纯曲线。
@@ -79,6 +84,7 @@ const PERSPECTIVES: Perspective[] = [
           <TenorHistoryPanel source="sofr_ois" interval={interval} />,
           <RateSpreadPanel source="sofr_ois" long="12M" short="3M" label="1Y − 3M" interval={interval} />,
         );
+      if (tabId === 'rates_vol') return <RegimeChart dim="ratesVol" interval={interval} />; // 10Y 收益率 + MOVE
       return <YieldCurvePanel source={tabId} />; // treasury / sofr_ois 纯曲线
     },
   },

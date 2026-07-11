@@ -35,13 +35,18 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const src = {
     walcl: fredSeries('WALCL'), wtregen: fredSeries('WTREGEN'), rrp: fredSeries('RRPONTSYD'),
     rpo: fredSeries('RPONTSYD'), sofr: fredSeries('SOFR'), iorb: fredSeries('IORB'),
-    hyOas: fredSeries('BAMLH0A0HYM2'),
+    hyOas: fredSeries('BAMLH0A0HYM2'), dgs10: fredSeries('DGS10'),
     cor1m: cboeSeries('COR1M'), vixeq: cboeSeries('VIXEQ'),
     rxm: cboeSeries('RXM'), spx: cboeSeries('SPX'),
     fng: fetchFearGreed(),
     // 美元指数 DXY(Yahoo DX-Y.NYB,真 ICE 指数;moomoo OpenD 无 FX 行情权限)。
     usd: (async () => {
       const bars = await createYahooFetcher().fetchDailyBars('DX-Y.NYB', new Date(HISTORY_START_DATE));
+      return bars.map((b) => ({ date: b.tradeDate, value: b.close }));
+    })(),
+    // 债市波动率 MOVE(Yahoo ^MOVE,ICE BofA MOVE 指数;带 caret,无 caret 的 MOVE 是 Movado 股)。
+    move: (async () => {
+      const bars = await createYahooFetcher().fetchDailyBars('^MOVE', new Date(HISTORY_START_DATE));
       return bars.map((b) => ({ date: b.tradeDate, value: b.close }));
     })(),
   };
@@ -63,7 +68,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 直接对外的序列(对外名 → 原始源名)。
   const direct: Record<string, keyof typeof src> = {
     hyOas: 'hyOas', cor1m: 'cor1m', vixeq: 'vixeq', fng: 'fng',
-    reverseRepo: 'rrp', repoUsage: 'rpo', usd: 'usd',
+    reverseRepo: 'rrp', repoUsage: 'rpo', usd: 'usd', move: 'move', dgs10: 'dgs10',
   };
   for (const [out, s] of Object.entries(direct)) put(out, raw[s]);
 
