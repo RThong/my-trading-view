@@ -4,7 +4,7 @@ import type { Point } from '../analytics/regime';
 import { HISTORY_START_DATE } from '../config';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
-import { ERIS_OIS_TENORS, CREDIT_RATING, CREDIT_TERM } from '../analytics/rateCurves';
+import { ERIS_OIS_TENORS, CREDIT_RATING, CREDIT_TERM, BEI_TENORS, computeBeiCurve } from '../analytics/rateCurves';
 
 // 期限 → FRED 国债不变期限收益率 series id。数组顺序即曲线 x 轴顺序。
 const TENORS: [string, string][] = [
@@ -60,6 +60,21 @@ function buildFromDb(pairs: { label: string; symbol: string }[], xform: (v: numb
   }
 }
 
+// BEI 通胀曲线:各档拉 名义(DGS)+ TIPS 实际(DFII),现算 名义 − 实际(见 computeBeiCurve)。
+// 单腿失败 → null,由 computeBeiCurve 归入 unavailable(FRED 无现成多档 breakeven,故自拼)。
+async function buildBei(): Promise<CurveBody> {
+  const fred = createFredFetcher({ apiKey: process.env.FRED_API_KEY ?? '' });
+  const leg = (id: string): Promise<Point[] | null> =>
+    fred.fetchSeries(id, HISTORY_START_DATE)
+      .then((rows) => rows.map((r) => ({ date: r.obsDate, value: r.value })))
+      .catch(() => null);
+
+  const legs = await Promise.all(
+    BEI_TENORS.map(async (t) => ({ tenor: t.tenor, nominal: await leg(t.nominal), real: await leg(t.real) })),
+  );
+  return computeBeiCurve(legs);
+}
+
 // Eris 的 FairCoupon 已是百分点 → 恒等 xform。
 const buildOis = (): CurveBody =>
   buildFromDb(ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })), (v) => v);
@@ -70,6 +85,7 @@ const BUILDERS: Record<string, () => CurveBody | Promise<CurveBody>> = {
   sofr_ois: buildOis,
   credit_rating: () => buildFredCurve(CREDIT_RATING),
   credit_term: () => buildFredCurve(CREDIT_TERM),
+  bei: buildBei, // 通胀预期(BEI = DGS − DFII 现算)
 };
 
 export const yieldCurveRoute = new Hono().get('/', async (c) => {
