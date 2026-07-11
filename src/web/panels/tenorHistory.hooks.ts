@@ -12,6 +12,7 @@ import { useStable } from '../hooks/useStable';
 export const DEFAULT_TENORS: Record<string, string[]> = {
   treasury: ['3M', '1Y', '2Y', '5Y', '10Y', '30Y'],
   sofr_ois: ['1M', '3M', '6M', '12M', '2Y', '10Y'],
+  bei: ['5Y', '10Y', '30Y'],
 };
 
 /** 某期限的 {date,value}[] → 图用的 {time,value}[],按 interval 聚合。缺该期限 → []。 */
