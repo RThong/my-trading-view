@@ -35,7 +35,7 @@ export function useRegimeData() {
   return { data, error: error as Error | undefined, isLoading };
 }
 
-export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol';
+export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol' | 'ratesVol';
 
 type DimConfig = {
   paneDefs: PaneDef[];               // 一序列一 pane;key = series key
@@ -72,14 +72,13 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
       { key: 'vix', label: 'VIX', series: ['vix'] },
       { key: 'vxn', label: 'VXN', series: ['vxn'] },
       { key: 'vixeq', label: 'VIXEQ', series: ['vixeq'] },
-      { key: 'move', label: 'MOVE', series: ['move'] },
       { key: 'vxTerm', label: 'VX1−V3', series: ['vxTermSpread'] },
     ],
-    seriesName: { vix: 'VIX', vxn: 'VXN (纳指波动率)', vixeq: '成分股波动率 VIXEQ', move: 'MOVE (债市波动率)', vxTermSpread: 'VX1−V3 期限结构' },
-    colors: { vix: '#eab308', vxn: '#f97316', vixeq: '#ec4899', move: '#f43f5e' },
+    seriesName: { vix: 'VIX', vxn: 'VXN (纳指波动率)', vixeq: '成分股波动率 VIXEQ', vxTermSpread: 'VX1−V3 期限结构' },
+    colors: { vix: '#eab308', vxn: '#f97316', vixeq: '#ec4899' },
     percentiles: true,
-    // 波动率类一律 低=压扁=自满=风险(逆向,恐慌飙高=机会);MOVE(债市波动率)同理。
-    riskTail: { vix: 'low', vxn: 'low', vixeq: 'low', move: 'low' },
+    // 波动率类一律 低=压扁=自满=风险(逆向,恐慌飙高=机会)。
+    riskTail: { vix: 'low', vxn: 'low', vixeq: 'low' },
     signed: ['vxTermSpread'], // 期限结构:符号柱状图,不套分位带
   },
   sentiment: {
@@ -98,6 +97,17 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     paneDefs: [{ key: 'usd', label: '美元 DXY', series: ['usd'] }],
     seriesName: { usd: '美元指数 DXY' },
     colors: { usd: '#38bdf8' },
+  },
+  // 利率水平 + 利率波动率:MOVE 是债市波动率,与利率同宗(和股市 VIX 相关性一般),故与 10Y 收益率配对。
+  ratesVol: {
+    paneDefs: [
+      { key: 'dgs10', label: '10Y 国债', series: ['dgs10'] },
+      { key: 'move', label: 'MOVE', series: ['move'] },
+    ],
+    seriesName: { dgs10: '10Y 国债收益率', move: 'MOVE (债市波动率)' },
+    colors: { dgs10: '#22d3ee', move: '#f43f5e' },
+    percentiles: true,
+    riskTail: { move: 'low' }, // MOVE 压扁=自满=风险;10Y 收益率方向不单一,不设风险端
   },
 };
 
@@ -133,6 +143,8 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
     const hi = percentile(vals, PCTL_HI);
     lineSpec.refLines = [{ price: lo, title: `P${PCTL_LO}` }, { price: hi, title: `P${PCTL_HI}` }];
     const risk = cfg.riskTail?.[key];
+    // 背景带 = 风险/机会信号,需已知风险端;无 riskTail 的序列(如 10Y 收益率,高低方向不单一)只留 P5/P95 线,不染背景。
+    if (risk === undefined) return [lineSpec];
     // 背景带按原始日频逐日判定极端(不用聚合点),保证与显示 interval 无关。
     const bgData: HistoPoint[] = rows.map((r) => {
       if (r.value < lo) return { time: r.date, value: 1, color: risk === 'low' ? BG_RED : BG_GREEN };

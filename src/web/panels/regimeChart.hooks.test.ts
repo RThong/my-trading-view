@@ -48,6 +48,15 @@ test('情绪维度:分位带 + 极端期背景带按 riskTail 语义上色', () 
   expect(bg.data[5].value).toBe(0);                                               // 值50 不极端 → 无柱
 });
 
+test('percentiles 维度里无 riskTail 的序列不画背景带(方向不单一,只留 P5/P95 线)', () => {
+  const dgs10 = Array.from({ length: 21 }, (_, i) => ({ date: `2021-01-${String(i + 1).padStart(2, '0')}`, value: i }));
+  const specs = buildRegimeSpecs({ series: { dgs10 }, unavailable: [] }, 'ratesVol', '1D');
+  expect(specs.map((s) => s.key)).toEqual(['dgs10']); // 无 dgs10-bg 背景带
+  const line = specs[0] as { kind: string; refLines?: unknown[] };
+  expect(line.kind).toBe('line');
+  expect(line.refLines).toHaveLength(2); // P5/P95 参考线仍在
+});
+
 test('期限结构:符号柱状图(正绿负红、0基线),不套分位带/徽标', () => {
   const vxTermSpread = [
     { date: '2021-01-01', value: 2 },   // 正 → 绿
