@@ -43,10 +43,10 @@ describe('shiftDate: 往前推', () => {
 describe('presetDates: 基于最新数据日并贴到交易日', () => {
   const dates = ['2025-07-01', '2026-06-05', '2026-06-30', '2026-07-01', '2026-07-02'];
   const presets = presetDates('2026-07-02', dates);
-  it('Current = 最新数据日本身', () => expect(presets.find((p) => p.label === 'Current')!.date).toBe('2026-07-02'));
-  it('1 year ago 贴到最近交易日', () => expect(presets.find((p) => p.label === '1 year ago')!.date).toBe('2025-07-01'));
+  it('今天 = 最新数据日本身', () => expect(presets.find((p) => p.label === '今天')!.date).toBe('2026-07-02'));
+  it('一年前 贴到最近交易日', () => expect(presets.find((p) => p.label === '一年前')!.date).toBe('2025-07-01'));
   it('无法贴的预置被丢弃(不产出空曲线)', () => {
     const only = presetDates('2026-07-02', ['2026-07-02']); // 只有当天,往前的都贴不到
-    expect(only.map((p) => p.label)).toEqual(['Current']);
+    expect(only.map((p) => p.label)).toEqual(['今天']);
   });
 });
