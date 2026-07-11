@@ -35,5 +35,10 @@ export function buildSeriesColors(n: number): string[] {
   });
 }
 
-// 24 ≥ 最大期限数(OIS 24 档),面板按下标直取不会 mod 撞色。模块加载算一次。
-export const SERIES_COLORS = buildSeriesColors(24);
+// dataviz skill 验证过的 8 色定序类别配色(dark surface,顺序即相邻 CVD 最优)。
+// validate_palette.js 对底 #0a0a0a 全 PASS(亮度/彩度/对比);相邻 CVD 最差 10.3 在 floor 带,
+// 靠面板已有的图例 + 右侧数值直标做二级编码(合规)。隔档选(如 BEI 5Y/10Y/30Y=slot 0/2/4=蓝/黄/紫)也拉得开。
+export const CATEGORICAL_DARK = ['#3987e5', '#199e70', '#c98500', '#008300', '#9085e9', '#e66767', '#d55181', '#d95926'];
+
+// 前 8 档用验证配色(覆盖各曲线默认选择);OIS 深档(≥8,少被同时选)沿用 HSL 生成填满 24。
+export const SERIES_COLORS = [...CATEGORICAL_DARK, ...buildSeriesColors(24).slice(CATEGORICAL_DARK.length)];
