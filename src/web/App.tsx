@@ -37,6 +37,14 @@ const regimePersp = (id: RegimeDim, label: string): Perspective => ({
   render: (_tabId, interval) => <RegimeChart dim={id} interval={interval} />,
 });
 
+// 走势视角通用:上「期限随时间」+ 下「利差」纵向堆叠(2:1)。
+const stacked = (top: ReactNode, bottom: ReactNode) => (
+  <div className="flex h-full flex-col gap-2">
+    <div className="min-h-0 flex-[2]">{top}</div>
+    <div className="min-h-0 flex-1">{bottom}</div>
+  </div>
+);
+
 const PERSPECTIVES: Perspective[] = [
   {
     id: 'options',
@@ -59,13 +67,7 @@ const PERSPECTIVES: Perspective[] = [
       { id: 'ois_history', label: 'OIS 走势' },
     ],
     render: (tabId, interval) => {
-      // 走势 tab:上「期限随时间」+ 下「利差」纵向堆叠(2:1);曲线 tab 只画纯曲线。
-      const stacked = (top: ReactNode, bottom: ReactNode) => (
-        <div className="flex h-full flex-col gap-2">
-          <div className="min-h-0 flex-[2]">{top}</div>
-          <div className="min-h-0 flex-1">{bottom}</div>
-        </div>
-      );
+      // 走势 tab:上「期限随时间」+ 下「利差」纵向堆叠;曲线 tab 只画纯曲线。
       if (tabId === 'tenor_history')
         return stacked(
           <TenorHistoryPanel source="treasury" interval={interval} />,
@@ -86,6 +88,21 @@ const PERSPECTIVES: Perspective[] = [
       { id: 'credit_term', label: '期限结构' },
     ],
     render: (tabId) => <YieldCurvePanel source={tabId} />,
+  },
+  {
+    id: 'inflation', label: '通胀',
+    tabs: [
+      { id: 'bei', label: '通胀预期' },
+      { id: 'bei_history', label: '通胀走势' },
+    ],
+    render: (tabId, interval) => {
+      if (tabId === 'bei_history')
+        return stacked(
+          <TenorHistoryPanel source="bei" interval={interval} />,
+          <RateSpreadPanel source="bei" long="10Y" short="5Y" label="10Y − 5Y" interval={interval} />,
+        );
+      return <YieldCurvePanel source="bei" />; // BEI 纯曲线
+    },
   },
   {
     id: 'featured', label: '特色指标',
