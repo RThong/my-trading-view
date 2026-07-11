@@ -36,6 +36,8 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     walcl: fredSeries('WALCL'), wtregen: fredSeries('WTREGEN'), rrp: fredSeries('RRPONTSYD'),
     rpo: fredSeries('RPONTSYD'), sofr: fredSeries('SOFR'), iorb: fredSeries('IORB'),
     hyOas: fredSeries('BAMLH0A0HYM2'), dgs10: fredSeries('DGS10'),
+    wages: fredSeries('FRBATLWGT3MMAUMHWGO'),   // Atlanta Fed 薪资增速 tracker(3mma,月频 %)
+    stickyCpi: fredSeries('CORESTICKM159SFRBATL'), // Sticky Price CPI(服务黏性,YoY%,月频)
     cor1m: cboeSeries('COR1M'), vixeq: cboeSeries('VIXEQ'),
     rxm: cboeSeries('RXM'), spx: cboeSeries('SPX'),
     fng: fetchFearGreed(),
@@ -69,6 +71,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const direct: Record<string, keyof typeof src> = {
     hyOas: 'hyOas', cor1m: 'cor1m', vixeq: 'vixeq', fng: 'fng',
     reverseRepo: 'rrp', repoUsage: 'rpo', usd: 'usd', move: 'move', dgs10: 'dgs10',
+    wages: 'wages', stickyCpi: 'stickyCpi',
   };
   for (const [out, s] of Object.entries(direct)) put(out, raw[s]);
 
