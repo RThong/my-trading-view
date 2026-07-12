@@ -42,8 +42,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     rxm: cboeSeries('RXM'), spx: cboeSeries('SPX'),
     fng: fetchFearGreed(),
     // 美元指数 DXY(Yahoo DX-Y.NYB,真 ICE 指数;moomoo OpenD 无 FX 行情权限)。
+    // 拉全历史(回到 1971)——美元周期看长线;live 不落库,起点不受 HISTORY_START_DATE 限制。单 pane 独立图,不压别的序列。
     usd: (async () => {
-      const bars = await createYahooFetcher().fetchDailyBars('DX-Y.NYB', new Date(HISTORY_START_DATE));
+      const bars = await createYahooFetcher().fetchDailyBars('DX-Y.NYB', new Date(0));
       return bars.map((b) => ({ date: b.tradeDate, value: b.close }));
     })(),
     // 债市波动率 MOVE(Yahoo ^MOVE,ICE BofA MOVE 指数;带 caret,无 caret 的 MOVE 是 Movado 股)。
