@@ -79,11 +79,13 @@ const PERSPECTIVES: Perspective[] = [
       { id: 'jpy', label: '日元' },
       { id: 'jgb_curve', label: '收益曲线' },
       { id: 'jgb_history', label: '期限走势' },
+      { id: 'jgb_vol', label: '日债波动率' },
     ],
     render: (tabId, interval) => {
       if (tabId === 'jpy') return <RegimeChart dim="jpy" interval={interval} />;
       if (tabId === 'jgb_history')
         return <TenorHistoryPanel source="jgb" interval={interval} long="10Y" short="2Y" spreadLabel="10Y − 2Y" />;
+      if (tabId === 'jgb_vol') return <RegimeChart dim="jgbVol" interval={interval} />;
       return <YieldCurvePanel source="jgb" />;
     },
   },
