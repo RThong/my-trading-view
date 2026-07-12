@@ -16,7 +16,8 @@ export function dotDateToIso(s: string): string | null {
 
 /** sheet1.xml + sharedStrings.xml → [{date,value}]。A 列共享串索引=日期,B 列内联值;表头/空行/since 前自然过滤。 */
 export function parseJgbVixXlsx(sheetXml: string, sharedStringsXml: string, since: string): { date: string; value: number }[] {
-  const ss = [...sharedStringsXml.matchAll(/<t[^>]*>([^<]*)<\/t>/g)].map((m) => m[1]);
+  // 按 <si> 分块取首个 <t>:一 <si> 一条目,索引才与 A 列对齐。全局扫 <t> 遇富文本(多 run)会错位成看似合理的错日期(静默污染)。
+  const ss = [...sharedStringsXml.matchAll(/<si>(.*?)<\/si>/gs)].map((m) => /<t[^>]*>([^<]*)<\/t>/.exec(m[1])?.[1] ?? '');
   const out: { date: string; value: number }[] = [];
 
   for (const [, body] of sheetXml.matchAll(/<row[^>]*>(.*?)<\/row>/gs)) {
@@ -27,7 +28,8 @@ export function parseJgbVixXlsx(sheetXml: string, sharedStringsXml: string, sinc
     const value = Number(b[1]);
     if (date && date >= since && Number.isFinite(value)) out.push({ date, value });
   }
-  return out;
+  // 源已升序,但 lightweight-charts 对乱序 setData 会抛;显式排序对齐 mofJgb,防源变序静默炸图。
+  return out.sort((x, y) => x.date.localeCompare(y.date));
 }
 
 /** 下载 JPX xlsx → 解 zip → 解析。默认 2018 起。 */
