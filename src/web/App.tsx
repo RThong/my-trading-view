@@ -5,7 +5,6 @@ import { AssetChart } from './panels/AssetChart';
 import { RegimeChart } from './panels/RegimeChart';
 import { YieldCurvePanel } from './panels/YieldCurvePanel';
 import { TenorHistoryPanel } from './panels/TenorHistoryPanel';
-import { RateSpreadPanel } from './panels/RateSpreadPanel';
 import { AttackDefensePanel } from './panels/AttackDefensePanel';
 import type { RegimeDim } from './panels/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
@@ -37,14 +36,6 @@ const regimePersp = (id: RegimeDim, label: string): Perspective => ({
   render: (_tabId, interval) => <RegimeChart dim={id} interval={interval} />,
 });
 
-// 走势视角通用:上「期限随时间」+ 下「利差」纵向堆叠(2:1)。
-const stacked = (top: ReactNode, bottom: ReactNode) => (
-  <div className="flex h-full flex-col gap-2">
-    <div className="min-h-0 flex-[2]">{top}</div>
-    <div className="min-h-0 flex-1">{bottom}</div>
-  </div>
-);
-
 const PERSPECTIVES: Perspective[] = [
   {
     id: 'options',
@@ -73,17 +64,11 @@ const PERSPECTIVES: Perspective[] = [
       { id: 'rates_vol', label: '利率波动率' },
     ],
     render: (tabId, interval) => {
-      // 走势 tab:上「期限随时间」+ 下「利差」纵向堆叠;曲线 tab 只画纯曲线。
+      // 走势 tab:期限线 + 利差同一多 pane 图(共享时间轴,见 TenorHistoryPanel);曲线 tab 只画纯曲线。
       if (tabId === 'tenor_history')
-        return stacked(
-          <TenorHistoryPanel source="treasury" interval={interval} />,
-          <RateSpreadPanel source="treasury" long="10Y" short="3M" label="10Y − 3M" interval={interval} />,
-        );
+        return <TenorHistoryPanel source="treasury" interval={interval} long="10Y" short="3M" spreadLabel="10Y − 3M" />;
       if (tabId === 'ois_history')
-        return stacked(
-          <TenorHistoryPanel source="sofr_ois" interval={interval} />,
-          <RateSpreadPanel source="sofr_ois" long="12M" short="3M" label="1Y − 3M" interval={interval} />,
-        );
+        return <TenorHistoryPanel source="sofr_ois" interval={interval} long="12M" short="3M" spreadLabel="1Y − 3M" />;
       if (tabId === 'rates_vol') return <RegimeChart dim="ratesVol" interval={interval} />; // 10Y 收益率 + MOVE
       return <YieldCurvePanel source={tabId} />; // treasury / sofr_ois 纯曲线
     },
@@ -98,10 +83,7 @@ const PERSPECTIVES: Perspective[] = [
     render: (tabId, interval) => {
       if (tabId === 'jpy') return <RegimeChart dim="jpy" interval={interval} />;
       if (tabId === 'jgb_history')
-        return stacked(
-          <TenorHistoryPanel source="jgb" interval={interval} />,
-          <RateSpreadPanel source="jgb" long="10Y" short="2Y" label="10Y − 2Y" interval={interval} />,
-        );
+        return <TenorHistoryPanel source="jgb" interval={interval} long="10Y" short="2Y" spreadLabel="10Y − 2Y" />;
       return <YieldCurvePanel source="jgb" />;
     },
   },
@@ -122,10 +104,7 @@ const PERSPECTIVES: Perspective[] = [
     ],
     render: (tabId, interval) => {
       if (tabId === 'bei_history')
-        return stacked(
-          <TenorHistoryPanel source="bei" interval={interval} />,
-          <RateSpreadPanel source="bei" long="10Y" short="5Y" label="10Y − 5Y" interval={interval} />,
-        );
+        return <TenorHistoryPanel source="bei" interval={interval} long="10Y" short="5Y" spreadLabel="10Y − 5Y" />;
       if (tabId === 'infl_source') return <RegimeChart dim="inflSource" interval={interval} />; // 薪资 + 服务黏性
       return <YieldCurvePanel source="bei" />; // BEI 纯曲线
     },

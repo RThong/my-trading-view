@@ -32,30 +32,40 @@ export function pickDefaultTenors(source: string, available: string[]): string[]
 // ── 图表实例:单图,每个选中期限一条线 ────────────────────────────
 export type TenorSpec = { tenor: string; color: string; data: LinePoint[] };
 
-/** 建图挂 containerRef;specs 变化时同步 line series(缺的删、没有的建、有的 setData)。
- *  baseline 传数字时,在每条新建 series 上画一条该值的水平参考线(利差图传 0)。 */
+export type SpreadSpec = { label: string; color: string; data: LinePoint[] };
+
+/** 建图挂 containerRef;期限线 → pane 0;spread 给了 → pane 1 一条利差线 + 0 基线(共享时间轴、联动)。 */
 export function useTenorChart(
   containerRef: React.RefObject<HTMLDivElement | null>,
   rawSpecs: TenorSpec[],
-  baseline?: number,
+  rawSpread?: SpreadSpec,
 ) {
   // 引用稳定化在 hook 内部扛:调用方传新数组字面量不该让 sync effect 每帧重跑 fitContent。
   const specs = useStable(rawSpecs);
+  const spread = useStable(rawSpread ?? null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  const spreadRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const hasSpread = rawSpread !== undefined; // 组件生命周期内稳定
 
-  // 挂载建一次,卸载销毁。
+  // 挂载建一次;有 spread 则加 pane 1(2:1 高)。卸载销毁。
   useEffect(() => {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, CHART_OPTIONS);
     chartRef.current = chart;
-    return () => { chart.remove(); chartRef.current = null; seriesRef.current.clear(); };
-  }, [containerRef]);
+    if (hasSpread) {
+      chart.addPane();
+      chart.panes()[0].setStretchFactor(2);
+      chart.panes()[1].setStretchFactor(1);
+    }
+    return () => { chart.remove(); chartRef.current = null; seriesRef.current.clear(); spreadRef.current = null; };
+  }, [containerRef, hasSpread]);
 
-  // specs 变化时增删/更新线。
+  // 期限线(pane 0)+ 利差(pane 1)同步。
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
+
     const keysNow = new Set(specs.map((s) => s.tenor));
     for (const [k, s] of seriesRef.current) {
       if (!keysNow.has(k)) { chart.removeSeries(s); seriesRef.current.delete(k); }
@@ -64,14 +74,20 @@ export function useTenorChart(
       let s = seriesRef.current.get(spec.tenor);
       if (!s) {
         s = chart.addSeries(LineSeries, { color: spec.color, title: spec.tenor, lineWidth: 2, priceLineVisible: false });
-        // 利差图传 baseline=0:穿 0 = 倒挂。只在建线时加一次,免每次 setData 重复加。
-        if (baseline !== undefined) {
-          s.createPriceLine({ price: baseline, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
-        }
         seriesRef.current.set(spec.tenor, s);
       }
       s.setData(spec.data);
     }
+
+    if (spread) {
+      if (!spreadRef.current) {
+        spreadRef.current = chart.addSeries(LineSeries, { color: spread.color, title: spread.label, lineWidth: 2, priceLineVisible: false }, 1);
+        // 穿 0 = 倒挂。只在建线时加一次。
+        spreadRef.current.createPriceLine({ price: 0, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
+      }
+      spreadRef.current.setData(spread.data);
+    }
+
     chart.timeScale().fitContent();
-  }, [specs, baseline]);
+  }, [specs, spread]);
 }
