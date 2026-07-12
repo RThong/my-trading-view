@@ -91,10 +91,12 @@ const PERSPECTIVES: Perspective[] = [
   {
     id: 'japan', label: '日本',
     tabs: [
+      { id: 'jpy', label: '日元' },
       { id: 'jgb_curve', label: '收益曲线' },
       { id: 'jgb_history', label: '期限走势' },
     ],
     render: (tabId, interval) => {
+      if (tabId === 'jpy') return <RegimeChart dim="jpy" interval={interval} />;
       if (tabId === 'jgb_history')
         return stacked(
           <TenorHistoryPanel source="jgb" interval={interval} />,

@@ -35,7 +35,7 @@ export function useRegimeData() {
   return { data, error: error as Error | undefined, isLoading };
 }
 
-export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol' | 'ratesVol' | 'inflSource';
+export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol' | 'ratesVol' | 'inflSource' | 'jpy';
 
 type DimConfig = {
   paneDefs: PaneDef[];               // 一序列一 pane;key = series key
@@ -99,6 +99,17 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     seriesName: { usd: '美元指数 DXY' },
     colors: { usd: '#38bdf8' },
     candle: ['usd'], // DXY 画蜡烛(用 data.ohlc.usd)
+  },
+  // 日元 carry:价格(USD/JPY)+ 收益驱动(美日2Y利差)+ 拥挤度(CFTC 净持仓)。
+  jpy: {
+    paneDefs: [
+      { key: 'usdjpy', label: 'USD/JPY', series: ['usdjpy'] },
+      { key: 'usjp2y', label: '美日2Y利差', series: ['usjp2y'] },
+      { key: 'cftcJpy', label: 'CFTC 净持仓', series: ['cftcJpy'] },
+    ],
+    seriesName: { usdjpy: 'USD/JPY', usjp2y: '美日 2Y 利差 (DGS2−JGB2Y)', cftcJpy: 'CFTC 日元净持仓 (多−空)' },
+    colors: { usdjpy: '#3987e5', usjp2y: '#c98500' },
+    signed: ['cftcJpy'], // 净持仓符号柱:净多绿、净空红、0 基线(拥挤度)
   },
   // 利率水平 + 利率波动率:MOVE 是债市波动率,与利率同宗(和股市 VIX 相关性一般),故与 10Y 收益率配对。
   ratesVol: {

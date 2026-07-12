@@ -3,6 +3,8 @@ import { createFredFetcher } from '../fetchers/fred';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 import { fetchFearGreed } from '../fetchers/cnnFearGreed';
 import { createYahooFetcher } from '../fetchers/yahoo';
+import { fetchJgbCurve } from '../fetchers/mofJgb';
+import { fetchCftcJpyNet } from '../fetchers/cftcCot';
 import { subtractAligned, divideAligned, type Point } from '../analytics/regime';
 import { computeSpread } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
@@ -37,7 +39,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const src = {
     walcl: fredSeries('WALCL'), wtregen: fredSeries('WTREGEN'), rrp: fredSeries('RRPONTSYD'),
     rpo: fredSeries('RPONTSYD'), sofr: fredSeries('SOFR'), iorb: fredSeries('IORB'),
-    hyOas: fredSeries('BAMLH0A0HYM2'), dgs10: fredSeries('DGS10'),
+    hyOas: fredSeries('BAMLH0A0HYM2'), dgs10: fredSeries('DGS10'), dgs2: fredSeries('DGS2'),
     wages: fredSeries('FRBATLWGT3MMAUMHWGO'),   // Atlanta Fed 薪资增速 tracker(3mma,月频 %)
     stickyCpi: fredSeries('CORESTICKM159SFRBATL'), // Sticky Price CPI(服务黏性,YoY%,月频)
     cor1m: cboeSeries('COR1M'), vixeq: cboeSeries('VIXEQ'),
@@ -52,10 +54,15 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const names = Object.keys(src) as (keyof typeof src)[];
   // 美元指数 DXY 单独抓(要 OHLC 画蜡烛;全历史 1971→今,live 不落库)。moomoo OpenD 无 FX 行情权限。
   const usdBarsP = createYahooFetcher().fetchDailyBars('DX-Y.NYB', new Date(0)).catch(() => null);
+  // 日元 carry:USD/JPY(全历史)、JGB 2Y(美日利差的日腿)、CFTC 净持仓。均 catch→null。
+  const usdjpyBarsP = createYahooFetcher().fetchDailyBars('JPY=X', new Date(0)).catch(() => null);
+  const jgb2yP = fetchJgbCurve('2018-01-01').then((c) => c.series['2Y'] ?? null).catch(() => null);
+  const cftcJpyP = fetchCftcJpyNet('2018-01-01').catch(() => null);
   const settled = await Promise.allSettled(Object.values(src));
   const raw: Partial<Record<keyof typeof src, Point[]>> = {};
   settled.forEach((s, i) => { if (s.status === 'fulfilled') raw[names[i]] = s.value; });
   const usdBars = await usdBarsP;
+  const [usdjpyBars, jgb2y, cftcJpy] = await Promise.all([usdjpyBarsP, jgb2yP, cftcJpyP]);
 
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
@@ -77,6 +84,10 @@ export const regimeRoute = new Hono().get('/', async (c) => {
 
   // DXY:close 进 series(unavailable/存在性),OHLC 进 ohlc(蜡烛)。缺 → 归 unavailable。
   put('usd', usdBars?.length ? usdBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
+  // 日元 carry 三序列
+  put('usdjpy', usdjpyBars?.length ? usdjpyBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
+  put('cftcJpy', cftcJpy?.length ? cftcJpy : undefined);
+  put('usjp2y', raw.dgs2 && jgb2y?.length ? subtractAligned([raw.dgs2, jgb2y]) : undefined); // 美日 2Y 利差 = DGS2 − JGB2Y
   const ohlc: Record<string, OhlcBar[]> = {};
   if (usdBars?.length) {
     ohlc.usd = usdBars.map((b) => ({
