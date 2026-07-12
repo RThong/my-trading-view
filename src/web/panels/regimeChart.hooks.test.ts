@@ -48,6 +48,17 @@ test('情绪维度:分位带 + 极端期背景带按 riskTail 语义上色', () 
   expect(bg.data[5].value).toBe(0);                                               // 值50 不极端 → 无柱
 });
 
+test('candle 维度:标 candle 的序列用 ohlc 出蜡烛 spec', () => {
+  const ohlc = { usd: [
+    { time: '2021-01-04', open: 89, high: 90, low: 88, close: 89.5 },
+    { time: '2021-01-05', open: 89.5, high: 91, low: 89, close: 90.8 },
+  ] };
+  const specs = buildRegimeSpecs({ series: { usd: [] }, unavailable: [], ohlc }, 'macro', '1D');
+  expect(specs.map((s) => s.key)).toEqual(['usd']);
+  expect((specs[0] as { kind: string }).kind).toBe('candle');
+  expect((specs[0] as { data: unknown[] }).data.length).toBe(2);
+});
+
 test('percentiles 维度里无 riskTail 的序列不画背景带(方向不单一,只留 P5/P95 线)', () => {
   const dgs10 = Array.from({ length: 21 }, (_, i) => ({ date: `2021-01-${String(i + 1).padStart(2, '0')}`, value: i }));
   const specs = buildRegimeSpecs({ series: { dgs10 }, unavailable: [] }, 'ratesVol', '1D');
