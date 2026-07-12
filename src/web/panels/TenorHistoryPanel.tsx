@@ -2,11 +2,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useYieldCurve } from './yieldCurve.hooks';
 import { SERIES_COLORS } from '../lib/palette';
-import { tenorSeriesData, pickDefaultTenors, useTenorChart, type TenorSpec } from './tenorHistory.hooks';
+import { tenorSeriesData, pickDefaultTenors, useTenorChart, type TenorSpec, type SpreadSpec } from './tenorHistory.hooks';
+import { spreadSeries } from './rateSpread.hooks';
+import { aggregate } from '../lib/chart';
 import type { Interval } from '../hooks/interval';
 
-// 时间横轴 × 每条线一个期限:单期限完整历史。数据/存储不改,纯复用收益率曲线序列。
-export function TenorHistoryPanel({ source, interval }: { source: string; interval: Interval }) {
+// 时间横轴 × 每条线一个期限(pane 0)+ 利差(pane 1),共享时间轴。数据/存储不改,复用收益率曲线序列。
+export function TenorHistoryPanel({ source, interval, long, short, spreadLabel }:
+  { source: string; interval: Interval; long: string; short: string; spreadLabel: string }) {
   const { data, isLoading, error, maxDate } = useYieldCurve(source);
   const containerRef = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -23,7 +26,13 @@ export function TenorHistoryPanel({ source, interval }: { source: string; interv
     .filter((t) => selected.has(t))
     .map((t) => ({ tenor: t, color: colorOf(t), data: tenorSeriesData(data.series[t], interval) }));
 
-  useTenorChart(containerRef, specs);
+  const spread: SpreadSpec = {
+    label: spreadLabel,
+    color: SERIES_COLORS[0],
+    data: aggregate(spreadSeries(data.series[long], data.series[short]).map((p) => ({ time: p.date, value: p.value })), interval),
+  };
+
+  useTenorChart(containerRef, specs, spread);
 
   const toggle = (t: string) =>
     setSelected((prev) => {
