@@ -89,6 +89,21 @@ const PERSPECTIVES: Perspective[] = [
     },
   },
   {
+    id: 'japan', label: '日本',
+    tabs: [
+      { id: 'jgb_curve', label: '收益曲线' },
+      { id: 'jgb_history', label: '期限走势' },
+    ],
+    render: (tabId, interval) => {
+      if (tabId === 'jgb_history')
+        return stacked(
+          <TenorHistoryPanel source="jgb" interval={interval} />,
+          <RateSpreadPanel source="jgb" long="10Y" short="2Y" label="10Y − 2Y" interval={interval} />,
+        );
+      return <YieldCurvePanel source="jgb" />;
+    },
+  },
+  {
     id: 'creditCurve', label: '信用曲线',
     tabs: [
       { id: 'credit_rating', label: '评级利差' },

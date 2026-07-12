@@ -5,6 +5,7 @@ import { HISTORY_START_DATE } from '../config';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
 import { ERIS_OIS_TENORS, CREDIT_RATING, CREDIT_TERM, BEI_TENORS, computeBeiCurve } from '../analytics/rateCurves';
+import { fetchJgbCurve } from '../fetchers/mofJgb';
 
 // 期限 → FRED 国债不变期限收益率 series id。数组顺序即曲线 x 轴顺序。
 const TENORS: [string, string][] = [
@@ -75,6 +76,13 @@ async function buildBei(): Promise<CurveBody> {
   return computeBeiCurve(legs);
 }
 
+// JGB 收益曲线(MOF 官方 CSV,2018 起,15 档含 2Y)。缺档进 unavailable。
+const buildJgb = async (): Promise<CurveBody> => {
+  const c = await fetchJgbCurve('2018-01-01');
+  const unavailable = c.tenors.filter((t) => !c.series[t]?.length);
+  return { tenors: c.tenors, series: c.series, unavailable };
+};
+
 // Eris 的 FairCoupon 已是百分点 → 恒等 xform。
 const buildOis = (): CurveBody =>
   buildFromDb(ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })), (v) => v);
@@ -86,6 +94,7 @@ const BUILDERS: Record<string, () => CurveBody | Promise<CurveBody>> = {
   credit_rating: () => buildFredCurve(CREDIT_RATING),
   credit_term: () => buildFredCurve(CREDIT_TERM),
   bei: buildBei, // 通胀预期(BEI = DGS − DFII 现算)
+  jgb: buildJgb, // 日本国债收益曲线(MOF)
 };
 
 export const yieldCurveRoute = new Hono().get('/', async (c) => {

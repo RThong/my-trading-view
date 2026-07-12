@@ -32,8 +32,8 @@ describe('pickDefaultTenors', () => {
     expect(pickDefaultTenors('sofr_ois', ['3M', '10Y'])).toEqual(['3M', '10Y']));
   it('无表项 → 回退前 4 个', () =>
     expect(pickDefaultTenors('unknown', available)).toEqual(['1M', '3M', '6M', '1Y']));
-  it('DEFAULT_TENORS 含 treasury / sofr_ois / bei', () =>
-    expect(Object.keys(DEFAULT_TENORS).sort()).toEqual(['bei', 'sofr_ois', 'treasury']));
+  it('DEFAULT_TENORS 含 treasury / sofr_ois / bei / jgb', () =>
+    expect(Object.keys(DEFAULT_TENORS).sort()).toEqual(['bei', 'jgb', 'sofr_ois', 'treasury']));
   it('sofr_ois 默认用 12M 而非 1Y,对齐 OIS 真实档位', () => {
     const oisTenors = ['1D', '1W', '1M', '3M', '6M', '9M', '12M', '18M', '2Y', '3Y', '5Y', '10Y', '30Y'];
     expect(pickDefaultTenors('sofr_ois', oisTenors)).toEqual(['1M', '3M', '6M', '12M', '2Y', '10Y']);
