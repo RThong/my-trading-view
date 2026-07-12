@@ -35,7 +35,7 @@ export function useRegimeData() {
   return { data, error: error as Error | undefined, isLoading };
 }
 
-export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol' | 'ratesVol' | 'inflSource' | 'jpy';
+export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol' | 'ratesVol' | 'inflSource' | 'jpy' | 'jgbVol';
 
 type DimConfig = {
   paneDefs: PaneDef[];               // 一序列一 pane;key = series key
@@ -132,6 +132,17 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     colors: { wages: '#f59e0b', stickyCpi: '#8b5cf6' },
     percentiles: true,
     riskTail: { wages: 'high', stickyCpi: 'high' }, // 高=通胀压力=风险(红);低=缓解=绿
+  },
+  // 日债 level + vol:10Y 收益率 + JGB VIX(对称美债 ratesVol 的 10Y+MOVE)。
+  jgbVol: {
+    paneDefs: [
+      { key: 'jgb10y', label: '10Y 国债', series: ['jgb10y'] },
+      { key: 'jgbVix', label: 'JGB VIX', series: ['jgbVix'] },
+    ],
+    seriesName: { jgb10y: 'JGB 10Y 收益率', jgbVix: 'S&P/JPX JGB VIX (日债波动率)' },
+    colors: { jgb10y: '#22d3ee', jgbVix: '#f43f5e' },
+    percentiles: true,
+    riskTail: { jgbVix: 'low' }, // 波动率压扁=自满=风险(同 MOVE);10Y 收益率方向不单一,不设风险端
   },
 };
 
