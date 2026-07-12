@@ -9,7 +9,9 @@ import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
 
-type RegimeBody = { series: Record<string, Point[]>; unavailable: string[] };
+// 后端不 import web 的 Bar(跨边界);内联 OHLC 形状,JSON 与前端 chart 的 Bar 一致。
+type OhlcBar = { time: string; open: number; high: number; low: number; close: number };
+type RegimeBody = { series: Record<string, Point[]>; unavailable: string[]; ohlc?: Record<string, OhlcBar[]> };
 
 // 内存 TTL 缓存:现拉全部外部源约 1.3s,重复打开走缓存瞬时返回。
 // 只缓存全成功的响应(降级响应不缓存,下次刷新重试),避免瞬时反爬失败被粘住。
@@ -41,12 +43,6 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     cor1m: cboeSeries('COR1M'), vixeq: cboeSeries('VIXEQ'),
     rxm: cboeSeries('RXM'), spx: cboeSeries('SPX'),
     fng: fetchFearGreed(),
-    // 美元指数 DXY(Yahoo DX-Y.NYB,真 ICE 指数;moomoo OpenD 无 FX 行情权限)。
-    // 拉全历史(回到 1971)——美元周期看长线;live 不落库,起点不受 HISTORY_START_DATE 限制。单 pane 独立图,不压别的序列。
-    usd: (async () => {
-      const bars = await createYahooFetcher().fetchDailyBars('DX-Y.NYB', new Date(0));
-      return bars.map((b) => ({ date: b.tradeDate, value: b.close }));
-    })(),
     // 债市波动率 MOVE(Yahoo ^MOVE,ICE BofA MOVE 指数;带 caret,无 caret 的 MOVE 是 Movado 股)。
     move: (async () => {
       const bars = await createYahooFetcher().fetchDailyBars('^MOVE', new Date(HISTORY_START_DATE));
@@ -54,9 +50,12 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     })(),
   };
   const names = Object.keys(src) as (keyof typeof src)[];
+  // 美元指数 DXY 单独抓(要 OHLC 画蜡烛;全历史 1971→今,live 不落库)。moomoo OpenD 无 FX 行情权限。
+  const usdBarsP = createYahooFetcher().fetchDailyBars('DX-Y.NYB', new Date(0)).catch(() => null);
   const settled = await Promise.allSettled(Object.values(src));
   const raw: Partial<Record<keyof typeof src, Point[]>> = {};
   settled.forEach((s, i) => { if (s.status === 'fulfilled') raw[names[i]] = s.value; });
+  const usdBars = await usdBarsP;
 
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
@@ -71,10 +70,19 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 直接对外的序列(对外名 → 原始源名)。
   const direct: Record<string, keyof typeof src> = {
     hyOas: 'hyOas', cor1m: 'cor1m', vixeq: 'vixeq', fng: 'fng',
-    reverseRepo: 'rrp', repoUsage: 'rpo', usd: 'usd', move: 'move', dgs10: 'dgs10',
+    reverseRepo: 'rrp', repoUsage: 'rpo', move: 'move', dgs10: 'dgs10',
     wages: 'wages', stickyCpi: 'stickyCpi',
   };
   for (const [out, s] of Object.entries(direct)) put(out, raw[s]);
+
+  // DXY:close 进 series(unavailable/存在性),OHLC 进 ohlc(蜡烛)。缺 → 归 unavailable。
+  put('usd', usdBars?.length ? usdBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
+  const ohlc: Record<string, OhlcBar[]> = {};
+  if (usdBars?.length) {
+    ohlc.usd = usdBars.map((b) => ({
+      time: b.tradeDate, open: b.open ?? b.close, high: b.high ?? b.close, low: b.low ?? b.close, close: b.close,
+    }));
+  }
 
   // 派生:分量齐才算,缺则整条进 unavailable。
   put('netLiquidity', raw.walcl && raw.wtregen && raw.rrp ? subtractAligned([raw.walcl, raw.wtregen, raw.rrp]) : undefined);
@@ -96,7 +104,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     db.close();
   }
 
-  const body: RegimeBody = { series, unavailable };
+  const body: RegimeBody = { series, unavailable, ohlc };
   if (unavailable.length === 0) cache = { at: Date.now(), body }; // 只缓存全成功
   return c.json(body);
 });

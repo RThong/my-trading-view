@@ -1,10 +1,10 @@
 // 宏观 regime 视角的数据层:取数 + 各维度的 pane 配置 + spec 构造。
 // 图表引擎(usePaneChart/usePaneLayout/useCrosshairLegend)与展示壳(PaneChartView)全复用期权侧。
 import useSWR from 'swr';
-import { aggregate, type LinePoint } from '../lib/chart';
+import { aggregate, aggregateBars, type LinePoint, type Bar } from '../lib/chart';
 import { percentile, percentileRank } from '../../shared/stats';
 import type { Interval } from '../hooks/interval';
-import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from './assetChart.hooks';
+import type { PaneDef, LineSpec, HistoSpec, HistoPoint, CandleSpec, Spec } from './assetChart.hooks';
 
 // 分位带阈值(自身历史):想改 5/95 更严就动这里。
 const PCTL_LO = 5;
@@ -18,7 +18,7 @@ const SIGNED_UP = '#22c55e';
 const SIGNED_DOWN = '#ef4444';
 
 export type RegimePoint = { date: string; value: number };
-export type RegimeData = { series: Record<string, RegimePoint[]>; unavailable: string[] };
+export type RegimeData = { series: Record<string, RegimePoint[]>; unavailable: string[]; ohlc?: Record<string, Bar[]> };
 
 const NO_DATA: RegimeData = { series: {}, unavailable: [] }; // 稳定空引用,避免 render 抖动
 const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
@@ -45,6 +45,7 @@ type DimConfig = {
   percentiles?: boolean;             // 该维度画 P5/P95 分位带 + 显示当前分位徽标(目前仅情绪)
   riskTail?: Record<string, 'low' | 'high'>; // 哪一端是"风险"(红),另一端为"机会"(绿)
   signed?: string[];                 // 这些序列画符号柱状图(正绿负红,0 基线),不套分位带/徽标(如期限结构)
+  candle?: string[];                 // 这些序列画蜡烛(需 data.ohlc 提供 OHLC,如 DXY),不套分位/背景带
 };
 
 export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
@@ -97,6 +98,7 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     paneDefs: [{ key: 'usd', label: '美元 DXY', series: ['usd'] }],
     seriesName: { usd: '美元指数 DXY' },
     colors: { usd: '#38bdf8' },
+    candle: ['usd'], // DXY 画蜡烛(用 data.ohlc.usd)
   },
   // 利率水平 + 利率波动率:MOVE 是债市波动率,与利率同宗(和股市 VIX 相关性一般),故与 10Y 收益率配对。
   ratesVol: {
@@ -131,6 +133,15 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
   return cfg.paneDefs.flatMap((def, pane): Spec[] => {
     const key = def.series[0];
     if (data.unavailable.includes(key)) return []; // unavailable 权威:不建 spec
+
+    // 蜡烛:用 ohlc(按 interval 聚合 OHLC),涨绿跌红(addSeries 内置)。不套分位/背景带。
+    if (cfg.candle?.includes(key)) {
+      const bars = data.ohlc?.[key];
+      if (!bars?.length) return [];
+      const candle: CandleSpec = { key, pane, kind: 'candle', title: cfg.seriesName[key], data: aggregateBars(bars, interval) };
+      return [candle];
+    }
+
     const rows = data.series[key];
     if (!rows) return [];
     const line = aggregate(toLine(rows), interval);
