@@ -97,7 +97,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('usjp2y', raw.dgs2 && jgb2y?.length ? subtractAligned([raw.dgs2, jgb2y]) : undefined); // 美日 2Y 利差 = DGS2 − JGB2Y
   put('jgb10y', jgb10y?.length ? jgb10y : undefined);
   put('jgbVix', jgbVix?.length ? jgbVix : undefined);
-  put('cape', cape?.length ? cape : undefined);
+  // CAPE 图只画 1990+(全历史 1871 太远、可眼看互联网泡沫);分位窗口更近(前端 pctlSince 2000+)。
+  const cape1990 = cape?.filter((p) => p.date >= '1990-01-01');
+  put('cape', cape1990?.length ? cape1990 : undefined);
   const ohlc: Record<string, OhlcBar[]> = {};
   if (usdBars?.length) {
     ohlc.usd = usdBars.map((b) => ({
