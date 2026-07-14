@@ -96,3 +96,9 @@ test('jgbVol:jgbVix 有 riskTail → 带背景带', () => {
   const specs = buildRegimeSpecs({ series: { jgbVix }, unavailable: [] }, 'jgbVol', '1D');
   expect(specs.map((s) => s.key)).toEqual(['jgbVix-bg', 'jgbVix']);
 });
+
+test('valuation:cape 有 riskTail high → 带背景带', () => {
+  const cape = [{ date: '2020-01-01', value: 30 }, { date: '2020-02-01', value: 42 }];
+  const specs = buildRegimeSpecs({ series: { cape }, unavailable: [] }, 'valuation', '1D');
+  expect(specs.map((s) => s.key)).toEqual(['cape-bg', 'cape']);
+});
