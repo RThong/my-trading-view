@@ -6,6 +6,7 @@ import { createYahooFetcher } from '../fetchers/yahoo';
 import { fetchJgbCurve } from '../fetchers/mofJgb';
 import { fetchJgbVix } from '../fetchers/jpxJgbVix';
 import { fetchCftcJpyNet } from '../fetchers/cftcCot';
+import { fetchShillerCape } from '../fetchers/capeShiller';
 import { subtractAligned, divideAligned, type Point } from '../analytics/regime';
 import { computeSpread } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
@@ -60,11 +61,13 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const jgbCurveP = fetchJgbCurve('2018-01-01').catch(() => null); // 一次拉,派生 2Y/10Y
   const jgbVixP = fetchJgbVix('2018-01-01').catch(() => null);
   const cftcJpyP = fetchCftcJpyNet('2018-01-01').catch(() => null);
+  // 席勒 CAPE(月频,Robert Shiller 数据集;全历史 1871→今)。
+  const capeP = fetchShillerCape().catch(() => null);
   const settled = await Promise.allSettled(Object.values(src));
   const raw: Partial<Record<keyof typeof src, Point[]>> = {};
   settled.forEach((s, i) => { if (s.status === 'fulfilled') raw[names[i]] = s.value; });
   const usdBars = await usdBarsP;
-  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix] = await Promise.all([usdjpyBarsP, jgbCurveP, cftcJpyP, jgbVixP]);
+  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape] = await Promise.all([usdjpyBarsP, jgbCurveP, cftcJpyP, jgbVixP, capeP]);
   const jgb2y = jgbCurve?.series['2Y'] ?? null;
   const jgb10y = jgbCurve?.series['10Y'] ?? null;
 
@@ -94,6 +97,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('usjp2y', raw.dgs2 && jgb2y?.length ? subtractAligned([raw.dgs2, jgb2y]) : undefined); // 美日 2Y 利差 = DGS2 − JGB2Y
   put('jgb10y', jgb10y?.length ? jgb10y : undefined);
   put('jgbVix', jgbVix?.length ? jgbVix : undefined);
+  put('cape', cape?.length ? cape : undefined);
   const ohlc: Record<string, OhlcBar[]> = {};
   if (usdBars?.length) {
     ohlc.usd = usdBars.map((b) => ({

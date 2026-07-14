@@ -35,7 +35,7 @@ export function useRegimeData() {
   return { data, error: error as Error | undefined, isLoading };
 }
 
-export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol' | 'ratesVol' | 'inflSource' | 'jpy' | 'jgbVol';
+export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol' | 'ratesVol' | 'inflSource' | 'jpy' | 'jgbVol' | 'valuation';
 
 type DimConfig = {
   paneDefs: PaneDef[];               // 一序列一 pane;key = series key
@@ -143,6 +143,14 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     colors: { jgb10y: '#22d3ee', jgbVix: '#f43f5e' },
     percentiles: true,
     riskTail: { jgbVix: 'low' }, // 波动率压扁=自满=风险(同 MOVE);10Y 收益率方向不单一,不设风险端
+  },
+  // 估值:席勒 CAPE(PE10)。高=贵=未来回报低=风险(红);低=便宜=机会(绿)。
+  valuation: {
+    paneDefs: [{ key: 'cape', label: '席勒 CAPE', series: ['cape'] }],
+    seriesName: { cape: '席勒 CAPE (PE10 周期调整市盈率)' },
+    colors: { cape: '#eab308' },
+    percentiles: true,
+    riskTail: { cape: 'high' },
   },
 };
 

@@ -111,6 +111,7 @@ const PERSPECTIVES: Perspective[] = [
       return <YieldCurvePanel source="bei" />; // BEI 纯曲线
     },
   },
+  regimePersp('valuation', '估值'),
   {
     id: 'featured', label: '特色指标',
     tabs: [{ id: 'attack_defense', label: '攻防' }],
