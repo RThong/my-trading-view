@@ -46,6 +46,7 @@ type DimConfig = {
   riskTail?: Record<string, 'low' | 'high'>; // 哪一端是"风险"(红),另一端为"机会"(绿)
   signed?: string[];                 // 这些序列画符号柱状图(正绿负红,0 基线),不套分位带/徽标(如期限结构)
   candle?: string[];                 // 这些序列画蜡烛(需 data.ohlc 提供 OHLC,如 DXY),不套分位/背景带
+  pctlSince?: Record<string, string>; // 分位只用该 ISO 日期起的子窗口算(线仍画全部);如 CAPE:图看长历史,但百分位只近年才有说服力
 };
 
 export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
@@ -151,6 +152,8 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     colors: { cape: '#eab308' },
     percentiles: true,
     riskTail: { cape: 'high' },
+    // 图看 1990+(含互联网泡沫),但 CAPE 结构性抬升,分位只用 2000+ 才有说服力。
+    pctlSince: { cape: '2000-01-01' },
   },
 };
 
@@ -190,7 +193,9 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
     if (!cfg.percentiles) return [lineSpec];
 
     // 分位:P5/P95 参考线用原始日频算(与显示 interval 无关);极端期画满高背景带。
-    const vals = rows.map((r) => r.value);
+    // pctlSince 给了则只用该子窗口算阈值(线仍画全部 rows);阈值再铺回整条线。
+    const since = cfg.pctlSince?.[key];
+    const vals = (since ? rows.filter((r) => r.date >= since) : rows).map((r) => r.value);
     const lo = percentile(vals, PCTL_LO);
     const hi = percentile(vals, PCTL_HI);
     lineSpec.refLines = [{ price: lo, title: `P${PCTL_LO}` }, { price: hi, title: `P${PCTL_HI}` }];
@@ -220,7 +225,10 @@ export function regimePercentiles(data: RegimeData, dim: RegimeDim): Record<stri
       if (data.unavailable.includes(key)) return [];
       const rows = data.series[key];
       if (!rows?.length) return [];
-      const rank = percentileRank(rows.map((r) => r.value), rows[rows.length - 1].value);
+      // 徽标 = 最新值在分位窗口内的排名(pctlSince 给了就只对子窗口排,与 buildRegimeSpecs 阈值同源)。
+      const since = cfg.pctlSince?.[key];
+      const base = since ? rows.filter((r) => r.date >= since) : rows;
+      const rank = percentileRank(base.map((r) => r.value), rows[rows.length - 1].value);
       return Number.isNaN(rank) ? [] : [[key, `P${rank}`]];
     }),
   );

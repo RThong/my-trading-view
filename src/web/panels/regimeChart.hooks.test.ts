@@ -102,3 +102,24 @@ test('valuation:cape 有 riskTail high → 带背景带', () => {
   const specs = buildRegimeSpecs({ series: { cape }, unavailable: [] }, 'valuation', '1D');
   expect(specs.map((s) => s.key)).toEqual(['cape-bg', 'cape']);
 });
+
+test('valuation:cape 分位只用 pctlSince(2000+)窗口,线仍画全部', () => {
+  // 1995 的极低值不该进分位(会把 P5 拉到 10);2000+ 三点才算分位。
+  const cape = [
+    { date: '1995-01-01', value: 10 },
+    { date: '2000-01-01', value: 30 },
+    { date: '2000-02-01', value: 40 },
+    { date: '2000-03-01', value: 50 },
+  ];
+  const specs = buildRegimeSpecs({ series: { cape }, unavailable: [] }, 'valuation', '1D');
+  const line = specs.find((s) => s.key === 'cape')!;
+  expect(line.data.length).toBe(4); // 线画全部 4 点(含 1995)
+  const refLines = (line as { refLines: { price: number; title: string }[] }).refLines;
+  const p5 = refLines.find((r) => r.title === 'P5')!.price;
+  expect(p5).toBeGreaterThanOrEqual(30); // 分位不含 1995 的 10 → P5 落在 2000+ 区间
+
+  // 徽标分位:最新值 50 只对 2000+ 三点(中位排名 =(3−0.5)/3=P83)排名,不被 1995 稀释
+  // (含 1995 会是 4 点 → P88,借此证明窗口生效)
+  const pctls = regimePercentiles({ series: { cape }, unavailable: [] }, 'valuation');
+  expect(pctls.cape).toBe('P83');
+});
