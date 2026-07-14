@@ -51,6 +51,13 @@ export async function withConnection<T>(cfg: MoomooConfig, fn: (ws: any) => Prom
   const ws = await connect(cfg);
   try {
     return await fn(ws);
+  } catch (e: any) {
+    // moomoo 的 GetXxx 失败时 reject 的是 {retType,retMsg,errCode} 对象而非 Error;转成带 retMsg
+    // 的 Error,否则上层 (err as Error).message 只拿到 undefined,真因(如 "Network interruption.")被吞。
+    if (e && typeof e === 'object' && !(e instanceof Error) && 'retMsg' in e) {
+      throw new Error(`moomoo: ${e.retMsg} (retType=${e.retType})`);
+    }
+    throw e;
   } finally {
     disconnect(ws);
   }
