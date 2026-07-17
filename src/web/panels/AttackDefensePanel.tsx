@@ -20,6 +20,10 @@ const PANE_DEFS: PaneDef[] = [
 ];
 const SERIES_NAME = { qqq: 'QQQ', ad: 'NOBL/QQQ' };
 const COLORS = { ad: RATIO_COLOR };
+const DESC: Record<string, string> = {
+  qqq: '定义:QQQ(纳指 100 ETF)蜡烛。\n进攻资产的价格参照。',
+  ad: '定义:NOBL / QQQ 比值(自动红绿分区)。\nNOBL = 标普红利贵族(防守),QQQ = 成长(进攻)。\n比值上行(绿)= 防守跑赢 = 避险;下行(红)= 进攻跑赢 = risk-on。恒日频。',
+};
 
 const getJson = (url: string) => fetch(url).then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); });
 const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
@@ -58,7 +62,7 @@ export function AttackDefensePanel() {
       containerRef={containerRef} paneDefs={PANE_DEFS} paneCount={PANE_DEFS.length}
       order={order} collapsed={collapsed} move={move} toggle={toggle}
       cells={cells} hovering={hovering} tops={tops}
-      seriesName={SERIES_NAME} colors={COLORS} isLoading={isLoading} error={error}
+      seriesName={SERIES_NAME} colors={COLORS} isLoading={isLoading} error={error} desc={DESC}
     />
   );
 }

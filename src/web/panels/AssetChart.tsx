@@ -20,7 +20,7 @@ export function AssetChart({
 }) {
   const label = underlying.replace(/^\./, '');
   // 每渲染直接算(paneConfig 是查表,便宜);paneDefs 的引用稳定由 usePaneLayout 内部 useStable 负责,无需在此 memo。
-  const { seriesName, paneDefs, paneCount } = paneConfig(vrpUnderlying);
+  const { seriesName, paneDefs, paneCount, desc } = paneConfig(vrpUnderlying);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { opt, vrp, price, error, isLoading } = useAssetData(underlying, vrpUnderlying);
@@ -32,7 +32,7 @@ export function AssetChart({
       containerRef={containerRef} paneDefs={paneDefs} paneCount={paneCount}
       order={order} collapsed={collapsed} move={move} toggle={toggle}
       cells={cells} hovering={hovering} tops={tops}
-      seriesName={seriesName} colors={COLORS} isLoading={isLoading} error={error} errorLabel={label}
+      seriesName={seriesName} colors={COLORS} isLoading={isLoading} error={error} errorLabel={label} desc={desc}
     />
   );
 }

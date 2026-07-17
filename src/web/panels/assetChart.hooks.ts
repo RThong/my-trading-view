@@ -66,7 +66,14 @@ export function paneConfig(vrpUnderlying?: string) {
     ] : []),
     // VX1−V3 期限结构已搬到情绪视角(见 regimeChart.hooks);.VIX 只到 skew。
   ];
-  return { seriesName, paneDefs, paneCount: paneDefs.length };
+  const desc: Record<string, string> = {
+    price: '定义:标的现货价(蜡烛)。\n期权指标的锚;和下面 IV / skew / VRP 对照看价格与波动的关系。',
+    iv: '定义:25Δ 看涨 / 看跌期权隐含波动率。\n市场对该标的未来波动的定价。\nCall vs Put 的高低差就是 skew 的来源。',
+    skew: '定义:25Δ 风险逆转(put IV − call IV)。\n下行保护 vs 上行的相对贵贱。\n高 = 抢跌保护 / 避险;低或负 = 追涨 / 自满。\n注意:高 IV 标的采样点被推出活跃区,skew 偏噪声。',
+    ivrv: '定义:隐含波动率(IV)vs 已实现波动率(RV)。\nIV 持续高于 RV = 期权卖方长期有溢价。',
+    vrp: '定义:波动率风险溢价 = IV − RV。\n正 = 卖波动率有利可图(市场为保护付溢价);负 = 买保护划算 / 应激。',
+  };
+  return { seriesName, paneDefs, desc, paneCount: paneDefs.length };
 }
 
 const toLine = (rows: Array<Record<string, unknown>>, key: string): LinePoint[] =>

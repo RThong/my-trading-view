@@ -7,7 +7,7 @@ import { fetchJgbCurve } from '../fetchers/mofJgb';
 import { fetchJgbVix } from '../fetchers/jpxJgbVix';
 import { fetchCftcJpyNet } from '../fetchers/cftcCot';
 import { fetchShillerCape } from '../fetchers/capeShiller';
-import { subtractAligned, divideAligned, yoyPct, type Point } from '../analytics/regime';
+import { subtractAligned, divideAligned, yoyPct, scale, type Point } from '../analytics/regime';
 import { computeSpread } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
@@ -117,14 +117,16 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   }
 
   // 派生:分量齐才算,缺则整条进 unavailable。
-  put('netLiquidity', raw.walcl && raw.wtregen && raw.rrp ? subtractAligned([raw.walcl, raw.wtregen, raw.rrp]) : undefined);
+  // RRPONTSYD 源为「十亿美元」,而 WALCL/WTREGEN 为「百万美元」——RRP 腿必须 ×1000 对齐,
+  // 否则被缩小 1000 倍(历史高 RRP 期 ~$2.5T 会让净流动性严重虚高)。
+  put('netLiquidity', raw.walcl && raw.wtregen && raw.rrp ? subtractAligned([raw.walcl, raw.wtregen, scale(raw.rrp, 1000)]) : undefined);
   put('repoStress', raw.iorb && raw.sofr ? subtractAligned([raw.iorb, raw.sofr]) : undefined);
-  // RXM(PutWrite 指数)/ SPX:期权情绪/周期成熟度,低=melt-up/自满。
+  // RXM(Cboe 风险逆转指数:买 25Δ call / 卖 25Δ put 滚动策略)/ SPX:该策略相对 SPX 的累计表现比。
   put('rxmSpx', raw.rxm && raw.spx ? divideAligned(raw.rxm, raw.spx) : undefined);
 
   // 油市结构(物理紧张):Brent−WTI 海运 vs 内陆;柴油裂解 = ULSD×42 − WTI(HO 单位 $/gal→$/bbl)。
   put('brentWti', brent && wti ? subtractAligned([brent, wti]) : undefined);
-  const dieselBbl = diesel?.map((p) => ({ date: p.date, value: p.value * 42 }));
+  const dieselBbl = diesel ? scale(diesel, 42) : null; // ULSD $/gal → $/bbl
   put('dieselCrack', dieselBbl && wti ? subtractAligned([dieselBbl, wti]) : undefined);
   // 汽油 RBOB 同比:CPI 汽油分项的高频前瞻,进「通胀来源」与薪资/服务黏性并读。
   const rbobYoyS = rbob ? yoyPct(rbob) : null;

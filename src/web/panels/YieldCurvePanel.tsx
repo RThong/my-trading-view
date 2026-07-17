@@ -2,9 +2,20 @@ import { useEffect, useRef, useState } from 'react';
 import { useYieldCurve, curveForDate, snapToTradingDay } from './yieldCurve.hooks';
 import { YieldCurveChart, type Curve } from './YieldCurveChart';
 import { DatePickerWithPresets } from '../components/DatePickerWithPresets';
+import { InfoTip } from '../components/InfoTip';
 import { SERIES_COLORS } from '../lib/palette';
 
 type Row = { id: number; date: string; visible: boolean };
+
+// 视图说明(按 source):某几个时间点的曲线(横轴 = 期限)。
+const VIEW_DESC: Record<string, { title: string; desc: string }> = {
+  treasury: { title: '收益曲线', desc: '定义:某几个时间点的美债收益率曲线(横轴 = 期限)。\n看形状:陡峭 / 平坦 / 倒挂,及随时间的移动。' },
+  sofr_ois: { title: 'SOFR OIS', desc: '定义:SOFR OIS 曲线(横轴 = 期限)。\n市场对未来隔夜利率的预期路径;下弯 = 预期降息。' },
+  jgb: { title: 'JGB 曲线', desc: '定义:日本国债收益率曲线。\n看 BOJ / YCC 对曲线形状的压制与松绑。' },
+  bei: { title: 'BEI 曲线', desc: '定义:盈亏平衡通胀率(BEI)曲线。\n各期限市场定价的通胀预期;= 名义 − TIPS 实际收益率。' },
+  credit_rating: { title: '评级利差', desc: '定义:不同信用评级债券的收益率(横轴 = 评级)。\n评级越低收益越高 = 信用风险溢价的阶梯。' },
+  credit_term: { title: '信用期限', desc: '定义:同一信用品种不同期限的收益率(横轴 = 期限)。\n信用债自身的期限结构。' },
+};
 
 export function YieldCurvePanel({ source }: { source: string }) {
   const { data, isLoading, error, datesAsc, maxDate, presets } = useYieldCurve(source);
@@ -43,8 +54,17 @@ export function YieldCurvePanel({ source }: { source: string }) {
     .filter((e) => e.row.visible)
     .map((e) => ({ date: e.row.date, label: labelOf(e.row.date), color: e.color, values: e.values }));
 
+  const view = VIEW_DESC[source];
+
   return (
     <div className="flex h-full flex-col gap-3">
+      {/* 视图说明:左上角精简工具条(label + ⓘ,无 ↑↓/显隐) */}
+      {view && (
+        <div className="flex items-center gap-0.5 self-start rounded border border-neutral-700 px-1 py-0.5 text-xs">
+          <span className="text-neutral-300">{view.title}</span>
+          <InfoTip text={view.desc} />
+        </div>
+      )}
       {data.unavailable.length > 0 && <div className="text-xs text-amber-500">缺失期限:{data.unavailable.join(', ')}</div>}
 
       {/* 图 */}

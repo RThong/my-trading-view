@@ -18,6 +18,11 @@ export function divideAligned(num: Point[], den: Point[]): Point[] {
   });
 }
 
+/** 逐点乘常数 k:单位/量纲对齐用(如 RRP 十亿→百万 ×1000、柴油 $/gal→$/bbl ×42)。 */
+export function scale(rows: Point[], k: number): Point[] {
+  return rows.map((p) => ({ date: p.date, value: p.value * k }));
+}
+
 /** 日频序列的同比 %:每点对齐到约一年前(≤ 当日−1年 的最近观测),(今/去年−1)×100。
  *  头一年无对照 → 跳过;去年值为 0 → 跳过。用于把 RBOB 等价格转成可与 CPI 并读的 YoY。 */
 export function yoyPct(rows: Point[]): Point[] {

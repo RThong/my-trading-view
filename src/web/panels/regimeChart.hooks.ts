@@ -56,6 +56,9 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     paneDefs: [{ key: 'hyOas', label: '信用利差', series: ['hyOas'] }],
     seriesName: { hyOas: 'HY 信用利差' },
     colors: { hyOas: '#f59e0b' },
+    desc: {
+      hyOas: '定义:高收益债 vs 美债利差(OAS)。\n信用风险 / 融资环境的温度计。\n走阔 = 违约担忧升、钱变贵、risk-off;收窄 = 信用宽松、risk-on。',
+    },
   },
   liquidity: {
     paneDefs: [
@@ -70,6 +73,12 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     },
     colors: { netLiquidity: '#22c55e', reverseRepo: '#14b8a6', repoUsage: '#ec4899', repoStress: '#a855f7' },
     baseline: { repoStress: 0 },
+    desc: {
+      netLiquidity: '定义:美联储净流动性 = 总资产 WALCL − 财政部账户 TGA − 逆回购 RRP。\n真正流到市场的美元量。\n升 = 宽松(利多风险资产);降 = 收紧。粗略代理,非因果。',
+      reverseRepo: '定义:货币基金等把现金隔夜停在美联储的量(ON RRP)。\n过剩流动性的蓄水池。\n快速抽干 = 流动性被吸走(常伴 TGA 重建 / QT)。',
+      repoUsage: '定义:美联储常备回购便利(SRF)动用量。\n平时为 0;一旦有量 = 回购市场缺钱来借,短端压力信号。',
+      repoStress: '定义:准备金利率 IORB − 实际隔夜利率 SOFR。\n回购市场松紧。\n正常为正且平稳;收窄 / 转负 = 准备金变稀缺、回购承压(2019 钱荒)。',
+    },
   },
   vol: {
     paneDefs: [
@@ -84,6 +93,12 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     // 波动率类一律 低=压扁=自满=风险(逆向,恐慌飙高=机会)。
     riskTail: { vix: 'low', vxn: 'low', vixeq: 'low' },
     signed: ['vxTermSpread'], // 期限结构:符号柱状图,不套分位带
+    desc: {
+      vix: '定义:标普 500 隐含波动率(未来 30 天)。\n股市恐慌 / 自满。\n飙高 = 恐慌(常是机会);极低 = 压扁自满(风险端,红)。',
+      vxn: '定义:纳指 100 隐含波动率(VXN)。\n科技股版 VIX,通常更高。低 = 自满。',
+      vixeq: '定义:标普成分股平均单股波动率(VIXEQ)。\n配 VIX / COR1M 看指数波动 vs 个股波动。低 = 自满。',
+      vxTerm: '定义:VIX 期货近月 − 三月。\n期限结构(柱子绿正红负,仅表符号)。\n红 / 负(contango,近低远高)= 常态;绿 / 正(backwardation,近端翘高)= 近端恐慌 / 应激。',
+    },
   },
   sentiment: {
     paneDefs: [
@@ -96,12 +111,20 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     percentiles: true,
     // F&G 高=贪婪=风险;COR1M 低=自满=风险;RXM/SPX 低=melt-up/晚周期=风险。
     riskTail: { fng: 'high', cor1m: 'low', rxmSpx: 'low' },
+    desc: {
+      fng: '定义:CNN Fear & Greed 综合情绪(0-100)。\n高 = 贪婪(风险端,红);低 = 恐惧(常是机会)。多因子合成,粗略。',
+      cor1m: '定义:标普隐含相关性(COR1M)。\n成分股齐动程度。低 = 个股分化 / 自满(风险端);高 = 齐跌 / 系统性恐慌。',
+      rxmSpx: '定义:CBOE PutWrite 指数 RXM / SPX 比值。\n期权卖方情绪 / 周期成熟度。低 = melt-up / 晚周期 / 自满(风险端)。',
+    },
   },
   macro: {
     paneDefs: [{ key: 'usd', label: '美元 DXY', series: ['usd'] }],
     seriesName: { usd: '美元指数 DXY' },
     colors: { usd: '#38bdf8' },
     candle: ['usd'], // DXY 画蜡烛(用 data.ohlc.usd)
+    desc: {
+      usd: '定义:美元指数 DXY(对一篮子货币),蜡烛图。\n全球美元强弱 / 流动性。\n走强 = 压新兴市场 / 商品 / 风险资产;走弱 = 宽松。源:Yahoo DX-Y.NYB。',
+    },
   },
   // 日元 carry:价格(USD/JPY)+ 收益驱动(美日2Y利差)+ 拥挤度(CFTC 净持仓)。
   jpy: {
@@ -113,6 +136,11 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     seriesName: { usdjpy: 'USD/JPY', usjp2y: '美日 2Y 利差 (DGS2−JGB2Y)', cftcJpy: 'CFTC 日元净持仓 (多−空)' },
     colors: { usdjpy: '#3987e5', usjp2y: '#c98500' },
     signed: ['cftcJpy'], // 净持仓符号柱:净多绿、净空红、0 基线(拥挤度)
+    desc: {
+      usdjpy: '定义:美元兑日元汇率。\n日元套息(carry)的价格腿。走高(日元贬)= carry 顺风 / risk-on;急跌 = carry 平仓 / 避险。',
+      usjp2y: '定义:美日 2 年期利差(DGS2 − JGB2Y)。\ncarry 的收益驱动。走阔 = 借日元买美元更划算 = 支撑 USD/JPY。',
+      cftcJpy: '定义:CFTC 投机盘日元净持仓(多 − 空)。\n拥挤度。极端净空 = 大家都空日元 = 一旦反转平仓凶。绿净多、红净空。',
+    },
   },
   // 利率水平 + 利率波动率:MOVE 是债市波动率,与利率同宗(和股市 VIX 相关性一般),故与 10Y 收益率配对。
   ratesVol: {
@@ -124,6 +152,10 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     colors: { dgs10: '#22d3ee', move: '#f43f5e' },
     percentiles: true,
     riskTail: { move: 'low' }, // MOVE 压扁=自满=风险;10Y 收益率方向不单一,不设风险端
+    desc: {
+      dgs10: '定义:美国 10 年期国债收益率。\n长端利率锚。方向不单一(增长 or 通胀 / 供给都能推),故不设风险端,只给 P5/P95 参考。',
+      move: '定义:美债期权隐含波动率(MOVE),债市版 VIX。\n利率市场不确定性。低 = 自满(风险端,红);飙高 = 利率动荡。',
+    },
   },
   // 通胀来源(供给侧):薪资增速 + 服务黏性 + 汽油同比。与 BEI(市场前瞻预期)并读。高=通胀压力=风险。
   // RBOB YoY:CPI 汽油分项的高频前瞻(汽油是 headline CPI 波动最大的分项),领先约 0-1 月。
@@ -139,6 +171,8 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     percentiles: true,
     riskTail: { wages: 'high', stickyCpi: 'high', rbobYoy: 'high' }, // 高=通胀压力=风险(红);低=缓解=绿
     desc: {
+      wages: '定义:亚特兰大联储薪资增速 tracker(3mma,%)。\n工资-通胀螺旋的供给侧。高 = 通胀黏、难降(风险端,红)。月频。',
+      stickyCpi: '定义:亚特兰大联储 Sticky Price CPI(YoY%)。\n价格黏性大的那半篮子(服务为主),转向慢。高 = 核心通胀顽固(风险端)。月频。',
       rbobYoy: [
         '定义:RBOB 汽油近月期货的同比(YoY%)。',
         '用途:CPI 汽油分项的高频前瞻——汽油是 headline CPI 波动最大的分项,领先约 0-1 月。',
@@ -188,6 +222,10 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     colors: { jgb10y: '#22d3ee', jgbVix: '#f43f5e' },
     percentiles: true,
     riskTail: { jgbVix: 'low' }, // 波动率压扁=自满=风险(同 MOVE);10Y 收益率方向不单一,不设风险端
+    desc: {
+      jgb10y: '定义:日本 10 年期国债收益率。\nBOJ 政策 / YCC 的长端。方向不单一,只给参考线。',
+      jgbVix: '定义:S&P/JPX JGB VIX,日债期权隐含波动率。\n日债不确定性(对称美债 MOVE)。低 = 自满(风险端);飙高 = 日债动荡、或外溢全球利率。',
+    },
   },
   // 估值:席勒 CAPE(PE10)。高=贵=未来回报低=风险(红);低=便宜=机会(绿)。
   valuation: {
@@ -198,6 +236,9 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     riskTail: { cape: 'high' },
     // 图看 1990+(含互联网泡沫),但 CAPE 结构性抬升,分位只用 2000+ 才有说服力。
     pctlSince: { cape: '2000-01-01' },
+    desc: {
+      cape: '定义:席勒 CAPE(周期调整市盈率 PE10)。\n股市长期估值。高 = 贵 = 未来 10 年回报低(风险端,红);低 = 便宜。\n分位只用 2000+ 算(CAPE 结构性抬升,长历史比不公平)。',
+    },
   },
 };
 

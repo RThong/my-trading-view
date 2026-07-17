@@ -1,5 +1,10 @@
 import { test, expect } from 'bun:test';
-import { subtractAligned, divideAligned, yoyPct } from './regime';
+import { subtractAligned, divideAligned, yoyPct, scale } from './regime';
+
+test('scale:逐点乘常数(单位对齐)', () => {
+  expect(scale([{ date: '2020-01-01', value: 2 }, { date: '2020-01-02', value: 3 }], 1000))
+    .toEqual([{ date: '2020-01-01', value: 2000 }, { date: '2020-01-02', value: 3000 }]);
+});
 
 test('yoyPct:对齐到约一年前算同比%', () => {
   const rows = [
