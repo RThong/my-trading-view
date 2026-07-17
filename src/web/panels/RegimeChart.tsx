@@ -26,7 +26,7 @@ export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Inter
       containerRef={containerRef} paneDefs={paneDefs} paneCount={paneCount}
       order={order} collapsed={collapsed} move={move} toggle={toggle}
       cells={cells} hovering={hovering} tops={tops}
-      seriesName={cfg.seriesName} colors={cfg.colors} isLoading={isLoading} error={error} note={note} badges={badges}
+      seriesName={cfg.seriesName} colors={cfg.colors} isLoading={isLoading} error={error} note={note} badges={badges} desc={cfg.desc}
     />
   );
 }

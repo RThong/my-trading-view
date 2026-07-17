@@ -35,7 +35,7 @@ export function useRegimeData() {
   return { data, error: error as Error | undefined, isLoading };
 }
 
-export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol' | 'ratesVol' | 'inflSource' | 'jpy' | 'jgbVol' | 'valuation';
+export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol' | 'ratesVol' | 'inflSource' | 'jpy' | 'jgbVol' | 'valuation' | 'oil';
 
 type DimConfig = {
   paneDefs: PaneDef[];               // 一序列一 pane;key = series key
@@ -47,6 +47,8 @@ type DimConfig = {
   signed?: string[];                 // 这些序列画符号柱状图(正绿负红,0 基线),不套分位带/徽标(如期限结构)
   candle?: string[];                 // 这些序列画蜡烛(需 data.ohlc 提供 OHLC,如 DXY),不套分位/背景带
   pctlSince?: Record<string, string>; // 分位只用该 ISO 日期起的子窗口算(线仍画全部);如 CAPE:图看长历史,但百分位只近年才有说服力
+  bands?: Record<string, { lo: number; hi: number }>; // 固定常态带(基本面锚,替代 P5/P95):画上下参考线。出带=异常/告警,非确诊
+  desc?: Record<string, string>;     // 每 pane 的指标说明(hover ⓘ 显示);写谦虚版读法,别下强因果结论
 };
 
 export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
@@ -123,16 +125,58 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     percentiles: true,
     riskTail: { move: 'low' }, // MOVE 压扁=自满=风险;10Y 收益率方向不单一,不设风险端
   },
-  // 通胀来源(供给侧):薪资增速 + 服务黏性。与 BEI(市场前瞻预期)并读。高=通胀压力=风险。
+  // 通胀来源(供给侧):薪资增速 + 服务黏性 + 汽油同比。与 BEI(市场前瞻预期)并读。高=通胀压力=风险。
+  // RBOB YoY:CPI 汽油分项的高频前瞻(汽油是 headline CPI 波动最大的分项),领先约 0-1 月。
   inflSource: {
     paneDefs: [
       { key: 'wages', label: '薪资增速', series: ['wages'] },
       { key: 'stickyCpi', label: '服务黏性', series: ['stickyCpi'] },
+      { key: 'rbobYoy', label: '汽油同比', series: ['rbobYoy'] },
     ],
-    seriesName: { wages: '薪资增速 (Atlanta Fed)', stickyCpi: 'Sticky CPI (服务黏性)' },
-    colors: { wages: '#f59e0b', stickyCpi: '#8b5cf6' },
+    seriesName: { wages: '薪资增速 (Atlanta Fed)', stickyCpi: 'Sticky CPI (服务黏性)', rbobYoy: 'RBOB 汽油 YoY%' },
+    colors: { wages: '#f59e0b', stickyCpi: '#8b5cf6', rbobYoy: '#fb923c' },
+    baseline: { rbobYoy: 0 }, // YoY 会穿零
     percentiles: true,
-    riskTail: { wages: 'high', stickyCpi: 'high' }, // 高=通胀压力=风险(红);低=缓解=绿
+    riskTail: { wages: 'high', stickyCpi: 'high', rbobYoy: 'high' }, // 高=通胀压力=风险(红);低=缓解=绿
+    desc: {
+      rbobYoy: [
+        '定义:RBOB 汽油近月期货的同比(YoY%)。',
+        '用途:CPI 汽油分项的高频前瞻——汽油是 headline CPI 波动最大的分项,领先约 0-1 月。',
+        '只管 headline / 能源,不碰核心 CPI(core)。',
+        '高 = 能源在给通胀加压;低于 0 = 拖累。',
+      ].join('\n'),
+    },
+  },
+  // 油市结构(物理紧张):Brent−WTI(海运 vs 内陆)+ 柴油裂解(炼厂利润/工业需求)。
+  // 长期结构指标:海峡恢复后切回本职——读油市松紧、工业需求强弱。$/桶。
+  // 用固定常态带(平静期实测:剔除 2020/2022/2026 三段危机后的取值范围,长周期锚)替代 P5/P95——
+  // 后者是自指的(永远 5% 在外)。出带=异常/告警,非确诊;柴油裂解中枢会结构性抬升,需人工重定基。
+  oil: {
+    paneDefs: [
+      { key: 'brentWti', label: 'Brent−WTI', series: ['brentWti'] },
+      { key: 'dieselCrack', label: '柴油裂解', series: ['dieselCrack'] },
+    ],
+    seriesName: { brentWti: 'Brent − WTI ($/桶)', dieselCrack: '柴油裂解 (ULSD×42 − WTI, $/桶)' },
+    colors: { brentWti: '#38bdf8', dieselCrack: '#f97316' },
+    bands: { brentWti: { lo: 1.5, hi: 10 }, dieselCrack: { lo: 10, hi: 48 } },
+    desc: {
+      brentWti: [
+        '定义:国际海运原油(Brent)− 美国内陆原油(WTI),$/桶。',
+        '读法:看「紧张在哪、桶往哪流」。',
+        '走阔 = 国际紧 / 美国相对绝缘。',
+        '贴 0 或转负 = 美油被跨洋抢,或 Cushing 扭曲。',
+        '注意:常被美国出口 / 管输 / 库容主导,别当纯国际风险读。',
+        '常态带 1.5~10;出带需配 Cushing 库存 + 月差交叉确认(告警,非确诊)。',
+      ].join('\n'),
+      dieselCrack: [
+        '定义:炼柴油的毛利(ULSD×42 − WTI,$/桶),看下游 / 实体经济。',
+        '高 = 产品端比原油紧:需求强 or 炼厂 / 供应紧,单独分不清。',
+        '低 = 毛利崩、需求走弱。',
+        '常态带 10~48;中枢会结构性抬升(西方炼厂关停 / IMO 2020)。',
+        '长期站上带上沿 → 更可能是 regime 变了而非危机,需人工重定基。',
+        '用法:配库存 + 月差交叉确认(告警,非确诊)。',
+      ].join('\n'),
+    },
   },
   // 日债 level + vol:10Y 收益率 + JGB VIX(对称美债 ratesVol 的 10Y+MOVE)。
   jgbVol: {
@@ -190,6 +234,13 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
       key, pane, kind: 'line', color: cfg.colors[key], title: cfg.seriesName[key], data: line,
       ...(cfg.baseline?.[key] !== undefined ? { baseline: cfg.baseline[key] } : {}),
     };
+    // 固定常态带:画上下参考线(基本面锚,替代自指的 P5/P95;出带=告警非确诊)。
+    const band = cfg.bands?.[key];
+    if (band) lineSpec.refLines = [
+      { price: band.lo, title: '常态下限' },
+      { price: band.hi, title: '常态上限' },
+    ];
+
     if (!cfg.percentiles) return [lineSpec];
 
     // 分位:P5/P95 参考线用原始日频算(与显示 interval 无关);极端期画满高背景带。
