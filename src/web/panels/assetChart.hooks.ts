@@ -167,9 +167,10 @@ export function usePaneChart(
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, CHART_OPTIONS);
     chartRef.current = chart;
+    const seriesMap = seriesRef.current; // 同一 Map(useRef 只建一次),捕获供 cleanup 用
     for (let i = 1; i < paneCount; i++) chart.addPane(); // pane 0 默认已存在
     chart.panes().forEach((p) => p.setStretchFactor(1)); // 等高,可拖分隔条调整
-    return () => { chart.remove(); chartRef.current = null; seriesRef.current.clear(); };
+    return () => { chart.remove(); seriesMap.clear(); chartRef.current = null; };
   }, [containerRef, paneCount]);
 
   // 数据/聚合变化时同步 series:缺的删、没有的建、有的 setData。

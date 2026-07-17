@@ -53,12 +53,14 @@ export function useTenorChart(
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, CHART_OPTIONS);
     chartRef.current = chart;
+    const seriesMap = seriesRef.current; // 同一 Map(useRef 只建一次),捕获供 cleanup 用
     if (hasSpread) {
       chart.addPane();
       chart.panes()[0].setStretchFactor(2);
       chart.panes()[1].setStretchFactor(1);
     }
-    return () => { chart.remove(); chartRef.current = null; seriesRef.current.clear(); spreadRef.current = null; };
+    // 重建/卸载时清理:seriesMap 用捕获的局部;spreadRef 置空供重建时重新识别。
+    return () => { chart.remove(); seriesMap.clear(); chartRef.current = null; spreadRef.current = null; };
   }, [containerRef, hasSpread]);
 
   // 期限线(pane 0)+ 利差(pane 1)同步。

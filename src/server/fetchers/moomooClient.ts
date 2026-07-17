@@ -30,7 +30,7 @@ export async function connect(cfg: MoomooConfig): Promise<any> {
       const timer = setTimeout(() => reject(new Error('OpenD login timeout')), LOGIN_TIMEOUT_MS);
       ws.onlogin = (ret: boolean, msg: string) => {
         clearTimeout(timer);
-        ret ? resolve() : reject(new Error(`OpenD login failed: ${msg}`));
+        if (ret) resolve(); else reject(new Error(`OpenD login failed: ${msg}`));
       };
     });
   } catch (e) {
