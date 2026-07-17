@@ -69,14 +69,14 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     ],
     seriesName: {
       netLiquidity: '净流动性 (WALCL−TGA−RRP)', reverseRepo: '逆回购 RRP',
-      repoUsage: '回购用量 SRF', repoStress: '回购压力 (IORB−SOFR)',
+      repoUsage: '回购用量 (隔夜正回购 RPONTSYD)', repoStress: '回购压力 (IORB−SOFR)',
     },
     colors: { netLiquidity: '#22c55e', reverseRepo: '#14b8a6', repoUsage: '#ec4899', repoStress: '#a855f7' },
     baseline: { repoStress: 0 },
     desc: {
-      netLiquidity: '定义:美联储净流动性 = 总资产 WALCL − 财政部账户 TGA − 逆回购 RRP。\n真正流到市场的美元量。\n升 = 宽松(利多风险资产);降 = 收紧。粗略代理,非因果。',
-      reverseRepo: '定义:货币基金等把现金隔夜停在美联储的量(ON RRP)。\n过剩流动性的蓄水池。\n快速抽干 = 流动性被吸走(常伴 TGA 重建 / QT)。',
-      repoUsage: '定义:美联储常备回购便利(SRF)动用量。\n平时为 0;一旦有量 = 回购市场缺钱来借,短端压力信号。',
+      netLiquidity: '定义:美联储资产负债表净流动性(粗略代理)= 总资产 WALCL − 财政部账户 TGA − 逆回购 RRP(三腿已统一到百万美元)。\n升 = 宽松倾向(利多风险资产);降 = 收紧倾向。是启发式代理,非实际流入市场的资金量。',
+      reverseRepo: '定义:货币基金等把现金隔夜停在美联储的量(ON RRP)。\n过剩流动性的蓄水池。\nRRP 下降本身 = 这部分资金回流准备金 / 货币市场(是释放);但常与 TGA 重建 / QT 同时发生,后两者才是真正收紧。',
+      repoUsage: '定义:美联储隔夜正回购操作总量(RPONTSYD,含 2021 起的常备回购便利 SRF)。\n平时接近 0;一旦有量 = 回购市场缺钱来借,短端压力信号(如 2019-09 钱荒)。',
       repoStress: '定义:准备金利率 IORB − 实际隔夜利率 SOFR。\n回购市场松紧。\n正常为正且平稳;收窄 / 转负 = 准备金变稀缺、回购承压(2019 钱荒)。',
     },
   },
@@ -106,15 +106,15 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
       { key: 'cor1m', label: 'COR1M', series: ['cor1m'] },
       { key: 'rxmSpx', label: 'RXM/SPX', series: ['rxmSpx'] },
     ],
-    seriesName: { fng: 'Fear & Greed', cor1m: '隐含相关性 COR1M', rxmSpx: 'RXM/SPX 期权情绪' },
+    seriesName: { fng: 'Fear & Greed', cor1m: '隐含相关性 COR1M', rxmSpx: 'RXM/SPX (风险逆转相对表现)' },
     colors: { fng: '#3b82f6', cor1m: '#22c55e', rxmSpx: '#a855f7' },
     percentiles: true,
-    // F&G 高=贪婪=风险;COR1M 低=自满=风险;RXM/SPX 低=melt-up/晚周期=风险。
-    riskTail: { fng: 'high', cor1m: 'low', rxmSpx: 'low' },
+    // F&G 高=贪婪=风险;COR1M 低=分化/自满=风险。RXM/SPX 无可靠方向,不设风险端(只给 P5/P95 参考)。
+    riskTail: { fng: 'high', cor1m: 'low' },
     desc: {
       fng: '定义:CNN Fear & Greed 综合情绪(0-100)。\n高 = 贪婪(风险端,红);低 = 恐惧(常是机会)。多因子合成,粗略。',
-      cor1m: '定义:标普隐含相关性(COR1M)。\n成分股齐动程度。低 = 个股分化 / 自满(风险端);高 = 齐跌 / 系统性恐慌。',
-      rxmSpx: '定义:CBOE PutWrite 指数 RXM / SPX 比值。\n期权卖方情绪 / 周期成熟度。低 = melt-up / 晚周期 / 自满(风险端)。',
+      cor1m: '定义:标普隐含相关性(COR1M)。\n成分股隐含共动程度。高 = 共动更强(常在系统性压力期上升);低 = 隐含分化更强(偏自满,风险端红)。',
+      rxmSpx: '定义:Cboe 风险逆转指数 RXM(买 25Δ call / 卖 25Δ put 滚动策略)/ SPX。\n该期权策略相对 SPX 的累计表现比。\n低 = 策略相对跑输;不宜单独据此断情绪方向,故不染风险背景带。',
     },
   },
   macro: {
@@ -171,8 +171,8 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     percentiles: true,
     riskTail: { wages: 'high', stickyCpi: 'high', rbobYoy: 'high' }, // 高=通胀压力=风险(红);低=缓解=绿
     desc: {
-      wages: '定义:亚特兰大联储薪资增速 tracker(3mma,%)。\n工资-通胀螺旋的供给侧。高 = 通胀黏、难降(风险端,红)。月频。',
-      stickyCpi: '定义:亚特兰大联储 Sticky Price CPI(YoY%)。\n价格黏性大的那半篮子(服务为主),转向慢。高 = 核心通胀顽固(风险端)。月频。',
+      wages: '定义:亚特兰大联储薪资增速 tracker(个人时薪同比的非加权中位数,3 个月移动平均)。\n工资压力 / 劳动力市场紧张度代理(不度量因果螺旋)。高 = 工资涨得快、通胀更黏(风险端,红)。月频。',
+      stickyCpi: '定义:亚特兰大联储 Core Sticky-Price CPI(剔除食品能源,同比)。\n调价频率低的那部分篮子(服务为主,含部分商品),转向慢。高 = 核心通胀顽固(风险端)。月频。',
       rbobYoy: [
         '定义:RBOB 汽油近月期货的同比(YoY%)。',
         '用途:CPI 汽油分项的高频前瞻——汽油是 headline CPI 波动最大的分项,领先约 0-1 月。',
@@ -205,7 +205,7 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
       dieselCrack: [
         '定义:炼柴油的毛利(ULSD×42 − WTI,$/桶),看下游 / 实体经济。',
         '高 = 产品端比原油紧:需求强 or 炼厂 / 供应紧,单独分不清。',
-        '低 = 毛利崩、需求走弱。',
+        '低 = 产品端偏松:需求弱 or 炼厂 / 供应宽松、库存高,同样单独分不清。',
         '常态带 10~48;中枢会结构性抬升(西方炼厂关停 / IMO 2020)。',
         '长期站上带上沿 → 更可能是 regime 变了而非危机,需人工重定基。',
         '用法:配库存 + 月差交叉确认(告警,非确诊)。',
