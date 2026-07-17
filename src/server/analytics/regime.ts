@@ -18,6 +18,22 @@ export function divideAligned(num: Point[], den: Point[]): Point[] {
   });
 }
 
+/** 日频序列的同比 %:每点对齐到约一年前(≤ 当日−1年 的最近观测),(今/去年−1)×100。
+ *  头一年无对照 → 跳过;去年值为 0 → 跳过。用于把 RBOB 等价格转成可与 CPI 并读的 YoY。 */
+export function yoyPct(rows: Point[]): Point[] {
+  const isoMinusYear = (d: string) => `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`;
+  const out: Point[] = [];
+  let j = 0; // 指向 ≤ target 的最近一行;target 随 i 单调增,j 只前进
+
+  for (let i = 0; i < rows.length; i++) {
+    const target = isoMinusYear(rows[i].date);
+    while (j + 1 < rows.length && rows[j + 1].date <= target) j++;
+    if (rows[j].date <= target && rows[j].value !== 0)
+      out.push({ date: rows[i].date, value: (rows[i].value / rows[j].value - 1) * 100 });
+  }
+  return out;
+}
+
 export function subtractAligned(series: Point[][]): Point[] {
   const maps = series.map((s) => new Map(s.map((p) => [p.date, p.value])));
   const dates = [...new Set(series.flatMap((s) => s.map((p) => p.date)))].sort();

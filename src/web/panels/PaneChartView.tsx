@@ -1,4 +1,5 @@
 import type { LegendCell, PaneDef } from './assetChart.hooks';
+import { InfoTip } from '../components/InfoTip';
 
 // 多 pane 堆叠图的通用展示壳:pane 工具条(↑↓ 换位 / ▾ 折叠)+ 竖线图例 + 容器 + loading/error。
 // 与数据源无关——期权(AssetChart)与宏观(RegimeChart)共用,靠 props 注入 paneDefs/图例/命名/配色。
@@ -20,11 +21,12 @@ type Props = {
   errorLabel?: string; // error 前缀(期权用标的名);宏观省略
   note?: string;       // 右上角提示(宏观用来标"某序列暂不可用")
   badges?: Record<string, string>; // paneKey → 常显徽标(情绪用当前分位 Pxx)
+  desc?: Record<string, string>;   // paneKey → 指标说明(工具条 ⓘ hover 显示)
 };
 
 export function PaneChartView({
   containerRef, paneDefs, paneCount, order, collapsed, move, toggle,
-  cells, hovering, tops, seriesName, colors, isLoading, error, errorLabel, note, badges,
+  cells, hovering, tops, seriesName, colors, isLoading, error, errorLabel, note, badges, desc,
 }: Props) {
   return (
     <div className="relative flex h-full w-full flex-col">
@@ -44,6 +46,7 @@ export function PaneChartView({
                 {isCollapsed ? '▸' : '▾'}
               </button>
               <span className={isCollapsed ? 'text-neutral-600' : 'text-neutral-300'}>{pl}</span>
+              {desc?.[key] && <InfoTip text={desc[key]} />}
             </div>
           );
         })}

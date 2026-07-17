@@ -7,7 +7,7 @@ import { fetchJgbCurve } from '../fetchers/mofJgb';
 import { fetchJgbVix } from '../fetchers/jpxJgbVix';
 import { fetchCftcJpyNet } from '../fetchers/cftcCot';
 import { fetchShillerCape } from '../fetchers/capeShiller';
-import { subtractAligned, divideAligned, type Point } from '../analytics/regime';
+import { subtractAligned, divideAligned, yoyPct, type Point } from '../analytics/regime';
 import { computeSpread } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
@@ -63,11 +63,20 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const cftcJpyP = fetchCftcJpyNet('2018-01-01').catch(() => null);
   // 席勒 CAPE(月频,Robert Shiller 数据集;全历史 1871→今)。
   const capeP = fetchShillerCape().catch(() => null);
+  // 油品近月期货(Yahoo 连续近月,自带全历史,live 不落库)。派生油市结构 + 汽油 YoY。
+  const yahooClose = (sym: string): Promise<Point[] | null> =>
+    createYahooFetcher().fetchDailyBars(sym, new Date(HISTORY_START_DATE))
+      .then((bars) => bars.map((b) => ({ date: b.tradeDate, value: b.close })))
+      .catch(() => null);
+  // 各标的已 catch→null,Promise.all 不会拒绝;先建后 await(与其它源同批),
+  // 别在 allSettled(src) 挂处理器前 await——否则 src 源在此窗口拒绝会成 unhandled。
+  const oilP = Promise.all(['CL=F', 'BZ=F', 'HO=F', 'RB=F'].map(yahooClose));
   const settled = await Promise.allSettled(Object.values(src));
   const raw: Partial<Record<keyof typeof src, Point[]>> = {};
   settled.forEach((s, i) => { if (s.status === 'fulfilled') raw[names[i]] = s.value; });
   const usdBars = await usdBarsP;
   const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape] = await Promise.all([usdjpyBarsP, jgbCurveP, cftcJpyP, jgbVixP, capeP]);
+  const [wti, brent, diesel, rbob] = await oilP;
   const jgb2y = jgbCurve?.series['2Y'] ?? null;
   const jgb10y = jgbCurve?.series['10Y'] ?? null;
 
@@ -112,6 +121,14 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('repoStress', raw.iorb && raw.sofr ? subtractAligned([raw.iorb, raw.sofr]) : undefined);
   // RXM(PutWrite 指数)/ SPX:期权情绪/周期成熟度,低=melt-up/自满。
   put('rxmSpx', raw.rxm && raw.spx ? divideAligned(raw.rxm, raw.spx) : undefined);
+
+  // 油市结构(物理紧张):Brent−WTI 海运 vs 内陆;柴油裂解 = ULSD×42 − WTI(HO 单位 $/gal→$/bbl)。
+  put('brentWti', brent && wti ? subtractAligned([brent, wti]) : undefined);
+  const dieselBbl = diesel?.map((p) => ({ date: p.date, value: p.value * 42 }));
+  put('dieselCrack', dieselBbl && wti ? subtractAligned([dieselBbl, wti]) : undefined);
+  // 汽油 RBOB 同比:CPI 汽油分项的高频前瞻,进「通胀来源」与薪资/服务黏性并读。
+  const rbobYoyS = rbob ? yoyPct(rbob) : null;
+  put('rbobYoy', rbobYoyS?.length ? rbobYoyS : undefined);
 
   // VIX / VXN 已在库里(market_series,daily job 维护)→ 直接读,不外拉。
   const db = openDb();

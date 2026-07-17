@@ -1,5 +1,17 @@
 import { test, expect } from 'bun:test';
-import { subtractAligned, divideAligned } from './regime';
+import { subtractAligned, divideAligned, yoyPct } from './regime';
+
+test('yoyPct:对齐到约一年前算同比%', () => {
+  const rows = [
+    { date: '2023-01-02', value: 100 }, // 头一年无对照,跳过
+    { date: '2024-01-02', value: 150 }, // 对 2023-01-02:+50%
+    { date: '2024-06-01', value: 120 }, // 无 2023-06-01,取 ≤ 该日最近=2023-01-02(100)→ +20%
+  ];
+  const out = yoyPct(rows);
+  expect(out.map((p) => p.date)).toEqual(['2024-01-02', '2024-06-01']); // 头一年跳过
+  expect(out[0].value).toBeCloseTo(50);
+  expect(out[1].value).toBeCloseTo(20);
+});
 
 test('divideAligned:逐日 num/den,den=0 跳过', () => {
   const num = [{ date: '2020-01-01', value: 10 }, { date: '2020-01-02', value: 12 }];

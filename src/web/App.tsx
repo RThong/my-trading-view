@@ -54,6 +54,8 @@ const PERSPECTIVES: Perspective[] = [
     render: (tabId, interval) => <RegimeChart dim={tabId as RegimeDim} interval={interval} />,
   },
   regimePersp('macro', '宏观'),
+  regimePersp('oil', '能源'), // Brent−WTI + 柴油裂解:油市结构 / 物理紧张
+
   {
     id: 'rates', label: '利率',
     tabs: [
