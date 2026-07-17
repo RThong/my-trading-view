@@ -66,7 +66,14 @@ export function paneConfig(vrpUnderlying?: string) {
     ] : []),
     // VX1−V3 期限结构已搬到情绪视角(见 regimeChart.hooks);.VIX 只到 skew。
   ];
-  return { seriesName, paneDefs, paneCount: paneDefs.length };
+  const desc: Record<string, string> = {
+    price: '定义:标的现货价(蜡烛)。\n期权指标的锚;和下面 IV / skew / VRP 对照看价格与波动的关系。',
+    iv: '定义:25Δ 看涨 / 看跌期权隐含波动率。\n市场对该标的未来波动的定价。\nCall vs Put 的高低差就是 skew 的来源。',
+    skew: '定义:25Δ 风险逆转(put IV − call IV)。\n符号:高 = 25Δ put 比 call 贵;低 / 负 = call 比 put 贵。\n情绪含义按标的分:普通权益(SPY/QQQ/GLD 等)高 = 抢下行保护 / 避险;但 VIX 等波动率标的 call 常被抢(赌波动上冲),负值不等于自满。\n注意:高 IV 标的采样点被推出活跃区,skew 偏噪声。',
+    ivrv: '定义:隐含波动率(IV)vs 截至当日的历史已实现波动率(RV)。\nIV 持续高于近期 RV = 期权偏贵;能否变成卖方收益还要看随后实现的波动 + 成本。',
+    vrp: '定义:当日 IV − 近期历史 RV 的价差(不是前瞻可实现收益)。\n正 = IV 高于近期 RV(通常卖方占优,但要与随后实现波动比才算数);负 = IV 低于近期 RV / 应激。',
+  };
+  return { seriesName, paneDefs, desc, paneCount: paneDefs.length };
 }
 
 const toLine = (rows: Array<Record<string, unknown>>, key: string): LinePoint[] =>

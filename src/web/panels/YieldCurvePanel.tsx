@@ -2,9 +2,20 @@ import { useEffect, useRef, useState } from 'react';
 import { useYieldCurve, curveForDate, snapToTradingDay } from './yieldCurve.hooks';
 import { YieldCurveChart, type Curve } from './YieldCurveChart';
 import { DatePickerWithPresets } from '../components/DatePickerWithPresets';
+import { InfoTip } from '../components/InfoTip';
 import { SERIES_COLORS } from '../lib/palette';
 
 type Row = { id: number; date: string; visible: boolean };
+
+// 视图说明(按 source):某几个时间点的曲线(横轴 = 期限)。
+const VIEW_DESC: Record<string, { title: string; desc: string }> = {
+  treasury: { title: '收益曲线', desc: '定义:某几个时间点的美债收益率曲线(横轴 = 期限)。\n看形状:陡峭 / 平坦 / 倒挂,及随时间的移动。' },
+  sofr_ois: { title: 'SOFR OIS', desc: '定义:SOFR OIS 曲线(Eris par OIS 固定利率,横轴 = 期限)。\n主要反映市场对未来隔夜利率(≈美联储路径)的预期,并含期限 / 流动性溢价。\n下弯 / 短端高于长端 = 降息定价占主导,非确定预测。' },
+  jgb: { title: 'JGB 曲线', desc: '定义:日本国债收益率曲线。\n看 BOJ / YCC 对曲线形状的压制与松绑。' },
+  bei: { title: 'BEI 曲线', desc: '定义:盈亏平衡通胀率(BEI)曲线,= 名义 − TIPS 实际收益率。\n是市场通胀补偿(含通胀风险溢价 + 名义债/TIPS 流动性差异),可作预期代理但非纯预期。' },
+  credit_rating: { title: '评级利差', desc: '定义:不同信用评级债券相对美债的期权调整利差(OAS,横轴 = 评级)。\n评级越低 OAS 通常越宽 = 信用风险溢价的阶梯。' },
+  credit_term: { title: '信用期限', desc: '定义:同一投资级公司债指数、不同剩余期限分组的期权调整利差(OAS)。\n是信用利差自身的期限结构,不是收益率曲线。' },
+};
 
 export function YieldCurvePanel({ source }: { source: string }) {
   const { data, isLoading, error, datesAsc, maxDate, presets } = useYieldCurve(source);
@@ -17,7 +28,7 @@ export function YieldCurvePanel({ source }: { source: string }) {
     if (maxDate && rows.length === 0) {
       setRows(presets.map((p) => ({ id: nextId(), date: p.date, visible: true })));
     }
-  }, [maxDate]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [maxDate]); 
 
   if (error) return <div className="flex h-full items-center justify-center text-red-400">加载失败:{error.message}</div>;
   if (isLoading) return <div className="flex h-full items-center justify-center text-neutral-500">加载中…</div>;
@@ -43,8 +54,17 @@ export function YieldCurvePanel({ source }: { source: string }) {
     .filter((e) => e.row.visible)
     .map((e) => ({ date: e.row.date, label: labelOf(e.row.date), color: e.color, values: e.values }));
 
+  const view = VIEW_DESC[source];
+
   return (
     <div className="flex h-full flex-col gap-3">
+      {/* 视图说明:左上角精简工具条(label + ⓘ,无 ↑↓/显隐) */}
+      {view && (
+        <div className="flex items-center gap-0.5 self-start rounded border border-neutral-700 px-1 py-0.5 text-xs">
+          <span className="text-neutral-300">{view.title}</span>
+          <InfoTip text={view.desc} />
+        </div>
+      )}
       {data.unavailable.length > 0 && <div className="text-xs text-amber-500">缺失期限:{data.unavailable.join(', ')}</div>}
 
       {/* 图 */}
