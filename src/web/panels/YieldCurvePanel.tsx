@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useYieldCurve, curveForDate, snapToTradingDay } from './yieldCurve.hooks';
 import { YieldCurveChart, type Curve } from './YieldCurveChart';
 import { DatePickerWithPresets } from '../components/DatePickerWithPresets';
@@ -20,15 +20,15 @@ const VIEW_DESC: Record<string, { title: string; desc: string }> = {
 export function YieldCurvePanel({ source }: { source: string }) {
   const { data, isLoading, error, datesAsc, maxDate, presets } = useYieldCurve(source);
   const [rows, setRows] = useState<Row[]>([]);
-  const idRef = useRef(0);
-  const nextId = () => ++idRef.current;
+  const [seeded, setSeeded] = useState(false);
+  const nextId = (rs: Row[]) => (rs.length ? Math.max(...rs.map((r) => r.id)) : -1) + 1; // id = 现有最大 + 1(免可变计数 ref)
 
-  // 数据到位后,首次种入全部预设时间点(今天/昨天/前天/上周/上个月/半年前/一年前),均勾选。
-  useEffect(() => {
-    if (maxDate && rows.length === 0) {
-      setRows(presets.map((p) => ({ id: nextId(), date: p.date, visible: true })));
-    }
-  }, [maxDate]); 
+  // 数据到位后种一次预设时间点(今天/昨天/…/一年前),均勾选。渲染中条件 setState + seeded
+  // 单调标志替代 effect:只种一次、删空也不重种,且无需对 exhaustive-deps 谎报依赖。
+  if (!seeded && maxDate && rows.length === 0) {
+    setRows(presets.map((p, i) => ({ id: i, date: p.date, visible: true })));
+    setSeeded(true);
+  }
 
   if (error) return <div className="flex h-full items-center justify-center text-red-400">加载失败:{error.message}</div>;
   if (isLoading) return <div className="flex h-full items-center justify-center text-neutral-500">加载中…</div>;
@@ -42,7 +42,7 @@ export function YieldCurvePanel({ source }: { source: string }) {
   const setDate = (id: number, date: string) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, date } : r)));
   const toggle = (id: number) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, visible: !r.visible } : r)));
   const remove = (id: number) => setRows((rs) => rs.filter((r) => r.id !== id));
-  const addRow = () => setRows((rs) => [...rs, { id: nextId(), date: maxDate, visible: true }]);
+  const addRow = () => setRows((rs) => [...rs, { id: nextId(rs), date: maxDate, visible: true }]);
 
   const presetLabelOf = (date: string) => presets.find((p) => p.date === date)?.label;
   const labelOf = (date: string) => (presetLabelOf(date) ? `${presetLabelOf(date)}: ${date}` : date);

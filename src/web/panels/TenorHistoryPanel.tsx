@@ -1,5 +1,5 @@
 // src/web/panels/TenorHistoryPanel.tsx
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useYieldCurve } from './yieldCurve.hooks';
 import { SERIES_COLORS } from '../lib/palette';
 import { tenorSeriesData, pickDefaultTenors, useTenorChart, type TenorSpec, type SpreadSpec } from './tenorHistory.hooks';
@@ -23,10 +23,12 @@ export function TenorHistoryPanel({ source, interval, long, short, spreadLabel }
   const containerRef = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  // 数据到位后首次种入默认勾选(按 source)。
-  useEffect(() => {
-    if (maxDate && selected.size === 0) setSelected(new Set(pickDefaultTenors(source, data.tenors)));
-  }, [maxDate]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 数据到位后种一次默认勾选(按 source)。渲染中条件 setState + seeded 单调标志替代 effect。
+  const [seeded, setSeeded] = useState(false);
+  if (!seeded && maxDate && selected.size === 0) {
+    setSelected(new Set(pickDefaultTenors(source, data.tenors)));
+    setSeeded(true);
+  }
 
   // 期限固定配色:按 tenors 序号取色(勾/取消不改色)。
   const colorOf = (tenor: string) => SERIES_COLORS[data.tenors.indexOf(tenor) % SERIES_COLORS.length];
@@ -46,7 +48,7 @@ export function TenorHistoryPanel({ source, interval, long, short, spreadLabel }
   const toggle = (t: string) =>
     setSelected((prev) => {
       const n = new Set(prev);
-      n.has(t) ? n.delete(t) : n.add(t);
+      if (n.has(t)) n.delete(t); else n.add(t);
       return n;
     });
 

@@ -4,7 +4,7 @@ import { createYahooFetcher, type YahooClient } from './yahoo';
 describe('yahoo fetcher', () => {
   test('fetchDailyBars maps yahoo chart() output to QuoteRow shape', async () => {
     const mockClient: YahooClient = {
-      chart: async (symbol, opts) => ({
+      chart: async (symbol, _opts) => ({
         meta: { symbol, currency: 'USD' },
         quotes: [
           { date: new Date('2026-05-10T00:00:00Z'), open: 100, high: 102, low: 99, close: 101, volume: 1000 },
