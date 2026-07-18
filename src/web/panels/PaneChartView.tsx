@@ -1,4 +1,4 @@
-import type { LegendCell, PaneDef } from './assetChart.hooks';
+import type { LegendCell, PaneDef } from './paneChart.types';
 import { InfoTip } from '../components/InfoTip';
 
 // 多 pane 堆叠图的通用展示壳:pane 工具条(↑↓ 换位 / ▾ 折叠)+ 竖线图例 + 容器 + loading/error。

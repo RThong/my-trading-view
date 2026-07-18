@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import type { Interval } from '../hooks/interval';
-import { COLORS, buildSpecs, paneConfig, useAssetData, usePaneChartStack } from './assetChart.hooks';
+import { COLORS, buildSpecs, paneConfig, useAssetData } from './assetChart.hooks';
+import { usePaneChartStack } from './paneChart.hooks';
 import { PaneChartView } from './PaneChartView';
 
 // 一个资产的指标放进同一个 chart 的多个 pane(共享时间轴),顶部恒为现货蜡烛:
