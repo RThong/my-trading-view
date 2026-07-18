@@ -4,6 +4,7 @@
 import useSWR from 'swr';
 import type { Interval } from '../hooks/interval';
 import { aggregate, aggregateBars, type LinePoint, type Bar } from '../lib/chart';
+import { ivIndexByUnderlying } from '../../shared/marketCatalog';
 import type { PaneDef, Spec, LineSpec } from './paneChart.types';
 
 export type OptRow = { date: string; callIv: number; putIv: number; skew: number };
@@ -36,10 +37,9 @@ async function getJson<T>(url: string): Promise<T> {
 
 /** pane 元数据 + series 短名(右轴 tag / 左上图例同一命名源)。所有 tab 顶部都有现货 pane;
  *  有 vrpUnderlying 的再加 隐含/RV + VRP 两个 pane。 */
-// 各标的 VRP 隐含腿用的波动率指数名(图例显示「隐含 (VXN)」等)。
-// ponytail: 与 server/routes/vrp.ts 的 RECIPE.iv 是同一份映射,改一处必同步另一处
-// (跨 client/server,5 条目不值得抽 shared/ 常量,但别只改一边——否则图例名和数据腿对不上)。
-const IV_INDEX: Record<string, string> = { SPY: 'VIX', QQQ: 'VXN', GLD: 'GVZ', USO: 'OVX', BTC: 'DVOL' };
+// 各标的 VRP 隐含腿用的波动率指数名(图例显示「隐含 (VXN)」等),由标的目录派生,
+// 与 server VRP RECIPE 同源(单一真相,不再需要手动跨端同步)。
+const IV_INDEX = ivIndexByUnderlying();
 
 export function paneConfig(vrpUnderlying?: string) {
   const ivName = vrpUnderlying ? (IV_INDEX[vrpUnderlying] ?? 'IV') : 'IV';
