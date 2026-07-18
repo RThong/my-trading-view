@@ -35,20 +35,31 @@ export function useRegimeData() {
   return { data, error: error as Error | undefined, isLoading };
 }
 
-export type RegimeDim = 'credit' | 'liquidity' | 'sentiment' | 'macro' | 'vol' | 'ratesVol' | 'inflSource' | 'jpy' | 'jgbVol' | 'valuation' | 'oil';
+export type RegimeDim =
+  | 'credit'
+  | 'liquidity'
+  | 'sentiment'
+  | 'macro'
+  | 'vol'
+  | 'ratesVol'
+  | 'inflSource'
+  | 'jpy'
+  | 'jgbVol'
+  | 'valuation'
+  | 'oil';
 
 type DimConfig = {
-  paneDefs: PaneDef[];               // 一序列一 pane;key = series key
+  paneDefs: PaneDef[]; // 一序列一 pane;key = series key
   seriesName: Record<string, string>;
   colors: Record<string, string>;
   baseline?: Record<string, number>; // 会穿零的序列画 0 基线(如回购压力)
-  percentiles?: boolean;             // 该维度画 P5/P95 分位带 + 显示当前分位徽标(目前仅情绪)
+  percentiles?: boolean; // 该维度画 P5/P95 分位带 + 显示当前分位徽标(目前仅情绪)
   riskTail?: Record<string, 'low' | 'high'>; // 哪一端是"风险"(红),另一端为"机会"(绿)
-  signed?: string[];                 // 这些序列画符号柱状图(正绿负红,0 基线),不套分位带/徽标(如期限结构)
-  candle?: string[];                 // 这些序列画蜡烛(需 data.ohlc 提供 OHLC,如 DXY),不套分位/背景带
+  signed?: string[]; // 这些序列画符号柱状图(正绿负红,0 基线),不套分位带/徽标(如期限结构)
+  candle?: string[]; // 这些序列画蜡烛(需 data.ohlc 提供 OHLC,如 DXY),不套分位/背景带
   pctlSince?: Record<string, string>; // 分位只用该 ISO 日期起的子窗口算(线仍画全部);如 CAPE:图看长历史,但百分位只近年才有说服力
   bands?: Record<string, { lo: number; hi: number }>; // 固定常态带(基本面锚,替代 P5/P95):画上下参考线。出带=异常/告警,非确诊
-  desc?: Record<string, string>;     // 每 pane 的指标说明(hover ⓘ 显示);写谦虚版读法,别下强因果结论
+  desc?: Record<string, string>; // 每 pane 的指标说明(hover ⓘ 显示);写谦虚版读法,别下强因果结论
 };
 
 export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
@@ -57,7 +68,8 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     seriesName: { hyOas: 'HY 信用利差' },
     colors: { hyOas: '#f59e0b' },
     desc: {
-      hyOas: '定义:高收益债 vs 美债利差(OAS)。\n信用风险 / 融资环境的温度计。\n走阔 = 违约担忧升、钱变贵、risk-off;收窄 = 信用宽松、risk-on。',
+      hyOas:
+        '定义:高收益债 vs 美债利差(OAS)。\n信用风险 / 融资环境的温度计。\n走阔 = 违约担忧升、钱变贵、risk-off;收窄 = 信用宽松、risk-on。',
     },
   },
   liquidity: {
@@ -68,16 +80,22 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
       { key: 'repoStress', label: '回购压力', series: ['repoStress'] },
     ],
     seriesName: {
-      netLiquidity: '净流动性 (WALCL−TGA−RRP)', reverseRepo: '逆回购 RRP',
-      repoUsage: '回购用量 (隔夜正回购 RPONTSYD)', repoStress: '回购压力 (IORB−SOFR)',
+      netLiquidity: '净流动性 (WALCL−TGA−RRP)',
+      reverseRepo: '逆回购 RRP',
+      repoUsage: '回购用量 (隔夜正回购 RPONTSYD)',
+      repoStress: '回购压力 (IORB−SOFR)',
     },
     colors: { netLiquidity: '#22c55e', reverseRepo: '#14b8a6', repoUsage: '#ec4899', repoStress: '#a855f7' },
     baseline: { repoStress: 0 },
     desc: {
-      netLiquidity: '定义:美联储资产负债表净流动性(粗略代理)= 总资产 WALCL − 财政部账户 TGA − 逆回购 RRP(三腿已统一到百万美元)。\n升 = 宽松倾向(利多风险资产);降 = 收紧倾向。是启发式代理,非实际流入市场的资金量。',
-      reverseRepo: '定义:货币基金等把现金隔夜停在美联储的量(ON RRP)。\n过剩流动性的蓄水池。\nRRP 下降本身 = 这部分资金回流准备金 / 货币市场(是释放);但常与 TGA 重建 / QT 同时发生,后两者才是真正收紧。',
-      repoUsage: '定义:美联储隔夜正回购操作总量(RPONTSYD,含 2021 起的常备回购便利 SRF)。\n平时接近 0;一旦有量 = 回购市场缺钱来借,短端压力信号(如 2019-09 钱荒)。',
-      repoStress: '定义:准备金利率 IORB − 实际隔夜利率 SOFR。\n回购市场松紧。\n正常为正且平稳;收窄 / 转负 = 准备金变稀缺、回购承压(2019 钱荒)。',
+      netLiquidity:
+        '定义:美联储资产负债表净流动性(粗略代理)= 总资产 WALCL − 财政部账户 TGA − 逆回购 RRP(三腿已统一到百万美元)。\n升 = 宽松倾向(利多风险资产);降 = 收紧倾向。是启发式代理,非实际流入市场的资金量。',
+      reverseRepo:
+        '定义:货币基金等把现金隔夜停在美联储的量(ON RRP)。\n过剩流动性的蓄水池。\nRRP 下降本身 = 这部分资金回流准备金 / 货币市场(是释放);但常与 TGA 重建 / QT 同时发生,后两者才是真正收紧。',
+      repoUsage:
+        '定义:美联储隔夜正回购操作总量(RPONTSYD,含 2021 起的常备回购便利 SRF)。\n平时接近 0;一旦有量 = 回购市场缺钱来借,短端压力信号(如 2019-09 钱荒)。',
+      repoStress:
+        '定义:准备金利率 IORB − 实际隔夜利率 SOFR。\n回购市场松紧。\n正常为正且平稳;收窄 / 转负 = 准备金变稀缺、回购承压(2019 钱荒)。',
     },
   },
   vol: {
@@ -97,7 +115,8 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
       vix: '定义:标普 500 隐含波动率(未来 30 天)。\n股市恐慌 / 自满。\n飙高 = 恐慌(常是机会);极低 = 压扁自满(风险端,红)。',
       vxn: '定义:纳指 100 隐含波动率(VXN)。\n科技股版 VIX,通常更高。低 = 自满。',
       vixeq: '定义:标普成分股平均单股波动率(VIXEQ)。\n配 VIX / COR1M 看指数波动 vs 个股波动。低 = 自满。',
-      vxTerm: '定义:VIX 期货近月 − 三月。\n期限结构(柱子绿正红负,仅表符号)。\n红 / 负(contango,近低远高)= 常态;绿 / 正(backwardation,近端翘高)= 近端恐慌 / 应激。',
+      vxTerm:
+        '定义:VIX 期货近月 − 三月。\n期限结构(柱子绿正红负,仅表符号)。\n红 / 负(contango,近低远高)= 常态;绿 / 正(backwardation,近端翘高)= 近端恐慌 / 应激。',
     },
   },
   sentiment: {
@@ -113,8 +132,10 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     riskTail: { fng: 'high', cor1m: 'low' },
     desc: {
       fng: '定义:CNN Fear & Greed 综合情绪(0-100)。\n高 = 贪婪(风险端,红);低 = 恐惧(常是机会)。多因子合成,粗略。',
-      cor1m: '定义:标普隐含相关性(COR1M)。\n成分股隐含共动程度。高 = 共动更强(常在系统性压力期上升);低 = 隐含分化更强(偏自满,风险端红)。',
-      rxmSpx: '定义:Cboe 风险逆转指数 RXM(买 25Δ call / 卖 25Δ put 滚动策略)/ SPX。\n该期权策略相对 SPX 的累计表现比。\n低 = 策略相对跑输;不宜单独据此断情绪方向,故不染风险背景带。',
+      cor1m:
+        '定义:标普隐含相关性(COR1M)。\n成分股隐含共动程度。高 = 共动更强(常在系统性压力期上升);低 = 隐含分化更强(偏自满,风险端红)。',
+      rxmSpx:
+        '定义:Cboe 风险逆转指数 RXM(买 25Δ call / 卖 25Δ put 滚动策略)/ SPX。\n该期权策略相对 SPX 的累计表现比。\n低 = 策略相对跑输;不宜单独据此断情绪方向,故不染风险背景带。',
     },
   },
   macro: {
@@ -137,9 +158,11 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     colors: { usdjpy: '#3987e5', usjp2y: '#c98500' },
     signed: ['cftcJpy'], // 净持仓符号柱:净多绿、净空红、0 基线(拥挤度)
     desc: {
-      usdjpy: '定义:美元兑日元汇率。\n日元套息(carry)的价格腿。走高(日元贬)= carry 顺风 / risk-on;急跌 = carry 平仓 / 避险。',
+      usdjpy:
+        '定义:美元兑日元汇率。\n日元套息(carry)的价格腿。走高(日元贬)= carry 顺风 / risk-on;急跌 = carry 平仓 / 避险。',
       usjp2y: '定义:美日 2 年期利差(DGS2 − JGB2Y)。\ncarry 的收益驱动。走阔 = 借日元买美元更划算 = 支撑 USD/JPY。',
-      cftcJpy: '定义:CFTC 投机盘日元净持仓(多 − 空)。\n拥挤度。极端净空 = 大家都空日元 = 一旦反转平仓凶。绿净多、红净空。',
+      cftcJpy:
+        '定义:CFTC 投机盘日元净持仓(多 − 空)。\n拥挤度。极端净空 = 大家都空日元 = 一旦反转平仓凶。绿净多、红净空。',
     },
   },
   // 利率水平 + 利率波动率:MOVE 是债市波动率,与利率同宗(和股市 VIX 相关性一般),故与 10Y 收益率配对。
@@ -153,7 +176,8 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     percentiles: true,
     riskTail: { move: 'low' }, // MOVE 压扁=自满=风险;10Y 收益率方向不单一,不设风险端
     desc: {
-      dgs10: '定义:美国 10 年期国债收益率。\n长端利率锚。方向不单一(增长 or 通胀 / 供给都能推),故不设风险端,只给 P5/P95 参考。',
+      dgs10:
+        '定义:美国 10 年期国债收益率。\n长端利率锚。方向不单一(增长 or 通胀 / 供给都能推),故不设风险端,只给 P5/P95 参考。',
       move: '定义:美债期权隐含波动率(MOVE),债市版 VIX。\n利率市场不确定性。低 = 自满(风险端,红);飙高 = 利率动荡。',
     },
   },
@@ -171,8 +195,10 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     percentiles: true,
     riskTail: { wages: 'high', stickyCpi: 'high', rbobYoy: 'high' }, // 高=通胀压力=风险(红);低=缓解=绿
     desc: {
-      wages: '定义:亚特兰大联储薪资增速 tracker(个人时薪同比的非加权中位数,3 个月移动平均)。\n工资压力 / 劳动力市场紧张度代理(不度量因果螺旋)。高 = 工资涨得快、通胀更黏(风险端,红)。月频。',
-      stickyCpi: '定义:亚特兰大联储 Core Sticky-Price CPI(剔除食品能源,同比)。\n调价频率低的那部分篮子(服务为主,含部分商品),转向慢。高 = 核心通胀顽固(风险端)。月频。',
+      wages:
+        '定义:亚特兰大联储薪资增速 tracker(个人时薪同比的非加权中位数,3 个月移动平均)。\n工资压力 / 劳动力市场紧张度代理(不度量因果螺旋)。高 = 工资涨得快、通胀更黏(风险端,红)。月频。',
+      stickyCpi:
+        '定义:亚特兰大联储 Core Sticky-Price CPI(剔除食品能源,同比)。\n调价频率低的那部分篮子(服务为主,含部分商品),转向慢。高 = 核心通胀顽固(风险端)。月频。',
       rbobYoy: [
         '定义:RBOB 汽油近月期货的同比(YoY%)。',
         '用途:CPI 汽油分项的高频前瞻——汽油是 headline CPI 波动最大的分项,领先约 0-1 月。',
@@ -224,7 +250,8 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
     riskTail: { jgbVix: 'low' }, // 波动率压扁=自满=风险(同 MOVE);10Y 收益率方向不单一,不设风险端
     desc: {
       jgb10y: '定义:日本 10 年期国债收益率。\nBOJ 政策 / YCC 的长端。方向不单一,只给参考线。',
-      jgbVix: '定义:S&P/JPX JGB VIX,日债期权隐含波动率。\n日债不确定性(对称美债 MOVE)。低 = 自满(风险端);飙高 = 日债动荡、或外溢全球利率。',
+      jgbVix:
+        '定义:S&P/JPX JGB VIX,日债期权隐含波动率。\n日债不确定性(对称美债 MOVE)。低 = 自满(风险端);飙高 = 日债动荡、或外溢全球利率。',
     },
   },
   // 估值:席勒 CAPE(PE10)。高=贵=未来回报低=风险(红);低=便宜=机会(绿)。
@@ -256,7 +283,13 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
     if (cfg.candle?.includes(key)) {
       const bars = data.ohlc?.[key];
       if (!bars?.length) return [];
-      const candle: CandleSpec = { key, pane, kind: 'candle', title: cfg.seriesName[key], data: aggregateBars(bars, interval) };
+      const candle: CandleSpec = {
+        key,
+        pane,
+        kind: 'candle',
+        title: cfg.seriesName[key],
+        data: aggregateBars(bars, interval),
+      };
       return [candle];
     }
 
@@ -266,21 +299,31 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
 
     // 符号柱状图(期限结构):正绿负红、0 基线,不套分位带/徽标。
     if (cfg.signed?.includes(key)) {
-      const bars: HistoPoint[] = line.map((p) => ({ time: p.time, value: p.value, color: p.value >= 0 ? SIGNED_UP : SIGNED_DOWN }));
+      const bars: HistoPoint[] = line.map((p) => ({
+        time: p.time,
+        value: p.value,
+        color: p.value >= 0 ? SIGNED_UP : SIGNED_DOWN,
+      }));
       const histo: HistoSpec = { key, pane, kind: 'histogram', title: cfg.seriesName[key], data: bars, baseline: 0 };
       return [histo];
     }
 
     const lineSpec: LineSpec = {
-      key, pane, kind: 'line', color: cfg.colors[key], title: cfg.seriesName[key], data: line,
+      key,
+      pane,
+      kind: 'line',
+      color: cfg.colors[key],
+      title: cfg.seriesName[key],
+      data: line,
       ...(cfg.baseline?.[key] !== undefined ? { baseline: cfg.baseline[key] } : {}),
     };
     // 固定常态带:画上下参考线(基本面锚,替代自指的 P5/P95;出带=告警非确诊)。
     const band = cfg.bands?.[key];
-    if (band) lineSpec.refLines = [
-      { price: band.lo, title: '常态下限' },
-      { price: band.hi, title: '常态上限' },
-    ];
+    if (band)
+      lineSpec.refLines = [
+        { price: band.lo, title: '常态下限' },
+        { price: band.hi, title: '常态上限' },
+      ];
 
     if (!cfg.percentiles) return [lineSpec];
 
@@ -290,7 +333,10 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
     const vals = (since ? rows.filter((r) => r.date >= since) : rows).map((r) => r.value);
     const lo = percentile(vals, PCTL_LO);
     const hi = percentile(vals, PCTL_HI);
-    lineSpec.refLines = [{ price: lo, title: `P${PCTL_LO}` }, { price: hi, title: `P${PCTL_HI}` }];
+    lineSpec.refLines = [
+      { price: lo, title: `P${PCTL_LO}` },
+      { price: hi, title: `P${PCTL_HI}` },
+    ];
     const risk = cfg.riskTail?.[key];
     // 背景带 = 风险/机会信号,需已知风险端;无 riskTail 的序列(如 10Y 收益率,高低方向不单一)只留 P5/P95 线,不染背景。
     if (risk === undefined) return [lineSpec];
@@ -300,7 +346,14 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
       if (r.value > hi) return { time: r.date, value: 1, color: risk === 'high' ? BG_RED : BG_GREEN };
       return { time: r.date, value: 0, color: BG_NONE };
     });
-    const bgSpec: HistoSpec = { key: `${key}-bg`, pane, kind: 'histogram', title: '', data: bgData, priceScaleId: `bg-${key}` };
+    const bgSpec: HistoSpec = {
+      key: `${key}-bg`,
+      pane,
+      kind: 'histogram',
+      title: '',
+      data: bgData,
+      priceScaleId: `bg-${key}`,
+    };
     return [bgSpec, lineSpec]; // bg 先建 → 画在线的下层
   });
 }
@@ -320,7 +373,10 @@ export function regimePercentiles(data: RegimeData, dim: RegimeDim): Record<stri
       // 徽标 = 最新值在分位窗口内的排名(pctlSince 给了就只对子窗口排,与 buildRegimeSpecs 阈值同源)。
       const since = cfg.pctlSince?.[key];
       const base = since ? rows.filter((r) => r.date >= since) : rows;
-      const rank = percentileRank(base.map((r) => r.value), rows[rows.length - 1].value);
+      const rank = percentileRank(
+        base.map((r) => r.value),
+        rows[rows.length - 1].value,
+      );
       return Number.isNaN(rank) ? [] : [[key, `P${rank}`]];
     }),
   );

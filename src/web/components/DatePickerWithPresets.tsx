@@ -4,14 +4,19 @@ import { CalendarIcon } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 
 // YYYY-MM-DD <-> Date(本地日历日,避免 UTC 偏移)。
-const toISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const fromISO = (s: string) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const toISO = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const fromISO = (s: string) => {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
 
 type Props = {
-  value: string;                                    // YYYY-MM-DD
+  value: string; // YYYY-MM-DD
   presets: { label: string; date: string }[];
-  min: string; max: string;
-  snap: (target: string) => string | null;          // 贴到最近交易日
+  min: string;
+  max: string;
+  snap: (target: string) => string | null; // 贴到最近交易日
   onChange: (date: string) => void;
 };
 
@@ -21,7 +26,12 @@ export function DatePickerWithPresets({ value, presets, min, max, snap, onChange
   const preset = presets.find((p) => p.date === value);
   const selected = fromISO(value);
 
-  const pick = (iso: string | null) => { if (iso) { onChange(iso); setOpen(false); } };
+  const pick = (iso: string | null) => {
+    if (iso) {
+      onChange(iso);
+      setOpen(false);
+    }
+  };
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>

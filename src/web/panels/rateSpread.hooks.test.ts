@@ -21,7 +21,10 @@ describe('spreadSeries', () => {
   });
 
   it('long 早于 short 首个观测的点被跳过(贴不到)', () => {
-    const long2 = [{ date: '2025-12-31', value: 4.0 }, { date: '2026-01-01', value: 4.5 }];
+    const long2 = [
+      { date: '2025-12-31', value: 4.0 },
+      { date: '2026-01-01', value: 4.5 },
+    ];
     expect(spreadSeries(long2, short).map((p) => p.date)).toEqual(['2026-01-01']);
   });
 

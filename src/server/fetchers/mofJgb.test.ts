@@ -2,7 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import { parseMofJgbCsv } from './mofJgb';
 
 describe('parseMofJgbCsv', () => {
-  const SAMPLE = '﻿Interest Rate,,,(Unit : %)\nDate,1Y,2Y,10Y\n2017/12/29,0.1,-,0.05\n2018/1/4,0.11,0.2,0.06\n2026/6/30,1.165,1.382,2.69';
+  const SAMPLE =
+    '﻿Interest Rate,,,(Unit : %)\nDate,1Y,2Y,10Y\n2017/12/29,0.1,-,0.05\n2018/1/4,0.11,0.2,0.06\n2026/6/30,1.165,1.382,2.69';
   it('取 tenors、日期补零、since 过滤、跳过 -', () => {
     const { tenors, series } = parseMofJgbCsv(SAMPLE, '2018-01-01');
     expect(tenors).toEqual(['1Y', '2Y', '10Y']);

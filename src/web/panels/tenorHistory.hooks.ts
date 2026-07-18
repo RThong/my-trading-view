@@ -19,7 +19,10 @@ export const DEFAULT_TENORS: Record<string, string[]> = {
 /** 某期限的 {date,value}[] → 图用的 {time,value}[],按 interval 聚合。缺该期限 → []。 */
 export function tenorSeriesData(rows: YPoint[] | undefined, interval: Interval): LinePoint[] {
   if (!rows) return [];
-  return aggregate(rows.map((p) => ({ time: p.date, value: p.value })), interval);
+  return aggregate(
+    rows.map((p) => ({ time: p.date, value: p.value })),
+    interval,
+  );
 }
 
 /** 默认勾选:取表内该 source 的期限并过滤到真实可用;无表则回退前 4 个可用期限。 */
@@ -60,7 +63,12 @@ export function useTenorChart(
       chart.panes()[1].setStretchFactor(1);
     }
     // 重建/卸载时清理:seriesMap 用捕获的局部;spreadRef 置空供重建时重新识别。
-    return () => { chart.remove(); seriesMap.clear(); chartRef.current = null; spreadRef.current = null; };
+    return () => {
+      chart.remove();
+      seriesMap.clear();
+      chartRef.current = null;
+      spreadRef.current = null;
+    };
   }, [containerRef, hasSpread]);
 
   // 期限线(pane 0)+ 利差(pane 1)同步。
@@ -70,12 +78,20 @@ export function useTenorChart(
 
     const keysNow = new Set(specs.map((s) => s.tenor));
     for (const [k, s] of seriesRef.current) {
-      if (!keysNow.has(k)) { chart.removeSeries(s); seriesRef.current.delete(k); }
+      if (!keysNow.has(k)) {
+        chart.removeSeries(s);
+        seriesRef.current.delete(k);
+      }
     }
     for (const spec of specs) {
       let s = seriesRef.current.get(spec.tenor);
       if (!s) {
-        s = chart.addSeries(LineSeries, { color: spec.color, title: spec.tenor, lineWidth: 2, priceLineVisible: false });
+        s = chart.addSeries(LineSeries, {
+          color: spec.color,
+          title: spec.tenor,
+          lineWidth: 2,
+          priceLineVisible: false,
+        });
         seriesRef.current.set(spec.tenor, s);
       }
       s.setData(spec.data);
@@ -83,9 +99,20 @@ export function useTenorChart(
 
     if (spread) {
       if (!spreadRef.current) {
-        spreadRef.current = chart.addSeries(LineSeries, { color: spread.color, title: spread.label, lineWidth: 2, priceLineVisible: false }, 1);
+        spreadRef.current = chart.addSeries(
+          LineSeries,
+          { color: spread.color, title: spread.label, lineWidth: 2, priceLineVisible: false },
+          1,
+        );
         // 穿 0 = 倒挂。只在建线时加一次。
-        spreadRef.current.createPriceLine({ price: 0, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' });
+        spreadRef.current.createPriceLine({
+          price: 0,
+          color: '#71717a',
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: '',
+        });
       }
       spreadRef.current.setData(spread.data);
     }

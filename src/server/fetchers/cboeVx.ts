@@ -26,14 +26,13 @@ import { groupBy, sortBy } from 'remeda';
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
-const API_URL =
-  'https://www-api.cboe.com/us/futures/market_statistics/historical_data/product/list/VX/';
+const API_URL = 'https://www-api.cboe.com/us/futures/market_statistics/historical_data/product/list/VX/';
 const CDN_BASE = 'https://cdn.cboe.com/';
 const UA = 'Mozilla/5.0 (compatible; my-trading-view/0.1)';
 
 export type CboeContract = {
-  symbol: string;       // 形如 'VX+VXT/F6'
-  expireDate: string;   // 形如 'YYYY-MM-DD'
+  symbol: string; // 形如 'VX+VXT/F6'
+  expireDate: string; // 形如 'YYYY-MM-DD'
   csvUrl: string;
 };
 
@@ -61,11 +60,13 @@ export function defaultCboeVxClient(opts?: { fetch?: FetchFn }): CboeVxClient {
         Array<{ product_display: string; expire_date: string; path: string }>
       >;
 
-      return Object.values(data).flat().map((c) => ({
-        symbol: c.product_display,
-        expireDate: c.expire_date,
-        csvUrl: CDN_BASE + c.path,
-      }));
+      return Object.values(data)
+        .flat()
+        .map((c) => ({
+          symbol: c.product_display,
+          expireDate: c.expire_date,
+          csvUrl: CDN_BASE + c.path,
+        }));
     },
     async fetchContractCsv(contract) {
       const res = await doFetch(contract.csvUrl, { headers: { 'User-Agent': UA } });
@@ -197,11 +198,8 @@ function toQuoteRows(
  * 上层入口:一次下载,产出 VX1(近月)与 VX3(第三近)两条序列。
  * 全量回填传 `freshSince: '1900-01-01'`;日常刷新传较近日期(只处理仍在交易/近期到期的合约)。
  */
-export async function fetchVxTermStructure(
-  opts: FetchAllOpts = {},
-): Promise<{ vx1: QuoteRow[]; vx3: QuoteRow[] }> {
+export async function fetchVxTermStructure(opts: FetchAllOpts = {}): Promise<{ vx1: QuoteRow[]; vx3: QuoteRow[] }> {
   const freshSince = opts.freshSince ?? new Date().toISOString().slice(0, 10);
   const contractRows = await downloadContractRows(opts, freshSince);
   return { vx1: toQuoteRows(contractRows, 1, freshSince), vx3: toQuoteRows(contractRows, 3, freshSince) };
 }
-

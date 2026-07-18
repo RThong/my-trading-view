@@ -9,13 +9,18 @@ const prices: AlignedRow[] = [
 ];
 
 const st = (panic: boolean, greed: boolean): DayState => ({ date: '', panic, greed });
-const base: EngineConfig = { tqqqSleeve: 0.3, cashSleeve: 0.2, costBps: 0, legs: { rotation: true, cashInsurance: true } };
+const base: EngineConfig = {
+  tqqqSleeve: 0.3,
+  cashSleeve: 0.2,
+  costBps: 0,
+  legs: { rotation: true, cashInsurance: true },
+};
 
 test('基准(无腿):纯 QQQ close-to-close', () => {
   const states = [st(false, false), st(false, false), st(false, false)];
   const eq = runBacktest(states, prices, { ...base, legs: { rotation: false, cashInsurance: false } });
-  expect(eq[1].value).toBeCloseTo(1.10);        // +10%
-  expect(eq[2].value).toBeCloseTo(1.10 * 0.90); // -10%
+  expect(eq[1].value).toBeCloseTo(1.1); // +10%
+  expect(eq[2].value).toBeCloseTo(1.1 * 0.9); // -10%
 });
 
 test('执行错位:第 t 天状态吃 t→t+1 收益(当天不贡献)', () => {
@@ -35,5 +40,5 @@ test('换手成本按 L1 权重变动计', () => {
 test('现金腿:贪婪减仓 20% → 只吃 80% QQQ 收益', () => {
   const states = [st(false, true), st(false, false), st(false, false)];
   const eq = runBacktest(states, prices, { ...base, costBps: 0, legs: { rotation: false, cashInsurance: true } });
-  expect(eq[1].value).toBeCloseTo(1 + 0.8 * 0.10); // 8%
+  expect(eq[1].value).toBeCloseTo(1 + 0.8 * 0.1); // 8%
 });

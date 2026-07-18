@@ -39,32 +39,57 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
   const failures: string[] = [];
 
   const add = (id: string, rows: Array<{ obsDate: string; value: number }>) => {
-    insertMarketSeries(db, rows.map((r) => ({ seriesId: id, obsDate: r.obsDate, value: r.value })));
+    insertMarketSeries(
+      db,
+      rows.map((r) => ({ seriesId: id, obsDate: r.obsDate, value: r.value })),
+    );
     total += rows.length;
   };
   // 每个源独立容错:一个源失败(抓取/解析出错)只记下来,不中断其它源。
   const run = async (name: string, fn: () => Promise<void>) => {
-    try { await fn(); succeeded++; }
-    catch (err) { failures.push(`${name}: ${(err as Error).message}`); }
+    try {
+      await fn();
+      succeeded++;
+    } catch (err) {
+      failures.push(`${name}: ${(err as Error).message}`);
+    }
   };
 
   const yahoo = createYahooFetcher();
   const yahooBars = async (sym: string, since: Date): Promise<Bar[]> =>
-    (await yahoo.fetchDailyBars(sym, since)).map((r) => ({ date: r.tradeDate, open: r.open, high: r.high, low: r.low, close: r.close }));
+    (await yahoo.fetchDailyBars(sym, since)).map((r) => ({
+      date: r.tradeDate,
+      open: r.open,
+      high: r.high,
+      low: r.low,
+      close: r.close,
+    }));
   const sincePrice = (u: string): Date => {
     const latest = getLatestPriceDate(db, u);
     return latest ? new Date(latest + 'T00:00:00Z') : new Date(HISTORY_START_DATE);
   };
   const writePrice = (u: string, bars: Bar[], source: string) => {
-    insertPriceEod(db, bars.map((b) => ({ underlying: u, obsDate: b.date, open: b.open, high: b.high, low: b.low, close: b.close, source })));
+    insertPriceEod(
+      db,
+      bars.map((b) => ({
+        underlying: u,
+        obsDate: b.date,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+        source,
+      })),
+    );
     total += bars.length;
   };
   // 标的现货:主源(moomoo/deribit)失败 → 降级 Yahoo,各自标 source。
   const priceLeg = (u: string, primary: (since: Date) => Promise<Bar[]>, primarySrc: string, fbSym: string) =>
     run(u, async () => {
       const since = sincePrice(u);
-      try { writePrice(u, await primary(since), primarySrc); }
-      catch (e) {
+      try {
+        writePrice(u, await primary(since), primarySrc);
+      } catch (e) {
         console.warn(`[vrpInputs] ${u} 主源失败,降级 Yahoo: ${(e as Error).message}`);
         writePrice(u, await yahooBars(fbSym, since), 'yahoo');
       }
@@ -73,33 +98,67 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
   // ── 隐含腿 → market_series ──
   for (const sym of ['VXN', 'GVZ', 'OVX'] as const) {
     await run(sym, async () => {
-      const rows = await fetchCboeIndexAsQuotes({ cboeSymbol: sym, storedSymbol: sym, afterDate: getLatestMarketDate(db, sym) ?? undefined });
-      add(sym, rows.map((r) => ({ obsDate: r.tradeDate, value: r.close })));
+      const rows = await fetchCboeIndexAsQuotes({
+        cboeSymbol: sym,
+        storedSymbol: sym,
+        afterDate: getLatestMarketDate(db, sym) ?? undefined,
+      });
+      add(
+        sym,
+        rows.map((r) => ({ obsDate: r.tradeDate, value: r.close })),
+      );
     });
   }
   // VIX:既是 SPY 的 IV 腿(market_series close),又是 .VIX 的现货(price_eod OHLC),两表都写。
   await run('VIX', async () => {
-    const mkt = await fetchCboeIndexAsQuotes({ cboeSymbol: 'VIX', storedSymbol: 'VIX', afterDate: getLatestMarketDate(db, 'VIX') ?? undefined });
-    add('VIX', mkt.map((r) => ({ obsDate: r.tradeDate, value: r.close })));
-    const px = await fetchCboeIndexAsQuotes({ cboeSymbol: 'VIX', storedSymbol: 'VIX', afterDate: getLatestPriceDate(db, 'VIX') ?? undefined });
-    writePrice('VIX', px.map((r) => ({ date: r.tradeDate, open: r.open, high: r.high, low: r.low, close: r.close })), 'cboe');
+    const mkt = await fetchCboeIndexAsQuotes({
+      cboeSymbol: 'VIX',
+      storedSymbol: 'VIX',
+      afterDate: getLatestMarketDate(db, 'VIX') ?? undefined,
+    });
+    add(
+      'VIX',
+      mkt.map((r) => ({ obsDate: r.tradeDate, value: r.close })),
+    );
+    const px = await fetchCboeIndexAsQuotes({
+      cboeSymbol: 'VIX',
+      storedSymbol: 'VIX',
+      afterDate: getLatestPriceDate(db, 'VIX') ?? undefined,
+    });
+    writePrice(
+      'VIX',
+      px.map((r) => ({ date: r.tradeDate, open: r.open, high: r.high, low: r.low, close: r.close })),
+      'cboe',
+    );
   });
   await run('DVOL', async () => {
     const dvolLatest = getLatestMarketDate(db, 'DVOL');
     const dvolStart = dvolLatest ? new Date(dvolLatest + 'T00:00:00Z').getTime() : new Date(DVOL_START).getTime();
     const dvol = await fetchDvolHistory('BTC', dvolStart, Date.now());
-    add('DVOL', dvol.map((d) => ({ obsDate: d.date, value: d.value })));
+    add(
+      'DVOL',
+      dvol.map((d) => ({ obsDate: d.date, value: d.value })),
+    );
   });
 
   // ── 标的现货 OHLC → price_eod ──
   let mooWs: any = null;
-  try { mooWs = await connect(envConfig()); } catch { /* OpenD 不可用,ETF 腿整体回退 Yahoo */ }
+  try {
+    mooWs = await connect(envConfig());
+  } catch {
+    /* OpenD 不可用,ETF 腿整体回退 Yahoo */
+  }
   try {
     for (const u of ['SPY', 'QQQ', 'GLD', 'USO', 'TLT', 'NOBL'] as const) {
-      await priceLeg(u, (since) => {
-        if (!mooWs) throw new Error('OpenD unavailable');
-        return fetchDailyBars(mooWs, u, since);
-      }, 'moomoo', u);
+      await priceLeg(
+        u,
+        (since) => {
+          if (!mooWs) throw new Error('OpenD unavailable');
+          return fetchDailyBars(mooWs, u, since);
+        },
+        'moomoo',
+        u,
+      );
     }
   } finally {
     if (mooWs) disconnect(mooWs);

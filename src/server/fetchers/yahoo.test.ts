@@ -19,7 +19,11 @@ describe('yahoo fetcher', () => {
     expect(rows[0]).toEqual({
       symbol: 'TEST',
       tradeDate: '2026-05-10',
-      open: 100, high: 102, low: 99, close: 101, volume: 1000,
+      open: 100,
+      high: 102,
+      low: 99,
+      close: 101,
+      volume: 1000,
     });
   });
 
@@ -27,7 +31,9 @@ describe('yahoo fetcher', () => {
     const mockClient: YahooClient = {
       chart: async () => ({
         meta: { symbol: 'TEST', currency: 'USD' },
-        quotes: [{ date: new Date('2026-05-10T00:00:00Z'), open: null, high: null, low: null, close: 50, volume: null }],
+        quotes: [
+          { date: new Date('2026-05-10T00:00:00Z'), open: null, high: null, low: null, close: 50, volume: null },
+        ],
       }),
     };
 
@@ -36,7 +42,11 @@ describe('yahoo fetcher', () => {
     expect(rows[0]).toEqual({
       symbol: 'TEST',
       tradeDate: '2026-05-10',
-      open: null, high: null, low: null, close: 50, volume: null,
+      open: null,
+      high: null,
+      low: null,
+      close: 50,
+      volume: null,
     });
   });
 

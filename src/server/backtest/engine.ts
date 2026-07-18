@@ -8,7 +8,7 @@ export type EquityPoint = { date: string; value: number };
 export type EngineConfig = {
   tqqqSleeve: number; // 恐慌时换入 TQQQ 的比例(默认 0.30)
   cashSleeve: number; // 贪婪时转现金的比例(默认 0.20)
-  costBps: number;    // 单边换手成本(基点)
+  costBps: number; // 单边换手成本(基点)
   legs: { rotation: boolean; cashInsurance: boolean };
 };
 

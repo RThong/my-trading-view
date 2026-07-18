@@ -13,7 +13,8 @@ const FNG_URL = 'https://production.dataviz.cnn.io/index/fearandgreed/graphdata'
 // 注意:起始日早于 CNN 数据起点会返回空体,故此日期不能更早。
 const FNG_START = '2021-01-01';
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
   Accept: 'application/json',
   Referer: 'https://www.cnn.com/',
   Origin: 'https://www.cnn.com',

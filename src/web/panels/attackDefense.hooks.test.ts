@@ -9,7 +9,7 @@ describe('ratioSeries', () => {
     const qqq = [bar('d1', 400), bar('d2', 410)]; // 缺 d3
     const r = ratioSeries(nobl, qqq);
     expect(r.map((p) => p.date)).toEqual(['d1', 'd2']);
-    expect(r[0].value).toBeCloseTo(0.125);   // 50/400
+    expect(r[0].value).toBeCloseTo(0.125); // 50/400
     expect(r[1].value).toBeCloseTo(0.126829); // 52/410
   });
   it('任一缺失 → []', () => {

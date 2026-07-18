@@ -2,7 +2,12 @@ import { describe, test, expect, beforeEach } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
 import { getOptions25Delta } from '../storage/repository';
-import { select25Delta, runOptionsSnapshot, type OptionsChainClient, type OptionChainSnapshot } from './optionsSnapshot';
+import {
+  select25Delta,
+  runOptionsSnapshot,
+  type OptionsChainClient,
+  type OptionChainSnapshot,
+} from './optionsSnapshot';
 
 function freshDb(): Database {
   const db = new Database(':memory:');
@@ -15,17 +20,134 @@ const SAMPLE_CHAIN: OptionChainSnapshot = {
   underlyingPrice: 5000,
   expirationDate: new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10),
   calls: [
-    { contractSymbol: 'TEST', strike: 4800, expiration: '2026-06-15', impliedVolatility: 0.25, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null, delta: 0.70 },
-    { contractSymbol: 'TEST', strike: 5000, expiration: '2026-06-15', impliedVolatility: 0.20, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null, delta: 0.50 },
-    { contractSymbol: 'TEST', strike: 5200, expiration: '2026-06-15', impliedVolatility: 0.18, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null, delta: 0.33 },
-    { contractSymbol: 'TEST', strike: 5400, expiration: '2026-06-15', impliedVolatility: 0.19, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null, delta: 0.24 },  // ~25Δ call
-    { contractSymbol: 'TEST', strike: 5600, expiration: '2026-06-15', impliedVolatility: 0.21, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null, delta: 0.15 },
+    {
+      contractSymbol: 'TEST',
+      strike: 4800,
+      expiration: '2026-06-15',
+      impliedVolatility: 0.25,
+      bid: null,
+      ask: null,
+      lastPrice: null,
+      volume: null,
+      openInterest: null,
+      inTheMoney: false,
+      lastTradeDate: null,
+      delta: 0.7,
+    },
+    {
+      contractSymbol: 'TEST',
+      strike: 5000,
+      expiration: '2026-06-15',
+      impliedVolatility: 0.2,
+      bid: null,
+      ask: null,
+      lastPrice: null,
+      volume: null,
+      openInterest: null,
+      inTheMoney: false,
+      lastTradeDate: null,
+      delta: 0.5,
+    },
+    {
+      contractSymbol: 'TEST',
+      strike: 5200,
+      expiration: '2026-06-15',
+      impliedVolatility: 0.18,
+      bid: null,
+      ask: null,
+      lastPrice: null,
+      volume: null,
+      openInterest: null,
+      inTheMoney: false,
+      lastTradeDate: null,
+      delta: 0.33,
+    },
+    {
+      contractSymbol: 'TEST',
+      strike: 5400,
+      expiration: '2026-06-15',
+      impliedVolatility: 0.19,
+      bid: null,
+      ask: null,
+      lastPrice: null,
+      volume: null,
+      openInterest: null,
+      inTheMoney: false,
+      lastTradeDate: null,
+      delta: 0.24,
+    }, // ~25Δ call
+    {
+      contractSymbol: 'TEST',
+      strike: 5600,
+      expiration: '2026-06-15',
+      impliedVolatility: 0.21,
+      bid: null,
+      ask: null,
+      lastPrice: null,
+      volume: null,
+      openInterest: null,
+      inTheMoney: false,
+      lastTradeDate: null,
+      delta: 0.15,
+    },
   ],
   puts: [
-    { contractSymbol: 'TEST', strike: 4400, expiration: '2026-06-15', impliedVolatility: 0.30, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null, delta: -0.12 },
-    { contractSymbol: 'TEST', strike: 4600, expiration: '2026-06-15', impliedVolatility: 0.27, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null, delta: -0.26 },  // ~25Δ put
-    { contractSymbol: 'TEST', strike: 4800, expiration: '2026-06-15', impliedVolatility: 0.25, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null, delta: -0.40 },
-    { contractSymbol: 'TEST', strike: 5000, expiration: '2026-06-15', impliedVolatility: 0.22, bid: null, ask: null, lastPrice: null, volume: null, openInterest: null, inTheMoney: false, lastTradeDate: null, delta: -0.52 },
+    {
+      contractSymbol: 'TEST',
+      strike: 4400,
+      expiration: '2026-06-15',
+      impliedVolatility: 0.3,
+      bid: null,
+      ask: null,
+      lastPrice: null,
+      volume: null,
+      openInterest: null,
+      inTheMoney: false,
+      lastTradeDate: null,
+      delta: -0.12,
+    },
+    {
+      contractSymbol: 'TEST',
+      strike: 4600,
+      expiration: '2026-06-15',
+      impliedVolatility: 0.27,
+      bid: null,
+      ask: null,
+      lastPrice: null,
+      volume: null,
+      openInterest: null,
+      inTheMoney: false,
+      lastTradeDate: null,
+      delta: -0.26,
+    }, // ~25Δ put
+    {
+      contractSymbol: 'TEST',
+      strike: 4800,
+      expiration: '2026-06-15',
+      impliedVolatility: 0.25,
+      bid: null,
+      ask: null,
+      lastPrice: null,
+      volume: null,
+      openInterest: null,
+      inTheMoney: false,
+      lastTradeDate: null,
+      delta: -0.4,
+    },
+    {
+      contractSymbol: 'TEST',
+      strike: 5000,
+      expiration: '2026-06-15',
+      impliedVolatility: 0.22,
+      bid: null,
+      ask: null,
+      lastPrice: null,
+      volume: null,
+      openInterest: null,
+      inTheMoney: false,
+      lastTradeDate: null,
+      delta: -0.52,
+    },
   ],
 };
 
@@ -33,15 +155,17 @@ describe('select25Delta', () => {
   test('picks a strike whose call delta is near 0.25 for the call side', () => {
     const sel = select25Delta(SAMPLE_CHAIN);
     const spot = SAMPLE_CHAIN.underlyingPrice!;
-    expect(sel.callStrike).toBeGreaterThan(spot);  // 虚值 call
-    expect(sel.putStrike).toBeLessThan(spot);  // 虚值 put
+    expect(sel.callStrike).toBeGreaterThan(spot); // 虚值 call
+    expect(sel.putStrike).toBeLessThan(spot); // 虚值 put
     expect(sel.skew).toBeCloseTo(sel.putIv - sel.callIv, 8);
   });
 });
 
 describe('runOptionsSnapshot', () => {
   let db: Database;
-  beforeEach(() => { db = freshDb(); });
+  beforeEach(() => {
+    db = freshDb();
+  });
 
   test('writes one row per underlying, stamped with the source', async () => {
     const mock: OptionsChainClient = {
@@ -62,7 +186,9 @@ describe('runOptionsSnapshot', () => {
     expect(spyRows[0].source).toBe('moomoo');
 
     // 归档表 option_chain_raw 也要带上同一 source(无 getter,直接查)。
-    const raw = db.query(`SELECT source FROM option_chain_raw WHERE underlying = 'SPY'`).all() as Array<{ source: string }>;
+    const raw = db.query(`SELECT source FROM option_chain_raw WHERE underlying = 'SPY'`).all() as Array<{
+      source: string;
+    }>;
     expect(raw).toHaveLength(1);
     expect(raw[0].source).toBe('moomoo');
   });
@@ -82,7 +208,9 @@ describe('runOptionsSnapshot', () => {
     await runOptionsSnapshot({ db, source: 'deribit', underlyings: ['BTC'], client: mock });
 
     expect(getOptions25Delta(db, 'BTC', 7)[0].source).toBe('deribit');
-    const raw = db.query(`SELECT source FROM option_chain_raw WHERE underlying = 'BTC'`).all() as Array<{ source: string }>;
+    const raw = db.query(`SELECT source FROM option_chain_raw WHERE underlying = 'BTC'`).all() as Array<{
+      source: string;
+    }>;
     expect(raw[0].source).toBe('deribit');
   });
 

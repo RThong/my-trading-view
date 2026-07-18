@@ -11,8 +11,14 @@ function nyParts(now: Date): { date: string; hour: number } {
   const m = Object.fromEntries(
     new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/New_York',
-      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hour12: false,
-    }).formatToParts(now).map((p) => [p.type, p.value]),
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hour12: false,
+    })
+      .formatToParts(now)
+      .map((p) => [p.type, p.value]),
   );
   // 某些 Node/Bun 下午夜会返回 '24' 而非 '00',归一化。
   return { date: `${m.year}-${m.month}-${m.day}`, hour: Number(m.hour) % 24 };

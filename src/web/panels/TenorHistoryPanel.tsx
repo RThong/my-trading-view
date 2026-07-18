@@ -2,7 +2,13 @@
 import { useRef, useState } from 'react';
 import { useYieldCurve } from './yieldCurve.hooks';
 import { SERIES_COLORS } from '../lib/palette';
-import { tenorSeriesData, pickDefaultTenors, useTenorChart, type TenorSpec, type SpreadSpec } from './tenorHistory.hooks';
+import {
+  tenorSeriesData,
+  pickDefaultTenors,
+  useTenorChart,
+  type TenorSpec,
+  type SpreadSpec,
+} from './tenorHistory.hooks';
 import { spreadSeries } from './rateSpread.hooks';
 import { aggregate } from '../lib/chart';
 import { InfoTip } from '../components/InfoTip';
@@ -10,15 +16,38 @@ import type { Interval } from '../hooks/interval';
 
 // 视图说明(按 source):同一曲线换时间横轴看各期限走势 + 利差。
 const VIEW_DESC: Record<string, { title: string; desc: string }> = {
-  treasury: { title: '期限走势', desc: '定义:美债各期限收益率的时间走势 + 10Y−3M 利差。\n同一条曲线换成时间横轴看。\n利差转负(倒挂)= 经典衰退前兆。' },
-  sofr_ois: { title: 'OIS 走势', desc: '定义:SOFR OIS(Eris par OIS)各期限的时间走势 + 1Y−3M 利差。\n主要反映市场对未来隔夜利率(≈美联储路径)的预期,并含期限 / 流动性溢价。\n短端 > 长端 = 降息定价占主导,非确定预测。' },
-  jgb: { title: 'JGB 走势', desc: '定义:日本国债各期限收益率的时间走势 + 10Y−2Y 利差。\n看 BOJ 政策与 YCC 松绑的传导。' },
-  bei: { title: '通胀走势', desc: '定义:盈亏平衡通胀率(BEI)各期限的时间走势 + 10Y−5Y 利差。\nBEI = 名义 − TIPS 实际收益率 = 市场通胀补偿(含通胀风险溢价),可作预期代理但非纯预期。' },
+  treasury: {
+    title: '期限走势',
+    desc: '定义:美债各期限收益率的时间走势 + 10Y−3M 利差。\n同一条曲线换成时间横轴看。\n利差转负(倒挂)= 经典衰退前兆。',
+  },
+  sofr_ois: {
+    title: 'OIS 走势',
+    desc: '定义:SOFR OIS(Eris par OIS)各期限的时间走势 + 1Y−3M 利差。\n主要反映市场对未来隔夜利率(≈美联储路径)的预期,并含期限 / 流动性溢价。\n短端 > 长端 = 降息定价占主导,非确定预测。',
+  },
+  jgb: {
+    title: 'JGB 走势',
+    desc: '定义:日本国债各期限收益率的时间走势 + 10Y−2Y 利差。\n看 BOJ 政策与 YCC 松绑的传导。',
+  },
+  bei: {
+    title: '通胀走势',
+    desc: '定义:盈亏平衡通胀率(BEI)各期限的时间走势 + 10Y−5Y 利差。\nBEI = 名义 − TIPS 实际收益率 = 市场通胀补偿(含通胀风险溢价),可作预期代理但非纯预期。',
+  },
 };
 
 // 时间横轴 × 每条线一个期限(pane 0)+ 利差(pane 1),共享时间轴。数据/存储不改,复用收益率曲线序列。
-export function TenorHistoryPanel({ source, interval, long, short, spreadLabel }:
-  { source: string; interval: Interval; long: string; short: string; spreadLabel: string }) {
+export function TenorHistoryPanel({
+  source,
+  interval,
+  long,
+  short,
+  spreadLabel,
+}: {
+  source: string;
+  interval: Interval;
+  long: string;
+  short: string;
+  spreadLabel: string;
+}) {
   const { data, isLoading, error, maxDate } = useYieldCurve(source);
   const containerRef = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -40,7 +69,10 @@ export function TenorHistoryPanel({ source, interval, long, short, spreadLabel }
   const spread: SpreadSpec = {
     label: spreadLabel,
     color: SERIES_COLORS[0],
-    data: aggregate(spreadSeries(data.series[long], data.series[short]).map((p) => ({ time: p.date, value: p.value })), interval),
+    data: aggregate(
+      spreadSeries(data.series[long], data.series[short]).map((p) => ({ time: p.date, value: p.value })),
+      interval,
+    ),
   };
 
   useTenorChart(containerRef, specs, spread);
@@ -48,7 +80,8 @@ export function TenorHistoryPanel({ source, interval, long, short, spreadLabel }
   const toggle = (t: string) =>
     setSelected((prev) => {
       const n = new Set(prev);
-      if (n.has(t)) n.delete(t); else n.add(t);
+      if (n.has(t)) n.delete(t);
+      else n.add(t);
       return n;
     });
 

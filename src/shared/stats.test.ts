@@ -19,9 +19,9 @@ test('percentile:未排序输入也正确', () => {
 
 test('percentileRank:最小/中间/最大', () => {
   const v = [1, 2, 3, 4, 5];
-  expect(percentileRank(v, 1)).toBe(10);  // (0 + 0.5)/5
-  expect(percentileRank(v, 3)).toBe(50);  // (2 + 0.5)/5
-  expect(percentileRank(v, 5)).toBe(90);  // (4 + 0.5)/5
+  expect(percentileRank(v, 1)).toBe(10); // (0 + 0.5)/5
+  expect(percentileRank(v, 3)).toBe(50); // (2 + 0.5)/5
+  expect(percentileRank(v, 5)).toBe(90); // (4 + 0.5)/5
 });
 
 test('percentileRank:范围外', () => {

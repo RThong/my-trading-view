@@ -3,7 +3,12 @@ import { useState } from 'react';
 export type Curve = { date: string; label: string; color: string; values: (number | null)[] };
 
 // viewBox 坐标系(等比缩放填充 pane)。左留 y 轴刻度、下留期限标签。
-const W = 1000, H = 420, PAD_L = 46, PAD_R = 18, PAD_T = 16, PAD_B = 30;
+const W = 1000,
+  H = 420,
+  PAD_L = 46,
+  PAD_R = 18,
+  PAD_T = 16,
+  PAD_B = 30;
 const PLOT_W = W - PAD_L - PAD_R;
 const PLOT_H = H - PAD_T - PAD_B;
 
@@ -16,9 +21,11 @@ export function YieldCurveChart({ tenors, curves }: { tenors: string[]; curves: 
   const all = curves.flatMap((c) => c.values.filter((v): v is number => v != null));
   if (!all.length) return <div className="flex h-full items-center justify-center text-neutral-500">无数据</div>;
 
-  const lo = Math.min(...all), hi = Math.max(...all);
+  const lo = Math.min(...all),
+    hi = Math.max(...all);
   const pad = (hi - lo) * 0.08 || 0.1; // 上下留白;全平时给个默认幅度
-  const min = lo - pad, max = hi + pad;
+  const min = lo - pad,
+    max = hi + pad;
   const yOf = (v: number) => PAD_T + (1 - (v - min) / (max - min)) * PLOT_H;
 
   const n = tenors.length;
@@ -29,8 +36,12 @@ export function YieldCurveChart({ tenors, curves }: { tenors: string[]; curves: 
   const segments = (values: (number | null)[]): string[] =>
     values
       .reduce<{ i: number; v: number }[][]>((segs, v, i) => {
-        if (v == null) { if (segs.length && segs[segs.length - 1].length) segs.push([]); }
-        else { if (!segs.length) segs.push([]); segs[segs.length - 1].push({ i, v }); }
+        if (v == null) {
+          if (segs.length && segs[segs.length - 1].length) segs.push([]);
+        } else {
+          if (!segs.length) segs.push([]);
+          segs[segs.length - 1].push({ i, v });
+        }
         return segs;
       }, [])
       .filter((s) => s.length)
@@ -64,22 +75,39 @@ export function YieldCurveChart({ tenors, curves }: { tenors: string[]; curves: 
         {gridVals.map((v) => (
           <g key={v}>
             <line x1={PAD_L} x2={W - PAD_R} y1={yOf(v)} y2={yOf(v)} stroke="#262626" strokeWidth={1} />
-            <text x={PAD_L - 6} y={yOf(v) + 3} textAnchor="end" fontSize={11} fill="#737373">{v.toFixed(2)}%</text>
+            <text x={PAD_L - 6} y={yOf(v) + 3} textAnchor="end" fontSize={11} fill="#737373">
+              {v.toFixed(2)}%
+            </text>
           </g>
         ))}
         {/* x 期限标签 */}
         {tenors.map((t, i) => (
-          <text key={t} x={xOf(i, n)} y={H - 10} textAnchor="middle" fontSize={11} fill="#737373">{t}</text>
+          <text key={t} x={xOf(i, n)} y={H - 10} textAnchor="middle" fontSize={11} fill="#737373">
+            {t}
+          </text>
         ))}
         {/* hover 竖线 */}
-        {hover != null && <line x1={xOf(hover, n)} x2={xOf(hover, n)} y1={PAD_T} y2={PAD_T + PLOT_H} stroke="#525252" strokeWidth={1} strokeDasharray="3 3" />}
+        {hover != null && (
+          <line
+            x1={xOf(hover, n)}
+            x2={xOf(hover, n)}
+            y1={PAD_T}
+            y2={PAD_T + PLOT_H}
+            stroke="#525252"
+            strokeWidth={1}
+            strokeDasharray="3 3"
+          />
+        )}
         {/* 曲线 + 点 */}
         {curves.map((c, ci) => (
           <g key={ci}>
             {segments(c.values).map((pts, k) => (
               <polyline key={k} points={pts} fill="none" stroke={c.color} strokeWidth={1.8} />
             ))}
-            {c.values.map((v, i) => v != null && <circle key={i} cx={xOf(i, n)} cy={yOf(v)} r={i === focus ? 3.5 : 2.4} fill={c.color} />)}
+            {c.values.map(
+              (v, i) =>
+                v != null && <circle key={i} cx={xOf(i, n)} cy={yOf(v)} r={i === focus ? 3.5 : 2.4} fill={c.color} />,
+            )}
           </g>
         ))}
       </svg>

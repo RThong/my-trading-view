@@ -14,15 +14,13 @@ export function Header({ interval, onIntervalChange }: HeaderProps) {
       <StatusLight />
       <h1 className="text-lg font-semibold">My Trading View</h1>
       <div className="ml-auto flex items-center gap-1">
-        {INTERVALS.map(i => (
+        {INTERVALS.map((i) => (
           <button
             key={i}
             onClick={() => onIntervalChange(i)}
             className={
               'rounded px-3 py-1 text-sm ' +
-              (i === interval
-                ? 'bg-neutral-700 text-white'
-                : 'text-neutral-400 hover:text-white hover:bg-neutral-800')
+              (i === interval ? 'bg-neutral-700 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-800')
             }
           >
             {i}

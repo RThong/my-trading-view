@@ -19,7 +19,7 @@ describe('realizedVol', () => {
   test('跳过非正价格,不产生 NaN', () => {
     const prices: Point[] = [
       { date: '2026-01-01', value: 100 },
-      { date: '2026-01-02', value: 0 },   // 脏数据:应被跳过
+      { date: '2026-01-02', value: 0 }, // 脏数据:应被跳过
       { date: '2026-01-03', value: 110 },
       { date: '2026-01-04', value: 121 },
     ];

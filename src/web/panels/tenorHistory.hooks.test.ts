@@ -28,10 +28,8 @@ describe('pickDefaultTenors', () => {
   const available = ['1M', '3M', '6M', '1Y', '2Y', '3Y', '5Y', '7Y', '10Y', '20Y', '30Y'];
   it('treasury 用表并过滤到可用期限', () =>
     expect(pickDefaultTenors('treasury', available)).toEqual(['3M', '1Y', '2Y', '5Y', '10Y', '30Y']));
-  it('表里有但数据没有的期限被剔除', () =>
-    expect(pickDefaultTenors('sofr_ois', ['3M', '10Y'])).toEqual(['3M', '10Y']));
-  it('无表项 → 回退前 4 个', () =>
-    expect(pickDefaultTenors('unknown', available)).toEqual(['1M', '3M', '6M', '1Y']));
+  it('表里有但数据没有的期限被剔除', () => expect(pickDefaultTenors('sofr_ois', ['3M', '10Y'])).toEqual(['3M', '10Y']));
+  it('无表项 → 回退前 4 个', () => expect(pickDefaultTenors('unknown', available)).toEqual(['1M', '3M', '6M', '1Y']));
   it('DEFAULT_TENORS 含 treasury / sofr_ois / bei / jgb', () =>
     expect(Object.keys(DEFAULT_TENORS).sort()).toEqual(['bei', 'jgb', 'sofr_ois', 'treasury']));
   it('sofr_ois 默认用 12M 而非 1Y,对齐 OIS 真实档位', () => {

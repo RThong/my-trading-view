@@ -35,17 +35,27 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const fredSeries = (id: string): Promise<Point[]> =>
     fred.fetchSeries(id, HISTORY_START_DATE).then((rows) => rows.map((r) => ({ date: r.obsDate, value: r.value })));
   const cboeSeries = (sym: string): Promise<Point[]> =>
-    fetchCboeIndexAsQuotes({ cboeSymbol: sym, storedSymbol: sym }).then((rows) => rows.map((r) => ({ date: r.tradeDate, value: r.close })));
+    fetchCboeIndexAsQuotes({ cboeSymbol: sym, storedSymbol: sym }).then((rows) =>
+      rows.map((r) => ({ date: r.tradeDate, value: r.close })),
+    );
 
   // 并行拉全部原始源。key 为内部名,后面映射到对外序列名。
   const src = {
-    walcl: fredSeries('WALCL'), wtregen: fredSeries('WTREGEN'), rrp: fredSeries('RRPONTSYD'),
-    rpo: fredSeries('RPONTSYD'), sofr: fredSeries('SOFR'), iorb: fredSeries('IORB'),
-    hyOas: fredSeries('BAMLH0A0HYM2'), dgs10: fredSeries('DGS10'), dgs2: fredSeries('DGS2'),
-    wages: fredSeries('FRBATLWGT3MMAUMHWGO'),   // Atlanta Fed 薪资增速 tracker(3mma,月频 %)
+    walcl: fredSeries('WALCL'),
+    wtregen: fredSeries('WTREGEN'),
+    rrp: fredSeries('RRPONTSYD'),
+    rpo: fredSeries('RPONTSYD'),
+    sofr: fredSeries('SOFR'),
+    iorb: fredSeries('IORB'),
+    hyOas: fredSeries('BAMLH0A0HYM2'),
+    dgs10: fredSeries('DGS10'),
+    dgs2: fredSeries('DGS2'),
+    wages: fredSeries('FRBATLWGT3MMAUMHWGO'), // Atlanta Fed 薪资增速 tracker(3mma,月频 %)
     stickyCpi: fredSeries('CORESTICKM159SFRBATL'), // Sticky Price CPI(服务黏性,YoY%,月频)
-    cor1m: cboeSeries('COR1M'), vixeq: cboeSeries('VIXEQ'),
-    rxm: cboeSeries('RXM'), spx: cboeSeries('SPX'),
+    cor1m: cboeSeries('COR1M'),
+    vixeq: cboeSeries('VIXEQ'),
+    rxm: cboeSeries('RXM'),
+    spx: cboeSeries('SPX'),
     fng: fetchFearGreed(),
     // 债市波动率 MOVE(Yahoo ^MOVE,ICE BofA MOVE 指数;带 caret,无 caret 的 MOVE 是 Movado 股)。
     move: (async () => {
@@ -55,9 +65,13 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   };
   const names = Object.keys(src) as (keyof typeof src)[];
   // 美元指数 DXY 单独抓(要 OHLC 画蜡烛;全历史 1971→今,live 不落库)。moomoo OpenD 无 FX 行情权限。
-  const usdBarsP = createYahooFetcher().fetchDailyBars('DX-Y.NYB', new Date(0)).catch(() => null);
+  const usdBarsP = createYahooFetcher()
+    .fetchDailyBars('DX-Y.NYB', new Date(0))
+    .catch(() => null);
   // 日元 carry:USD/JPY(全历史)、JGB 2Y(美日利差的日腿)、CFTC 净持仓。均 catch→null。
-  const usdjpyBarsP = createYahooFetcher().fetchDailyBars('JPY=X', new Date(0)).catch(() => null);
+  const usdjpyBarsP = createYahooFetcher()
+    .fetchDailyBars('JPY=X', new Date(0))
+    .catch(() => null);
   const jgbCurveP = fetchJgbCurve('2018-01-01').catch(() => null); // 一次拉,派生 2Y/10Y
   const jgbVixP = fetchJgbVix('2018-01-01').catch(() => null);
   const cftcJpyP = fetchCftcJpyNet('2018-01-01').catch(() => null);
@@ -65,7 +79,8 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const capeP = fetchShillerCape().catch(() => null);
   // 油品近月期货(Yahoo 连续近月,自带全历史,live 不落库)。派生油市结构 + 汽油 YoY。
   const yahooClose = (sym: string): Promise<Point[] | null> =>
-    createYahooFetcher().fetchDailyBars(sym, new Date(HISTORY_START_DATE))
+    createYahooFetcher()
+      .fetchDailyBars(sym, new Date(HISTORY_START_DATE))
       .then((bars) => bars.map((b) => ({ date: b.tradeDate, value: b.close })))
       .catch(() => null);
   // 各标的已 catch→null,Promise.all 不会拒绝;先建后 await(与其它源同批),
@@ -73,9 +88,17 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const oilP = Promise.all(['CL=F', 'BZ=F', 'HO=F', 'RB=F'].map(yahooClose));
   const settled = await Promise.allSettled(Object.values(src));
   const raw: Partial<Record<keyof typeof src, Point[]>> = {};
-  settled.forEach((s, i) => { if (s.status === 'fulfilled') raw[names[i]] = s.value; });
+  settled.forEach((s, i) => {
+    if (s.status === 'fulfilled') raw[names[i]] = s.value;
+  });
   const usdBars = await usdBarsP;
-  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape] = await Promise.all([usdjpyBarsP, jgbCurveP, cftcJpyP, jgbVixP, capeP]);
+  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape] = await Promise.all([
+    usdjpyBarsP,
+    jgbCurveP,
+    cftcJpyP,
+    jgbVixP,
+    capeP,
+  ]);
   const [wti, brent, diesel, rbob] = await oilP;
   const jgb2y = jgbCurve?.series['2Y'] ?? null;
   const jgb10y = jgbCurve?.series['10Y'] ?? null;
@@ -92,9 +115,16 @@ export const regimeRoute = new Hono().get('/', async (c) => {
 
   // 直接对外的序列(对外名 → 原始源名)。
   const direct: Record<string, keyof typeof src> = {
-    hyOas: 'hyOas', cor1m: 'cor1m', vixeq: 'vixeq', fng: 'fng',
-    reverseRepo: 'rrp', repoUsage: 'rpo', move: 'move', dgs10: 'dgs10',
-    wages: 'wages', stickyCpi: 'stickyCpi',
+    hyOas: 'hyOas',
+    cor1m: 'cor1m',
+    vixeq: 'vixeq',
+    fng: 'fng',
+    reverseRepo: 'rrp',
+    repoUsage: 'rpo',
+    move: 'move',
+    dgs10: 'dgs10',
+    wages: 'wages',
+    stickyCpi: 'stickyCpi',
   };
   for (const [out, s] of Object.entries(direct)) put(out, raw[s]);
 
@@ -112,14 +142,21 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const ohlc: Record<string, OhlcBar[]> = {};
   if (usdBars?.length) {
     ohlc.usd = usdBars.map((b) => ({
-      time: b.tradeDate, open: b.open ?? b.close, high: b.high ?? b.close, low: b.low ?? b.close, close: b.close,
+      time: b.tradeDate,
+      open: b.open ?? b.close,
+      high: b.high ?? b.close,
+      low: b.low ?? b.close,
+      close: b.close,
     }));
   }
 
   // 派生:分量齐才算,缺则整条进 unavailable。
   // RRPONTSYD 源为「十亿美元」,而 WALCL/WTREGEN 为「百万美元」——RRP 腿必须 ×1000 对齐,
   // 否则被缩小 1000 倍(历史高 RRP 期 ~$2.5T 会让净流动性严重虚高)。
-  put('netLiquidity', raw.walcl && raw.wtregen && raw.rrp ? subtractAligned([raw.walcl, raw.wtregen, scale(raw.rrp, 1000)]) : undefined);
+  put(
+    'netLiquidity',
+    raw.walcl && raw.wtregen && raw.rrp ? subtractAligned([raw.walcl, raw.wtregen, scale(raw.rrp, 1000)]) : undefined,
+  );
   put('repoStress', raw.iorb && raw.sofr ? subtractAligned([raw.iorb, raw.sofr]) : undefined);
   // RXM(Cboe 风险逆转指数:买 25Δ call / 卖 25Δ put 滚动策略)/ SPX:该策略相对 SPX 的累计表现比。
   put('rxmSpx', raw.rxm && raw.spx ? divideAligned(raw.rxm, raw.spx) : undefined);
@@ -135,7 +172,10 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // VIX / VXN 已在库里(market_series,daily job 维护)→ 直接读,不外拉。
   const db = openDb();
   try {
-    for (const [out, sym] of [['vix', 'VIX'], ['vxn', 'VXN']] as const) {
+    for (const [out, sym] of [
+      ['vix', 'VIX'],
+      ['vxn', 'VXN'],
+    ] as const) {
       const rows = getMarketSeries(db, sym);
       put(out, rows.length ? rows : undefined);
     }

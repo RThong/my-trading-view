@@ -11,9 +11,7 @@ describe('computeSpread', () => {
       { date: '2026-06-01', value: 18.5 },
       { date: '2026-05-31', value: 18.0 }, // 5-31 VX1 缺 → 丢弃
     ];
-    expect(computeSpread(vx1, vx3)).toEqual([
-      { date: '2026-06-01', vx1: 20.0, vx3: 18.5, spread: 1.5 },
-    ]);
+    expect(computeSpread(vx1, vx3)).toEqual([{ date: '2026-06-01', vx1: 20.0, vx3: 18.5, spread: 1.5 }]);
   });
 
   test('empty inputs → empty', () => {

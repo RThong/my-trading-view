@@ -19,7 +19,9 @@ export function hslToHex(h: number, s: number, l: number): string {
   const a = s * Math.min(l, 1 - l);
   const f = (n: number) => {
     const c = l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
-    return Math.round(255 * c).toString(16).padStart(2, '0');
+    return Math.round(255 * c)
+      .toString(16)
+      .padStart(2, '0');
   };
   return `#${f(0)}${f(8)}${f(4)}`;
 }
@@ -29,8 +31,8 @@ export function hslToHex(h: number, s: number, l: number): string {
 export function buildSeriesColors(n: number): string[] {
   return Array.from({ length: n }, (_, i) => {
     const hue = ZONE_HUES[i % ZONE_HUES.length] + (hash01(i) * 24 - 12); // ±12°
-    const light = [60, 72, 50][Math.floor(i / ZONE_HUES.length) % 3];    // 轮次错开明度
-    const sat = 68 + hash01(i * 7) * 20;                                 // 68–88%
+    const light = [60, 72, 50][Math.floor(i / ZONE_HUES.length) % 3]; // 轮次错开明度
+    const sat = 68 + hash01(i * 7) * 20; // 68–88%
     return hslToHex((hue + 360) % 360, sat, light);
   });
 }
@@ -38,7 +40,16 @@ export function buildSeriesColors(n: number): string[] {
 // dataviz skill 验证过的 8 色定序类别配色(dark surface,顺序即相邻 CVD 最优)。
 // validate_palette.js 对底 #0a0a0a 全 PASS(亮度/彩度/对比);相邻 CVD 最差 10.3 在 floor 带,
 // 靠面板已有的图例 + 右侧数值直标做二级编码(合规)。隔档选(如 BEI 5Y/10Y/30Y=slot 0/2/4=蓝/黄/紫)也拉得开。
-export const CATEGORICAL_DARK = ['#3987e5', '#199e70', '#c98500', '#008300', '#9085e9', '#e66767', '#d55181', '#d95926'];
+export const CATEGORICAL_DARK = [
+  '#3987e5',
+  '#199e70',
+  '#c98500',
+  '#008300',
+  '#9085e9',
+  '#e66767',
+  '#d55181',
+  '#d95926',
+];
 
 // 前 8 档用验证配色(覆盖各曲线默认选择);OIS 深档(≥8,少被同时选)沿用 HSL 生成填满 24。
 export const SERIES_COLORS = [...CATEGORICAL_DARK, ...buildSeriesColors(24).slice(CATEGORICAL_DARK.length)];

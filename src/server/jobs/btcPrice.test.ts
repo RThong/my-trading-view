@@ -12,7 +12,9 @@ function freshDb(): Database {
 
 describe('updateBtcPrice', () => {
   let db: Database;
-  beforeEach(() => { db = freshDb(); });
+  beforeEach(() => {
+    db = freshDb();
+  });
 
   test('写 BTC 日 bar 进 price_eod,source=deribit', async () => {
     const total = await updateBtcPrice(db, {
@@ -29,7 +31,9 @@ describe('updateBtcPrice', () => {
 
   test('Deribit 抛错 → 降级 Yahoo,source=yahoo', async () => {
     const total = await updateBtcPrice(db, {
-      deribit: async () => { throw new Error('Deribit 503'); },
+      deribit: async () => {
+        throw new Error('Deribit 503');
+      },
       yahoo: async () => [{ date: '2026-06-27', open: 1, high: 2, low: 0.5, close: 1.5 }],
     });
     expect(total).toBe(1);

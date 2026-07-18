@@ -12,8 +12,10 @@ type YahooQuote = {
 };
 
 export type YahooClient = {
-  chart: (symbol: string, opts: { period1: Date | string; period2?: Date | string; interval: '1d' })
-    => Promise<{ meta: { symbol: string; currency?: string }; quotes: YahooQuote[] }>;
+  chart: (
+    symbol: string,
+    opts: { period1: Date | string; period2?: Date | string; interval: '1d' },
+  ) => Promise<{ meta: { symbol: string; currency?: string }; quotes: YahooQuote[] }>;
 };
 
 export function defaultYahooClient(): YahooClient {
@@ -34,8 +36,8 @@ export function createYahooFetcher(client: YahooClient = defaultYahooClient()) {
     async fetchDailyBars(symbol: string, since: Date): Promise<QuoteRow[]> {
       const result = await client.chart(symbol, { period1: since, interval: '1d' });
       return result.quotes
-        .filter(q => q.close !== null && q.close !== undefined)
-        .map(q => ({
+        .filter((q) => q.close !== null && q.close !== undefined)
+        .map((q) => ({
           symbol,
           tradeDate: toIsoDate(q.date),
           open: q.open ?? null,
@@ -50,8 +52,8 @@ export function createYahooFetcher(client: YahooClient = defaultYahooClient()) {
     async fetchAdjDailyBars(symbol: string, since: Date): Promise<AdjBar[]> {
       const result = await client.chart(symbol, { period1: since, interval: '1d' });
       return result.quotes
-        .filter(q => q.adjclose !== null && q.adjclose !== undefined)
-        .map(q => ({ date: toIsoDate(q.date), adjClose: q.adjclose as number }));
+        .filter((q) => q.adjclose !== null && q.adjclose !== undefined)
+        .map((q) => ({ date: toIsoDate(q.date), adjClose: q.adjclose as number }));
     },
   };
 }

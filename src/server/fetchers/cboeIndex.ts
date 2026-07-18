@@ -54,10 +54,7 @@ export function parseCboeIndexCsv(text: string): CboeIndexRow[] {
 
   const header = lines[0].split(',').map((s) => s.trim().toUpperCase());
   const isOhlc =
-    header.includes('OPEN') &&
-    header.includes('HIGH') &&
-    header.includes('LOW') &&
-    header.includes('CLOSE');
+    header.includes('OPEN') && header.includes('HIGH') && header.includes('LOW') && header.includes('CLOSE');
 
   // 跳过表头行,逐行解析;flatMap 返回 [] 即丢弃该行(等价于原来的 continue)。
   return lines.slice(1).flatMap((line): CboeIndexRow[] => {
@@ -68,7 +65,9 @@ export function parseCboeIndexCsv(text: string): CboeIndexRow[] {
     if (isOhlc) {
       const close = parseNullable(cols[4]);
       if (close === null) return [];
-      return [{ tradeDate, open: parseNullable(cols[1]), high: parseNullable(cols[2]), low: parseNullable(cols[3]), close }];
+      return [
+        { tradeDate, open: parseNullable(cols[1]), high: parseNullable(cols[2]), low: parseNullable(cols[3]), close },
+      ];
     }
 
     const close = parseNullable(cols[1]);
@@ -109,7 +108,7 @@ export async function fetchCboeIndexAsQuotes(opts: FetchToRowsOpts): Promise<Quo
   const all = await client.fetchHistory(opts.cboeSymbol);
   const cutoff = opts.afterDate && opts.afterDate > HISTORY_START_DATE ? opts.afterDate : HISTORY_START_DATE;
   const isStrict = opts.afterDate !== undefined;
-  const filtered = all.filter((r) => isStrict ? r.tradeDate > cutoff : r.tradeDate >= cutoff);
+  const filtered = all.filter((r) => (isStrict ? r.tradeDate > cutoff : r.tradeDate >= cutoff));
 
   return filtered.map((r) => ({
     symbol: opts.storedSymbol,

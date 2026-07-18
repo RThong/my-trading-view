@@ -45,7 +45,10 @@ export function parseErisParCoupon(csv: string): ErisCurve {
     const sym = c[iSym]?.trim();
     const rate = Number(c[iFair]?.trim());
     if (!sym?.startsWith('SOFR') || !Number.isFinite(rate)) continue;
-    if (!date) { const [m, d, y] = c[iDate].trim().split('/'); date = `${y}-${m}-${d}`; }
+    if (!date) {
+      const [m, d, y] = c[iDate].trim().split('/');
+      date = `${y}-${m}-${d}`;
+    }
     points.push({ tenor: sym.slice(4), rate }); // 去 'SOFR' 前缀
   }
   if (!date) throw new Error('Eris CSV: 无有效数据行');

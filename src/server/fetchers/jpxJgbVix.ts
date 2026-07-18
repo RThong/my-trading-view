@@ -6,7 +6,8 @@ import { fetchWithTimeout } from './http';
 // ponytail: JPX 哈希 URL,改版会变;挂了归 unavailable、手工去 JPX 页面重取链接。
 const XLSX_URL =
   'https://www.jpx.co.jp/english/markets/derivatives-indices/sp-jpx-jgb-vix/b5b4pj000002y7jd-att/SP_JPX_JGB_VIX_Historical_Data.xlsx';
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
+const UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
 
 /** '2008.01.15' → '2008-01-15';非 YYYY.MM.DD(如表头 'Date')→ null。 */
 export function dotDateToIso(s: string): string | null {
@@ -15,9 +16,15 @@ export function dotDateToIso(s: string): string | null {
 }
 
 /** sheet1.xml + sharedStrings.xml → [{date,value}]。A 列共享串索引=日期,B 列内联值;表头/空行/since 前自然过滤。 */
-export function parseJgbVixXlsx(sheetXml: string, sharedStringsXml: string, since: string): { date: string; value: number }[] {
+export function parseJgbVixXlsx(
+  sheetXml: string,
+  sharedStringsXml: string,
+  since: string,
+): { date: string; value: number }[] {
   // 按 <si> 分块取首个 <t>:一 <si> 一条目,索引才与 A 列对齐。全局扫 <t> 遇富文本(多 run)会错位成看似合理的错日期(静默污染)。
-  const ss = [...sharedStringsXml.matchAll(/<si>(.*?)<\/si>/gs)].map((m) => /<t[^>]*>([^<]*)<\/t>/.exec(m[1])?.[1] ?? '');
+  const ss = [...sharedStringsXml.matchAll(/<si>(.*?)<\/si>/gs)].map(
+    (m) => /<t[^>]*>([^<]*)<\/t>/.exec(m[1])?.[1] ?? '',
+  );
   const out: { date: string; value: number }[] = [];
 
   for (const [, body] of sheetXml.matchAll(/<row[^>]*>(.*?)<\/row>/gs)) {
