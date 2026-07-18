@@ -18,29 +18,29 @@
     "typecheck": "bun node_modules/typescript/lib/tsc.js --noEmit"
   },
   "dependencies": {
-    "@radix-ui/react-popover": "^1.1.18",
+    "@radix-ui/react-popover": "^1.1.19",
     "fflate": "^0.8.3",
-    "hono": "^4.6.0",
-    "lightweight-charts": "^5.0.0",
-    "lucide-react": "^1.23.0",
-    "moomoo-api": "^10.7.6708",
-    "react": "^19.0.0",
+    "hono": "^4.12.30",
+    "lightweight-charts": "^5.2.0",
+    "lucide-react": "^1.25.0",
+    "moomoo-api": "^10.9.6908",
+    "react": "^19.2.7",
     "react-day-picker": "^10.0.1",
-    "react-dom": "^19.0.0",
+    "react-dom": "^19.2.7",
     "remeda": "^2.39.0",
-    "swr": "^2.4.1",
-    "yahoo-finance2": "^3"
+    "swr": "^2.4.2",
+    "yahoo-finance2": "^4.0.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.4",
-    "@tailwindcss/vite": "^4.0.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/bun": "latest",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.3.0",
-    "concurrently": "^9.2.1",
-    "tailwindcss": "^4.0.0",
-    "typescript": "^7.0.0",
-    "vite": "^5.4.0"
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "concurrently": "^10.0.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5"
   }
 }
