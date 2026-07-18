@@ -15,7 +15,13 @@ import { overlayPut, type PutConfig, type PutDay } from './putLeg';
 import { metrics, episodes } from './metrics';
 
 const ENGINE = { tqqqSleeve: 0.3, cashSleeve: 0.2, costBps: 5 } as const;
-const PUT: PutConfig = { protectedNotional: 0.2, premiumBudgetAnnual: 0.02, moneyness: 1, tenorDays: 21, skewMarkup: 1.1 };
+const PUT: PutConfig = {
+  protectedNotional: 0.2,
+  premiumBudgetAnnual: 0.02,
+  moneyness: 1,
+  tenorDays: 21,
+  skewMarkup: 1.1,
+};
 const VARIANTS: PanicEntry[] = ['A', 'B', 'C'];
 
 const pct = (x: number) => (x * 100).toFixed(2) + '%';
@@ -58,7 +64,11 @@ async function main() {
   const runs: Array<{ name: string; states: DayState[]; legs: EngineConfig['legs'] }> = [
     { name: 'QQQ benchmark', states: statesBy.C, legs: { rotation: false, cashInsurance: false } },
     { name: 'cash-only (greed)', states: statesBy.C, legs: { rotation: false, cashInsurance: true } },
-    ...VARIANTS.map((v) => ({ name: `rot-only ${v}`, states: statesBy[v], legs: { rotation: true, cashInsurance: false } })),
+    ...VARIANTS.map((v) => ({
+      name: `rot-only ${v}`,
+      states: statesBy[v],
+      legs: { rotation: true, cashInsurance: false },
+    })),
     ...VARIANTS.map((v) => ({ name: `both ${v}`, states: statesBy[v], legs: { rotation: true, cashInsurance: true } })),
   ];
   const results = runs.map((r) => ({
@@ -68,9 +78,14 @@ async function main() {
 
   // put 保险腿:叠加在 base 净值路径上(贪婪期 base 必是 100% QQQ)。
   // put-only 的 base = 纯 QQQ 基准;both A+put 的 base = 仅轮动 A。
-  const putDays: PutDay[] = aligned.map((a, i) => ({ date: a.date, qqq: a.qqq, vxn: a.vxn, greed: statesBy.C[i].greed }));
-  const benchEq = results[0].equity;                                   // QQQ benchmark
-  const rotAEq = results.find((r) => r.name === 'rot-only A')!.equity;  // 仅轮动 A
+  const putDays: PutDay[] = aligned.map((a, i) => ({
+    date: a.date,
+    qqq: a.qqq,
+    vxn: a.vxn,
+    greed: statesBy.C[i].greed,
+  }));
+  const benchEq = results[0].equity; // QQQ benchmark
+  const rotAEq = results.find((r) => r.name === 'rot-only A')!.equity; // 仅轮动 A
   results.push(
     { name: 'put-only (greed)', equity: overlayPut(benchEq, putDays, PUT) },
     { name: 'both A + put', equity: overlayPut(rotAEq, putDays, PUT) },
@@ -78,14 +93,27 @@ async function main() {
 
   // ── 打印 ──
   const spreadPos = spread.filter((p) => p.value > 0).length;
-  console.log(`窗口 ${prices[0].date} → ${prices[prices.length - 1].date}  ·  ${prices.length} 交易日  ·  spread>0: ${spreadPos} 天`);
-  console.log(`panic episodes  A=${episodes(statesBy.A, 'panic').episodes}  B=${episodes(statesBy.B, 'panic').episodes}  C=${episodes(statesBy.C, 'panic').episodes}` +
-    `  ·  greed episodes=${episodes(statesBy.C, 'greed').episodes}(days=${episodes(statesBy.C, 'greed').days})`);
+  console.log(
+    `窗口 ${prices[0].date} → ${prices[prices.length - 1].date}  ·  ${prices.length} 交易日  ·  spread>0: ${spreadPos} 天`,
+  );
+  console.log(
+    `panic episodes  A=${episodes(statesBy.A, 'panic').episodes}  B=${episodes(statesBy.B, 'panic').episodes}  C=${episodes(statesBy.C, 'panic').episodes}` +
+      `  ·  greed episodes=${episodes(statesBy.C, 'greed').episodes}(days=${episodes(statesBy.C, 'greed').days})`,
+  );
   console.log();
   console.log([pad('策略', 20), pad('CAGR', 9), pad('MDD', 9), pad('Sharpe', 8), pad('Sortino', 8), 'Calmar'].join(''));
   for (const r of results) {
     const m = metrics(r.equity);
-    console.log([pad(r.name, 20), pad(pct(m.cagr), 9), pad(pct(m.mdd), 9), pad(m.sharpe.toFixed(2), 8), pad(m.sortino.toFixed(2), 8), m.calmar.toFixed(2)].join(''));
+    console.log(
+      [
+        pad(r.name, 20),
+        pad(pct(m.cagr), 9),
+        pad(pct(m.mdd), 9),
+        pad(m.sharpe.toFixed(2), 8),
+        pad(m.sortino.toFixed(2), 8),
+        m.calmar.toFixed(2),
+      ].join(''),
+    );
   }
 }
 

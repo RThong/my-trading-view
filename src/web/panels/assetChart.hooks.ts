@@ -3,7 +3,14 @@
 // 切 tab 不卸载),所以这里所有 effect 都是「挂载建/卸载销」,不再按标的 reset。
 import { useEffect, useRef, useState } from 'react';
 import useSWR from 'swr';
-import { createChart, LineSeries, CandlestickSeries, HistogramSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
+import {
+  createChart,
+  LineSeries,
+  CandlestickSeries,
+  HistogramSeries,
+  type IChartApi,
+  type ISeriesApi,
+} from 'lightweight-charts';
 import type { Interval } from '../hooks/interval';
 import { useStable } from '../hooks/useStable';
 import { CHART_OPTIONS, aggregate, aggregateBars, changeStats, type LinePoint, type Bar } from '../lib/chart';
@@ -12,11 +19,28 @@ export type OptRow = { date: string; callIv: number; putIv: number; skew: number
 export type VrpRow = { date: string; iv: number; rv: number; vrp: number };
 export type PriceBar = { date: string; open: number | null; high: number | null; low: number | null; close: number };
 export type PaneDef = { key: string; label: string; series: string[] };
-export type LineSpec = { key: string; pane: number; kind: 'line'; color: string; title: string; data: LinePoint[]; baseline?: number; refLines?: { price: number; title: string }[] };
+export type LineSpec = {
+  key: string;
+  pane: number;
+  kind: 'line';
+  color: string;
+  title: string;
+  data: LinePoint[];
+  baseline?: number;
+  refLines?: { price: number; title: string }[];
+};
 export type CandleSpec = { key: string; pane: number; kind: 'candle'; title: string; data: Bar[] };
 export type HistoPoint = { time: string; value: number; color: string };
 // priceScaleId 给定 → 挂独立 overlay 轴(自身 0–1 自缩放),用来画满高度背景带(极端期着色)。
-export type HistoSpec = { key: string; pane: number; kind: 'histogram'; title: string; data: HistoPoint[]; baseline?: number; priceScaleId?: string };
+export type HistoSpec = {
+  key: string;
+  pane: number;
+  kind: 'histogram';
+  title: string;
+  data: HistoPoint[];
+  baseline?: number;
+  priceScaleId?: string;
+};
 export type Spec = LineSpec | CandleSpec | HistoSpec;
 export type LegendCell =
   | { kind: 'candle'; open: number; high: number; low: number; close: number; delta: number | null; pct: number | null }
@@ -25,8 +49,12 @@ type AnySeries = ISeriesApi<'Line' | 'Candlestick' | 'Histogram'>;
 
 export const COLORS = {
   price: '#d4d4d8', // 现货图例文字(蜡烛本身用涨绿跌红)
-  call: '#22c55e', put: '#ec4899', skew: '#3b82f6',
-  iv: '#3b82f6', rv: '#f59e0b', vrp: '#22c55e',
+  call: '#22c55e',
+  put: '#ec4899',
+  skew: '#3b82f6',
+  iv: '#3b82f6',
+  rv: '#f59e0b',
+  vrp: '#22c55e',
 };
 const HISTORY_DAYS = 3650;
 
@@ -53,17 +81,24 @@ const IV_INDEX: Record<string, string> = { SPY: 'VIX', QQQ: 'VXN', GLD: 'GVZ', U
 export function paneConfig(vrpUnderlying?: string) {
   const ivName = vrpUnderlying ? (IV_INDEX[vrpUnderlying] ?? 'IV') : 'IV';
   const seriesName: Record<string, string> = {
-    price: '现货', call: 'Call IV', put: 'Put IV', skew: 'Skew',
-    iv: `隐含 (${ivName})`, rv: '已实现 RV', vrp: 'VRP',
+    price: '现货',
+    call: 'Call IV',
+    put: 'Put IV',
+    skew: 'Skew',
+    iv: `隐含 (${ivName})`,
+    rv: '已实现 RV',
+    vrp: 'VRP',
   };
   const paneDefs: PaneDef[] = [
     { key: 'price', label: '现货', series: ['price'] },
     { key: 'iv', label: 'IV', series: ['call', 'put'] },
     { key: 'skew', label: 'Skew', series: ['skew'] },
-    ...(vrpUnderlying ? [
-      { key: 'ivrv', label: '隐含/RV', series: ['iv', 'rv'] },
-      { key: 'vrp', label: 'VRP', series: ['vrp'] },
-    ] : []),
+    ...(vrpUnderlying
+      ? [
+          { key: 'ivrv', label: '隐含/RV', series: ['iv', 'rv'] },
+          { key: 'vrp', label: 'VRP', series: ['vrp'] },
+        ]
+      : []),
     // VX1−V3 期限结构已搬到情绪视角(见 regimeChart.hooks);.VIX 只到 skew。
   ];
   const desc: Record<string, string> = {
@@ -80,26 +115,47 @@ const toLine = (rows: Array<Record<string, unknown>>, key: string): LinePoint[] 
   rows.map((r) => ({ time: r.date as string, value: r[key] as number }));
 // OHLC 缺失(个别源)时退化成 close 的一字蜡烛,避免 setData 报错。
 const toBars = (rows: PriceBar[]): Bar[] =>
-  rows.map((r) => ({ time: r.date, open: r.open ?? r.close, high: r.high ?? r.close, low: r.low ?? r.close, close: r.close }));
+  rows.map((r) => ({
+    time: r.date,
+    open: r.open ?? r.close,
+    high: r.high ?? r.close,
+    low: r.low ?? r.close,
+    close: r.close,
+  }));
 
 /** 把数据按 interval 聚合成各 series 的 spec;pane 下标从 paneDefs 派生(谁含此 series)。 */
 export function buildSpecs(
-  opt: OptRow[], vrp: VrpRow[], price: PriceBar[], interval: Interval,
-  vrpUnderlying: string | undefined, paneDefs: PaneDef[], seriesName: Record<string, string>,
+  opt: OptRow[],
+  vrp: VrpRow[],
+  price: PriceBar[],
+  interval: Interval,
+  vrpUnderlying: string | undefined,
+  paneDefs: PaneDef[],
+  seriesName: Record<string, string>,
 ): Spec[] {
   const paneOf = (key: string) => paneDefs.findIndex((d) => d.series.includes(key));
-  const line = (key: string, rows: Array<Record<string, unknown>>, field: string, color: string): LineSpec =>
-    ({ key, pane: paneOf(key), kind: 'line', color, title: seriesName[key], data: aggregate(toLine(rows, field), interval) });
+  const line = (key: string, rows: Array<Record<string, unknown>>, field: string, color: string): LineSpec => ({
+    key,
+    pane: paneOf(key),
+    kind: 'line',
+    color,
+    title: seriesName[key],
+    data: aggregate(toLine(rows, field), interval),
+  });
   return [
-    { key: 'price', pane: paneOf('price'), kind: 'candle', title: seriesName.price, data: aggregateBars(toBars(price), interval) },
+    {
+      key: 'price',
+      pane: paneOf('price'),
+      kind: 'candle',
+      title: seriesName.price,
+      data: aggregateBars(toBars(price), interval),
+    },
     line('call', opt, 'callIv', COLORS.call),
     line('put', opt, 'putIv', COLORS.put),
     line('skew', opt, 'skew', COLORS.skew),
-    ...(vrpUnderlying ? [
-      line('iv', vrp, 'iv', COLORS.iv),
-      line('rv', vrp, 'rv', COLORS.rv),
-      line('vrp', vrp, 'vrp', COLORS.vrp),
-    ] : []),
+    ...(vrpUnderlying
+      ? [line('iv', vrp, 'iv', COLORS.iv), line('rv', vrp, 'rv', COLORS.rv), line('vrp', vrp, 'vrp', COLORS.vrp)]
+      : []),
   ];
 }
 
@@ -111,9 +167,15 @@ export function useAssetData(underlying: string, vrpUnderlying?: string) {
   const priceUrl = `/api/price/${encodeURIComponent(underlying)}`;
   const { data: opt = NO_OPT, error: oe, isLoading: optLoading } = useSWR(optUrl, getJson<OptRow[]>, SWR_OPTS);
   const { data: vrp = NO_VRP, error: ve, isLoading: vrpLoading } = useSWR(vrpUrl, getJson<VrpRow[]>, SWR_OPTS);
-  const { data: price = NO_PRICE, error: pe, isLoading: priceLoading } = useSWR(priceUrl, getJson<PriceBar[]>, SWR_OPTS);
+  const {
+    data: price = NO_PRICE,
+    error: pe,
+    isLoading: priceLoading,
+  } = useSWR(priceUrl, getJson<PriceBar[]>, SWR_OPTS);
   return {
-    opt, vrp, price,
+    opt,
+    vrp,
+    price,
     error: (oe ?? ve ?? pe) as Error | undefined,
     isLoading: optLoading || vrpLoading || priceLoading,
   };
@@ -122,33 +184,69 @@ export function useAssetData(underlying: string, vrpUnderlying?: string) {
 // 按 kind 建对应 series,并挂上各自的参考线/背景带。
 function addSeries(chart: IChartApi, spec: Spec): AnySeries {
   if (spec.kind === 'candle') {
-    return chart.addSeries(CandlestickSeries, {
-      title: spec.title, upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
-      wickUpColor: '#22c55e', wickDownColor: '#ef4444', priceLineVisible: false,
-    }, spec.pane);
+    return chart.addSeries(
+      CandlestickSeries,
+      {
+        title: spec.title,
+        upColor: '#22c55e',
+        downColor: '#ef4444',
+        borderVisible: false,
+        wickUpColor: '#22c55e',
+        wickDownColor: '#ef4444',
+        priceLineVisible: false,
+      },
+      spec.pane,
+    );
   }
 
   if (spec.kind === 'histogram') {
-    const s = chart.addSeries(HistogramSeries, {
-      title: spec.title, base: 0, priceLineVisible: false,
-      ...(spec.priceScaleId ? { priceScaleId: spec.priceScaleId, lastValueVisible: false } : {}),
-    }, spec.pane);
+    const s = chart.addSeries(
+      HistogramSeries,
+      {
+        title: spec.title,
+        base: 0,
+        priceLineVisible: false,
+        ...(spec.priceScaleId ? { priceScaleId: spec.priceScaleId, lastValueVisible: false } : {}),
+      },
+      spec.pane,
+    );
     // overlay 背景带:独立轴去掉上下留白 → 柱子满 pane 高。
     if (spec.priceScaleId) s.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
     if (spec.baseline !== undefined) {
-      s.createPriceLine({ price: spec.baseline, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '0' });
+      s.createPriceLine({
+        price: spec.baseline,
+        color: '#71717a',
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: '0',
+      });
     }
     return s;
   }
 
   const s = chart.addSeries(LineSeries, { color: spec.color, title: spec.title, lineWidth: 2 }, spec.pane);
   if (spec.baseline !== undefined) {
-    s.createPriceLine({ price: spec.baseline, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '0' });
+    s.createPriceLine({
+      price: spec.baseline,
+      color: '#71717a',
+      lineWidth: 1,
+      lineStyle: 2,
+      axisLabelVisible: true,
+      title: '0',
+    });
   }
   // 参考线(如情绪指标的 P10/P90 分位带);期权侧不传 refLines 即无。
   if (spec.refLines) {
     for (const rl of spec.refLines) {
-      s.createPriceLine({ price: rl.price, color: '#71717a', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: rl.title });
+      s.createPriceLine({
+        price: rl.price,
+        color: '#71717a',
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: rl.title,
+      });
     }
   }
   return s;
@@ -156,7 +254,9 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
 
 // ── 图表引擎维度:持有 chart + series 句柄,负责建图与 series 同步 ──────────────
 export function usePaneChart(
-  containerRef: React.RefObject<HTMLDivElement | null>, paneCount: number, rawSpecs: Spec[],
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  paneCount: number,
+  rawSpecs: Spec[],
 ) {
   const specs = useStable(rawSpecs);
   const chartRef = useRef<IChartApi | null>(null);
@@ -169,8 +269,14 @@ export function usePaneChart(
     chartRef.current = chart;
     const seriesMap = seriesRef.current; // 同一 Map(useRef 只建一次),捕获供 cleanup 用
     for (let i = 1; i < paneCount; i++) chart.addPane(); // pane 0 默认已存在
-    chart.panes().forEach((p) => p.setStretchFactor(1)); // 等高,可拖分隔条调整
-    return () => { chart.remove(); seriesMap.clear(); chartRef.current = null; };
+    chart.panes().forEach((p) => {
+      p.setStretchFactor(1);
+    }); // 等高,可拖分隔条调整
+    return () => {
+      chart.remove();
+      seriesMap.clear();
+      chartRef.current = null;
+    };
   }, [containerRef, paneCount]);
 
   // 数据/聚合变化时同步 series:缺的删、没有的建、有的 setData。
@@ -181,7 +287,10 @@ export function usePaneChart(
     // specs 里已消失的 series:删掉。
     const keysNow = new Set(specs.map((s) => s.key));
     for (const [k, s] of seriesRef.current) {
-      if (!keysNow.has(k)) { chart.removeSeries(s); seriesRef.current.delete(k); }
+      if (!keysNow.has(k)) {
+        chart.removeSeries(s);
+        seriesRef.current.delete(k);
+      }
     }
 
     // 缺的建,已有的直接 setData。
@@ -202,7 +311,8 @@ export function usePaneChart(
 
 // ── 布局维度:pane 上下换位(order)+ 折叠显隐(collapsed)──────────────────────
 export function usePaneLayout(
-  rawPaneDefs: PaneDef[], paneCount: number,
+  rawPaneDefs: PaneDef[],
+  paneCount: number,
   chartRef: React.RefObject<IChartApi | null>,
   seriesRef: React.RefObject<Map<string, AnySeries>>,
 ) {
@@ -216,10 +326,14 @@ export function usePaneLayout(
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    chart.panes().forEach((p, i) => p.setStretchFactor(collapsed.has(order[i]) ? 0.0001 : 1));
+    chart.panes().forEach((p, i) => {
+      p.setStretchFactor(collapsed.has(order[i]) ? 0.0001 : 1);
+    });
     for (const d of paneDefs) {
       const visible = !collapsed.has(d.key);
-      d.series.forEach((sk) => seriesRef.current.get(sk)?.applyOptions({ visible }));
+      d.series.forEach((sk) => {
+        seriesRef.current.get(sk)?.applyOptions({ visible });
+      });
     }
   }, [collapsed, order, paneDefs, chartRef, seriesRef]);
 
@@ -260,10 +374,11 @@ export function useCrosshairLegend(
   chartRef: React.RefObject<IChartApi | null>,
   seriesRef: React.RefObject<Map<string, AnySeries>>,
   containerRef: React.RefObject<HTMLDivElement | null>,
-  order: string[], collapsed: Set<string>,
+  order: string[],
+  collapsed: Set<string>,
 ) {
   const [cells, setCells] = useState<Record<string, LegendCell>>({}); // 竖线处各 series 的图例格
-  const [tops, setTops] = useState<number[]>([]);                      // 各 pane 顶部像素偏移
+  const [tops, setTops] = useState<number[]>([]); // 各 pane 顶部像素偏移
 
   // 竖线滑动:读各 series 当前点(蜡烛 OHLC / 线 value)+ 用 logical-1 取前值算 Δ/Δ%。不悬停 → 空。
   useEffect(() => {
@@ -274,13 +389,22 @@ export function useCrosshairLegend(
       const prevIdx = param.logical == null ? undefined : param.logical - 1;
       for (const [key, s] of seriesRef.current) {
         const d = param.seriesData.get(s) as
-          { value?: number; open?: number; high?: number; low?: number; close?: number } | undefined;
+          | { value?: number; open?: number; high?: number; low?: number; close?: number }
+          | undefined;
         if (!d) continue;
-        const prev = prevIdx == null ? undefined
-          : (s.dataByIndex(prevIdx) as { value?: number; close?: number } | null);
+        const prev =
+          prevIdx == null ? undefined : (s.dataByIndex(prevIdx) as { value?: number; close?: number } | null);
         if (typeof d.open === 'number' && typeof d.close === 'number') {
           const st = changeStats(d.close, typeof prev?.close === 'number' ? prev.close : undefined);
-          next[key] = { kind: 'candle', open: d.open, high: d.high!, low: d.low!, close: d.close, delta: st?.delta ?? null, pct: st?.pct ?? null };
+          next[key] = {
+            kind: 'candle',
+            open: d.open,
+            high: d.high!,
+            low: d.low!,
+            close: d.close,
+            delta: st?.delta ?? null,
+            pct: st?.pct ?? null,
+          };
         } else if (typeof d.value === 'number') {
           const st = changeStats(d.value, typeof prev?.value === 'number' ? prev.value : undefined);
           next[key] = { kind: 'line', value: d.value, delta: st?.delta ?? null, pct: st?.pct ?? null };
@@ -300,7 +424,10 @@ export function useCrosshairLegend(
         if (!chart) return;
         const t: number[] = [];
         let acc = 0;
-        for (const p of chart.panes()) { t.push(acc); acc += p.getHeight() + 1; }
+        for (const p of chart.panes()) {
+          t.push(acc);
+          acc += p.getHeight() + 1;
+        }
         setTops(t);
       });
     recompute();
@@ -316,7 +443,10 @@ export function useCrosshairLegend(
 
 // ── 组合:引擎 + 布局 + 图例 一处接线,供 AssetChart / RegimeChart 共用(避免两处接线漂移)。
 export function usePaneChartStack(
-  containerRef: React.RefObject<HTMLDivElement | null>, paneDefs: PaneDef[], paneCount: number, specs: Spec[],
+  containerRef: React.RefObject<HTMLDivElement | null>,
+  paneDefs: PaneDef[],
+  paneCount: number,
+  specs: Spec[],
 ) {
   const { chartRef, seriesRef } = usePaneChart(containerRef, paneCount, specs);
   const { order, collapsed, move, toggle } = usePaneLayout(paneDefs, paneCount, chartRef, seriesRef);

@@ -88,10 +88,10 @@ export function migrate(db: Database): void {
   if (prior < CURRENT_SCHEMA_VERSION) {
     migrateOptionSource(db);
     migrateSpotToPriceEod(db);
-    db.run(
-      'INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)',
-      [CURRENT_SCHEMA_VERSION, new Date().toISOString()],
-    );
+    db.run('INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)', [
+      CURRENT_SCHEMA_VERSION,
+      new Date().toISOString(),
+    ]);
   }
 }
 

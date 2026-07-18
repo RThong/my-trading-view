@@ -18,10 +18,16 @@ export async function updateBtcPrice(
   opts?: { deribit?: BarsFetcher; yahoo?: BarsFetcher },
 ): Promise<number> {
   const deribit: BarsFetcher = opts?.deribit ?? ((since) => fetchBtcDailyBars(since.getTime(), Date.now()));
-  const yahoo: BarsFetcher = opts?.yahoo ?? (async (since) =>
-    (await createYahooFetcher().fetchDailyBars('BTC-USD', since)).map((r) => ({
-      date: r.tradeDate, open: r.open, high: r.high, low: r.low, close: r.close,
-    })));
+  const yahoo: BarsFetcher =
+    opts?.yahoo ??
+    (async (since) =>
+      (await createYahooFetcher().fetchDailyBars('BTC-USD', since)).map((r) => ({
+        date: r.tradeDate,
+        open: r.open,
+        high: r.high,
+        low: r.low,
+        close: r.close,
+      })));
 
   const latest = getLatestPriceDate(db, 'BTC');
   const since = latest ? new Date(latest + 'T00:00:00Z') : new Date(HISTORY_START_DATE);
@@ -37,8 +43,17 @@ export async function updateBtcPrice(
     source = 'yahoo';
   }
 
-  insertPriceEod(db, bars.map((b) => ({
-    underlying: 'BTC', obsDate: b.date, open: b.open, high: b.high, low: b.low, close: b.close, source,
-  })));
+  insertPriceEod(
+    db,
+    bars.map((b) => ({
+      underlying: 'BTC',
+      obsDate: b.date,
+      open: b.open,
+      high: b.high,
+      low: b.low,
+      close: b.close,
+      source,
+    })),
+  );
   return bars.length;
 }

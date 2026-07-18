@@ -31,9 +31,7 @@ type RunDailyJobOpts = {
 };
 
 /** 包一次 job_run:开跑 → 按 fn 结果落终态;fn 抛异常记 failed。所有分组共用,免去 4 处重复 try/catch。 */
-async function withJobRun(
-  db: Database, jobName: string, fn: () => Promise<FinishParams>,
-): Promise<void> {
+async function withJobRun(db: Database, jobName: string, fn: () => Promise<FinishParams>): Promise<void> {
   const runId = startJobRun(db, jobName);
   try {
     finishJobRun(db, runId, await fn());
@@ -51,7 +49,11 @@ function threeState(total: number, succeeded: number, failures: string[]): Finis
 
 /** 跑一组期权快照并记一个 job_run(单标的失败 → partial,全失败 → failed)。 */
 async function runOptionsGroup(
-  db: Database, jobName: string, source: string, underlyings: string[], client: OptionsChainClient,
+  db: Database,
+  jobName: string,
+  source: string,
+  underlyings: string[],
+  client: OptionsChainClient,
 ): Promise<void> {
   await withJobRun(db, jobName, async () => {
     const { rows, failures } = await runOptionsSnapshot({ db, source, underlyings, client });
@@ -65,7 +67,13 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     await runOptionsGroup(opts.db, 'options', 'moomoo', opts.optionsUnderlyings, opts.optionsClient);
   }
   if (opts.cryptoOptionsUnderlyings?.length && opts.cryptoOptionsClient) {
-    await runOptionsGroup(opts.db, 'options_crypto', 'deribit', opts.cryptoOptionsUnderlyings, opts.cryptoOptionsClient);
+    await runOptionsGroup(
+      opts.db,
+      'options_crypto',
+      'deribit',
+      opts.cryptoOptionsUnderlyings,
+      opts.cryptoOptionsClient,
+    );
   }
 
   // vrp_inputs 分组:增量更新各 VRP 配方的隐含腿与 RV 腿

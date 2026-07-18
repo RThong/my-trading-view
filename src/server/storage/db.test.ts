@@ -16,12 +16,16 @@ describe('openDb', () => {
 
   test('真实文件库:busy_timeout 让并发写等待,而非 0ms 撞锁瞬崩', () => {
     const path = join(tmpdir(), `mtv-busy-${process.pid}-${Date.now()}.db`);
-    const cleanup = () => ['', '-wal', '-shm'].forEach((s) => rmSync(path + s, { force: true }));
+    const cleanup = () => {
+      ['', '-wal', '-shm'].forEach((s) => {
+        rmSync(path + s, { force: true });
+      });
+    };
     const holder = new Database(path);
     try {
       holder.exec('PRAGMA journal_mode = WAL;');
       holder.exec('CREATE TABLE t (x)');
-      holder.exec('BEGIN IMMEDIATE');        // holder 持有写锁,直到本测试结束都不放
+      holder.exec('BEGIN IMMEDIATE'); // holder 持有写锁,直到本测试结束都不放
       holder.run('INSERT INTO t VALUES (1)');
 
       // 无 busy_timeout:第二个写者立刻崩(~0ms)

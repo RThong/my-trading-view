@@ -3,8 +3,15 @@ import { valueAt, curveForDate, unionDatesAsc, snapToTradingDay, shiftDate, pres
 
 // 收益率有周末/假日缺口,取值一律"往前贴到 ≤ 目标的最近观测"。
 const series = {
-  '3M': [{ date: '2026-06-30', value: 3.7 }, { date: '2026-07-01', value: 3.75 }, { date: '2026-07-02', value: 3.76 }],
-  '2Y': [{ date: '2026-06-30', value: 4.1 }, { date: '2026-07-02', value: 4.14 }], // 缺 07-01
+  '3M': [
+    { date: '2026-06-30', value: 3.7 },
+    { date: '2026-07-01', value: 3.75 },
+    { date: '2026-07-02', value: 3.76 },
+  ],
+  '2Y': [
+    { date: '2026-06-30', value: 4.1 },
+    { date: '2026-07-02', value: 4.14 },
+  ], // 缺 07-01
   '10Y': [{ date: '2026-07-02', value: 4.49 }],
 };
 
@@ -19,7 +26,8 @@ describe('valueAt: 就近往前贴', () => {
 describe('curveForDate: 一条曲线', () => {
   const tenors = ['3M', '2Y', '10Y'];
   it('07-02 各期限齐全', () => expect(curveForDate(series, tenors, '2026-07-02')).toEqual([3.76, 4.14, 4.49]));
-  it('07-01 缺该日的期限往前贴或断开', () => expect(curveForDate(series, tenors, '2026-07-01')).toEqual([3.75, 4.1, null]));
+  it('07-01 缺该日的期限往前贴或断开', () =>
+    expect(curveForDate(series, tenors, '2026-07-01')).toEqual([3.75, 4.1, null]));
 });
 
 describe('unionDatesAsc', () => {

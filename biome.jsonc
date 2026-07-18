@@ -1,0 +1,33 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
+  // 复用 .gitignore;再显式排除 vendor(第三方二进制)/ data(数据库)/ dist(构建产物)
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": { "includes": ["**", "!!**/dist", "!!**/vendor", "!!**/data"] },
+  // 对齐项目现有风格:2 空格缩进、行宽 120(比默认 80 宽,少折密集行)
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 120 },
+  "javascript": {
+    "formatter": { "quoteStyle": "single", "semicolons": "always", "trailingCommas": "all" }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      // 单用户本地 dashboard,无无障碍需求(oxlint 之前也不管)→ 关掉整个 a11y 组
+      "a11y": { "recommended": false },
+      // 关掉与本项目刻意风格冲突的 style/suspicious 规则(non-null `!`、`as any`、字符串拼接)
+      "style": { "noNonNullAssertion": "off", "useTemplate": "off" },
+      // noArrayIndexKey:图表 SVG/表格的位置型元素(polyline 段、按 x 的圆点、按列 td),index 即天然稳定 key
+      "suspicious": { "noExplicitAny": "off", "noArrayIndexKey": "off" },
+      // React hooks 升 error(对齐之前 oxlint);只报"漏依赖",关掉"多余依赖"(Biome 会误报刻意的触发型依赖)
+      "correctness": {
+        "useHookAtTopLevel": "error",
+        "useExhaustiveDependencies": {
+          "level": "error",
+          "options": { "reportUnnecessaryDependencies": false }
+        }
+      }
+    }
+  },
+  // 先关自动整理 import,避免这次迁移 diff 过大;需要再开
+  "assist": { "enabled": true, "actions": { "source": { "organizeImports": "off" } } }
+}

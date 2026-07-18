@@ -143,7 +143,10 @@ export function defaultMoomooOptionsClient(): OptionsChainClient {
 
         // 对选中到期日的所有行权价(看涨 + 看跌)拉取 snapshot。
         const allStatic = [...best.calls, ...best.puts];
-        const snaps = await fetchSnapshots(ws, allStatic.map((c) => c.code));
+        const snaps = await fetchSnapshots(
+          ws,
+          allStatic.map((c) => c.code),
+        );
 
         const calls = best.calls
           .map((c) => toContract(c, snaps.get(c.code)))

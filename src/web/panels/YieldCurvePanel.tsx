@@ -9,12 +9,27 @@ type Row = { id: number; date: string; visible: boolean };
 
 // 视图说明(按 source):某几个时间点的曲线(横轴 = 期限)。
 const VIEW_DESC: Record<string, { title: string; desc: string }> = {
-  treasury: { title: '收益曲线', desc: '定义:某几个时间点的美债收益率曲线(横轴 = 期限)。\n看形状:陡峭 / 平坦 / 倒挂,及随时间的移动。' },
-  sofr_ois: { title: 'SOFR OIS', desc: '定义:SOFR OIS 曲线(Eris par OIS 固定利率,横轴 = 期限)。\n主要反映市场对未来隔夜利率(≈美联储路径)的预期,并含期限 / 流动性溢价。\n下弯 / 短端高于长端 = 降息定价占主导,非确定预测。' },
+  treasury: {
+    title: '收益曲线',
+    desc: '定义:某几个时间点的美债收益率曲线(横轴 = 期限)。\n看形状:陡峭 / 平坦 / 倒挂,及随时间的移动。',
+  },
+  sofr_ois: {
+    title: 'SOFR OIS',
+    desc: '定义:SOFR OIS 曲线(Eris par OIS 固定利率,横轴 = 期限)。\n主要反映市场对未来隔夜利率(≈美联储路径)的预期,并含期限 / 流动性溢价。\n下弯 / 短端高于长端 = 降息定价占主导,非确定预测。',
+  },
   jgb: { title: 'JGB 曲线', desc: '定义:日本国债收益率曲线。\n看 BOJ / YCC 对曲线形状的压制与松绑。' },
-  bei: { title: 'BEI 曲线', desc: '定义:盈亏平衡通胀率(BEI)曲线,= 名义 − TIPS 实际收益率。\n是市场通胀补偿(含通胀风险溢价 + 名义债/TIPS 流动性差异),可作预期代理但非纯预期。' },
-  credit_rating: { title: '评级利差', desc: '定义:不同信用评级债券相对美债的期权调整利差(OAS,横轴 = 评级)。\n评级越低 OAS 通常越宽 = 信用风险溢价的阶梯。' },
-  credit_term: { title: '信用期限', desc: '定义:同一投资级公司债指数、不同剩余期限分组的期权调整利差(OAS)。\n是信用利差自身的期限结构,不是收益率曲线。' },
+  bei: {
+    title: 'BEI 曲线',
+    desc: '定义:盈亏平衡通胀率(BEI)曲线,= 名义 − TIPS 实际收益率。\n是市场通胀补偿(含通胀风险溢价 + 名义债/TIPS 流动性差异),可作预期代理但非纯预期。',
+  },
+  credit_rating: {
+    title: '评级利差',
+    desc: '定义:不同信用评级债券相对美债的期权调整利差(OAS,横轴 = 评级)。\n评级越低 OAS 通常越宽 = 信用风险溢价的阶梯。',
+  },
+  credit_term: {
+    title: '信用期限',
+    desc: '定义:同一投资级公司债指数、不同剩余期限分组的期权调整利差(OAS)。\n是信用利差自身的期限结构,不是收益率曲线。',
+  },
 };
 
 export function YieldCurvePanel({ source }: { source: string }) {
@@ -30,14 +45,16 @@ export function YieldCurvePanel({ source }: { source: string }) {
     setSeeded(true);
   }
 
-  if (error) return <div className="flex h-full items-center justify-center text-red-400">加载失败:{error.message}</div>;
+  if (error)
+    return <div className="flex h-full items-center justify-center text-red-400">加载失败:{error.message}</div>;
   if (isLoading) return <div className="flex h-full items-center justify-center text-neutral-500">加载中…</div>;
   // 加载完但无任何期限数据(如 FRED key 缺 / 全部失败):显示降级结果而非一直"加载中"。
-  if (!maxDate) return (
-    <div className="flex h-full items-center justify-center text-amber-500">
-      暂无收益率数据{data.unavailable.length ? `(全部期限缺失:${data.unavailable.join(', ')})` : ''}
-    </div>
-  );
+  if (!maxDate)
+    return (
+      <div className="flex h-full items-center justify-center text-amber-500">
+        暂无收益率数据{data.unavailable.length ? `(全部期限缺失:${data.unavailable.join(', ')})` : ''}
+      </div>
+    );
 
   const setDate = (id: number, date: string) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, date } : r)));
   const toggle = (id: number) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, visible: !r.visible } : r)));
@@ -49,7 +66,11 @@ export function YieldCurvePanel({ source }: { source: string }) {
   const colorOf = (i: number) => SERIES_COLORS[i % SERIES_COLORS.length];
 
   // 每行算好值 + 颜色(按行序,与显隐无关,勾掉再勾回颜色不变);图只画勾选的。
-  const enriched = rows.map((r, i) => ({ row: r, color: colorOf(i), values: curveForDate(data.series, data.tenors, r.date) }));
+  const enriched = rows.map((r, i) => ({
+    row: r,
+    color: colorOf(i),
+    values: curveForDate(data.series, data.tenors, r.date),
+  }));
   const curves: Curve[] = enriched
     .filter((e) => e.row.visible)
     .map((e) => ({ date: e.row.date, label: labelOf(e.row.date), color: e.color, values: e.values }));
@@ -65,7 +86,9 @@ export function YieldCurvePanel({ source }: { source: string }) {
           <InfoTip text={view.desc} />
         </div>
       )}
-      {data.unavailable.length > 0 && <div className="text-xs text-amber-500">缺失期限:{data.unavailable.join(', ')}</div>}
+      {data.unavailable.length > 0 && (
+        <div className="text-xs text-amber-500">缺失期限:{data.unavailable.join(', ')}</div>
+      )}
 
       {/* 图 */}
       <div className="min-h-0 flex-1">
@@ -78,7 +101,11 @@ export function YieldCurvePanel({ source }: { source: string }) {
           <thead>
             <tr className="text-neutral-500">
               <th className="px-2 py-1 text-left font-normal">日期</th>
-              {data.tenors.map((t) => <th key={t} className="px-2 py-1 text-right font-normal">{t}</th>)}
+              {data.tenors.map((t) => (
+                <th key={t} className="px-2 py-1 text-right font-normal">
+                  {t}
+                </th>
+              ))}
               <th className="px-2 py-1" />
             </tr>
           </thead>
@@ -101,18 +128,26 @@ export function YieldCurvePanel({ source }: { source: string }) {
                   </div>
                 </td>
                 {values.map((v, i) => (
-                  <td key={i} className={`px-2 py-1 text-right ${row.visible ? 'text-neutral-300' : 'text-neutral-600'}`}>
+                  <td
+                    key={i}
+                    className={`px-2 py-1 text-right ${row.visible ? 'text-neutral-300' : 'text-neutral-600'}`}
+                  >
                     {v != null ? `${v.toFixed(3)}%` : '—'}
                   </td>
                 ))}
                 <td className="px-2 py-1 text-right">
-                  <button onClick={() => remove(row.id)} className="text-neutral-500 hover:text-red-400" title="删除">✕</button>
+                  <button onClick={() => remove(row.id)} className="text-neutral-500 hover:text-red-400" title="删除">
+                    ✕
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <button onClick={addRow} className="mt-2 rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800">
+        <button
+          onClick={addRow}
+          className="mt-2 rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800"
+        >
           + 添加时间点
         </button>
       </div>

@@ -17,7 +17,10 @@ export async function fetchBtcDailyBars(startMs: number, endMs: number): Promise
     const url = `${BASE}/get_tradingview_chart_data?instrument_name=BTC-PERPETUAL&start_timestamp=${from}&end_timestamp=${to}&resolution=1D`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Deribit BTC chart → HTTP ${res.status}`);
-    const j = (await res.json()) as { result?: { ticks?: number[]; open?: number[]; high?: number[]; low?: number[]; close?: number[] }; error?: unknown };
+    const j = (await res.json()) as {
+      result?: { ticks?: number[]; open?: number[]; high?: number[]; low?: number[]; close?: number[] };
+      error?: unknown;
+    };
     if (j.error) throw new Error(`Deribit BTC chart → ${JSON.stringify(j.error)}`);
     const r = j.result ?? {};
     const ticks = r.ticks ?? [];

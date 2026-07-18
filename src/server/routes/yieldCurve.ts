@@ -9,10 +9,17 @@ import { fetchJgbCurve } from '../fetchers/mofJgb';
 
 // 期限 → FRED 国债不变期限收益率 series id。数组顺序即曲线 x 轴顺序。
 const TENORS: [string, string][] = [
-  ['1M', 'DGS1MO'], ['3M', 'DGS3MO'], ['6M', 'DGS6MO'],
-  ['1Y', 'DGS1'], ['2Y', 'DGS2'], ['3Y', 'DGS3'],
-  ['5Y', 'DGS5'], ['7Y', 'DGS7'], ['10Y', 'DGS10'],
-  ['20Y', 'DGS20'], ['30Y', 'DGS30'],
+  ['1M', 'DGS1MO'],
+  ['3M', 'DGS3MO'],
+  ['6M', 'DGS6MO'],
+  ['1Y', 'DGS1'],
+  ['2Y', 'DGS2'],
+  ['3Y', 'DGS3'],
+  ['5Y', 'DGS5'],
+  ['7Y', 'DGS7'],
+  ['10Y', 'DGS10'],
+  ['20Y', 'DGS20'],
+  ['30Y', 'DGS30'],
 ];
 
 type CurveBody = { tenors: string[]; series: Record<string, Point[]>; unavailable: string[] };
@@ -30,7 +37,8 @@ async function buildFredCurve(pairs: { tenor: string; series: string }[]): Promi
   const unavailable: string[] = [];
   settled.forEach((s, i) => {
     const { tenor } = pairs[i];
-    if (s.status === 'fulfilled' && s.value.length) series[tenor] = s.value.map((r) => ({ date: r.obsDate, value: r.value }));
+    if (s.status === 'fulfilled' && s.value.length)
+      series[tenor] = s.value.map((r) => ({ date: r.obsDate, value: r.value }));
     else unavailable.push(tenor);
   });
 
@@ -42,8 +50,7 @@ async function buildFredCurve(pairs: { tenor: string; series: string }[]): Promi
  * 并行 + 优雅降级:单期限失败(FRED key 缺 / 序列 404)→ 归入 unavailable,其余照常返回。
  * 曲线的组装(取某日各期限值)在前端按需做,后端只回原始时间序列。前端 SWR 已做客户端缓存。
  */
-const buildTreasury = (): Promise<CurveBody> =>
-  buildFredCurve(TENORS.map(([tenor, series]) => ({ tenor, series })));
+const buildTreasury = (): Promise<CurveBody> => buildFredCurve(TENORS.map(([tenor, series]) => ({ tenor, series })));
 
 // 从 market_series 读一组 (label→symbol),按 xform 转值;缺行的 label 进 unavailable。
 function buildFromDb(pairs: { label: string; symbol: string }[], xform: (v: number) => number): CurveBody {
@@ -52,7 +59,9 @@ function buildFromDb(pairs: { label: string; symbol: string }[], xform: (v: numb
     // 一次查库,再声明式拆成 series(有数据)/ unavailable(缺数据)两组。
     const fetched = pairs.map((p) => ({ label: p.label, rows: getMarketSeries(db, p.symbol) }));
     const series = Object.fromEntries(
-      fetched.filter((f) => f.rows.length).map((f) => [f.label, f.rows.map((r) => ({ date: r.date, value: xform(r.value) }))]),
+      fetched
+        .filter((f) => f.rows.length)
+        .map((f) => [f.label, f.rows.map((r) => ({ date: r.date, value: xform(r.value) }))]),
     );
     const unavailable = fetched.filter((f) => !f.rows.length).map((f) => f.label);
     return { tenors: pairs.map((p) => p.label), series, unavailable };
@@ -66,7 +75,8 @@ function buildFromDb(pairs: { label: string; symbol: string }[], xform: (v: numb
 async function buildBei(): Promise<CurveBody> {
   const fred = createFredFetcher({ apiKey: process.env.FRED_API_KEY ?? '' });
   const leg = (id: string): Promise<Point[] | null> =>
-    fred.fetchSeries(id, HISTORY_START_DATE)
+    fred
+      .fetchSeries(id, HISTORY_START_DATE)
       .then((rows) => rows.map((r) => ({ date: r.obsDate, value: r.value })))
       .catch(() => null);
 
@@ -85,7 +95,10 @@ const buildJgb = async (): Promise<CurveBody> => {
 
 // Eris 的 FairCoupon 已是百分点 → 恒等 xform。
 const buildOis = (): CurveBody =>
-  buildFromDb(ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })), (v) => v);
+  buildFromDb(
+    ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })),
+    (v) => v,
+  );
 
 // source → 曲线构造器。await 对同步返回值也安全,新增曲线源只加一行。
 const BUILDERS: Record<string, () => CurveBody | Promise<CurveBody>> = {

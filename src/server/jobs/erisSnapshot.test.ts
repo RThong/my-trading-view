@@ -8,7 +8,13 @@ describe('updateErisSnapshot', () => {
   it('把 Eris 曲线按 ERIS_OIS_{tenor} 存进 market_series', async () => {
     const db = new Database(':memory:');
     migrate(db);
-    const curve = { date: '2026-07-02', points: [{ tenor: '3M', rate: 3.7194 }, { tenor: '10Y', rate: 4.0647 }] };
+    const curve = {
+      date: '2026-07-02',
+      points: [
+        { tenor: '3M', rate: 3.7194 },
+        { tenor: '10Y', rate: 4.0647 },
+      ],
+    };
     const { total } = await updateErisSnapshot(db, async () => curve);
     expect(total).toBe(2);
     const r = getMarketSeries(db, 'ERIS_OIS_3M');

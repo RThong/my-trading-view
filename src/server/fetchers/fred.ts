@@ -30,10 +30,10 @@ export function createFredFetcher(opts: FredOpts) {
         throw new Error(`FRED request failed for ${seriesId}: ${res.status} ${await res.text()}`);
       }
 
-      const body = await res.json() as { observations: Array<{ date: string; value: string }> };
+      const body = (await res.json()) as { observations: Array<{ date: string; value: string }> };
       return body.observations
-        .filter(o => o.value !== '.' && o.value !== '')
-        .map(o => ({
+        .filter((o) => o.value !== '.' && o.value !== '')
+        .map((o) => ({
           seriesId,
           obsDate: o.date,
           value: Number(o.value),

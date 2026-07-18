@@ -14,7 +14,12 @@ export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Inter
 
   const { data, error, isLoading } = useRegimeData();
   const specs = buildRegimeSpecs(data, dim, interval);
-  const { order, collapsed, move, toggle, cells, hovering, tops } = usePaneChartStack(containerRef, paneDefs, paneCount, specs);
+  const { order, collapsed, move, toggle, cells, hovering, tops } = usePaneChartStack(
+    containerRef,
+    paneDefs,
+    paneCount,
+    specs,
+  );
 
   // 本维度里在 unavailable 中的序列 → 右上角提示。
   const missing = paneDefs.map((d) => d.series[0]).filter((k) => data.unavailable.includes(k));
@@ -23,10 +28,23 @@ export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Inter
 
   return (
     <PaneChartView
-      containerRef={containerRef} paneDefs={paneDefs} paneCount={paneCount}
-      order={order} collapsed={collapsed} move={move} toggle={toggle}
-      cells={cells} hovering={hovering} tops={tops}
-      seriesName={cfg.seriesName} colors={cfg.colors} isLoading={isLoading} error={error} note={note} badges={badges} desc={cfg.desc}
+      containerRef={containerRef}
+      paneDefs={paneDefs}
+      paneCount={paneCount}
+      order={order}
+      collapsed={collapsed}
+      move={move}
+      toggle={toggle}
+      cells={cells}
+      hovering={hovering}
+      tops={tops}
+      seriesName={cfg.seriesName}
+      colors={cfg.colors}
+      isLoading={isLoading}
+      error={error}
+      note={note}
+      badges={badges}
+      desc={cfg.desc}
     />
   );
 }

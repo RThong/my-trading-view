@@ -6,7 +6,8 @@ export type Regime = 'defense' | 'offense' | 'neutral';
  *  腿方向 = 走向该腿终点:结束于峰=上行(defense)、结束于谷=下行(offense);首拐点前同理。
  *  末腿(最后拐点之后)未确认 → pending。无拐点 → 全 neutral。 */
 export function zigzagRegimes(
-  series: { date: string; value: number }[], pct: number,
+  series: { date: string; value: number }[],
+  pct: number,
 ): { date: string; regime: Regime; pending: boolean }[] {
   const n = series.length;
   if (n === 0) return [];
@@ -14,13 +15,21 @@ export function zigzagRegimes(
   type Pivot = { idx: number; kind: 'peak' | 'trough' };
   const pivots: Pivot[] = [];
   let dir: 0 | 1 | -1 = 0; // 0 未定, 1 上行腿, -1 下行腿
-  let hiIdx = 0, hiVal = series[0].value;
-  let loIdx = 0, loVal = series[0].value;
+  let hiIdx = 0,
+    hiVal = series[0].value;
+  let loIdx = 0,
+    loVal = series[0].value;
 
   for (let i = 1; i < n; i++) {
     const v = series[i].value;
-    if (v > hiVal) { hiVal = v; hiIdx = i; }
-    if (v < loVal) { loVal = v; loIdx = i; }
+    if (v > hiVal) {
+      hiVal = v;
+      hiIdx = i;
+    }
+    if (v < loVal) {
+      loVal = v;
+      loIdx = i;
+    }
 
     const isPeakConfirm = dir >= 0 && v <= hiVal * (1 - pct);
     const isTroughConfirm = dir <= 0 && v >= loVal * (1 + pct);
@@ -29,19 +38,27 @@ export function zigzagRegimes(
     if (dir === 0) {
       if (hiIdx > loIdx && isPeakConfirm) {
         pivots.push({ idx: hiIdx, kind: 'peak' });
-        dir = -1; loVal = v; loIdx = i;
+        dir = -1;
+        loVal = v;
+        loIdx = i;
       } else if (loIdx > hiIdx && isTroughConfirm) {
         pivots.push({ idx: loIdx, kind: 'trough' });
-        dir = 1; hiVal = v; hiIdx = i;
+        dir = 1;
+        hiVal = v;
+        hiIdx = i;
       }
     } else if (isPeakConfirm) {
       // 从波峰回落 pct → 确认峰(吸附到 hiIdx),转下行,重置波谷跟踪
       pivots.push({ idx: hiIdx, kind: 'peak' });
-      dir = -1; loVal = v; loIdx = i;
+      dir = -1;
+      loVal = v;
+      loIdx = i;
     } else if (isTroughConfirm) {
       // 从波谷反弹 pct → 确认谷(吸附到 loIdx),转上行,重置波峰跟踪
       pivots.push({ idx: loIdx, kind: 'trough' });
-      dir = 1; hiVal = v; hiIdx = i;
+      dir = 1;
+      hiVal = v;
+      hiIdx = i;
     }
   }
 

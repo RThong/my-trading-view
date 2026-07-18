@@ -5,9 +5,9 @@ type Tone = 'green' | 'yellow' | 'red' | 'gray';
 
 function overallTone(jobs: JobStatus[]): Tone {
   if (jobs.length === 0) return 'gray';
-  if (jobs.some(j => j.status === 'failed')) return 'red';
-  if (jobs.some(j => j.status === 'partial')) return 'yellow';
-  if (jobs.every(j => j.status === 'success')) return 'green';
+  if (jobs.some((j) => j.status === 'failed')) return 'red';
+  if (jobs.some((j) => j.status === 'partial')) return 'yellow';
+  if (jobs.every((j) => j.status === 'success')) return 'green';
   return 'gray';
 }
 
@@ -23,16 +23,20 @@ export function StatusLight() {
 
   useEffect(() => {
     // 低频轮询:dashboard 开着一整天,cron 跑完后状态灯能自动转绿,不必手动刷页面。
-    const load = () => fetch('/api/health').then(r => r.json() as Promise<HealthResponse>).then(data => setJobs(data.jobs));
+    const load = () =>
+      fetch('/api/health')
+        .then((r) => r.json() as Promise<HealthResponse>)
+        .then((data) => setJobs(data.jobs));
     load();
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
   }, []);
 
   const tone = overallTone(jobs);
-  const title = jobs.length === 0
-    ? 'No job runs recorded'
-    : jobs.map(j => `${j.name}: ${j.status}${j.error ? ` (${j.error})` : ''}`).join(' | ');
+  const title =
+    jobs.length === 0
+      ? 'No job runs recorded'
+      : jobs.map((j) => `${j.name}: ${j.status}${j.error ? ` (${j.error})` : ''}`).join(' | ');
 
   return (
     <span

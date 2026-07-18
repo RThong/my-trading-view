@@ -26,8 +26,7 @@ describe('parseSettleCsv', () => {
 
   test('handles CRLF line endings', () => {
     const csv =
-      'Trade Date,Futures,Open,High,Low,Close,Settle,Change\r\n' +
-      '2026-01-16,F (Jan 2026),0,0,0,0,16.6389,0\r\n';
+      'Trade Date,Futures,Open,High,Low,Close,Settle,Change\r\n' + '2026-01-16,F (Jan 2026),0,0,0,0,16.6389,0\r\n';
     expect(parseSettleCsv(csv)).toHaveLength(1);
   });
 
@@ -39,24 +38,27 @@ describe('parseSettleCsv', () => {
 
 describe('computeNthMonth n=1(近月,roll + 排序)', () => {
   test('picks contract with earliest expire_date strictly after trade_date', () => {
-    const series = computeNthMonth([
-      {
-        expireDate: '2026-02-18', // G6 —— 1 月的远月合约
-        rows: [
-          { tradeDate: '2026-01-15', settle: 18.0 },
-          { tradeDate: '2026-01-16', settle: 18.5 },
-          { tradeDate: '2026-01-21', settle: 19.0 }, // F6 到期后,G6 成为近月
-        ],
-      },
-      {
-        expireDate: '2026-01-21', // F6 —— 仍在交易时是近月合约
-        rows: [
-          { tradeDate: '2026-01-15', settle: 17.5 },
-          { tradeDate: '2026-01-16', settle: 17.8 },
-          { tradeDate: '2026-01-21', settle: 18.2 }, // 最后一天,但 expireDate == tradeDate 故被跳过
-        ],
-      },
-    ], 1);
+    const series = computeNthMonth(
+      [
+        {
+          expireDate: '2026-02-18', // G6 —— 1 月的远月合约
+          rows: [
+            { tradeDate: '2026-01-15', settle: 18.0 },
+            { tradeDate: '2026-01-16', settle: 18.5 },
+            { tradeDate: '2026-01-21', settle: 19.0 }, // F6 到期后,G6 成为近月
+          ],
+        },
+        {
+          expireDate: '2026-01-21', // F6 —— 仍在交易时是近月合约
+          rows: [
+            { tradeDate: '2026-01-15', settle: 17.5 },
+            { tradeDate: '2026-01-16', settle: 17.8 },
+            { tradeDate: '2026-01-21', settle: 18.2 }, // 最后一天,但 expireDate == tradeDate 故被跳过
+          ],
+        },
+      ],
+      1,
+    );
     const byDate = Object.fromEntries(series.map((s) => [s.tradeDate, s.settle]));
     // 1/15 和 1/16 时,F6(1/21 到期)是近月;到了 1/21,F6 被排除,改由 G6 接替。
     expect(byDate['2026-01-15']).toBe(17.5);
@@ -65,21 +67,20 @@ describe('computeNthMonth n=1(近月,roll + 排序)', () => {
   });
 
   test('result is sorted ascending by trade date', () => {
-    const series = computeNthMonth([
-      {
-        expireDate: '2026-03-18',
-        rows: [
-          { tradeDate: '2026-02-05', settle: 20 },
-          { tradeDate: '2026-01-20', settle: 19 },
-          { tradeDate: '2026-02-20', settle: 21 },
-        ],
-      },
-    ], 1);
-    expect(series.map((s) => s.tradeDate)).toEqual([
-      '2026-01-20',
-      '2026-02-05',
-      '2026-02-20',
-    ]);
+    const series = computeNthMonth(
+      [
+        {
+          expireDate: '2026-03-18',
+          rows: [
+            { tradeDate: '2026-02-05', settle: 20 },
+            { tradeDate: '2026-01-20', settle: 19 },
+            { tradeDate: '2026-02-20', settle: 21 },
+          ],
+        },
+      ],
+      1,
+    );
+    expect(series.map((s) => s.tradeDate)).toEqual(['2026-01-20', '2026-02-05', '2026-02-20']);
   });
 });
 
@@ -169,9 +170,9 @@ describe('fetchVxTermStructure', () => {
     // 不剔除会污染"第 N 近"排序:VX3 会误取到周度(=18)而非真正的第三月(=20)。
     const withWeeklies: CboeVxClient = {
       fetchContractList: async () => [
-        { symbol: 'VX+VXT/N6', expireDate: '2025-07-22', csvUrl: 'm1' },   // 月度近月
-        { symbol: 'VX+VXT/Q6', expireDate: '2025-08-19', csvUrl: 'm2' },   // 月度次月
-        { symbol: 'VX+VXT/U6', expireDate: '2025-09-16', csvUrl: 'm3' },   // 月度三月
+        { symbol: 'VX+VXT/N6', expireDate: '2025-07-22', csvUrl: 'm1' }, // 月度近月
+        { symbol: 'VX+VXT/Q6', expireDate: '2025-08-19', csvUrl: 'm2' }, // 月度次月
+        { symbol: 'VX+VXT/U6', expireDate: '2025-09-16', csvUrl: 'm3' }, // 月度三月
         { symbol: 'VX+VXT26/N6', expireDate: '2025-07-01', csvUrl: 'w1' }, // 周度
         { symbol: 'VX+VXT27/N6', expireDate: '2025-07-08', csvUrl: 'w2' }, // 周度
       ],

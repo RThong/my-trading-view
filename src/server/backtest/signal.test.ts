@@ -2,7 +2,13 @@ import { test, expect } from 'bun:test';
 import { computeStates, type SpreadPoint, type SignalConfig } from './signal';
 
 const cfg = (over: Partial<SignalConfig> = {}): SignalConfig => ({
-  warmup: 3, panicEntry: 'C', panicEnterRank: 85, panicExitRank: 50, greedEnterRank: 10, greedExitRank: 30, ...over,
+  warmup: 3,
+  panicEntry: 'C',
+  panicEnterRank: 85,
+  panicExitRank: 50,
+  greedEnterRank: 10,
+  greedExitRank: 30,
+  ...over,
 });
 
 const mkSpread = (vals: number[]): SpreadPoint[] =>
@@ -29,8 +35,8 @@ test('入场变体 A(仅 backwardation)vs B(仅 rank)不同', () => {
   const vals = [15, 12, 10, -1, -2, -1, 0.5];
   const a = computeStates(mkSpread(vals), cfg({ warmup: 3, panicEntry: 'A' }));
   const b = computeStates(mkSpread(vals), cfg({ warmup: 3, panicEntry: 'B' }));
-  expect(a[6].panic).toBe(true);   // A:0.5>0 backwardation → 入场
-  expect(b[6].panic).toBe(false);  // B:rank≈50 < 85 → 不入场
+  expect(a[6].panic).toBe(true); // A:0.5>0 backwardation → 入场
+  expect(b[6].panic).toBe(false); // B:rank≈50 < 85 → 不入场
 });
 
 test('互斥:变体 A 下 backwardation + 低 rank 也不会同日 panic&greed', () => {
@@ -38,8 +44,8 @@ test('互斥:变体 A 下 backwardation + 低 rank 也不会同日 panic&greed',
   const vals = [...Array.from({ length: 20 }, (_, i) => 100 - i), -5, 0.5];
   const s = computeStates(mkSpread(vals), cfg({ warmup: 3, panicEntry: 'A' }));
   expect(s.every((d) => !(d.panic && d.greed))).toBe(true); // 全程不同时为真
-  expect(s[s.length - 1].panic).toBe(true);                  // 末天 backwardation → panic 优先
-  expect(s[s.length - 1].greed).toBe(false);                 // greed 被压掉
+  expect(s[s.length - 1].panic).toBe(true); // 末天 backwardation → panic 优先
+  expect(s[s.length - 1].greed).toBe(false); // greed 被压掉
 });
 
 test('滞后:恐慌进入后在 exit 阈值以上保持,不抽搐', () => {

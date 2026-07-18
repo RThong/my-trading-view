@@ -23,8 +23,17 @@ describe('rateCurves 纯转换', () => {
 describe('computeBeiCurve(BEI = 名义 − TIPS 实际)', () => {
   it('各档按日对齐相减,tenors 保序', () => {
     const { tenors, series, unavailable } = computeBeiCurve([
-      { tenor: '5Y', nominal: [{ date: '2018-01-02', value: 4.0 }, { date: '2018-01-03', value: 4.1 }],
-                     real:    [{ date: '2018-01-02', value: 2.0 }, { date: '2018-01-03', value: 2.1 }] },
+      {
+        tenor: '5Y',
+        nominal: [
+          { date: '2018-01-02', value: 4.0 },
+          { date: '2018-01-03', value: 4.1 },
+        ],
+        real: [
+          { date: '2018-01-02', value: 2.0 },
+          { date: '2018-01-03', value: 2.1 },
+        ],
+      },
     ]);
     expect(tenors).toEqual(['5Y']);
     expect(unavailable).toEqual([]);

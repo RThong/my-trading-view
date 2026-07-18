@@ -1,7 +1,11 @@
 // CFTC 持仓(COT):日元期货非商业净持仓(拥挤度/carry 平仓领先信号)。官方 Socrata,免费,周频。
 import { fetchWithTimeout } from './http';
 
-type CotRow = { report_date_as_yyyy_mm_dd?: string; noncomm_positions_long_all?: string; noncomm_positions_short_all?: string };
+type CotRow = {
+  report_date_as_yyyy_mm_dd?: string;
+  noncomm_positions_long_all?: string;
+  noncomm_positions_short_all?: string;
+};
 
 /** Socrata 行 → {date(ISO), net=多−空},升序。 */
 export function cotToNet(rows: CotRow[]): { date: string; value: number }[] {
@@ -20,10 +24,10 @@ const JPY_CODE = '097741'; // JAPANESE YEN - CME
 export async function fetchCftcJpyNet(since = '2018-01-01'): Promise<{ date: string; value: number }[]> {
   const params = new URLSearchParams({
     cftc_contract_market_code: JPY_CODE,
-    '$select': 'report_date_as_yyyy_mm_dd,noncomm_positions_long_all,noncomm_positions_short_all',
-    '$where': `report_date_as_yyyy_mm_dd >= '${since}'`,
-    '$order': 'report_date_as_yyyy_mm_dd ASC',
-    '$limit': '5000',
+    $select: 'report_date_as_yyyy_mm_dd,noncomm_positions_long_all,noncomm_positions_short_all',
+    $where: `report_date_as_yyyy_mm_dd >= '${since}'`,
+    $order: 'report_date_as_yyyy_mm_dd ASC',
+    $limit: '5000',
   });
   const rows = (await fetchWithTimeout(`${CFTC_URL}?${params}`).then((r) => r.json())) as CotRow[];
   return cotToNet(rows);

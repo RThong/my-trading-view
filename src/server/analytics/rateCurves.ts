@@ -3,8 +3,30 @@ import { subtractAligned, type Point } from './regime';
 
 // Eris ParCouponCurve 的 24 档期限(顺序即曲线 x 轴)。存库 series_id = ERIS_OIS_{tenor}。
 export const ERIS_OIS_TENORS: string[] = [
-  '1D', '1W', '1M', '3M', '6M', '9M', '12M', '18M', '2Y', '3Y', '4Y', '5Y',
-  '6Y', '7Y', '8Y', '9Y', '10Y', '12Y', '15Y', '20Y', '25Y', '30Y', '40Y', '50Y',
+  '1D',
+  '1W',
+  '1M',
+  '3M',
+  '6M',
+  '9M',
+  '12M',
+  '18M',
+  '2Y',
+  '3Y',
+  '4Y',
+  '5Y',
+  '6Y',
+  '7Y',
+  '8Y',
+  '9Y',
+  '10Y',
+  '12Y',
+  '15Y',
+  '20Y',
+  '25Y',
+  '30Y',
+  '40Y',
+  '50Y',
 ];
 
 // 信用利差曲线(FRED ICE BofA OAS,读时现拉,值已是百分点)。
@@ -40,9 +62,11 @@ export const BEI_TENORS: { tenor: string; nominal: string; real: string }[] = [
 
 // 各档 BEI = 名义 − TIPS 实际(subtractAligned 按日前向填充对齐)。
 // 某腿缺(null/空)或相减后无重叠日 → 该档进 unavailable,不入 series。I/O(拉 FRED)在调用方。
-export function computeBeiCurve(
-  legs: { tenor: string; nominal: Point[] | null; real: Point[] | null }[],
-): { tenors: string[]; series: Record<string, Point[]>; unavailable: string[] } {
+export function computeBeiCurve(legs: { tenor: string; nominal: Point[] | null; real: Point[] | null }[]): {
+  tenors: string[];
+  series: Record<string, Point[]>;
+  unavailable: string[];
+} {
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
 

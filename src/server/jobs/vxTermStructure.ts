@@ -18,7 +18,10 @@ export async function updateVxTermStructure(db: Database): Promise<{ total: numb
   const { vx1, vx3 } = await fetchVxTermStructure({ freshSince });
 
   const write = (rows: QuoteRow[], id: string): number => {
-    insertMarketSeries(db, rows.map((r) => ({ seriesId: id, obsDate: r.tradeDate, value: r.close })));
+    insertMarketSeries(
+      db,
+      rows.map((r) => ({ seriesId: id, obsDate: r.tradeDate, value: r.close })),
+    );
     return rows.length;
   };
   const total = write(vx1, 'VX1') + write(vx3, 'VX3');

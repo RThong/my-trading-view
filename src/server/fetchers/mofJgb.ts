@@ -4,7 +4,8 @@ import { fetchWithTimeout } from './http';
 export type JgbCurve = { tenors: string[]; series: Record<string, { date: string; value: number }[]> };
 
 const MOF_BASE = 'https://www.mof.go.jp/english/policy/jgbs/reference/interest_rate';
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
+const UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
 
 // YYYY/M/D → YYYY-MM-DD(个位补零);非法返回 null。
 function toIso(d: string | undefined): string | null {
@@ -14,11 +15,17 @@ function toIso(d: string | undefined): string | null {
 
 /** 解析 MOF CSV 文本 → tenor→序列。两行表头;缺值 '-' 跳过;since 过滤;去 BOM。 */
 export function parseMofJgbCsv(text: string, since: string): JgbCurve {
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim());
+  const lines = text
+    .replace(/^﻿/, '')
+    .split(/\r?\n/)
+    .filter((l) => l.trim());
   const headerIdx = lines.findIndex((l) => l.startsWith('Date,'));
   if (headerIdx < 0) return { tenors: [], series: {} };
 
-  const tenors = lines[headerIdx].split(',').slice(1).map((s) => s.trim());
+  const tenors = lines[headerIdx]
+    .split(',')
+    .slice(1)
+    .map((s) => s.trim());
   const series: Record<string, { date: string; value: number }[]> = {};
   for (const t of tenors) series[t] = [];
 

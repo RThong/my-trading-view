@@ -7,8 +7,7 @@ describe('hslToHex', () => {
 });
 
 describe('buildSeriesColors', () => {
-  it('确定性:连调两次完全一致(= 刷新不变色的保证)', () =>
-    expect(buildSeriesColors(24)).toEqual(buildSeriesColors(24)));
+  it('确定性:连调两次完全一致(= 刷新不变色的保证)', () => expect(buildSeriesColors(24)).toEqual(buildSeriesColors(24)));
 
   it('长度 = n,每项是合法 hex', () => {
     const c = buildSeriesColors(24);

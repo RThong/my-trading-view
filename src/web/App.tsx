@@ -31,7 +31,8 @@ type Perspective = {
 
 // 宏观 regime 视角:每个维度一个竖视角,单视图(无横 tab)。
 const regimePersp = (id: RegimeDim, label: string): Perspective => ({
-  id, label,
+  id,
+  label,
   tabs: [{ id, label }],
   render: (_tabId, interval) => <RegimeChart dim={id} interval={interval} />,
 });
@@ -49,15 +50,20 @@ const PERSPECTIVES: Perspective[] = [
   regimePersp('credit', '信用'),
   regimePersp('liquidity', '流动性'),
   {
-    id: 'sentiment', label: '情绪',
-    tabs: [{ id: 'vol', label: '波动率' }, { id: 'sentiment', label: '情绪' }],
+    id: 'sentiment',
+    label: '情绪',
+    tabs: [
+      { id: 'vol', label: '波动率' },
+      { id: 'sentiment', label: '情绪' },
+    ],
     render: (tabId, interval) => <RegimeChart dim={tabId as RegimeDim} interval={interval} />,
   },
   regimePersp('macro', '宏观'),
   regimePersp('oil', '能源'), // Brent−WTI + 柴油裂解:油市结构 / 物理紧张
 
   {
-    id: 'rates', label: '利率',
+    id: 'rates',
+    label: '利率',
     tabs: [
       { id: 'treasury', label: '收益曲线' },
       { id: 'tenor_history', label: '期限走势' },
@@ -76,7 +82,8 @@ const PERSPECTIVES: Perspective[] = [
     },
   },
   {
-    id: 'japan', label: '日本',
+    id: 'japan',
+    label: '日本',
     tabs: [
       { id: 'jpy', label: '日元' },
       { id: 'jgb_curve', label: '收益曲线' },
@@ -92,7 +99,8 @@ const PERSPECTIVES: Perspective[] = [
     },
   },
   {
-    id: 'creditCurve', label: '信用曲线',
+    id: 'creditCurve',
+    label: '信用曲线',
     tabs: [
       { id: 'credit_rating', label: '评级利差' },
       { id: 'credit_term', label: '期限结构' },
@@ -100,7 +108,8 @@ const PERSPECTIVES: Perspective[] = [
     render: (tabId) => <YieldCurvePanel source={tabId} />,
   },
   {
-    id: 'inflation', label: '通胀',
+    id: 'inflation',
+    label: '通胀',
     tabs: [
       { id: 'bei', label: '通胀预期' },
       { id: 'bei_history', label: '通胀走势' },
@@ -115,7 +124,8 @@ const PERSPECTIVES: Perspective[] = [
   },
   regimePersp('valuation', '估值'),
   {
-    id: 'featured', label: '特色指标',
+    id: 'featured',
+    label: '特色指标',
     tabs: [{ id: 'attack_defense', label: '攻防' }],
     render: () => <AttackDefensePanel />,
   },
@@ -165,7 +175,7 @@ export function App() {
                         {p.render(t.id, interval)}
                       </div>
                     );
-                  })
+                  }),
               )}
             </div>
           </main>

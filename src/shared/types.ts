@@ -11,7 +11,7 @@ export type HealthResponse = {
 };
 
 export type OptionIVPoint = {
-  date: string;        // 格式 'YYYY-MM-DD'
+  date: string; // 格式 'YYYY-MM-DD'
   callIv: number;
   putIv: number;
   skew: number;
