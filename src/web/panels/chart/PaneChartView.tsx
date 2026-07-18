@@ -1,5 +1,5 @@
 import type { LegendCell, PaneDef } from './paneChart.types';
-import { InfoTip } from '../components/InfoTip';
+import { InfoTip } from '../../components/InfoTip';
 
 // 多 pane 堆叠图的通用展示壳:pane 工具条(↑↓ 换位 / ▾ 折叠)+ 竖线图例 + 容器 + loading/error。
 // 与数据源无关——期权(AssetChart)与宏观(RegimeChart)共用,靠 props 注入 paneDefs/图例/命名/配色。

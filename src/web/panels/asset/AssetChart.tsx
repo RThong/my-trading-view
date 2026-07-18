@@ -1,8 +1,8 @@
 import { useRef } from 'react';
-import type { Interval } from '../hooks/interval';
+import type { Interval } from '../../hooks/interval';
 import { COLORS, buildSpecs, paneConfig, useAssetData } from './assetChart.hooks';
-import { usePaneChartStack } from './paneChart.hooks';
-import { PaneChartView } from './PaneChartView';
+import { usePaneChartStack } from '../chart/paneChart.hooks';
+import { PaneChartView } from '../chart/PaneChartView';
 
 // 一个资产的指标放进同一个 chart 的多个 pane(共享时间轴),顶部恒为现货蜡烛:
 //   pane0 现货(OHLC)· pane1 25Δ call/put IV · pane2 skew · [pane3 隐含vs已实现RV · pane4 VRP]

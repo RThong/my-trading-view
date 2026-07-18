@@ -2,10 +2,10 @@
 // 前提:每个 AssetChart 实例与一个标的绑定一辈子(App 用 keep-alive 渲染,
 // 切 tab 不卸载),所以这里所有 effect 都是「挂载建/卸载销」,不再按标的 reset。
 import useSWR from 'swr';
-import type { Interval } from '../hooks/interval';
-import { aggregate, aggregateBars, type LinePoint, type Bar } from '../lib/chart';
-import { ivIndexByUnderlying } from '../../shared/marketCatalog';
-import type { PaneDef, Spec, LineSpec } from './paneChart.types';
+import type { Interval } from '../../hooks/interval';
+import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../lib/chart';
+import { ivIndexByUnderlying } from '../../../shared/marketCatalog';
+import type { PaneDef, Spec, LineSpec } from '../chart/paneChart.types';
 
 export type OptRow = { date: string; callIv: number; putIv: number; skew: number };
 export type VrpRow = { date: string; iv: number; rv: number; vrp: number };

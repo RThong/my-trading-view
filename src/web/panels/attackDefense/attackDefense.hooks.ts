@@ -1,8 +1,8 @@
 // 攻防指标数据层:NOBL/QQQ 比值 + ZigZag 攻防 regime 分区 + specs 构造。纯逻辑,便于单测。
 import useSWR from 'swr';
-import { zigzagRegimes, type Regime } from '../lib/zigzag';
-import type { Spec } from './paneChart.types';
-import type { PriceBar } from './assetChart.hooks';
+import { zigzagRegimes, type Regime } from '../../lib/zigzag';
+import type { Spec } from '../chart/paneChart.types';
+import type { PriceBar } from '../asset/assetChart.hooks';
 
 export const SWING_PCT = 0.2; // 攻防 ZigZag 反转阈值:摆动 ≥20% 才算一次大级别攻防切换
 

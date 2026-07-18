@@ -2,9 +2,9 @@
 // 攻防:上 QQQ 蜡烛、下 NOBL/QQQ 比值 + 绿(防守)/红(进攻)背景区。恒日频,不吃全局 interval。
 // 薄壳:取 model(useAttackDefenseData)→ 纯 buildSpecs → 通用 pane 壳。
 import { useRef } from 'react';
-import { usePaneChartStack } from './paneChart.hooks';
-import type { PaneDef } from './paneChart.types';
-import { PaneChartView } from './PaneChartView';
+import { usePaneChartStack } from '../chart/paneChart.hooks';
+import type { PaneDef } from '../chart/paneChart.types';
+import { PaneChartView } from '../chart/PaneChartView';
 import { useAttackDefenseData, buildAttackDefenseSpecs, RATIO_COLOR } from './attackDefense.hooks';
 
 const PANE_DEFS: PaneDef[] = [

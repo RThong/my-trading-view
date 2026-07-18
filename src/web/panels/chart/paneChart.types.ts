@@ -1,7 +1,7 @@
 // 通用多 pane 图表栈的类型(与数据源无关)。原在 assetChart.hooks.ts,因被
 // AssetChart / RegimeChart / AttackDefensePanel 三方复用,抽到中立模块,校正依赖方向。
 import type { ISeriesApi } from 'lightweight-charts';
-import type { LinePoint, Bar } from '../lib/chart';
+import type { LinePoint, Bar } from '../../lib/chart';
 
 export type PaneDef = { key: string; label: string; series: string[] };
 export type LineSpec = {

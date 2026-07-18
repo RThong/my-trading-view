@@ -1,6 +1,6 @@
 import { useRef } from 'react';
-import type { Interval } from '../hooks/interval';
-import { usePaneChartStack } from './paneChart.hooks';
+import type { Interval } from '../../hooks/interval';
+import { usePaneChartStack } from '../chart/paneChart.hooks';
 import {
   useRegimeData,
   buildRegimeSpecs,
@@ -9,7 +9,7 @@ import {
   REGIME_DIMS,
   type RegimeDim,
 } from './regimeChart.hooks';
-import { PaneChartView } from './PaneChartView';
+import { PaneChartView } from '../chart/PaneChartView';
 
 // 一个 regime 维度(信用/流动性/情绪)的多 pane 堆叠图。薄壳:取数 → build specs → 三个通用 hook → 展示壳。
 // 实例与维度绑定一辈子(App keep-alive),故 panes 取模块常量即引用稳定。

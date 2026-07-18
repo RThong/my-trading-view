@@ -1,7 +1,7 @@
 // src/web/panels/TenorHistoryPanel.tsx
 import { useRef, useState } from 'react';
 import { useYieldCurve } from './yieldCurve.hooks';
-import { SERIES_COLORS } from '../lib/palette';
+import { SERIES_COLORS } from '../../lib/palette';
 import {
   tenorSeriesData,
   pickDefaultTenors,
@@ -10,9 +10,9 @@ import {
   type SpreadSpec,
 } from './tenorHistory.hooks';
 import { spreadSeries } from './rateSpread.hooks';
-import { aggregate } from '../lib/chart';
-import { InfoTip } from '../components/InfoTip';
-import type { Interval } from '../hooks/interval';
+import { aggregate } from '../../lib/chart';
+import { InfoTip } from '../../components/InfoTip';
+import type { Interval } from '../../hooks/interval';
 
 // 视图说明(按 source):同一曲线换时间横轴看各期限走势 + 利差。
 const VIEW_DESC: Record<string, { title: string; desc: string }> = {

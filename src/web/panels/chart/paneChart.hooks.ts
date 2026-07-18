@@ -2,8 +2,8 @@
 // 与数据源无关——AssetChart / RegimeChart / AttackDefensePanel 三方复用,故从 assetChart.hooks 抽出。
 import { useEffect, useRef, useState } from 'react';
 import { createChart, LineSeries, CandlestickSeries, HistogramSeries, type IChartApi } from 'lightweight-charts';
-import { useStable } from '../hooks/useStable';
-import { CHART_OPTIONS, changeStats } from '../lib/chart';
+import { useStable } from '../../hooks/useStable';
+import { CHART_OPTIONS, changeStats } from '../../lib/chart';
 import type { PaneDef, Spec, LegendCell, AnySeries } from './paneChart.types';
 
 // 按 kind 建对应 series,并挂上各自的参考线/背景带。
