@@ -1,7 +1,9 @@
 // src/web/panels/AttackDefensePanel.tsx
 import { useRef } from 'react';
 import useSWR from 'swr';
-import { usePaneChartStack, type Spec, type PaneDef, type PriceBar } from './assetChart.hooks';
+import { usePaneChartStack } from './paneChart.hooks';
+import type { Spec, PaneDef } from './paneChart.types';
+import type { PriceBar } from './assetChart.hooks';
 import { PaneChartView } from './PaneChartView';
 import { ratioSeries, SWING_PCT } from './attackDefense.hooks';
 import { zigzagRegimes, type Regime } from '../lib/zigzag';

@@ -4,7 +4,7 @@ import useSWR from 'swr';
 import { aggregate, aggregateBars, type LinePoint, type Bar } from '../lib/chart';
 import { percentile, percentileRank } from '../../shared/stats';
 import type { Interval } from '../hooks/interval';
-import type { PaneDef, LineSpec, HistoSpec, HistoPoint, CandleSpec, Spec } from './assetChart.hooks';
+import type { PaneDef, LineSpec, HistoSpec, HistoPoint, CandleSpec, Spec } from './paneChart.types';
 
 // 分位带阈值(自身历史):想改 5/95 更严就动这里。
 const PCTL_LO = 5;

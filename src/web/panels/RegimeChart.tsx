@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import type { Interval } from '../hooks/interval';
-import { usePaneChartStack } from './assetChart.hooks';
+import { usePaneChartStack } from './paneChart.hooks';
 import { useRegimeData, buildRegimeSpecs, regimePercentiles, REGIME_DIMS, type RegimeDim } from './regimeChart.hooks';
 import { PaneChartView } from './PaneChartView';
 
