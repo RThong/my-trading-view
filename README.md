@@ -6,27 +6,30 @@ A personal, local-only markets dashboard, organized as **vertical perspectives**
 - **期权 (Options)** — daily 25Δ IV + skew snapshot of SPY / QQQ / VIX / TLT / GLD / USO
   (via moomoo OpenD) and BTC (via Deribit), stored in SQLite. Underlyings with a free
   volatility index (SPY/QQQ/GLD/USO/BTC) also get implied-vs-realized + VRP panes.
-- **信用 / 流动性 / 情绪 (Credit / Liquidity / Sentiment)** — macro *regime* indicators
-  pulled on demand from FRED / CBOE / CNN (see below). The sentiment view adds trailing
-  P5/P95 percentile bands, a current-percentile badge, and red/green background shading of
-  extreme periods.
+- **Regime perspectives** — macro/market *regime* indicators pulled on demand from
+  FRED / CBOE / CNN / Yahoo / Eris / MOF+JPX / CFTC / Shiller: **信用 · 流动性 · 情绪 ·
+  宏观 · 能源 · 利率 · 日本 · 信用曲线 · 通胀 · 估值**, plus a **特色指标 → 攻防** tab
+  (NOBL/QQQ offense-defense regime via ZigZag). Series with a trailing distribution add
+  P5/P95 bands, a current-percentile badge, and red/green shading of extreme periods.
 
-Built to track things TradingView doesn't expose well (25Δ skew, a composite regime read)
-in one local page.
+The whole rail (视角) + its tabs live in one registry ([`src/web/perspectives.tsx`](src/web/perspectives.tsx));
+each tab carries its own render factory. Built to track things TradingView doesn't expose
+well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local page.
 
 ## Tech stack
 
 - **Runtime:** [Bun](https://bun.sh) (TypeScript end-to-end, no Node required)
 - **Backend:** [Hono](https://hono.dev) on `Bun.serve` + `bun:sqlite`
 - **Frontend:** React 19 + Vite + Tailwind CSS v4 + [Lightweight Charts](https://github.com/tradingview/lightweight-charts) v5
+- **Tooling:** [Biome](https://biomejs.dev) for lint + format (Rust, no `typescript` dep → works with TS7, which typescript-eslint doesn't). `react-hooks/exhaustive-deps` is an **error**.
 - **Data sources:**
   - moomoo OpenD (local WebSocket) — stock/ETF/index options
-  - [Deribit](https://docs.deribit.com) public REST — crypto options + BTC spot
-  - CBOE public CSV — VIX/VXN/GVZ/OVX, COR1M/VIXEQ, VX1/VX3 futures, RXM (PutWrite) + SPX
-  - [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) — credit spread, net liquidity, repo (needs a free API key)
-  - CNN — Fear & Greed index
-  - Yahoo — price fallback
-- **Scheduling:** macOS `launchd` (daily job, options + VRP + VX only)
+  - [Deribit](https://docs.deribit.com) public REST — crypto options + BTC spot + DVOL
+  - CBOE public CSV — VIX/VXN/GVZ/OVX, COR1M/VIXEQ, VX1/VX3 futures, RXM (Risk Reversal) + SPX
+  - [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) — rates/TIPS · credit spread · net liquidity · repo · inflation (BEI · sticky CPI · wages) (needs a free API key)
+  - Yahoo (`yahoo-finance2` v4) — DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY · stock EOD fallback
+  - Eris — SOFR OIS par curve · MOF + JPX — JGB yields / JGB VIX · CFTC — JPY net positioning · Shiller — CAPE · CNN — Fear & Greed
+- **Scheduling:** macOS `launchd` (daily job, options + VRP + VX + Eris)
 
 The end-to-end type safety from server routes to React components flows through
 Hono's `hc<AppType>` typed client — there's no hand-written API client.
@@ -64,14 +67,14 @@ Open <http://localhost:5173>. Ctrl-C kills both. For separate logs: `bun run dev
 ## Collect data
 
 ```bash
-bun run job:daily               # options (moomoo) + VRP inputs + VX1/VX3 term structure
+bun run job:daily               # options (moomoo) + VRP inputs + VX1/VX3 term + Eris SOFR OIS + trading calendar
 bun run job:crypto              # BTC options + spot (Deribit) — separate, no OpenD needed
 ```
 
 `job:daily` needs OpenD for the moomoo leg; if it's down that group fails and the others
-still run. Each underlying is independent. **The regime views (credit/liquidity/sentiment)
-need no job** — they fetch live per request. Only VIX/VXN and VX1/VX3 (maintained by
-`job:daily`) are read from the DB by the regime endpoint.
+still run. Each underlying is independent. **Most regime perspectives fetch live per
+request** (FRED/Yahoo/CFTC/etc., cached 6h). Only the stored series — VIX/VXN, VX1/VX3,
+Eris SOFR OIS, BTC — are read from the DB by the regime / yield-curve endpoints.
 
 ## Schedule the daily job (macOS)
 
@@ -89,23 +92,32 @@ Check recent runs with `./scripts/cron.sh history`.
 
 ```
 src/
-├── shared/types.ts          types shared between server and web
+├── shared/                  types · stats · marketCatalog (标的元数据单一真相源;前后端派生)
 ├── server/
 │   ├── index.ts             Hono app, exports AppType
-│   ├── routes/              health · options · vrp · price · regime
-│   ├── fetchers/            moomoo · deribit · cboeIndex · cboeVx · fred · cnnFearGreed · yahoo
-│   ├── analytics/           vrp · termStructure · regime (all pure, read-time compute)
+│   ├── config.ts            option/price whitelists (derived from marketCatalog)
+│   ├── routes/              health · options · vrp · price · regime · yieldCurve
+│   ├── fetchers/            moomoo · deribit · cboe(Index/Vx) · fred · yahoo · eris · jpxJgbVix · mofJgb · cftcCot · capeShiller · cnnFearGreed
+│   ├── analytics/           vrp · termStructure · regime · rateCurves (all pure, read-time compute)
 │   ├── storage/             bun:sqlite schema, migrations, repository
-│   └── jobs/                daily.ts orchestrator + optionsSnapshot / vrpInputs / vxTermStructure / cryptoDaily
+│   └── jobs/                daily orchestrator + optionsSnapshot / vrpInputs / vxTermStructure / cryptoDaily / erisSnapshot / btcPrice / tradingCalendar
 └── web/
-    ├── App.tsx              vertical perspectives (期权/信用/流动性/情绪) × horizontal tabs, keep-alive
-    ├── components/          Header, StatusLight, TabBar (horizontal + vertical variants)
-    ├── lib/                 chart helpers + stats (percentile)
+    ├── App.tsx              shell only (vertical perspectives × horizontal tabs, keep-alive)
+    ├── perspectives.tsx     tab registry — each tab carries its own render() (asset/regime/curve/history factories)
+    ├── components/          Header · TabBar · StatusLight · InfoTip · DatePickerWithPresets
+    ├── hooks/               interval · useStable · usePerspectiveNavigation
+    ├── lib/                 chart · palette · zigzag
     └── panels/
-        ├── PaneChartView    shared multi-pane chart shell (toolbar + crosshair legend)
-        ├── AssetChart       options: per-underlying panes (25Δ + optional VRP)
-        └── RegimeChart      regime: per-dimension panes (bands / signed histogram)
+        ├── chart/           shared multi-pane infra (paneChart.hooks/types + PaneChartView) — data-source-agnostic
+        ├── asset/           options: AssetChart + hooks (25Δ + optional VRP)
+        ├── regime/          regime: RegimeChart + REGIME_DIMS (self-contained PaneSpec[] → specs)
+        ├── attackDefense/   NOBL/QQQ ratio + ZigZag offense/defense regimes
+        └── rates/           yield-curve + tenor-history (YieldCurve* / TenorHistory* / shared yieldCurve+rateSpread hooks)
 ```
+
+Each panel is a thin shell: **fetch model (data hook) → pure buildSpecs → shared pane infra**.
+"Add an indicator/tab/underlying" = add one entry to its domain source-of-truth
+(`REGIME_DIMS` / `PERSPECTIVES` / `MARKET_CATALOG`), nothing else moves.
 
 ## Perspectives
 
@@ -122,16 +134,26 @@ IV + skew, plus implied-vs-realized + VRP where a free vol index exists:
 | USO | `USO`  | moomoo OpenD | OVX / USO |
 | BTC | `BTC`  | Deribit | DVOL / BTC |
 
-**Regime** — one pane per indicator, served by `/api/regime` (fetch-on-demand, cached):
+**Regime perspectives** — indicator panes (`/api/regime`, fetch-on-demand + cached) and
+curve/history panels (`/api/yield-curve`). Each perspective is one rail entry; some carry
+several horizontal tabs:
 
-| Perspective | Panes | Source |
+| Perspective | Tabs / panes | Source |
 |---|---|---|
 | 信用 Credit | HY OAS credit spread | FRED |
 | 流动性 Liquidity | net liquidity (WALCL−TGA−RRP) · reverse repo · repo usage · repo stress (IORB−SOFR) | FRED |
-| 情绪 Sentiment | Fear&Greed · COR1M · VIXEQ · VIX · VXN · VX1−V3 term structure · RXM/SPX (PutWrite vs SPX) | CNN / CBOE / DB |
+| 情绪 Sentiment | 波动率 (COR1M · VIXEQ · VIX · VXN · VX1−V3 term · RXM/SPX risk-reversal) · 情绪 (Fear&Greed) | CBOE / CNN |
+| 宏观 Macro | growth/inflation/policy regime read | FRED |
+| 能源 Energy | Brent−WTI spread · diesel crack (油市结构 / 物理紧张) | Yahoo |
+| 利率 Rates | 收益曲线 · 期限走势 · SOFR OIS · OIS 走势 · 利率波动率 (MOVE) | FRED / Eris / Yahoo |
+| 日本 Japan | 日元 (USD-JPY + CFTC 持仓) · JGB 收益曲线 · 期限走势 · 日债波动率 (JGB VIX) | Yahoo / CFTC / MOF / JPX |
+| 信用曲线 Credit curve | 评级利差 · 期限结构 | FRED |
+| 通胀 Inflation | 通胀预期 (BEI) · 通胀走势 · 通胀来源 (RBOB YoY 等) | FRED / Yahoo |
+| 估值 Valuation | Shiller CAPE regime | Shiller |
+| 特色指标 Featured | 攻防 — NOBL/QQQ offense-defense via ZigZag | Yahoo |
 
-Sentiment panes carry P5/P95 percentile bands + a current-percentile badge, and shade
-extreme periods red (risk end) / green (opportunity end) per each series' direction.
+Series with a trailing distribution carry P5/P95 bands + a current-percentile badge, and
+shade extreme periods red (risk end) / green (opportunity end) per each series' direction.
 
 ## License
 

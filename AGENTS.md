@@ -9,8 +9,9 @@
 |---|---|---|---|
 | **CBOE 指数** | VIX 家族 / SKEW / RXM | **静态 CSV 直下**:`cdn.cboe.com/api/global/us_indices/daily_prices/{指数}_History.csv`(无需 key,免爬虫) | 1990 至今全历史 |
 | **CBOE VX 期货** | VX 近月连续(存为 `VX1`) | API 列清单(`www-api.cboe.com/.../product/list/VX/`)+ `cdn.cboe.com/{path}` 下 CSV | 全历史 |
-| **FRED** | 利率(UST 10Y/2Y/3M)/ 美元指数(`DTWEXBGS` 广义贸易加权,非 ICE DXY) | JSON API `api.stlouisfed.org/fred/series/observations`(要 key) | 全历史 |
-| **Yahoo** | 股票 EOD | `yahoo-finance2` npm(底层 Yahoo query JSON API) | 可回填多年 |
+| **FRED** | 利率(UST/TIPS)/ 信用利差(HY+IG 梯队)/ 流动性(WALCL/TGA/RRP/SOFR/IORB)/ 通胀(BEI=DGS−DFII、Sticky CPI、薪资) | JSON API `api.stlouisfed.org/fred/series/observations`(要 key) | 全历史 |
+| **Yahoo** | 股票 EOD + **DXY(`DX-Y.NYB` 真 ICE 美元指数)/ MOVE(`^MOVE`)/ 油品期货(`CL=F`/`BZ=F`/`HO=F`/`RB=F`)/ USD/JPY** | `yahoo-finance2` **v4** npm(class API `new YahooFinance()`) | 可回填多年 |
+| **其它** | Eris(SOFR OIS 曲线)/ MOF+JPX(JGB 收益率/JGB VIX)/ CFTC(日元净持仓)/ Shiller(CAPE) | 各自 adapter(见 `fetchers/`)| 多为全历史 |
 | **moomoo** | 期权链(股票/ETF/指数:SPY/.VIX) | 本地 OpenD WebSocket `127.0.0.1:33333` | **仅当天快照,不可回填** |
 | **Deribit** | 加密期权链(BTC/ETH) | 公开 REST `deribit.com/api/v2/public`(免 key) | 链快照型;但 **DVOL** 波动率指数有历史 |
 
@@ -71,14 +72,17 @@
 
 ### 其它数据源
 
-- **Yahoo(股票 EOD)**:用 `yahoo-finance2` **v3**(v2 已失效,class API `new YahooFinance()`)。
-  周末它会返回标着周六/日的快照——用 `lastClosedTradingDate()` 归到正确的周五,否则 X 轴混入周末。
+- **Yahoo(股票 EOD + DXY/MOVE/油品期货/USD-JPY)**:用 `yahoo-finance2` **v4**(class API `new YahooFinance()`;
+  v4 相对 v3 只把最低 Node 提到 22,**API 无变化**)。周末它会返回标着周六/日的快照——用
+  `lastClosedTradingDate()` 归到正确的周五,否则 X 轴混入周末。
 - **CBOE(VIX 家族/SKEW/RXM/VX1)**:直接打 API + 下 CSV,**不需要 Playwright**。
-- **FRED(利率/DXY)**:免费 key 在 `.env`(`FRED_API_KEY`),不要提交。
+- **FRED(利率 / 信用利差 / 流动性 / 通胀)**:免费 key 在 `.env`(`FRED_API_KEY`),不要提交。**油品现货/期货走 Yahoo(`CL/BZ/HO/RB=F`),不是 FRED**;DXY 也走 Yahoo 真 ICE 指数(`DX-Y.NYB`),不用 FRED 的贸易加权 `DTWEXBGS`。
 - **图表**:用 BusinessDay(字符串日期)压掉周末空隙;跨标的共享 X 轴时先 `dropWeekends()`。
 
 ## 约定
 
-- 改完代码跑 `bunx tsc --noEmit` + `bun test`,**不要自动 git commit**,等用户发话。
+- 改完代码跑 `bunx tsc --noEmit` + `bun test` + `bun run lint`(**Biome**:lint + format 二合一;
+  `react-hooks/exhaustive-deps` 为 error)。因 typescript-eslint 不支持项目用的 TS7,lint 用 Biome/oxlint
+  这类 Rust 工具(不依赖 typescript 包)。**不要自动 git commit**,等用户发话。
 - 注释用中文。声明式优先于命令式 `for` 循环。
 - 秘密只在 `.env`(gitignored):`FRED_API_KEY`、`MOOMOO_WS_*`。
