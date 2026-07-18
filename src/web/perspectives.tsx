@@ -9,6 +9,7 @@ import { TenorHistoryPanel } from './panels/TenorHistoryPanel';
 import { AttackDefensePanel } from './panels/AttackDefensePanel';
 import type { RegimeDim } from './panels/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
+import { MARKET_CATALOG } from '../shared/marketCatalog';
 
 export type TabDef = { id: string; label: string; render: (interval: Interval) => ReactNode };
 export type Perspective = { id: string; label: string; tabs: TabDef[] };
@@ -51,15 +52,10 @@ export const PERSPECTIVES: Perspective[] = [
   {
     id: 'options',
     label: '期权',
-    tabs: [
-      assetTab('spy', 'SPY', 'SPY', 'SPY'),
-      assetTab('qqq', 'QQQ', 'QQQ', 'QQQ'),
-      assetTab('vix', 'VIX', '.VIX'), // 无免费波动率指数,只 2-pane
-      assetTab('tlt', 'TLT', 'TLT'),
-      assetTab('gld', 'GLD', 'GLD', 'GLD'),
-      assetTab('uso', 'USO', 'USO', 'USO'),
-      assetTab('btc', 'BTC', 'BTC', 'BTC'),
-    ],
+    // 期权标的 tab 由标的目录派生(有 tab 的条目);vrpUnderlying 有 VRP 才传(否则只 2-pane)。
+    tabs: MARKET_CATALOG.filter((a) => a.tab).map((a) =>
+      assetTab(a.tab!.id, a.tab!.label, a.underlying, a.vrp ? a.underlying : undefined),
+    ),
   },
   regimePersp('credit', '信用'),
   regimePersp('liquidity', '流动性'),

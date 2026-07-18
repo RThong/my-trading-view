@@ -23,6 +23,7 @@ import { fetchDvolHistory } from '../fetchers/deribitDvol';
 import { connect, disconnect, envConfig } from '../fetchers/moomooClient';
 import { fetchDailyBars, type Bar } from '../fetchers/moomooHistoryKL';
 import { HISTORY_START_DATE } from '../config';
+import { cboeIvLegs, priceLegUnderlyings } from '../../shared/marketCatalog';
 
 const DVOL_START = '2021-01-01'; // DVOL(BTC)上线约 2021 年
 
@@ -95,8 +96,8 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
       }
     });
 
-  // ── 隐含腿 → market_series ──
-  for (const sym of ['VXN', 'GVZ', 'OVX'] as const) {
+  // ── 隐含腿 → market_series(CBOE:VXN/GVZ/OVX;VIX 走下方 VX 链路双写,DVOL 走 Deribit)──
+  for (const sym of cboeIvLegs()) {
     await run(sym, async () => {
       const rows = await fetchCboeIndexAsQuotes({
         cboeSymbol: sym,
@@ -149,7 +150,7 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
     /* OpenD 不可用,ETF 腿整体回退 Yahoo */
   }
   try {
-    for (const u of ['SPY', 'QQQ', 'GLD', 'USO', 'TLT', 'NOBL'] as const) {
+    for (const u of priceLegUnderlyings()) {
       await priceLeg(
         u,
         (since) => {
