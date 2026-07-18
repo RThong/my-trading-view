@@ -2,12 +2,12 @@
 // 取代原 App 里"tabs 只声明 id/label + 相邻 render(tabId) 用字符串分支决定内容"的分离写法——
 // 新增 tab = 往数组加一条工厂调用,不再牵动 render 分支,两者也不会漂移。
 import type { ReactNode } from 'react';
-import { AssetChart } from './panels/AssetChart';
-import { RegimeChart } from './panels/RegimeChart';
-import { YieldCurvePanel } from './panels/YieldCurvePanel';
-import { TenorHistoryPanel } from './panels/TenorHistoryPanel';
-import { AttackDefensePanel } from './panels/AttackDefensePanel';
-import type { RegimeDim } from './panels/regimeChart.hooks';
+import { AssetChart } from './panels/asset/AssetChart';
+import { RegimeChart } from './panels/regime/RegimeChart';
+import { YieldCurvePanel } from './panels/rates/YieldCurvePanel';
+import { TenorHistoryPanel } from './panels/rates/TenorHistoryPanel';
+import { AttackDefensePanel } from './panels/attackDefense/AttackDefensePanel';
+import type { RegimeDim } from './panels/regime/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
 import { MARKET_CATALOG } from '../shared/marketCatalog';
 

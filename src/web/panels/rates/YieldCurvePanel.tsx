@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useYieldCurve, curveForDate, snapToTradingDay } from './yieldCurve.hooks';
 import { YieldCurveChart, type Curve } from './YieldCurveChart';
-import { DatePickerWithPresets } from '../components/DatePickerWithPresets';
-import { InfoTip } from '../components/InfoTip';
-import { SERIES_COLORS } from '../lib/palette';
+import { DatePickerWithPresets } from '../../components/DatePickerWithPresets';
+import { InfoTip } from '../../components/InfoTip';
+import { SERIES_COLORS } from '../../lib/palette';
 
 type Row = { id: number; date: string; visible: boolean };
 

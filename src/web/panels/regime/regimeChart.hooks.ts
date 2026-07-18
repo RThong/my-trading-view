@@ -1,10 +1,10 @@
 // 宏观 regime 视角的数据层:取数 + 各维度的 pane 配置 + spec 构造。
 // 图表引擎(usePaneChart/usePaneLayout/useCrosshairLegend)与展示壳(PaneChartView)全复用期权侧。
 import useSWR from 'swr';
-import { aggregate, aggregateBars, type LinePoint, type Bar } from '../lib/chart';
-import { percentile, percentileRank } from '../../shared/stats';
-import type { Interval } from '../hooks/interval';
-import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from './paneChart.types';
+import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../lib/chart';
+import { percentile, percentileRank } from '../../../shared/stats';
+import type { Interval } from '../../hooks/interval';
+import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../chart/paneChart.types';
 
 // 分位带阈值(自身历史):想改 5/95 更严就动这里。
 const PCTL_LO = 5;

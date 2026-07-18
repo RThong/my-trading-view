@@ -2,10 +2,10 @@
 // 纯函数在此,图表实例管理见下方 useTenorChart。
 import { useEffect, useRef } from 'react';
 import { createChart, LineSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
-import { aggregate, CHART_OPTIONS, type LinePoint } from '../lib/chart';
+import { aggregate, CHART_OPTIONS, type LinePoint } from '../../lib/chart';
 import type { YPoint } from './yieldCurve.hooks';
-import type { Interval } from '../hooks/interval';
-import { useStable } from '../hooks/useStable';
+import type { Interval } from '../../hooks/interval';
+import { useStable } from '../../hooks/useStable';
 
 // 各 source 的默认勾选期限(短/前端/中/长各取锚点)。
 // treasury 前端用信息量更大的 2Y;OIS 档位对齐 Eris 真实点,12M 而非 1Y。
