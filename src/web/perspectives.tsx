@@ -7,6 +7,7 @@ import { RegimeChart } from './panels/regime/RegimeChart';
 import { YieldCurvePanel } from './panels/rates/YieldCurvePanel';
 import { TenorHistoryPanel } from './panels/rates/TenorHistoryPanel';
 import { AttackDefensePanel } from './panels/attackDefense/AttackDefensePanel';
+import { SoxFngPanel } from './panels/industry/SoxFngPanel';
 import type { RegimeDim } from './panels/regime/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
 import { MARKET_CATALOG } from '../shared/marketCatalog';
@@ -102,6 +103,12 @@ export const PERSPECTIVES: Perspective[] = [
     ],
   },
   regimePersp('valuation', '估值'),
+  {
+    id: 'industry',
+    label: '行业',
+    // 目前只半导体一个横 tab(单 tab 时 TabBar 不渲染横条);以后加别的行业自动出条。
+    tabs: [{ id: 'semiconductor', label: '半导体', render: (interval) => <SoxFngPanel interval={interval} /> }],
+  },
   {
     id: 'featured',
     label: '特色指标',
