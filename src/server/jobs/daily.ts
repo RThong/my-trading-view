@@ -11,6 +11,7 @@ import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
 import { updateVrpInputs } from './vrpInputs';
 import { updateVxTermStructure } from './vxTermStructure';
 import { updateErisSnapshot } from './erisSnapshot';
+import { updateSoxFng, updateSoxPutcall } from './soxFng';
 
 type RunDailyJobOpts = {
   db: Database;
@@ -28,6 +29,10 @@ type RunDailyJobOpts = {
   btcPriceUpdater?: (db: Database) => Promise<number>;
   /** Eris SOFR OIS 曲线更新器(注入式;CLI 传 updateErisSnapshot,测试省略以免联网)。 */
   erisUpdater?: (db: Database) => Promise<{ total: number }>;
+  /** 半导体恐贪指数更新器(注入式;CLI 传 updateSoxFng,测试省略以免联网)。 */
+  soxFngUpdater?: (db: Database) => Promise<{ total: number; succeeded: number; failures: string[] }>;
+  /** SOXX put/call 记录器(注入式;需 OpenD。在 soxFngUpdater 之前跑,让指数读到当日最新)。 */
+  soxPutcallUpdater?: (db: Database) => Promise<{ total: number; succeeded: number; failures: string[] }>;
 };
 
 /** 包一次 job_run:开跑 → 按 fn 结果落终态;fn 抛异常记 failed。所有分组共用,免去 4 处重复 try/catch。 */
@@ -109,12 +114,30 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       return { status: 'success', recordsWritten: total };
     });
   }
+
+  // sox_putcall 分组:SOXX put/call 量比(OpenD 实时,每天记一点积累)。须在 sox_fng 前。
+  if (opts.soxPutcallUpdater) {
+    await withJobRun(opts.db, 'sox_putcall', async () => {
+      const { total, succeeded, failures } = await opts.soxPutcallUpdater!(opts.db);
+      return threeState(total, succeeded, failures);
+    });
+  }
+
+  // sox_fng 分组:半导体恐贪指数(Yahoo 派生 + 读 sox_putcall;全量重算 upsert)。
+  if (opts.soxFngUpdater) {
+    await withJobRun(opts.db, 'sox_fng', async () => {
+      const { total, succeeded, failures } = await opts.soxFngUpdater!(opts.db);
+      return threeState(total, succeeded, failures);
+    });
+  }
 }
 
-// 一天多触发点(08/11/14/17/20)的「成功即止」守卫:这 3 组当天全部 success 过 → 跳过本次。
+// 一天多触发点(08/11/14/17/20)的「成功即止」守卫:这几组当天全部 success 过 → 跳过本次。
 // 任一组当天还没成功(含失败/部分)→ 照常跑,直到跑出一次全绿。
+// sox_putcall 必须列入:put/call 是 OpenD 实时、当天不记就永久丢,首触发失败必须让后续触发补记。
+// sox_fng 一并列入:让指数当天重试到绿(它可随时重算,列入无害)。
 // btc_price 不列入:低频,失败不该阻断"当天必需组已全绿则跳过"的逻辑。
-const REQUIRED_JOBS = ['options', 'vrp_inputs', 'vx_term_structure'];
+const REQUIRED_JOBS = ['options', 'vrp_inputs', 'vx_term_structure', 'sox_putcall', 'sox_fng'];
 
 // CLI 入口
 if (import.meta.main) {
@@ -123,7 +146,7 @@ if (import.meta.main) {
 
   const done = getTodaySucceededJobs(db);
   if (REQUIRED_JOBS.every((j) => done.includes(j))) {
-    console.log(`今天 3 组已全部成功(${done.join(', ')}),跳过本次运行。`);
+    console.log(`今天必需组已全部成功(${done.join(', ')}),跳过本次运行。`);
   } else {
     await runDailyJob({
       db,
@@ -132,6 +155,8 @@ if (import.meta.main) {
       vrpInputsUpdater: updateVrpInputs,
       vxUpdater: updateVxTermStructure,
       erisUpdater: updateErisSnapshot,
+      soxPutcallUpdater: (db) => updateSoxPutcall(db, defaultMoomooOptionsClient()),
+      soxFngUpdater: updateSoxFng,
     });
     console.log('Daily job complete.');
   }
