@@ -47,6 +47,23 @@ export function disconnect(ws: any): void {
   ws.websock?.close();
 }
 
+/**
+ * 行情(qot)会话是否真就绪。onlogin=true 只保证交易(trd)登录,qot 会话可能悬空
+ * (见 memory opend-qot-session-drop):端口开、登录成功,但取行情全 retType=-1。
+ * daily 就绪门用它探真状态,别只信端口。
+ */
+export async function qotReady(cfg: MoomooConfig): Promise<boolean> {
+  try {
+    return await withConnection(cfg, async (ws) => {
+      const r = await ws.GetGlobalState({ c2s: { userID: 0 } });
+      return r?.s2c?.qotLogined === true;
+    });
+  } catch {
+    // 连不上 / 登录超时 / GetGlobalState 异常一律视为未就绪,保持布尔语义不抛。
+    return false;
+  }
+}
+
 /** 连接 → 执行 fn → 无论如何断开。 */
 export async function withConnection<T>(cfg: MoomooConfig, fn: (ws: any) => Promise<T>): Promise<T> {
   const ws = await connect(cfg);
@@ -62,4 +79,16 @@ export async function withConnection<T>(cfg: MoomooConfig, fn: (ws: any) => Prom
   } finally {
     disconnect(ws);
   }
+}
+
+// CLI:供 daily-with-opend.sh 就绪门探测。qot 就绪 exit 0,否则(未就绪/连不上/缺配置)exit 1。
+if (import.meta.main) {
+  // envConfig() 缺 MOOMOO_WS_KEY 会同步抛,一并包进 try,避免未捕获异常打堆栈。
+  (async () => {
+    try {
+      process.exit((await qotReady(envConfig())) ? 0 : 1);
+    } catch {
+      process.exit(1);
+    }
+  })();
 }
