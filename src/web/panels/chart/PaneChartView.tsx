@@ -22,6 +22,10 @@ type Props = {
   note?: string; // 右上角提示(宏观用来标"某序列暂不可用")
   badges?: Record<string, string>; // paneKey → 常显徽标(情绪用当前分位 Pxx)
   desc?: Record<string, string>; // paneKey → 指标说明(工具条 ⓘ hover 显示)
+  drawing?: boolean;
+  toggleDrawing?: () => void;
+  selection?: { x: number; y: number } | null; // 选中线时浮动操作条的位置(容器相对像素)
+  deleteSelected?: () => void;
 };
 
 export function PaneChartView({
@@ -43,6 +47,10 @@ export function PaneChartView({
   note,
   badges,
   desc,
+  drawing,
+  toggleDrawing,
+  selection,
+  deleteSelected,
 }: Props) {
   return (
     <div className="relative flex h-full w-full flex-col">
@@ -76,8 +84,36 @@ export function PaneChartView({
           );
         })}
       </div>
+      {toggleDrawing && (
+        <div className="mb-2 flex items-center gap-1.5 text-xs">
+          <button
+            onClick={toggleDrawing}
+            className={`rounded border px-2 py-0.5 ${
+              drawing ? 'border-yellow-500 text-yellow-400' : 'border-neutral-700 text-neutral-300'
+            }`}
+            title="画趋势线:开启后点两点成线(有预览跟手)。关闭后:点线选中→按 Delete 删除,或点端点抓起→移动→再点放下调整。"
+          >
+            ✏ 画线{drawing ? '中' : ''}
+          </button>
+        </div>
+      )}
       <div className="relative min-h-0 flex-1">
-        <div ref={containerRef} className="h-full w-full" />
+        <div ref={containerRef} tabIndex={0} className="h-full w-full outline-none" />
+        {/* 选中线后的浮动操作条:跟随点击位置,当前只有删除。 */}
+        {selection && deleteSelected && (
+          <div
+            className="absolute z-20 flex -translate-x-1/2 -translate-y-full gap-1 rounded border border-neutral-600 bg-neutral-900/95 px-1 py-0.5 shadow-lg"
+            style={{ left: selection.x, top: selection.y - 6 }}
+          >
+            <button
+              onClick={deleteSelected}
+              className="px-1.5 py-0.5 text-xs text-red-400 hover:text-red-300"
+              title="删除这条线"
+            >
+              🗑 删除
+            </button>
+          </div>
+        )}
         {/* 每个 pane 顶部图例:指标名 + 竖线对应值。仅悬停时显示,不悬停不挡线
             (最新值看右轴原生 tag)。 */}
         {hovering &&

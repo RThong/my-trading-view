@@ -23,12 +23,8 @@ export function AttackDefensePanel() {
   const { qqq, ratio, zones, error, isLoading } = useAttackDefenseData();
   // 故意不 useMemo:usePaneChart 已内部按内容稳定化 specs(useStable/isDeepEqual),无需调用方 memo。
   const specs = buildAttackDefenseSpecs(qqq, ratio, zones);
-  const { order, collapsed, move, toggle, cells, hovering, tops } = usePaneChartStack(
-    containerRef,
-    PANE_DEFS,
-    PANE_DEFS.length,
-    specs,
-  );
+  const { order, collapsed, move, toggle, cells, hovering, tops, drawing, toggleDrawing, selection, deleteSelected } =
+    usePaneChartStack(containerRef, PANE_DEFS, PANE_DEFS.length, specs, { storageKey: 'attackDefense' });
 
   return (
     <PaneChartView
@@ -47,6 +43,10 @@ export function AttackDefensePanel() {
       isLoading={isLoading}
       error={error}
       desc={DESC}
+      drawing={drawing}
+      toggleDrawing={toggleDrawing}
+      selection={selection}
+      deleteSelected={deleteSelected}
     />
   );
 }

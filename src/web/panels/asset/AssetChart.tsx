@@ -26,12 +26,8 @@ export function AssetChart({
 
   const { opt, vrp, price, error, isLoading } = useAssetData(underlying, vrpUnderlying);
   const specs = buildSpecs(opt, vrp, price, interval, vrpUnderlying, paneDefs, seriesName);
-  const { order, collapsed, move, toggle, cells, hovering, tops } = usePaneChartStack(
-    containerRef,
-    paneDefs,
-    paneCount,
-    specs,
-  );
+  const { order, collapsed, move, toggle, cells, hovering, tops, drawing, toggleDrawing, selection, deleteSelected } =
+    usePaneChartStack(containerRef, paneDefs, paneCount, specs, { storageKey: `asset:${underlying}` });
 
   return (
     <PaneChartView
@@ -51,6 +47,10 @@ export function AssetChart({
       error={error}
       errorLabel={label}
       desc={desc}
+      drawing={drawing}
+      toggleDrawing={toggleDrawing}
+      selection={selection}
+      deleteSelected={deleteSelected}
     />
   );
 }

@@ -21,12 +21,8 @@ export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Inter
 
   const { data, error, isLoading } = useRegimeData();
   const specs = buildRegimeSpecs(data, dim, interval);
-  const { order, collapsed, move, toggle, cells, hovering, tops } = usePaneChartStack(
-    containerRef,
-    paneDefs,
-    paneCount,
-    specs,
-  );
+  const { order, collapsed, move, toggle, cells, hovering, tops, drawing, toggleDrawing, selection, deleteSelected } =
+    usePaneChartStack(containerRef, paneDefs, paneCount, specs, { storageKey: `regime:${dim}` });
 
   // 本维度里在 unavailable 中的序列 → 右上角提示。
   const missing = panes.map((p) => p.key).filter((k) => data.unavailable.includes(k));
@@ -52,6 +48,10 @@ export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Inter
       note={note}
       badges={badges}
       desc={desc}
+      drawing={drawing}
+      toggleDrawing={toggleDrawing}
+      selection={selection}
+      deleteSelected={deleteSelected}
     />
   );
 }

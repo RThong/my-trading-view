@@ -5,6 +5,7 @@ import { createChart, LineSeries, CandlestickSeries, HistogramSeries, type IChar
 import { useStable } from '../../hooks/useStable';
 import { CHART_OPTIONS, changeStats } from '../../lib/chart';
 import type { PaneDef, Spec, LegendCell, AnySeries } from './paneChart.types';
+import { useTrendlines } from './trendlines.hooks';
 
 // 按 kind 建对应 series,并挂上各自的参考线/背景带。
 function addSeries(chart: IChartApi, spec: Spec): AnySeries {
@@ -86,6 +87,7 @@ export function usePaneChart(
   const specs = useStable(rawSpecs);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, AnySeries>>(new Map());
+  const [seriesVersion, setSeriesVersion] = useState(0); // series 建/删后自增,供画线 hook 感知 series 就绪
 
   // 建图 + 加 pane。paneCount 每实例固定,等价于挂载建一次、卸载销毁。
   useEffect(() => {
@@ -129,9 +131,10 @@ export function usePaneChart(
     }
 
     chart.timeScale().fitContent();
+    setSeriesVersion((v) => v + 1); // series 已就绪/变更,通知依赖方(趋势线挂载)
   }, [specs]);
 
-  return { chartRef, seriesRef };
+  return { chartRef, seriesRef, seriesVersion };
 }
 
 // ── 布局维度:pane 上下换位(order)+ 折叠显隐(collapsed)──────────────────────
@@ -267,14 +270,26 @@ export function useCrosshairLegend(
 }
 
 // ── 组合:引擎 + 布局 + 图例 一处接线,供 AssetChart / RegimeChart 共用(避免两处接线漂移)。
+// drawable 传入 → 额外接入趋势线画线能力(opt-in;纯折线曲线图不传即零影响)。
 export function usePaneChartStack(
   containerRef: React.RefObject<HTMLDivElement | null>,
   paneDefs: PaneDef[],
   paneCount: number,
   specs: Spec[],
+  drawable?: { storageKey: string },
 ) {
-  const { chartRef, seriesRef } = usePaneChart(containerRef, paneCount, specs);
+  const { chartRef, seriesRef, seriesVersion } = usePaneChart(containerRef, paneCount, specs);
   const { order, collapsed, move, toggle } = usePaneLayout(paneDefs, paneCount, chartRef, seriesRef);
   const { cells, hovering, tops } = useCrosshairLegend(chartRef, seriesRef, containerRef, order, collapsed);
-  return { order, collapsed, move, toggle, cells, hovering, tops };
+  const { drawing, toggleDrawing, selection, deleteSelected } = useTrendlines({
+    chartRef,
+    seriesRef,
+    containerRef,
+    paneDefs,
+    order,
+    storageKey: drawable?.storageKey ?? '',
+    enabled: drawable != null,
+    seriesVersion,
+  });
+  return { order, collapsed, move, toggle, cells, hovering, tops, drawing, toggleDrawing, selection, deleteSelected };
 }
