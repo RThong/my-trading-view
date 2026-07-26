@@ -32,6 +32,10 @@ const VIEW_DESC: Record<string, { title: string; desc: string }> = {
     title: '通胀走势',
     desc: '定义:盈亏平衡通胀率(BEI)各期限的时间走势 + 10Y−5Y 利差。\nBEI = 名义 − TIPS 实际收益率 = 市场通胀补偿(含通胀风险溢价),可作预期代理但非纯预期。',
   },
+  ai_cds: {
+    title: 'AI CDS',
+    desc: '定义:AI 资本开支巨头 + 甲骨文的 5Y 单名 CDS 利差(bp)时间走势 + Oracle − Apple 特质溢价。\n数据:ICE Clear Credit 免费 EOD 结算价,由合约价线性近似成约定 spread(annuity=4.7 校准)。\n利差越高 = 市场定价的违约风险越大;甲骨文因 AI 举债显著高于同类,是 AI 信用风险风向标。',
+  },
 };
 
 // 时间横轴 × 每条线一个期限(pane 0)+ 利差(pane 1),共享时间轴。数据/存储不改,复用收益率曲线序列。
@@ -120,7 +124,7 @@ export function TenorHistoryPanel({
         {isLoading && <p className="absolute left-2 top-2 text-xs text-neutral-500">加载中…</p>}
         {!isLoading && !error && !maxDate && (
           <p className="absolute left-2 top-2 text-xs text-amber-500">
-            暂无收益率数据{data.unavailable.length ? `(全部期限缺失:${data.unavailable.join(', ')})` : ''}
+            暂无数据{data.unavailable.length ? `(全部序列缺失:${data.unavailable.join(', ')})` : ''}
           </p>
         )}
       </div>

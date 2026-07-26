@@ -91,7 +91,12 @@ export const PERSPECTIVES: Perspective[] = [
   {
     id: 'creditCurve',
     label: '信用曲线',
-    tabs: [curveTab('credit_rating', '评级利差', 'credit_rating'), curveTab('credit_term', '期限结构', 'credit_term')],
+    tabs: [
+      curveTab('credit_rating', '评级利差', 'credit_rating'),
+      curveTab('credit_term', '期限结构', 'credit_term'),
+      // AI 巨头 + 甲骨文单名 CDS 时间走势;spread pane = Oracle − Apple(甲骨文特质溢价)。
+      historyTab('ai_cds', 'AI CDS', 'ai_cds', 'Oracle', 'Apple', 'Oracle − Apple'),
+    ],
   },
   {
     id: 'inflation',

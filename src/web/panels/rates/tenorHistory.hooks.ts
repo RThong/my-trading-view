@@ -14,6 +14,9 @@ export const DEFAULT_TENORS: Record<string, string[]> = {
   sofr_ois: ['1M', '3M', '6M', '12M', '2Y', '10Y'],
   bei: ['5Y', '10Y', '30Y'],
   jgb: ['2Y', '10Y', '30Y'],
+  // AI CDS:默认展示除 Broadcom/Dell/Intel 外的 7 家(这三条较次要,留 chip 按需勾)。
+  // 须与 rateCurves.ts AI_CDS 的 core 名单一致(core 缺失会让每日 job failed 告警)。
+  ai_cds: ['Oracle', 'Microsoft', 'Alphabet', 'Amazon', 'Apple', 'Nvidia', 'Meta'],
 };
 
 /** 某期限的 {date,value}[] → 图用的 {time,value}[],按 interval 聚合。缺该期限 → []。 */

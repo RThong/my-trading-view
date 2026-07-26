@@ -11,6 +11,7 @@ import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
 import { updateVrpInputs } from './vrpInputs';
 import { updateVxTermStructure } from './vxTermStructure';
 import { updateErisSnapshot } from './erisSnapshot';
+import { updateIceCds } from './iceCdsSnapshot';
 import { updateSoxFng, updateSoxPutcall } from './soxFng';
 
 type RunDailyJobOpts = {
@@ -29,6 +30,8 @@ type RunDailyJobOpts = {
   btcPriceUpdater?: (db: Database) => Promise<number>;
   /** Eris SOFR OIS 曲线更新器(注入式;CLI 传 updateErisSnapshot,测试省略以免联网)。 */
   erisUpdater?: (db: Database) => Promise<{ total: number }>;
+  /** ICE 单名 CDS(AI 巨头 + 甲骨文)更新器(注入式;CLI 传 updateIceCds,测试省略以免联网)。 */
+  iceCdsUpdater?: (db: Database) => Promise<{ total: number; missing: string[] }>;
   /** 半导体恐贪指数更新器(注入式;CLI 传 updateSoxFng,测试省略以免联网)。 */
   soxFngUpdater?: (db: Database) => Promise<{ total: number; succeeded: number; failures: string[] }>;
   /** SOXX put/call 记录器(注入式;需 OpenD。在 soxFngUpdater 之前跑,让指数读到当日最新)。 */
@@ -107,6 +110,17 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     });
   }
 
+  // ice_cds 分组:AI 巨头 + 甲骨文单名 CDS EOD 结算价(ICE 免费)。
+  // 默认展示的 core 标的缺任一 → failed(数据源可能改 ticker),让当天后续触发重试并在状态板告警。
+  if (opts.iceCdsUpdater) {
+    await withJobRun(opts.db, 'ice_cds', async () => {
+      const { total, missing } = await opts.iceCdsUpdater!(opts.db);
+      return missing.length
+        ? { status: 'failed', error: `核心标的缺失(数据源可能变动):${missing.join(', ')}`, recordsWritten: total }
+        : { status: 'success', recordsWritten: total };
+    });
+  }
+
   // btc_price 分组:BTC 现货日 bar(Deribit 主源 / Yahoo 降级;成功/失败两态)。
   if (opts.btcPriceUpdater) {
     await withJobRun(opts.db, 'btc_price', async () => {
@@ -137,7 +151,8 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
 // sox_putcall 必须列入:put/call 是 OpenD 实时、当天不记就永久丢,首触发失败必须让后续触发补记。
 // sox_fng 一并列入:让指数当天重试到绿(它可随时重算,列入无害)。
 // btc_price 不列入:低频,失败不该阻断"当天必需组已全绿则跳过"的逻辑。
-const REQUIRED_JOBS = ['options', 'vrp_inputs', 'vx_term_structure', 'sox_putcall', 'sox_fng'];
+// ice_cds 必须列入:ICE 端点只当日快照、不能回填,当天没抓到就永久丢,首触发失败须让后续触发补。
+const REQUIRED_JOBS = ['options', 'vrp_inputs', 'vx_term_structure', 'sox_putcall', 'sox_fng', 'ice_cds'];
 
 // CLI 入口
 if (import.meta.main) {
@@ -155,6 +170,7 @@ if (import.meta.main) {
       vrpInputsUpdater: updateVrpInputs,
       vxUpdater: updateVxTermStructure,
       erisUpdater: updateErisSnapshot,
+      iceCdsUpdater: updateIceCds,
       soxPutcallUpdater: (db) => updateSoxPutcall(db, defaultMoomooOptionsClient()),
       soxFngUpdater: updateSoxFng,
     });

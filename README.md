@@ -7,7 +7,7 @@ A personal, local-only markets dashboard, organized as **vertical perspectives**
   (via moomoo OpenD) and BTC (via Deribit), stored in SQLite. Underlyings with a free
   volatility index (SPY/QQQ/GLD/USO/BTC) also get implied-vs-realized + VRP panes.
 - **Regime perspectives** — macro/market *regime* indicators pulled on demand from
-  FRED / CBOE / CNN / Yahoo / Eris / MOF+JPX / CFTC / Shiller: **信用 · 流动性 · 情绪 ·
+  FRED / CBOE / CNN / Yahoo / Eris / MOF+JPX / CFTC / Shiller / ICE: **信用 · 流动性 · 情绪 ·
   宏观 · 能源 · 利率 · 日本 · 信用曲线 · 通胀 · 估值**, plus a **特色指标 → 攻防** tab
   (NOBL/QQQ offense-defense regime via ZigZag). Series with a trailing distribution add
   P5/P95 bands, a current-percentile badge, and red/green shading of extreme periods.
@@ -29,7 +29,8 @@ well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local pag
   - [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) — rates/TIPS · credit spread · net liquidity · repo · inflation (BEI · sticky CPI · wages) (needs a free API key)
   - Yahoo (`yahoo-finance2` v4) — DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY · stock EOD fallback
   - Eris — SOFR OIS par curve · MOF + JPX — JGB yields / JGB VIX · CFTC — JPY net positioning · Shiller — CAPE · CNN — Fear & Greed
-- **Scheduling:** macOS `launchd` (daily job, options + VRP + VX + Eris)
+  - [ICE](https://www.ice.com/cds-settlement-prices/icc/single-name-instruments) — free public single-name CDS EOD settlement prices (AI 巨头 + Oracle)
+- **Scheduling:** macOS `launchd` (daily job, options + VRP + VX + Eris + ICE CDS)
 
 The end-to-end type safety from server routes to React components flows through
 Hono's `hc<AppType>` typed client — there's no hand-written API client.
@@ -67,14 +68,14 @@ Open <http://localhost:5173>. Ctrl-C kills both. For separate logs: `bun run dev
 ## Collect data
 
 ```bash
-bun run job:daily               # options (moomoo) + VRP inputs + VX1/VX3 term + Eris SOFR OIS + trading calendar
+bun run job:daily               # options (moomoo) + VRP inputs + VX1/VX3 term + Eris SOFR OIS + ICE CDS + trading calendar
 bun run job:crypto              # BTC options + spot (Deribit) — separate, no OpenD needed
 ```
 
 `job:daily` needs OpenD for the moomoo leg; if it's down that group fails and the others
 still run. Each underlying is independent. **Most regime perspectives fetch live per
 request** (FRED/Yahoo/CFTC/etc., cached 6h). Only the stored series — VIX/VXN, VX1/VX3,
-Eris SOFR OIS, BTC — are read from the DB by the regime / yield-curve endpoints.
+Eris SOFR OIS, ICE single-name CDS, BTC — are read from the DB by the regime / yield-curve endpoints.
 
 ## Schedule the daily job (macOS)
 
@@ -97,10 +98,10 @@ src/
 │   ├── index.ts             Hono app, exports AppType
 │   ├── config.ts            option/price whitelists (derived from marketCatalog)
 │   ├── routes/              health · options · vrp · price · regime · yieldCurve
-│   ├── fetchers/            moomoo · deribit · cboe(Index/Vx) · fred · yahoo · eris · jpxJgbVix · mofJgb · cftcCot · capeShiller · cnnFearGreed
+│   ├── fetchers/            moomoo · deribit · cboe(Index/Vx) · fred · yahoo · eris · iceCds · jpxJgbVix · mofJgb · cftcCot · capeShiller · cnnFearGreed
 │   ├── analytics/           vrp · termStructure · regime · rateCurves (all pure, read-time compute)
 │   ├── storage/             bun:sqlite schema, migrations, repository
-│   └── jobs/                daily orchestrator + optionsSnapshot / vrpInputs / vxTermStructure / cryptoDaily / erisSnapshot / btcPrice / tradingCalendar
+│   └── jobs/                daily orchestrator + optionsSnapshot / vrpInputs / vxTermStructure / cryptoDaily / erisSnapshot / iceCdsSnapshot / btcPrice / tradingCalendar
 └── web/
     ├── App.tsx              shell only (vertical perspectives × horizontal tabs, keep-alive)
     ├── perspectives.tsx     tab registry — each tab carries its own render() (asset/regime/curve/history factories)
@@ -147,7 +148,7 @@ several horizontal tabs:
 | 能源 Energy | Brent−WTI spread · diesel crack (油市结构 / 物理紧张) | Yahoo |
 | 利率 Rates | 收益曲线 · 期限走势 · SOFR OIS · OIS 走势 · 利率波动率 (MOVE) | FRED / Eris / Yahoo |
 | 日本 Japan | 日元 (USD-JPY + CFTC 持仓) · JGB 收益曲线 · 期限走势 · 日债波动率 (JGB VIX) | Yahoo / CFTC / MOF / JPX |
-| 信用曲线 Credit curve | 评级利差 · 期限结构 | FRED |
+| 信用曲线 Credit curve | 评级利差 · 期限结构 · AI CDS (AI 巨头 + Oracle 单名 CDS，价近似 spread bp) | FRED / ICE |
 | 通胀 Inflation | 通胀预期 (BEI) · 通胀走势 · 通胀来源 (RBOB YoY 等) | FRED / Yahoo |
 | 估值 Valuation | Shiller CAPE regime | Shiller |
 | 特色指标 Featured | 攻防 — NOBL/QQQ offense-defense via ZigZag | Yahoo |

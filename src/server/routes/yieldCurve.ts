@@ -4,7 +4,15 @@ import type { Point } from '../analytics/regime';
 import { HISTORY_START_DATE } from '../config';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
-import { ERIS_OIS_TENORS, CREDIT_RATING, CREDIT_TERM, BEI_TENORS, computeBeiCurve } from '../analytics/rateCurves';
+import {
+  ERIS_OIS_TENORS,
+  CREDIT_RATING,
+  CREDIT_TERM,
+  BEI_TENORS,
+  computeBeiCurve,
+  AI_CDS,
+  cdsPriceToSpreadBp,
+} from '../analytics/rateCurves';
 import { fetchJgbCurve } from '../fetchers/mofJgb';
 
 // 期限 → FRED 国债不变期限收益率 series id。数组顺序即曲线 x 轴顺序。
@@ -100,6 +108,14 @@ const buildOis = (): CurveBody =>
     (v) => v,
   );
 
+// AI 巨头 + 甲骨文单名 CDS:读库原始价,xform 成约定 spread(bp)。"tenor" 复用为公司名。
+// 非真曲线(公司无序),但复用 CurveBody 走 TenorHistoryPanel 的时间序列视图(每名一条线)。
+const buildAiCds = (): CurveBody =>
+  buildFromDb(
+    AI_CDS.map((c) => ({ label: c.name, symbol: `ICE_CDS_${c.ticker}` })),
+    cdsPriceToSpreadBp,
+  );
+
 // source → 曲线构造器。await 对同步返回值也安全,新增曲线源只加一行。
 const BUILDERS: Record<string, () => CurveBody | Promise<CurveBody>> = {
   treasury: buildTreasury, // 默认国债(FRED 现拉)
@@ -108,6 +124,7 @@ const BUILDERS: Record<string, () => CurveBody | Promise<CurveBody>> = {
   credit_term: () => buildFredCurve(CREDIT_TERM),
   bei: buildBei, // 通胀预期(BEI = DGS − DFII 现算)
   jgb: buildJgb, // 日本国债收益曲线(MOF)
+  ai_cds: buildAiCds, // AI 巨头 + 甲骨文单名 CDS(ICE 结算价读时换算 spread bp)
 };
 
 export const yieldCurveRoute = new Hono().get('/', async (c) => {

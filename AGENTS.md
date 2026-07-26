@@ -12,6 +12,7 @@
 | **FRED** | 利率(UST/TIPS)/ 信用利差(HY+IG 梯队)/ 流动性(WALCL/TGA/RRP/SOFR/IORB)/ 通胀(BEI=DGS−DFII、Sticky CPI、薪资) | JSON API `api.stlouisfed.org/fred/series/observations`(要 key) | 全历史 |
 | **Yahoo** | 股票 EOD + **DXY(`DX-Y.NYB` 真 ICE 美元指数)/ MOVE(`^MOVE`)/ 油品期货(`CL=F`/`BZ=F`/`HO=F`/`RB=F`)/ USD/JPY** | `yahoo-finance2` **v4** npm(class API `new YahooFinance()`) | 可回填多年 |
 | **其它** | Eris(SOFR OIS 曲线)/ MOF+JPX(JGB 收益率/JGB VIX)/ CFTC(日元净持仓)/ Shiller(CAPE) | 各自 adapter(见 `fetchers/`)| 多为全历史 |
+| **ICE** | AI 巨头 + 甲骨文单名 CDS EOD 结算价(`iceCds`) | 公开 JSON `www.ice.com/api/cds-settlement-prices/icc-single-names`(免 key) | **仅当天快照,不可回填** |
 | **moomoo** | 期权链(股票/ETF/指数:SPY/.VIX) | 本地 OpenD WebSocket `127.0.0.1:33333` | **仅当天快照,不可回填** |
 | **Deribit** | 加密期权链(BTC/ETH) | 公开 REST `deribit.com/api/v2/public`(免 key) | 链快照型;但 **DVOL** 波动率指数有历史 |
 
@@ -77,6 +78,12 @@
   `lastClosedTradingDate()` 归到正确的周五,否则 X 轴混入周末。
 - **CBOE(VIX 家族/SKEW/RXM/VX1)**:直接打 API + 下 CSV,**不需要 Playwright**。
 - **FRED(利率 / 信用利差 / 流动性 / 通胀)**:免费 key 在 `.env`(`FRED_API_KEY`),不要提交。**油品现货/期货走 Yahoo(`CL/BZ/HO/RB=F`),不是 FRED**;DXY 也走 Yahoo 真 ICE 指数(`DX-Y.NYB`),不用 FRED 的贸易加权 `DTWEXBGS`。
+- **ICE 单名 CDS(AI 巨头 + 甲骨文)**:免费公开端点(无 auth),真 CDS 结算价,不是债券代理/二手抓取。
+  几个坑:①端点吐的是**价**(平价 100)不是 spread,读时用 `cdsPriceToSpreadBp` 线性近似成 bp(annuity=4.7 校准);
+  存库存**原始价**(真值源)。②`instrumentName`(如 `ORCLE.SNRFOR.USD.XR14.100.2031-06-20`)按 ticker 匹配名单,
+  **不认 ICE 的 `name` 字段**(有 "Oracle Cop" 等错拼);筛 SNRFOR+USD+100bp 票息,同名多到期取最长(on-the-run 5Y)。
+  ③价 ≤0 当缺价滤掉(`Number('')→0` 会伪装成 ~2228bp 假数据)。④**仅当天快照、不可回填**,靠 daily 每天攒;
+  故 `ice_cds` 列入 `REQUIRED_JOBS`,且默认展示的 core 标的缺任一即 job failed 告警(`missingCoreCds`)。
 - **图表**:用 BusinessDay(字符串日期)压掉周末空隙;跨标的共享 X 轴时先 `dropWeekends()`。
 
 ## 约定
