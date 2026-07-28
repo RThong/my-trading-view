@@ -40,31 +40,27 @@ export type TenorSpec = { tenor: string; color: string; data: LinePoint[] };
 
 export type SpreadSpec = { label: string; color: string; data: LinePoint[] };
 
-/** 建图挂 containerRef;期限线 → pane 0;spread 给了 → pane 1 一条利差线 + 0 基线(共享时间轴、联动)。 */
+/** 建图挂 containerRef;期限线 → pane 0;spread 非 null → pane 1 一条利差线 + 0 基线(共享时间轴、联动)。
+ *  spread 传 null = 收起差值 pane(不重建图,故缩放/平移保留)。 */
 export function useTenorChart(
   containerRef: React.RefObject<HTMLDivElement | null>,
   rawSpecs: TenorSpec[],
-  rawSpread?: SpreadSpec,
+  rawSpread: SpreadSpec | null,
 ) {
   // 引用稳定化在 hook 内部扛:调用方传新数组字面量不该让 sync effect 每帧重跑 fitContent。
   const specs = useStable(rawSpecs);
-  const spread = useStable(rawSpread ?? null);
+  const spread = useStable(rawSpread);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
   const spreadRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const hasSpread = rawSpread !== undefined; // 组件生命周期内稳定
+  const showSpread = spread !== null;
 
-  // 挂载建一次;有 spread 则加 pane 1(2:1 高)。卸载销毁。
+  // 挂载建一次,卸载销毁。
   useEffect(() => {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, CHART_OPTIONS);
     chartRef.current = chart;
     const seriesMap = seriesRef.current; // 同一 Map(useRef 只建一次),捕获供 cleanup 用
-    if (hasSpread) {
-      chart.addPane();
-      chart.panes()[0].setStretchFactor(2);
-      chart.panes()[1].setStretchFactor(1);
-    }
     // 重建/卸载时清理:seriesMap 用捕获的局部;spreadRef 置空供重建时重新识别。
     return () => {
       chart.remove();
@@ -72,9 +68,29 @@ export function useTenorChart(
       chartRef.current = null;
       spreadRef.current = null;
     };
-  }, [containerRef, hasSpread]);
+  }, [containerRef]);
 
-  // 期限线(pane 0)+ 利差(pane 1)同步。
+  // 差值 pane(2:1 高)随显隐增删。单独一个 effect:挂在建图 effect 上会让每次切换重建整张图、丢缩放。
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !showSpread) return;
+
+    chart.addPane();
+    chart.panes()[0].setStretchFactor(2);
+    chart.panes()[1].setStretchFactor(1);
+
+    return () => {
+      // 卸载时建图 effect 的 cleanup 先跑过、chart 已销毁 → 用 ref 判活,别用捕获的局部。
+      const alive = chartRef.current;
+      // removePane 只是把 pane 从数组里 splice 掉,不销毁 pane 内的 series(v5.2 实现如此)
+      // → 必须自己先 removeSeries,否则反复显隐会把旧差值线连 0 基线一起攒在 chart 里。
+      if (alive && spreadRef.current) alive.removeSeries(spreadRef.current);
+      spreadRef.current = null;
+      if (alive && alive.panes().length > 1) alive.removePane(1);
+    };
+  }, [showSpread]);
+
+  // 期限线(pane 0)同步。fitContent 留在这里:期限勾选 / interval 变化才重取视窗。
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
@@ -100,26 +116,30 @@ export function useTenorChart(
       s.setData(spec.data);
     }
 
-    if (spread) {
-      if (!spreadRef.current) {
-        spreadRef.current = chart.addSeries(
-          LineSeries,
-          { color: spread.color, title: spread.label, lineWidth: 2, priceLineVisible: false },
-          1,
-        );
-        // 穿 0 = 倒挂。只在建线时加一次。
-        spreadRef.current.createPriceLine({
-          price: 0,
-          color: '#71717a',
-          lineWidth: 1,
-          lineStyle: 2,
-          axisLabelVisible: true,
-          title: '',
-        });
-      }
-      spreadRef.current.setData(spread.data);
-    }
-
     chart.timeScale().fitContent();
-  }, [specs, spread]);
+  }, [specs]);
+
+  // 差值线(pane 1)同步。独立于期限线:这里不碰 timeScale,否则显隐差值会把用户的缩放/平移 fit 掉。
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !spread) return;
+
+    if (!spreadRef.current) {
+      spreadRef.current = chart.addSeries(
+        LineSeries,
+        { color: spread.color, title: spread.label, lineWidth: 2, priceLineVisible: false },
+        1,
+      );
+      // 穿 0 = 倒挂。只在建线时加一次。
+      spreadRef.current.createPriceLine({
+        price: 0,
+        color: '#71717a',
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: '',
+      });
+    }
+    spreadRef.current.setData(spread.data);
+  }, [spread]);
 }
