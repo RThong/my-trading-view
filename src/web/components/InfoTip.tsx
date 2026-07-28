@@ -18,8 +18,9 @@ export function InfoTip({ text }: { text: string }) {
       >
         i
       </button>
+      {/* pre-wrap 而非 pre-line:后者会折叠行首空白,文案里的 '  · ' 层级缩进会全部失效。 */}
       {open && (
-        <span className="absolute left-0 top-5 z-30 block w-96 whitespace-pre-line rounded border border-neutral-700 bg-neutral-900 p-3 text-[13px] font-normal not-italic leading-relaxed text-neutral-300 shadow-lg">
+        <span className="absolute left-0 top-5 z-30 block w-96 whitespace-pre-wrap rounded border border-neutral-700 bg-neutral-900 p-3 text-[13px] font-normal not-italic leading-relaxed text-neutral-300 shadow-lg">
           {text}
         </span>
       )}
