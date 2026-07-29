@@ -1,7 +1,7 @@
 // 收益曲线视角数据层:拉 11 期限 FRED 序列 + 纯粹的日期解析逻辑。
 // 图表(SVG)与展示壳在 YieldCurveChart/YieldCurvePanel;这里只管取数与"取某日的一条曲线"。
 import useSWR from 'swr';
-import { unique } from 'remeda';
+import { unique, uniqueBy } from 'remeda';
 
 export type YPoint = { date: string; value: number };
 export type YieldCurveData = { tenors: string[]; series: Record<string, YPoint[]>; unavailable: string[] };
@@ -57,23 +57,33 @@ export function shiftDate(iso: string, opt: { days?: number; months?: number; ye
   return d.toISOString().slice(0, 10);
 }
 
-// 预置时间点(基于数据里最新那天,不是墙上时钟,避免踩周末/假日)。
+// 短端预置:直接数数据里最近 3 个交易日,不按日历("昨天/前天"在周一会双双贴到上周五)。
+const RECENT_LABELS = ['最新', '前1日', '前2日'];
+
+// 长端预置:按日历往前推,再贴到交易日(基于最新数据日,不是墙上时钟,避免踩周末/假日)。
 export const PRESETS: { label: string; shift: { days?: number; months?: number; years?: number } }[] = [
-  { label: '今天', shift: {} },
-  { label: '昨天', shift: { days: 1 } },
-  { label: '前天', shift: { days: 2 } },
   { label: '上周', shift: { days: 7 } },
   { label: '上个月', shift: { months: 1 } },
   { label: '半年前', shift: { months: 6 } },
   { label: '一年前', shift: { years: 1 } },
 ];
 
-/** 预置项 → 贴到真实交易日的日期(datesAsc 升序,maxDate 为最新数据日)。 */
+/** 预置项 → 真实交易日(datesAsc 升序,maxDate 为最新数据日)。
+ *  短端取最近 3 个交易日;长端按日历推后贴。
+ *  同日去重保留靠前的标签:长端(如上个月/半年前)在历史稀疏时可能贴到同一天,
+ *  留两条一模一样的曲线没意义,且面板按 date 反查标签只会命中第一个。 */
 export function presetDates(maxDate: string, datesAsc: string[]): { label: string; date: string }[] {
-  return PRESETS.flatMap(({ label, shift }) => {
+  const recent = RECENT_LABELS.flatMap((label, i) => {
+    const date = datesAsc[datesAsc.length - 1 - i];
+    return date ? [{ label, date }] : [];
+  });
+
+  const older = PRESETS.flatMap(({ label, shift }) => {
     const snapped = snapToTradingDay(datesAsc, shiftDate(maxDate, shift));
     return snapped ? [{ label, date: snapped }] : [];
   });
+
+  return uniqueBy([...recent, ...older], (p) => p.date);
 }
 
 // ── Hook ──────────────────────────────────────────────────────────

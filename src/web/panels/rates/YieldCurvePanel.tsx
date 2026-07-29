@@ -38,7 +38,7 @@ export function YieldCurvePanel({ source }: { source: string }) {
   const [seeded, setSeeded] = useState(false);
   const nextId = (rs: Row[]) => (rs.length ? Math.max(...rs.map((r) => r.id)) : -1) + 1; // id = 现有最大 + 1(免可变计数 ref)
 
-  // 数据到位后种一次预设时间点(今天/昨天/…/一年前),均勾选。渲染中条件 setState + seeded
+  // 数据到位后种一次预设时间点(最新/前1日/…/一年前),均勾选。渲染中条件 setState + seeded
   // 单调标志替代 effect:只种一次、删空也不重种,且无需对 exhaustive-deps 谎报依赖。
   if (!seeded && maxDate && rows.length === 0) {
     setRows(presets.map((p, i) => ({ id: i, date: p.date, visible: true })));
