@@ -14,21 +14,7 @@ import {
   cdsPriceToSpreadBp,
 } from '../analytics/rateCurves';
 import { fetchJgbCurve } from '../fetchers/mofJgb';
-
-// 期限 → FRED 国债不变期限收益率 series id。数组顺序即曲线 x 轴顺序。
-const TENORS: [string, string][] = [
-  ['1M', 'DGS1MO'],
-  ['3M', 'DGS3MO'],
-  ['6M', 'DGS6MO'],
-  ['1Y', 'DGS1'],
-  ['2Y', 'DGS2'],
-  ['3Y', 'DGS3'],
-  ['5Y', 'DGS5'],
-  ['7Y', 'DGS7'],
-  ['10Y', 'DGS10'],
-  ['20Y', 'DGS20'],
-  ['30Y', 'DGS30'],
-];
+import { fetchTreasuryCurve, UST_TENORS } from '../fetchers/usTreasuryPar';
 
 type CurveBody = { tenors: string[]; series: Record<string, Point[]>; unavailable: string[] };
 
@@ -54,11 +40,18 @@ async function buildFredCurve(pairs: { tenor: string; series: string }[]): Promi
 }
 
 /**
- * 美债收益曲线:11 个期限的 FRED 日频收益率,读时现拉、零存储(同 regime)。
- * 并行 + 优雅降级:单期限失败(FRED key 缺 / 序列 404)→ 归入 unavailable,其余照常返回。
- * 曲线的组装(取某日各期限值)在前端按需做,后端只回原始时间序列。前端 SWR 已做客户端缓存。
+ * 美债收益曲线:美国财政部每日 par yield 直发源(当天出,比 FRED DGS 快 1-2 天;FRED 本就搬这份)。
+ * 按年拉 HISTORY_START_DATE 的年份 → 今年,并行 + 优雅降级(单年失败跳过)。某档全程无数据 → unavailable。
+ * 读时现拉、零存储(同 regime);前端 SWR 已做客户端缓存。
  */
-const buildTreasury = (): Promise<CurveBody> => buildFredCurve(TENORS.map(([tenor, series]) => ({ tenor, series })));
+async function buildTreasury(): Promise<CurveBody> {
+  const series = await fetchTreasuryCurve();
+
+  const avail = Object.fromEntries(UST_TENORS.flatMap((t) => (series[t]?.length ? [[t, series[t]]] : [])));
+  const unavailable = UST_TENORS.filter((t) => !series[t]?.length);
+
+  return { tenors: UST_TENORS, series: avail, unavailable };
+}
 
 // 从 market_series 读一组 (label→symbol),按 xform 转值;缺行的 label 进 unavailable。
 function buildFromDb(pairs: { label: string; symbol: string }[], xform: (v: number) => number): CurveBody {

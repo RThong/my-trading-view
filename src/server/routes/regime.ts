@@ -7,6 +7,7 @@ import { fetchJgbCurve } from '../fetchers/mofJgb';
 import { fetchJgbVix } from '../fetchers/jpxJgbVix';
 import { fetchCftcJpyNet } from '../fetchers/cftcCot';
 import { fetchShillerCape } from '../fetchers/capeShiller';
+import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
 import { subtractAligned, divideAligned, yoyPct, scale, type Point } from '../analytics/regime';
 import { computeSpread } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
@@ -48,8 +49,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     sofr: fredSeries('SOFR'),
     iorb: fredSeries('IORB'),
     hyOas: fredSeries('BAMLH0A0HYM2'),
-    dgs10: fredSeries('DGS10'),
-    dgs2: fredSeries('DGS2'),
+    // dgs10 / dgs2 改走财政部 par yield 直发源(当天出,FRED DGS 慢 1-2 天),见下方 ustP。
     wages: fredSeries('FRBATLWGT3MMAUMHWGO'), // Atlanta Fed 薪资增速 tracker(3mma,月频 %)
     stickyCpi: fredSeries('CORESTICKM159SFRBATL'), // Sticky Price CPI(服务黏性,YoY%,月频)
     cor1m: cboeSeries('COR1M'),
@@ -73,6 +73,8 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     .fetchDailyBars('JPY=X', new Date(0))
     .catch(() => null);
   const jgbCurveP = fetchJgbCurve('2018-01-01').catch(() => null); // 一次拉,派生 2Y/10Y
+  // 美债 par yield(财政部直发,当天新):一次拉,派生 10Y(利率波动率)/ 2Y(日元 carry 利差腿)。
+  const ustP = fetchTreasuryCurve().catch(() => null);
   const jgbVixP = fetchJgbVix('2018-01-01').catch(() => null);
   const cftcJpyP = fetchCftcJpyNet('2018-01-01').catch(() => null);
   // 席勒 CAPE(月频,Robert Shiller 数据集;全历史 1871→今)。
@@ -92,16 +94,19 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     if (s.status === 'fulfilled') raw[names[i]] = s.value;
   });
   const usdBars = await usdBarsP;
-  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape] = await Promise.all([
+  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape, ust] = await Promise.all([
     usdjpyBarsP,
     jgbCurveP,
     cftcJpyP,
     jgbVixP,
     capeP,
+    ustP,
   ]);
   const [wti, brent, diesel, rbob] = await oilP;
   const jgb2y = jgbCurve?.series['2Y'] ?? null;
   const jgb10y = jgbCurve?.series['10Y'] ?? null;
+  const dgs10 = ust?.['10Y'] ?? null;
+  const dgs2 = ust?.['2Y'] ?? null; // 美日 2Y 利差的日腿
 
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
@@ -122,7 +127,6 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     reverseRepo: 'rrp',
     repoUsage: 'rpo',
     move: 'move',
-    dgs10: 'dgs10',
     wages: 'wages',
     stickyCpi: 'stickyCpi',
   };
@@ -133,7 +137,8 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 日元 carry 三序列
   put('usdjpy', usdjpyBars?.length ? usdjpyBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
   put('cftcJpy', cftcJpy?.length ? cftcJpy : undefined);
-  put('usjp2y', raw.dgs2 && jgb2y?.length ? subtractAligned([raw.dgs2, jgb2y]) : undefined); // 美日 2Y 利差 = DGS2 − JGB2Y
+  put('dgs10', dgs10?.length ? dgs10 : undefined); // 10Y 国债(财政部直发,利率波动率 pane)
+  put('usjp2y', dgs2?.length && jgb2y?.length ? subtractAligned([dgs2, jgb2y]) : undefined); // 美日 2Y 利差 = UST2Y − JGB2Y
   put('jgb10y', jgb10y?.length ? jgb10y : undefined);
   put('jgbVix', jgbVix?.length ? jgbVix : undefined);
   // CAPE 图只画 1990+(全历史 1871 太远、可眼看互联网泡沫);分位窗口更近(前端 pctlSince 2000+)。
