@@ -7,7 +7,7 @@
  */
 
 /** 把某瞬间换算成美东(America/New_York)的日期与小时。 */
-function nyParts(now: Date): { date: string; hour: number } {
+export function nyParts(now: Date): { date: string; hour: number } {
   const m = Object.fromEntries(
     new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/New_York',

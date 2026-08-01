@@ -6,6 +6,7 @@ import { createYahooFetcher } from '../fetchers/yahoo';
 import { fetchJgbCurve } from '../fetchers/mofJgb';
 import { fetchJgbVix } from '../fetchers/jpxJgbVix';
 import { fetchCftcJpyNet } from '../fetchers/cftcCot';
+import { fetchMoveSeries, mergeMove } from '../fetchers/moveIndex';
 import { fetchShillerCape } from '../fetchers/capeShiller';
 import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
 import { subtractAligned, divideAligned, yoyPct, scale, type Point } from '../analytics/regime';
@@ -57,11 +58,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     rxm: cboeSeries('RXM'),
     spx: cboeSeries('SPX'),
     fng: fetchFearGreed(),
-    // 债市波动率 MOVE(Yahoo ^MOVE,ICE BofA MOVE 指数;带 caret,无 caret 的 MOVE 是 Movado 股)。
-    move: (async () => {
-      const bars = await createYahooFetcher().fetchDailyBars('^MOVE', new Date(HISTORY_START_DATE));
-      return bars.map((b) => ({ date: b.tradeDate, value: b.close }));
-    })(),
+    // 债市波动率 MOVE:日线 + meta 当日点(Yahoo 的 close 会整段返回 null,详见 fetchers/moveIndex)。
+    // 库里还有 daily job 攒的补丁,在下方 db 段合并。
+    move: fetchMoveSeries(new Date(HISTORY_START_DATE)).then((r) => r.points),
   };
   const names = Object.keys(src) as (keyof typeof src)[];
   // 美元指数 DXY 单独抓(要 OHLC 画蜡烛;全历史 1971→今,live 不落库)。moomoo OpenD 无 FX 行情权限。
@@ -126,7 +125,6 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     fng: 'fng',
     reverseRepo: 'rrp',
     repoUsage: 'rpo',
-    move: 'move',
     wages: 'wages',
     stickyCpi: 'stickyCpi',
   };
@@ -187,6 +185,10 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     // VX1−V3 期限结构价差(读 VX1/VX3 现算),给情绪视角画符号柱状图。
     const spread = computeSpread(getMarketSeries(db, 'VX1'), getMarketSeries(db, 'VX3'));
     put('vxTermSpread', spread.length ? spread.map((r) => ({ date: r.date, value: r.spread })) : undefined);
+
+    // MOVE:实时拉的优先,库里的补丁只填 Yahoo 断供的那些天。
+    const move = mergeMove(raw.move ?? [], getMarketSeries(db, 'MOVE'));
+    put('move', move.length ? move : undefined);
   } finally {
     db.close();
   }

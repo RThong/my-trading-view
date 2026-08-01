@@ -76,6 +76,14 @@
 - **Yahoo(股票 EOD + DXY/MOVE/油品期货/USD-JPY)**:用 `yahoo-finance2` **v4**(class API `new YahooFinance()`;
   v4 相对 v3 只把最低 Node 提到 22,**API 无变化**)。周末它会返回标着周六/日的快照——用
   `lastClosedTradingDate()` 归到正确的周五,否则 X 轴混入周末。
+- **MOVE(ICE BofA 债市波动率,走 Yahoo `^MOVE`)**:带 caret,无 caret 的 `MOVE` 是 Movado 股票。
+  MOVE 是 ICE 授权指数,FRED / stooq 都没有,GitHub 上的仓库不是用 yfinance 就是 Bloomberg,**没有第二个免费源**。
+  坑:Yahoo 的日线 `quotes[].close` 会**整段返回 null**(2026-07-20 起,已用 CNBC 与 TradingView 核对确认值仍在更新),
+  但同一响应的 `meta.regularMarketPrice/Time` 仍带当日真值。故 `fetchers/moveIndex` 用 meta 补当天,
+  `jobs/moveSnapshot` 把整条序列镜像进 `market_series` 的 `MOVE`,regime 路由读时 **Yahoo 优先、库兜底**
+  (`mergeMove`),源自愈后真值自动 upsert 覆盖,**没有删除路径**。断供期 meta 只有当日快照、漏一天永久缺一格,
+  故 `move` 列入 `REQUIRED_JOBS`,且成败判据是「本次有没有拿到**已收盘**的 meta 点」(盘中值不落库,见 `isCloseSnapshot`:判的是**当下**——meta 的 ET 日已翻篇、或现在已过 17:00 ET——不看 meta 那一刻几点,故半日市早收不构成特例。取 17 不取 16 是因为 MOVE ~16:34 ET 才定盘)——**不要改成比对交易日历**,
+  假日 `lastClosedTradingDate()` 会返回假日当天,导致整天判失败、守卫永远不绿。
 - **CBOE(VIX 家族/SKEW/RXM/VX1)**:直接打 API + 下 CSV,**不需要 Playwright**。
 - **FRED(利率 / 信用利差 / 流动性 / 通胀)**:免费 key 在 `.env`(`FRED_API_KEY`),不要提交。**油品现货/期货走 Yahoo(`CL/BZ/HO/RB=F`),不是 FRED**;DXY 也走 Yahoo 真 ICE 指数(`DX-Y.NYB`),不用 FRED 的贸易加权 `DTWEXBGS`。
 - **ICE 单名 CDS(AI 巨头 + 甲骨文)**:免费公开端点(无 auth),真 CDS 结算价,不是债券代理/二手抓取。
