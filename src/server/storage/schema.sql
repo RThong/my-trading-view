@@ -71,3 +71,22 @@ CREATE TABLE IF NOT EXISTS option_chain_raw (
     PRIMARY KEY (underlying, snapshot_date, expiry)
 );
 CREATE INDEX IF NOT EXISTS idx_opt_chain_date ON option_chain_raw(snapshot_date);
+
+-- SEC XBRL 单季财务事实(AI 链基本面锚)。存**单季已差分值**而非原始 YTD 累计:
+-- 差分/去重/tag 选择都是有损判断,把判断结果落库并带上 tag_used/accn/filed 三个溯源列,
+-- 出错时能直接看出是哪个 tag、哪次申报进来的。派生量(TTM 毛利率/capex/FCF)另写 market_series。
+-- 季频、滞后 4~8 周、会因重述回改 —— 只 upsert 不删,重述后同主键覆盖。
+CREATE TABLE IF NOT EXISTS sec_fundamentals (
+    ticker       TEXT NOT NULL,
+    period_end   TEXT NOT NULL,      -- YYYY-MM-DD,财报期末
+    concept      TEXT NOT NULL,      -- revenue | cogs | ocf | capex
+    value        REAL NOT NULL,      -- 单季值(已差分),USD
+    tag_used     TEXT NOT NULL,      -- 实际命中的 us-gaap tag
+    form         TEXT NOT NULL,      -- 10-Q / 10-K
+    accn         TEXT NOT NULL,      -- 申报号
+    filed        TEXT NOT NULL,      -- 申报日,用于判重述
+    fiscal_q     TEXT,               -- 日历季度,如 2026Q1
+    fetched_at   TEXT NOT NULL,
+    PRIMARY KEY (ticker, period_end, concept)
+);
+CREATE INDEX IF NOT EXISTS idx_sec_fundamentals_ticker ON sec_fundamentals(ticker);

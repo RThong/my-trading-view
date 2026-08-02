@@ -253,6 +253,100 @@ export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[]): v
   );
 }
 
+// ── sec_fundamentals(SEC XBRL 单季财务事实)─────────────────────────────────
+
+export type SecFundamentalRow = {
+  ticker: string;
+  periodEnd: string;
+  concept: string; // 'revenue' | 'cogs' | 'ocf' | 'capex'
+  value: number; // 单季值(已差分),USD
+  tagUsed: string;
+  form: string;
+  accn: string;
+  filed: string;
+  fiscalQ: string;
+};
+
+export function insertSecFundamentals(db: Database, rows: SecFundamentalRow[]): void {
+  bulkUpsert(
+    db,
+    `
+    INSERT INTO sec_fundamentals
+      (ticker, period_end, concept, value, tag_used, form, accn, filed, fiscal_q, fetched_at)
+    VALUES ($t, $pe, $c, $v, $tag, $form, $accn, $filed, $fq, $f)
+    ON CONFLICT(ticker, period_end, concept) DO UPDATE SET
+      value=excluded.value, tag_used=excluded.tag_used, form=excluded.form, accn=excluded.accn,
+      filed=excluded.filed, fiscal_q=excluded.fiscal_q, fetched_at=excluded.fetched_at
+  `,
+    rows,
+    (r, f) => ({
+      $t: r.ticker,
+      $pe: r.periodEnd,
+      $c: r.concept,
+      $v: r.value,
+      $tag: r.tagUsed,
+      $form: r.form,
+      $accn: r.accn,
+      $filed: r.filed,
+      $fq: r.fiscalQ,
+      $f: f,
+    }),
+  );
+}
+
+export function getSecFundamentals(db: Database, ticker: string): SecFundamentalRow[] {
+  const rows = db
+    .query(`
+    SELECT ticker, period_end, concept, value, tag_used, form, accn, filed, fiscal_q
+    FROM sec_fundamentals WHERE ticker = $t ORDER BY period_end ASC
+  `)
+    .all({ $t: ticker }) as Array<{
+    ticker: string;
+    period_end: string;
+    concept: string;
+    value: number;
+    tag_used: string;
+    form: string;
+    accn: string;
+    filed: string;
+    fiscal_q: string;
+  }>;
+
+  return rows.map((r) => ({
+    ticker: r.ticker,
+    periodEnd: r.period_end,
+    concept: r.concept,
+    value: r.value,
+    tagUsed: r.tag_used,
+    form: r.form,
+    accn: r.accn,
+    filed: r.filed,
+    fiscalQ: r.fiscal_q,
+  }));
+}
+
+/** 按前缀取一族序列(SEC 派生量比对用:算出来的和库里的一致就整轮不写)。
+ *  前缀里的 `_` / `%` 会被 LIKE 当通配符,故统一转义后再匹配。 */
+export function getMarketSeriesByPrefix(db: Database, prefix: string): MarketSeriesRow[] {
+  const escaped = prefix.replace(/[\\_%]/g, (ch) => `\\${ch}`);
+  const rows = db
+    .query(`
+    SELECT series_id, obs_date, value FROM market_series
+    WHERE series_id LIKE $p ESCAPE '\\' ORDER BY series_id, obs_date
+  `)
+    .all({ $p: `${escaped}%` }) as Array<{ series_id: string; obs_date: string; value: number }>;
+
+  return rows.map((r) => ({ seriesId: r.series_id, obsDate: r.obs_date, value: r.value }));
+}
+
+/** 本地已知的最新申报日;与 SEC submissions 比对,决定要不要拉几 MB 的 companyfacts。 */
+export function getLatestSecFiled(db: Database, ticker: string): string | null {
+  const row = db.query(`SELECT MAX(filed) AS d FROM sec_fundamentals WHERE ticker = $t`).get({ $t: ticker }) as {
+    d: string | null;
+  };
+  return row?.d ?? null;
+}
+
 export function getJobHealth(db: Database): JobStatus[] {
   // 取每个 job 的「最新一条」run —— 不再过滤 finished_at IS NOT NULL,
   // 否则正在 running(含卡死)的最新 run 会被隐藏,状态灯还亮着上次的 success。

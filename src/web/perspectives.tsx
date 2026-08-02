@@ -108,6 +108,8 @@ export const PERSPECTIVES: Perspective[] = [
     ],
   },
   regimePersp('valuation', '估值'),
+  regimePersp('fundamentals', '基本面'), // AI 链财务(SEC XBRL,季频)——不与日频指标同页
+
   {
     id: 'industry',
     label: '行业',

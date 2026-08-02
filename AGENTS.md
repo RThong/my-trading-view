@@ -14,6 +14,7 @@
 | **其它** | Eris(SOFR OIS 曲线)/ MOF+JPX(JGB 收益率/JGB VIX)/ CFTC(日元净持仓)/ Shiller(CAPE) | 各自 adapter(见 `fetchers/`)| 多为全历史 |
 | **ICE** | AI 巨头 + 甲骨文单名 CDS EOD 结算价(`iceCds`) | 公开 JSON `www.ice.com/api/cds-settlement-prices/icc-single-names`(免 key) | **仅当天快照,不可回填** |
 | **moomoo** | 期权链(股票/ETF/指数:SPY/.VIX) | 本地 OpenD WebSocket `127.0.0.1:33333` | **仅当天快照,不可回填** |
+| **SEC XBRL** | AI 链公司季报财务(TTM 毛利率/capex/FCF) | 公开 JSON `data.sec.gov`(免 key,**必须带 User-Agent**);submissions 比 filed → 有新申报才拉 companyfacts | 全历史(季频) |
 | **Deribit** | 加密期权链(BTC/ETH) | 公开 REST `deribit.com/api/v2/public`(免 key) | 链快照型;但 **DVOL** 波动率指数有历史 |
 
 **关键差异**:**两个期权源(moomoo + Deribit)的链都是快照型**——25Δ 序列只能从今往后每个
@@ -100,4 +101,4 @@
   `react-hooks/exhaustive-deps` 为 error)。因 typescript-eslint 不支持项目用的 TS7,lint 用 Biome/oxlint
   这类 Rust 工具(不依赖 typescript 包)。**不要自动 git commit**,等用户发话。
 - 注释用中文。声明式优先于命令式 `for` 循环。
-- 秘密只在 `.env`(gitignored):`FRED_API_KEY`、`MOOMOO_WS_*`。
+- 秘密只在 `.env`(gitignored):`FRED_API_KEY`、`MOOMOO_WS_*`、`SEC_USER_AGENT`(SEC 要求真实联系方式)。

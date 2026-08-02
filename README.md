@@ -30,7 +30,8 @@ well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local pag
   - Yahoo (`yahoo-finance2` v4) — DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY · stock EOD fallback
   - Eris — SOFR OIS par curve · MOF + JPX — JGB yields / JGB VIX · CFTC — JPY net positioning · Shiller — CAPE · CNN — Fear & Greed
   - [ICE](https://www.ice.com/cds-settlement-prices/icc/single-name-instruments) — free public single-name CDS EOD settlement prices (AI 巨头 + Oracle)
-- **Scheduling:** macOS `launchd` (daily job, options + VRP + VX + Eris + ICE CDS)
+  - [SEC XBRL](https://data.sec.gov) — quarterly company fundamentals (TTM gross margin / capex / FCF for the AI chain); needs `SEC_USER_AGENT`
+- **Scheduling:** macOS `launchd` (daily job, options + VRP + VX + Eris + ICE CDS; separate weekly job for SEC fundamentals)
 
 The end-to-end type safety from server routes to React components flows through
 Hono's `hc<AppType>` typed client — there's no hand-written API client.
@@ -70,22 +71,26 @@ Open <http://localhost:5173>. Ctrl-C kills both. For separate logs: `bun run dev
 ```bash
 bun run job:daily               # options (moomoo) + VRP inputs + VX1/VX3 term + Eris SOFR OIS + ICE CDS + trading calendar
 bun run job:crypto              # BTC options + spot (Deribit) — separate, no OpenD needed
+bun run job:sec                 # SEC XBRL fundamentals — quarterly data, weekly cadence; add --force or TICKER... to override
 ```
 
 `job:daily` needs OpenD for the moomoo leg; if it's down that group fails and the others
 still run. Each underlying is independent. **Most regime perspectives fetch live per
 request** (FRED/Yahoo/CFTC/etc., cached 6h). Only the stored series — VIX/VXN, VX1/VX3,
-Eris SOFR OIS, ICE single-name CDS, BTC — are read from the DB by the regime / yield-curve endpoints.
+Eris SOFR OIS, ICE single-name CDS, BTC, SEC fundamentals — are read from the DB by the
+regime / yield-curve endpoints. `job:sec` compares SEC's `filed` dates first, so most weeks are a no-op.
 
 ## Schedule the daily job (macOS)
 
-Two hand-managed `launchd` agents (plists in `~/Library/LaunchAgents`, not in git):
+Three hand-managed `launchd` agents (plists in `~/Library/LaunchAgents`, not in git;
+generate/reload them all with `./scripts/gen-cron.sh`):
 
-- `com.mtv.daily` — stocks via OpenD, Tue–Sat at 10/13/16/19/22 local.
+- `com.mtv.daily` — stocks via OpenD, Tue–Sat at 11/12/20/21/22 local.
 - `com.mtv.crypto` — BTC via Deribit (no OpenD), every day at the same hours.
+- `com.mtv.sec` — SEC XBRL fundamentals, Saturdays only (quarterly data; needs no OpenD).
 
-Each runs 5×/day; the job's "succeed once, then skip" guard stops after the first all-green
-run. Logs in `data/logs/`. After editing a plist, reload with
+The two daily agents run 5×/day; the job's "succeed once, then skip" guard stops after the
+first all-green run. Logs in `data/logs/`. After editing a plist, reload with
 `launchctl bootout gui/$(id -u)/<label>` then `bootstrap gui/$(id -u) <plist>`.
 Check recent runs with `./scripts/cron.sh history`.
 

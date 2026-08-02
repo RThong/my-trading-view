@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Database } from 'bun:sqlite';
 import { createFredFetcher } from '../fetchers/fred';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 import { fetchFearGreed } from '../fetchers/cnnFearGreed';
@@ -26,12 +27,53 @@ const TTL_MS = 6 * 60 * 60 * 1000;
 let cache: { at: number; body: RegimeBody } | null = null;
 
 /**
+ * SEC 基本面派生量(季频,jobs/secFundamentals 维护)。库里没有就归 unavailable,该 pane 留空——
+ * 这几条不像行情那样天天更新,job 没跑过是常态,不该整页失败。
+ *
+ * capex / FCF 只画 2020 起:更早的年份 XBRL 里没有年度 capex 行(NVDA FY2013–FY2021 只有 3 条
+ * 10-K capex,全来自 2012 那次申报),Q4 无从还原 → 单季序列断成孤岛,折线会在断档上画出跨年的
+ * 人造直线,斜率是假的。库里原始行全保留,只在读时裁。毛利率不受影响(2009 起连续)。
+ */
+function readSecSeries(db: Database): { series: Record<string, Point[]>; unavailable: string[] } {
+  const defs = [
+    ['secFcfTotal', 'SEC_AICHAIN_FCF_TTM', '2020-01-01'],
+    ['secNvdaGm', 'SEC_NVDA_GM_TTM', ''],
+    ['secNvdaCapex', 'SEC_NVDA_CAPEX_TTM', '2020-01-01'],
+  ] as const;
+
+  const series: Record<string, Point[]> = {};
+  const unavailable: string[] = [];
+
+  for (const [out, id, cut] of defs) {
+    const rows = getMarketSeries(db, id).filter((r) => r.date >= cut);
+    if (rows.length) series[out] = rows;
+    else unavailable.push(out);
+  }
+
+  return { series, unavailable };
+}
+
+/**
  * 宏观 / regime 指标:现拉外部源(零存储,见 spec),并行 + 优雅降级 + 内存 TTL 缓存。
  * 单源失败(FRED key 缺 / CBOE 符号 404 / CNN 反爬)→ 归入 unavailable,其余照常返回,不整体 500。
  * 净流动性 / 回购利差为读时派生(前向填充对齐后线性组合)。
  */
 export const regimeRoute = new Hono().get('/', async (c) => {
-  if (cache && Date.now() - cache.at < TTL_MS) return c.json(cache.body);
+  // 缓存命中也重读 SEC 那几条:它们由独立的周 job 写库,进程内缓存看不到跨进程的写入,
+  // 否则刚跑完 job 最长还要等 6h 才在面板上出现。读库很便宜,不值得为它整体失效缓存。
+  if (cache && Date.now() - cache.at < TTL_MS) {
+    const db = openDb();
+    try {
+      const sec = readSecSeries(db);
+      return c.json({
+        ...cache.body,
+        series: { ...cache.body.series, ...sec.series },
+        unavailable: [...cache.body.unavailable.filter((n) => !n.startsWith('sec')), ...sec.unavailable],
+      });
+    } finally {
+      db.close();
+    }
+  }
 
   const fred = createFredFetcher({ apiKey: process.env.FRED_API_KEY ?? '' });
   const fredSeries = (id: string): Promise<Point[]> =>
@@ -189,11 +231,17 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     // MOVE:实时拉的优先,库里的补丁只填 Yahoo 断供的那些天。
     const move = mergeMove(raw.move ?? [], getMarketSeries(db, 'MOVE'));
     put('move', move.length ? move : undefined);
+
+    const sec = readSecSeries(db);
+    for (const [out, rows] of Object.entries(sec.series)) put(out, rows);
+    unavailable.push(...sec.unavailable);
   } finally {
     db.close();
   }
 
   const body: RegimeBody = { series, unavailable, ohlc };
-  if (unavailable.length === 0) cache = { at: Date.now(), body }; // 只缓存全成功
+  // 只缓存全成功(降级响应不缓存,下次重试)。例外:SEC 那几条是季频、靠单独的周 job 攒,
+  // 从没跑过 job 的库里它们必然缺——不能让这个常态把整条路由的缓存永久关掉。
+  if (unavailable.every((n) => n.startsWith('sec'))) cache = { at: Date.now(), body };
   return c.json(body);
 });

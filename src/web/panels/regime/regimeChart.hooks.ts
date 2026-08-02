@@ -29,6 +29,19 @@ const SIGMA_ID = '恒等式 σ指数 ≈ σ个股 × √平均相关性 → VIX 
 const BREADTH_CHECK =
   '判别看宽度(RSP/SPY、200 日线上占比)+ 头部权重 + 流动性 P/Q:宽度塌 + 权重高 = 被少数巨头按住,不是健康分化。';
 const PINNED_VOL = '⚠️ 央行可信干预会诱使市场做多 gamma、内生压低波动率:这种低波不是真稳,可信度一破反向弹性极大。';
+// SEC 基本面三格共用:季频数据的读法约束。写在每格开头,防止被当日频指标使。
+const SEC_CAVEAT =
+  '\n源:SEC XBRL 财报实际值(非预期、非市场定价)。**季频、滞后 4~8 周、会因重述回改** —— ' +
+  '用途是证实/证伪叙事,不是择时;不要用它解释当天的价格。';
+// capex/FCF 两条线共用:源缺 Q4 capex 导致的断档,必须写在图旁边——折线只连点,断档处的斜率是假的。
+const SEC_CAPEX_GAP =
+  'XBRL 里没有 NVDA FY2013–FY2021 的年度 capex(仅 3 条 10-K 行,全来自 2012 那次申报),' +
+  'Q4 无从还原 → 单季序列断成孤岛。故这两条只画 2020 起,库里原始行全保留。' +
+  '2020 之后仍有一处断档(2022-01-30 → 2023-10-29,FY2023 只报了 9M 与 FY 两条累计),' +
+  '**那一段的直线是两点连线不是真数据,别读它的斜率**。';
+const SEC_ROSTER_CAVEAT =
+  '名单按判据分两侧:买铲子的(MSFT/GOOGL/AMZN/META/ORCL)才是 FCF 判据的对象,' +
+  '卖铲子的(NVDA/AVGO)看毛利率。当前只接了 NVDA,故这条合计线暂时只等于 NVDA 一家,不构成判据。';
 
 export type RegimePoint = { date: string; value: number };
 export type RegimeData = { series: Record<string, RegimePoint[]>; unavailable: string[]; ohlc?: Record<string, Bar[]> };
@@ -59,7 +72,8 @@ export type RegimeDim =
   | 'jpy'
   | 'jgbVol'
   | 'valuation'
-  | 'oil';
+  | 'oil'
+  | 'fundamentals';
 
 // 每个 pane 自带完整定义:单一 key 既是 pane 身份,也是 data.series[key]/data.ohlc[key] 的数据键。
 // 取代原来 ~10 张按同一 key 索引的平行 map(paneDefs/seriesName/colors/baseline/riskTail/
@@ -618,6 +632,60 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
           '  · 单看高估值只值得关注。' + RESONANCE,
           '',
           '分位只用 2000+ 算(CAPE 结构性抬升,长历史比不公平)。',
+        ].join('\n'),
+      },
+    ],
+  },
+  // AI 链基本面(SEC XBRL,季频)。这一组不套分位——样本仅十余期,分位是噪声。
+  fundamentals: {
+    panes: [
+      {
+        key: 'secFcfTotal',
+        label: '合计 FCF',
+        title: 'AI 链合计 TTM 自由现金流(百万美元)',
+        color: '#22c55e',
+        render: { kind: 'line', baseline: 0 }, // 零轴 = 判据本身
+        desc: [
+          '定义:AI 链各家 TTM 自由现金流(经营现金流 − 资本开支)之和。' + SEC_CAVEAT,
+          '判据(微观 §6.14):看的不是水平,是**会不会转负**——合计 FCF 跌破零轴 = capex 吞掉了',
+          '整条链的现金生成能力,扩张只能靠举债续,资本结构从自我造血转向外部融资。',
+          '',
+          '读法:',
+          '  · 零轴上方且抬升 = 扩张仍在自我造血,段位偏早。',
+          '  · 抬升但斜率转平 = capex 增速追上 OCF 增速,离转折不远。',
+          '  · 破零 = ③→④ 的硬信号。届时看举债路径(长期负债)确认。',
+          '',
+          '⚠️ ' + SEC_ROSTER_CAVEAT,
+          '⚠️ ' + SEC_CAPEX_GAP,
+        ].join('\n'),
+      },
+      {
+        key: 'secNvdaGm',
+        label: 'NVDA 毛利率',
+        title: 'NVDA TTM 毛利率(%)',
+        color: '#eab308',
+        desc: [
+          '定义:英伟达 TTM 毛利率 =(营收 − 营业成本)/ 营收。' + SEC_CAVEAT,
+          '判据:卖铲子一侧的**稀缺溢价读数**。见顶回落 = 供给追上需求、议价权开始让渡,',
+          '与买方 FCF 转负是同一转折的两侧(一侧收钱变难,一侧花钱变多)。',
+          '读法是**相对自身近年中枢的趋势**,不设硬阈值:TTM 口径下 70~75 区间的来回属常态,',
+          '单季波动更不算。要的是「连续多期离开中枢往下」这个形状,不是某一次跌破某个数。',
+          '',
+          '⚠️ 单季异常先查一次性事项再下结论:2025-04-27 那季 60.5% 是 H20 存货减值 45 亿的结果,',
+          '不是定价能力变化——TTM 口径会把它摊四个季度,别读成趋势。',
+        ].join('\n'),
+      },
+      {
+        key: 'secNvdaCapex',
+        label: 'NVDA capex',
+        title: 'NVDA TTM 资本开支(百万美元)',
+        color: '#60a5fa',
+        desc: [
+          '定义:英伟达 TTM 资本开支(购置固定资产付现)。' + SEC_CAVEAT,
+          '定位:配角,用来和上面两条对读——卖铲子的自身 capex 相对其 OCF 微不足道,',
+          '这正是「卖铲子 vs 买铲子」现金流结构差异的直观佐证。真正吃 FCF 的是买方那几家。',
+          '',
+          '⚠️ ' + SEC_CAPEX_GAP,
         ].join('\n'),
       },
     ],
