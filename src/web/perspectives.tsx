@@ -11,6 +11,7 @@ import { SoxFngPanel } from './panels/industry/SoxFngPanel';
 import type { RegimeDim } from './panels/regime/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
 import { MARKET_CATALOG } from '../shared/marketCatalog';
+import { SEC_ACTIVE_TICKERS } from '../shared/secCompanies';
 
 export type TabDef = { id: string; label: string; render: (interval: Interval) => ReactNode };
 export type Perspective = { id: string; label: string; tabs: TabDef[] };
@@ -108,7 +109,17 @@ export const PERSPECTIVES: Perspective[] = [
     ],
   },
   regimePersp('valuation', '估值'),
-  regimePersp('fundamentals', '基本面'), // AI 链财务(SEC XBRL,季频)——不与日频指标同页
+  {
+    id: 'fundamentals',
+    label: '基本面',
+    // AI 链财务(SEC XBRL,季频)。一家一个横 tab、各带自己的三格(毛利率/FCF/capex);
+    // 「买方合计」不属于任何一家,单独一个 tab 排在最前 —— 它才是 §6.14 的判据线。
+    // tab 由启用名单派生:开一家公司只改 SEC_ACTIVE_TICKERS,这里和路由都不用动。
+    tabs: [
+      regimeTab('buyer', '买方合计', 'fundamentals:buyer'),
+      ...SEC_ACTIVE_TICKERS.map((t) => regimeTab(t.toLowerCase(), t, `fundamentals:${t}`)),
+    ],
+  },
 
   {
     id: 'industry',

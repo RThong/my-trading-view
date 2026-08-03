@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import type { Interval } from '../../hooks/interval';
 import { usePaneChartStack } from '../chart/paneChart.hooks';
 import {
@@ -6,15 +6,17 @@ import {
   buildRegimeSpecs,
   regimePercentiles,
   derivePaneMeta,
-  REGIME_DIMS,
+  dimPanes,
   type RegimeDim,
 } from './regimeChart.hooks';
 import { PaneChartView } from '../chart/PaneChartView';
 
 // 一个 regime 维度(信用/流动性/情绪)的多 pane 堆叠图。薄壳:取数 → build specs → 三个通用 hook → 展示壳。
-// 实例与维度绑定一辈子(App keep-alive),故 panes 取模块常量即引用稳定。
+// 实例与维度绑定一辈子(App keep-alive)。固定维度的 panes 是模块常量;基本面维度按名单现算,见下。
 export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Interval }) {
-  const { panes } = REGIME_DIMS[dim];
+  // 基本面维度的 panes 按名单现算(每次渲染新引用)。usePaneChart 内部有 useStable 深比较兜底,
+  // 所以这层 useMemo 只为省掉每帧的重建与深比较;dim 一辈子不变,deps 只需 dim。
+  const panes = useMemo(() => dimPanes(dim), [dim]);
   const { paneDefs, seriesName, colors, desc } = derivePaneMeta(panes);
   const paneCount = paneDefs.length;
   const containerRef = useRef<HTMLDivElement>(null);

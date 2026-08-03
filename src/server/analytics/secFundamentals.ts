@@ -21,8 +21,7 @@ import type { Point } from './regime';
 
 export type { Point };
 
-type Concept = 'revenue' | 'cogs' | 'ocf' | 'capex';
-
+export type Concept = 'revenue' | 'cogs' | 'ocf' | 'capex';
 export type FactRow = {
   start?: string;
   end: string;
@@ -45,7 +44,7 @@ export type CompanyFacts = {
  * 换用它,会盖掉更早 filed 的 `CostOfRevenue`,成本被低估、毛利率虚高。`CostOfGoodsAndServicesSold`
  * 已是「货+服务」口径,够覆盖 MSFT/ORCL 这类公司。哪家两档都不命中,会在开那家时的核对里暴露。
  */
-const TAG_CHAINS: Record<Concept, string[]> = {
+export const TAG_CHAINS: Record<Concept, string[]> = {
   revenue: [
     'Revenues',
     'RevenueFromContractWithCustomerExcludingAssessedTax',
@@ -60,6 +59,10 @@ const TAG_CHAINS: Record<Concept, string[]> = {
     'PaymentsToAcquireOtherPropertyPlantAndEquipment',
   ],
 };
+
+/** 四个科目缺一个就算不出 FCF(ocf−capex)或毛利率((revenue−cogs)/revenue)。job 的完整性守卫用。
+ *  从 TAG_CHAINS 的键派生而非手写:加第 5 个科目时漏改会变成「静默不抽取」,正是要防的那类错。 */
+export const CONCEPTS = Object.keys(TAG_CHAINS) as Concept[];
 
 const PERIODIC_FORMS = new Set(['10-Q', '10-K']);
 const DAY_MS = 86_400_000;
@@ -164,7 +167,7 @@ export function toQuarters(periods: Period[]): QuarterFact[] {
 
 /** companyfacts → 四个科目的单季行(可直接落 sec_fundamentals)。 */
 export function extractFundamentals(ticker: string, facts: CompanyFacts): SecFundamentalRow[] {
-  return (Object.keys(TAG_CHAINS) as Concept[]).flatMap((concept) =>
+  return CONCEPTS.flatMap((concept) =>
     toQuarters(collectPeriods(facts, TAG_CHAINS[concept])).map((q) => ({ ticker, concept, ...q })),
   );
 }
@@ -223,7 +226,24 @@ export function deriveSeries(rows: SecFundamentalRow[]): DerivedSeries {
 }
 
 export const seriesId = (ticker: string, kind: 'GM' | 'CAPEX' | 'FCF'): string => `SEC_${ticker}_${kind}_TTM`;
-export const AICHAIN_FCF_SERIES = 'SEC_AICHAIN_FCF_TTM';
+/** §6.14 判据线:**只汇总买方**(见 shared/secCompanies 的 side)。卖方混进来会让「跌破零轴」永远不成立。 */
+export const BUYER_FCF_SERIES = 'SEC_BUYER_FCF_TTM';
+
+/**
+ * 只保留**尾部连续段**:从最后一点往前走,相邻点间隔超过 maxGapDays 就断开。
+ *
+ * 为什么必须裁:折线只连点,断档两端会被连成一条直线,而那条直线的斜率是**编出来的**。
+ * 本组判据全在读斜率(「抬升但斜率转平 = 离转折不远」),一条假斜率直接把判据读反。
+ * 断档的成因是源的空缺(如 NVDA FY2013–FY2021 的年度 capex 在 XBRL 里不存在,Q4 无从还原),
+ * 不是抓取失败,补不回来。库里原始行全保留,只在读时裁。
+ *
+ * 阈值 120 天:季度点间隔约 91 天,少报一季就是 182 天,故 120 能挡住「缺任一季」。
+ */
+export function trailingContiguous<T extends { date: string }>(points: T[], maxGapDays = 120): T[] {
+  const gapAt = points.findLastIndex((p, i) => i > 0 && durationDays(points[i - 1]!.date, p.date) > maxGapDays);
+
+  return gapAt < 0 ? points : points.slice(gapAt);
+}
 
 /**
  * 合计 TTM FCF:**按日历季度对齐**,不按期间末日。各家财年末不同(NVDA 1 月末 / MSFT 6 月末 …),

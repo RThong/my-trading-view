@@ -15,6 +15,8 @@ import { computeSpread } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
+import { BUYER_FCF_SERIES, seriesId as secSeriesId, trailingContiguous } from '../analytics/secFundamentals';
+import { SEC_ACTIVE_TICKERS, SEC_BUYER_FCF_KEY, SEC_KINDS, secKey, type SecKind } from '../../shared/secCompanies';
 
 // 后端不 import web 的 Bar(跨边界);内联 OHLC 形状,JSON 与前端 chart 的 Bar 一致。
 type OhlcBar = { time: string; open: number; high: number; low: number; close: number };
@@ -30,22 +32,28 @@ let cache: { at: number; body: RegimeBody } | null = null;
  * SEC 基本面派生量(季频,jobs/secFundamentals 维护)。库里没有就归 unavailable,该 pane 留空——
  * 这几条不像行情那样天天更新,job 没跑过是常态,不该整页失败。
  *
- * capex / FCF 只画 2020 起:更早的年份 XBRL 里没有年度 capex 行(NVDA FY2013–FY2021 只有 3 条
- * 10-K capex,全来自 2012 那次申报),Q4 无从还原 → 单季序列断成孤岛,折线会在断档上画出跨年的
- * 人造直线,斜率是假的。库里原始行全保留,只在读时裁。毛利率不受影响(2009 起连续)。
+ * 序列按**启用名单**派生(一家三条 + 一条买方合计),键由 shared/secCompanies 的 secKey 生成,
+ * 与面板同源,加公司不用改这里。
+ *
+ * 每条都过 trailingContiguous:源缺 Q4 capex 会让单季序列断成孤岛,折线会把断档连成一条
+ * 斜率是编的直线,而这组判据全在读斜率。库里原始行全保留,只在读时裁。
  */
+// 对外键的 kind → 库里 series_id 的段名。写成查表:漏加一档是编译错误,不是静默落到 FCF。
+const ID_SEGMENT: Record<SecKind, 'GM' | 'CAPEX' | 'FCF'> = { gm: 'GM', capex: 'CAPEX', fcf: 'FCF' };
+
 function readSecSeries(db: Database): { series: Record<string, Point[]>; unavailable: string[] } {
   const defs = [
-    ['secFcfTotal', 'SEC_AICHAIN_FCF_TTM', '2020-01-01'],
-    ['secNvdaGm', 'SEC_NVDA_GM_TTM', ''],
-    ['secNvdaCapex', 'SEC_NVDA_CAPEX_TTM', '2020-01-01'],
-  ] as const;
+    ...SEC_ACTIVE_TICKERS.flatMap((ticker) =>
+      SEC_KINDS.map((kind) => ({ out: secKey(ticker, kind), id: secSeriesId(ticker, ID_SEGMENT[kind]) })),
+    ),
+    { out: SEC_BUYER_FCF_KEY, id: BUYER_FCF_SERIES },
+  ];
 
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
 
-  for (const [out, id, cut] of defs) {
-    const rows = getMarketSeries(db, id).filter((r) => r.date >= cut);
+  for (const { out, id } of defs) {
+    const rows = trailingContiguous(getMarketSeries(db, id));
     if (rows.length) series[out] = rows;
     else unavailable.push(out);
   }

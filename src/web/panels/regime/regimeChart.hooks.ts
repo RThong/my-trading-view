@@ -5,6 +5,7 @@ import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../lib/ch
 import { percentile, percentileRank } from '../../../shared/stats';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../chart/paneChart.types';
+import { SEC_BUYER_FCF_KEY, chainTickers, secKey, sideOf, type SecKind } from '../../../shared/secCompanies';
 
 // 分位带阈值(自身历史):想改 5/95 更严就动这里。
 const PCTL_LO = 5;
@@ -29,19 +30,19 @@ const SIGMA_ID = '恒等式 σ指数 ≈ σ个股 × √平均相关性 → VIX 
 const BREADTH_CHECK =
   '判别看宽度(RSP/SPY、200 日线上占比)+ 头部权重 + 流动性 P/Q:宽度塌 + 权重高 = 被少数巨头按住,不是健康分化。';
 const PINNED_VOL = '⚠️ 央行可信干预会诱使市场做多 gamma、内生压低波动率:这种低波不是真稳,可信度一破反向弹性极大。';
-// SEC 基本面三格共用:季频数据的读法约束。写在每格开头,防止被当日频指标使。
+// SEC 基本面各格共用:季频数据的读法约束。写在每格开头,防止被当日频指标使。
 const SEC_CAVEAT =
   '\n源:SEC XBRL 财报实际值(非预期、非市场定价)。**季频、滞后 4~8 周、会因重述回改** —— ' +
   '用途是证实/证伪叙事,不是择时;不要用它解释当天的价格。';
-// capex/FCF 两条线共用:源缺 Q4 capex 导致的断档,必须写在图旁边——折线只连点,断档处的斜率是假的。
-const SEC_CAPEX_GAP =
-  'XBRL 里没有 NVDA FY2013–FY2021 的年度 capex(仅 3 条 10-K 行,全来自 2012 那次申报),' +
-  'Q4 无从还原 → 单季序列断成孤岛。故这两条只画 2020 起,库里原始行全保留。' +
-  '2020 之后仍有一处断档(2022-01-30 → 2023-10-29,FY2023 只报了 9M 与 FY 两条累计),' +
-  '**那一段的直线是两点连线不是真数据,别读它的斜率**。';
+// 名单会变,所以只写**口径与条件**,不写「当前接了哪几家」——写状态的文案一定会过期。
+// 两侧名单现算,别在文案里写死 —— 名单一改文案就过期。只列因果链内的(备查的三家不是判据成员)。
+const tickersOf = (side: 'buyer' | 'seller') => chainTickers(side).join('/');
 const SEC_ROSTER_CAVEAT =
-  '名单按判据分两侧:买铲子的(MSFT/GOOGL/AMZN/META/ORCL)才是 FCF 判据的对象,' +
-  '卖铲子的(NVDA/AVGO)看毛利率。当前只接了 NVDA,故这条合计线暂时只等于 NVDA 一家,不构成判据。';
+  `AI 链按判据分两侧(见 shared/secCompanies 的 side):**买铲子的**(${tickersOf('buyer')} —— 花钱建算力)` +
+  `进这条合计线;**卖铲子的**(${tickersOf('seller')} —— 收钱)只看毛利率、**不进**这条线。` +
+  '分侧不是分类洁癖:卖方在涨价周期里正 FCF 极大,混进来会把零轴永远垫在下方,判据直接失效。' +
+  '线上只汇总「已启用且属买方」的那几家(名单按「逐家核对毛利率后才开」推进),' +
+  '故**买方一家都没开时这格是空的** —— 空 = 判据还没有数据,不是「FCF 为零」。';
 
 export type RegimePoint = { date: string; value: number };
 export type RegimeData = { series: Record<string, RegimePoint[]>; unavailable: string[]; ohlc?: Record<string, Bar[]> };
@@ -73,7 +74,11 @@ export type RegimeDim =
   | 'jgbVol'
   | 'valuation'
   | 'oil'
-  | 'fundamentals';
+  // 基本面按启用名单派生:一家一个 dim(三格),外加一条买方合计。见 dimPanes / companyPanes。
+  | `fundamentals:${string}`;
+
+/** 固定维度(配置写死那些);基本面维度是按名单派生的,不进这张表。 */
+type FixedDim = Exclude<RegimeDim, `fundamentals:${string}`>;
 
 // 每个 pane 自带完整定义:单一 key 既是 pane 身份,也是 data.series[key]/data.ohlc[key] 的数据键。
 // 取代原来 ~10 张按同一 key 索引的平行 map(paneDefs/seriesName/colors/baseline/riskTail/
@@ -94,7 +99,7 @@ type PaneSpec = {
 
 type DimConfig = { panes: PaneSpec[] };
 
-export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
+export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
   credit: {
     panes: [
       {
@@ -636,61 +641,123 @@ export const REGIME_DIMS: Record<RegimeDim, DimConfig> = {
       },
     ],
   },
-  // AI 链基本面(SEC XBRL,季频)。这一组不套分位——样本仅十余期,分位是噪声。
-  fundamentals: {
-    panes: [
-      {
-        key: 'secFcfTotal',
-        label: '合计 FCF',
-        title: 'AI 链合计 TTM 自由现金流(百万美元)',
-        color: '#22c55e',
-        render: { kind: 'line', baseline: 0 }, // 零轴 = 判据本身
-        desc: [
-          '定义:AI 链各家 TTM 自由现金流(经营现金流 − 资本开支)之和。' + SEC_CAVEAT,
-          '判据(微观 §6.14):看的不是水平,是**会不会转负**——合计 FCF 跌破零轴 = capex 吞掉了',
-          '整条链的现金生成能力,扩张只能靠举债续,资本结构从自我造血转向外部融资。',
-          '',
-          '读法:',
-          '  · 零轴上方且抬升 = 扩张仍在自我造血,段位偏早。',
-          '  · 抬升但斜率转平 = capex 增速追上 OCF 增速,离转折不远。',
-          '  · 破零 = ③→④ 的硬信号。届时看举债路径(长期负债)确认。',
-          '',
-          '⚠️ ' + SEC_ROSTER_CAVEAT,
-          '⚠️ ' + SEC_CAPEX_GAP,
-        ].join('\n'),
-      },
-      {
-        key: 'secNvdaGm',
-        label: 'NVDA 毛利率',
-        title: 'NVDA TTM 毛利率(%)',
-        color: '#eab308',
-        desc: [
-          '定义:英伟达 TTM 毛利率 =(营收 − 营业成本)/ 营收。' + SEC_CAVEAT,
-          '判据:卖铲子一侧的**稀缺溢价读数**。见顶回落 = 供给追上需求、议价权开始让渡,',
-          '与买方 FCF 转负是同一转折的两侧(一侧收钱变难,一侧花钱变多)。',
-          '读法是**相对自身近年中枢的趋势**,不设硬阈值:TTM 口径下 70~75 区间的来回属常态,',
-          '单季波动更不算。要的是「连续多期离开中枢往下」这个形状,不是某一次跌破某个数。',
-          '',
-          '⚠️ 单季异常先查一次性事项再下结论:2025-04-27 那季 60.5% 是 H20 存货减值 45 亿的结果,',
-          '不是定价能力变化——TTM 口径会把它摊四个季度,别读成趋势。',
-        ].join('\n'),
-      },
-      {
-        key: 'secNvdaCapex',
-        label: 'NVDA capex',
-        title: 'NVDA TTM 资本开支(百万美元)',
-        color: '#60a5fa',
-        desc: [
-          '定义:英伟达 TTM 资本开支(购置固定资产付现)。' + SEC_CAVEAT,
-          '定位:配角,用来和上面两条对读——卖铲子的自身 capex 相对其 OCF 微不足道,',
-          '这正是「卖铲子 vs 买铲子」现金流结构差异的直观佐证。真正吃 FCF 的是买方那几家。',
-          '',
-          '⚠️ ' + SEC_CAPEX_GAP,
-        ].join('\n'),
-      },
-    ],
-  },
 };
+
+// ── 基本面维度:按启用名单派生,一家一个 dim(三格)+ 一条买方合计 ────────────────
+// 不写死在 REGIME_DIMS 里,否则每开一家公司都要手改三处(路由键 / pane 表 / 横 tab)。
+
+/** 各家自己的实测事实(不会过期的历史值 / 一次性事项),挂在对应公司的格上。 */
+const COMPANY_NOTES: Record<string, string> = {
+  NVDA:
+    '⚠️ 单季异常先查一次性事项:2025-04-27 那季单季毛利率 60.5% 是 H20 存货减值 45 亿的结果,' +
+    '不是定价能力变化 —— TTM 口径会把它摊四个季度,别读成趋势。',
+  MU:
+    '⚠️ 波幅远大于算力侧,读「在自身周期的哪个位置」而非跨公司比高低。库里实测历史标尺(2010 起):' +
+    '最低 −14.5%(2023-11,亏损年)、上一轮 2018 存储周期峰值 59.6%。' +
+    '**MU 毛利率是 DRAM/NAND 价格周期的免费代理** —— 权威现货价(TrendForce)要钱,而存储是纯周期品:' +
+    '同样的晶圆,价格涨落几乎全反映在毛利率上,增量收入接近全额毛利。',
+};
+
+// 断档裁剪是后端统一做的(trailingContiguous),对**每条** sec 序列都生效(含毛利率)。
+// 各家/各科目的起点因此长短不一,必须在每一格都讲清楚,否则「怎么这条线只有几年」无处可查。
+const SEC_TRIM_NOTE =
+  '⚠️ 只画**最近一段连续序列**:XBRL 里某些季度的原始行根本不存在(常见于早年,如 NVDA FY2013–FY2021 ' +
+  '没有年度 capex 行、Q4 无从还原;毛利率也会因某季缺 revenue/cogs 而断),单季序列就断成孤岛。' +
+  '折线只连点,断档两端会被连成一条**斜率是编的**直线,而这组判据全在读斜率,' +
+  '故早于断档的孤立段一律裁掉(库里原始行全保留,只在读时裁)。各家各格的起点长短不一就是这个原因。';
+
+const SELLER_GM =
+  '判据:卖铲子一侧的**稀缺溢价读数**。见顶回落 = 供给追上需求、议价权开始让渡,' +
+  '与买方 FCF 转负是同一转折的两侧(一侧收钱变难,一侧花钱变多)。' +
+  '读**相对自身近年中枢的趋势**,不设硬阈值 —— 要的是「连续多期离开中枢往下」这个形状,' +
+  '不是某一次跌破某个数。';
+const BUYER_GM = '定位:配角。买方的毛利率由本业(云 / 广告 / 软件)主导,不是 AI 判据;放这里只为和自家 capex 对读。';
+const SELLER_FCF =
+  '定位:**卖方的 FCF 不进买方合计线**(见「买方合计」tab)。卖方在涨价周期里正 FCF 极大,' +
+  '混进合计会把零轴永远垫在下方,§6.14 的「跌破零轴」就永远不成立。这条只看这家自身的现金生成。';
+const BUYER_FCF_READ = [
+  '判据(微观 §6.14):看的不是水平,是**会不会转负** —— 跌破零轴 = capex 吞掉了现金生成能力,',
+  '扩张只能靠举债续,资本结构从自我造血转向外部融资。',
+  '  · 零轴上方且抬升 = 扩张仍在自我造血,段位偏早。',
+  '  · 抬升但斜率转平 = capex 增速追上 OCF 增速,离转折不远。',
+  '  · 破零 = ③→④ 的硬信号。届时看举债路径(长期负债)确认。',
+].join('\n');
+
+const paneOf = (
+  ticker: string,
+  kind: SecKind,
+  label: string,
+  title: string,
+  color: string,
+  lines: Array<string | undefined>,
+): PaneSpec => ({
+  key: secKey(ticker, kind),
+  label,
+  title,
+  color,
+  ...(kind === 'fcf' ? { render: { kind: 'line' as const, baseline: 0 } } : {}),
+  // 不配 percentile:样本仅十余期,分位是噪声。
+  // 只丢 undefined —— '' 是段落分隔符,InfoTip 用 whitespace-pre-wrap 渲染,filter(Boolean) 会把它一起吃掉。
+  desc: lines.filter((l) => l !== undefined).join('\n'),
+});
+
+function companyPanes(ticker: string): PaneSpec[] {
+  const seller = sideOf(ticker) === 'seller';
+  const note = COMPANY_NOTES[ticker];
+
+  return [
+    paneOf(ticker, 'gm', '毛利率', `${ticker} TTM 毛利率(%)`, '#eab308', [
+      `定义:${ticker} TTM 毛利率 =(营收 − 营业成本)/ 营收。` + SEC_CAVEAT,
+      '',
+      seller ? SELLER_GM : BUYER_GM,
+      '',
+      SEC_TRIM_NOTE,
+      ...(note ? ['', note] : []),
+    ]),
+    paneOf(ticker, 'fcf', 'FCF', `${ticker} TTM 自由现金流(百万美元)`, '#22c55e', [
+      `定义:${ticker} TTM 自由现金流 = 经营现金流 − 资本开支。` + SEC_CAVEAT,
+      '',
+      seller ? SELLER_FCF : BUYER_FCF_READ,
+      '',
+      SEC_TRIM_NOTE,
+    ]),
+    paneOf(ticker, 'capex', 'capex', `${ticker} TTM 资本开支(百万美元)`, '#60a5fa', [
+      `定义:${ticker} TTM 资本开支(购置固定资产付现)。` + SEC_CAVEAT,
+      '',
+      seller
+        ? '定位:配角,和上面两条对读 —— 卖铲子的自身 capex 相对其 OCF 微不足道,这正是「卖铲子 vs 买铲子」现金流结构差异的直观佐证。真正吃 FCF 的是买方。'
+        : '判据:capex 的斜率就是 §6.14 的分子。它加速而 OCF 不跟上 = FCF 见顶的直接成因;要和同 tab 的 FCF 格对读,单看 capex 抬升不构成信号(收入同步扩张时是健康扩产)。',
+      '',
+      SEC_TRIM_NOTE,
+    ]),
+  ];
+}
+
+const buyerAggregatePane: PaneSpec = {
+  key: SEC_BUYER_FCF_KEY,
+  label: '买方合计 FCF',
+  title: 'AI 链买方合计 TTM 自由现金流(百万美元)',
+  color: '#22c55e',
+  render: { kind: 'line', baseline: 0 },
+  desc: [
+    '定义:**买方**(花钱建算力那一侧)已启用各家 TTM 自由现金流之和。' + SEC_CAVEAT,
+    '',
+    '⚠️ 口径先读这条:' + SEC_ROSTER_CAVEAT,
+    '',
+    BUYER_FCF_READ,
+    '  · 覆盖不全时读趋势不读绝对值:少一家买方,零轴的位置就没有可比性。',
+    '',
+    SEC_TRIM_NOTE,
+  ].join('\n'),
+};
+
+/** dim → panes。基本面维度按名单现算(引用每次新建,故 RegimeChart 里要 useMemo 化的地方已由 dim 固定)。 */
+export function dimPanes(dim: RegimeDim): PaneSpec[] {
+  if (!dim.startsWith('fundamentals:')) return REGIME_DIMS[dim as FixedDim].panes;
+
+  const who = dim.slice('fundamentals:'.length);
+  return who === 'buyer' ? [buyerAggregatePane] : companyPanes(who);
+}
 
 /** 从 panes[] 派生 PaneChartView 需要的平行 map(pane 定义 / 命名 / 配色 / 说明)。 */
 export function derivePaneMeta(panes: PaneSpec[]) {
@@ -707,7 +774,7 @@ const toLine = (rows: RegimePoint[]): LinePoint[] => rows.map((r) => ({ time: r.
 /** 一序列一 pane:pane 下标 = panes 索引;缺失的序列(unavailable)不建 spec,该 pane 留空。
  *  percentile 的 pane:按原始日频值算 P5/P95 作参考线(与显示 interval 无关)。 */
 export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Interval): Spec[] {
-  return REGIME_DIMS[dim].panes.flatMap((p, pane): Spec[] => {
+  return dimPanes(dim).flatMap((p, pane): Spec[] => {
     const key = p.key;
     if (data.unavailable.includes(key)) return []; // unavailable 权威:不建 spec
     const render = p.render ?? { kind: 'line' as const };
@@ -785,7 +852,7 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
 /** 各序列最新值在自身历史里的百分位(徽标用,如 { cor1m: 'P3' })。仅 percentile 的 pane 产出。 */
 export function regimePercentiles(data: RegimeData, dim: RegimeDim): Record<string, string> {
   return Object.fromEntries(
-    REGIME_DIMS[dim].panes.flatMap((p) => {
+    dimPanes(dim).flatMap((p) => {
       if (!p.percentile) return []; // 无分位 pane(含 signed / candle)无徽标
       if (data.unavailable.includes(p.key)) return [];
       const rows = data.series[p.key];

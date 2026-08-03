@@ -5,7 +5,9 @@ import {
   collectPeriods,
   deriveSeries,
   extractFundamentals,
+  TAG_CHAINS,
   toQuarters,
+  trailingContiguous,
   ttm,
   type CompanyFacts,
   type FactRow,
@@ -86,6 +88,139 @@ describe('YTD 差分还原单季', () => {
       ['2025-04-27', 100],
       ['2025-07-27', 130],
     ]);
+  });
+});
+
+describe('MU 黄金值(存储侧,tag 画像与 NVDA 完全不同)', () => {
+  // MU 的 revenue 要三个 tag 缝起来才有全历史,且 CostOfRevenue 在 MU 根本不存在。
+  // 实测值来自 data.sec.gov;Q3 FY2026 公司公布营收 41.5B、非 GAAP 毛利率 84.9%(GAAP 84.6%)。
+  const MU_REV_YTD = [
+    row('2025-08-29', '2025-11-27', 13_643_000_000, { filed: '2025-12-18' }),
+    row('2025-08-29', '2026-02-26', 37_503_000_000, { filed: '2026-03-19' }),
+    row('2025-08-29', '2026-05-28', 78_959_000_000, { filed: '2026-06-25' }),
+  ];
+  const MU_COGS_YTD = [
+    row('2025-08-29', '2025-11-27', 5_997_000_000, { filed: '2025-12-18' }),
+    row('2025-08-29', '2026-02-26', 12_102_000_000, { filed: '2026-03-19' }),
+    row('2025-08-29', '2026-05-28', 18_502_000_000, { filed: '2026-06-25' }),
+  ];
+
+  test('YTD 差分还原出的单季与源里的直接单季行逐位一致', () => {
+    const diffed = toQuarters(
+      collectPeriods(facts({ RevenueFromContractWithCustomerExcludingAssessedTax: MU_REV_YTD }), [
+        'RevenueFromContractWithCustomerExcludingAssessedTax',
+      ]),
+    );
+
+    // 78.959 − 37.503 = 41.456,与 SEC 里那条 start=2026-02-27 的直接单季行相同。
+    expect(diffed.map((q) => [q.periodEnd, q.value])).toEqual([
+      ['2025-11-27', 13_643_000_000],
+      ['2026-02-26', 23_860_000_000],
+      ['2026-05-28', 41_456_000_000],
+    ]);
+  });
+
+  test('cogs 走 CostOfGoodsAndServicesSold(MU 没有 CostOfRevenue),毛利率 84.6%', () => {
+    const muFacts = facts({
+      RevenueFromContractWithCustomerExcludingAssessedTax: MU_REV_YTD,
+      CostOfGoodsAndServicesSold: MU_COGS_YTD,
+    });
+    const rows = extractFundamentals('MU', muFacts);
+    const q3 = (concept: string) => rows.find((r) => r.concept === concept && r.periodEnd === '2026-05-28')!;
+
+    expect(q3('cogs').tagUsed).toBe('CostOfGoodsAndServicesSold');
+    expect(q3('revenue').value).toBe(41_456_000_000);
+    expect(q3('cogs').value).toBe(6_400_000_000);
+
+    const gm = ((q3('revenue').value - q3('cogs').value) / q3('revenue').value) * 100;
+    expect(gm).toBeCloseTo(84.56, 2);
+  });
+
+  test('ocf 也跨两个 tag:老年份走 ...ContinuingOperations,新年份走主 tag', () => {
+    // MU 实测:2011-09~2016-06 那 16 期走的是 ...ContinuingOperations。链里少这一档,
+    // 那几年的 ocf 全没,FCF 会被 trailingContiguous 裁到 2017 之后而无人察觉。
+    const stitched = collectPeriods(
+      facts({
+        NetCashProvidedByUsedInOperatingActivitiesContinuingOperations: [
+          row('2015-09-04', '2015-12-03', 1_500_000_000, { filed: '2016-01-07' }),
+        ],
+        NetCashProvidedByUsedInOperatingActivities: [
+          row('2025-08-29', '2025-11-27', 5_000_000_000, { filed: '2025-12-18' }),
+        ],
+      }),
+      TAG_CHAINS.ocf, // 走生产链:少一档 tag 这条测试就红
+    );
+
+    expect(stitched.map((p) => [p.end, p.tag])).toEqual([
+      ['2015-12-03', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'],
+      ['2025-11-27', 'NetCashProvidedByUsedInOperatingActivities'],
+    ]);
+  });
+
+  test('capex 的第二档也在链里:PaymentsToAcquireProductiveAssets(NVDA 近年走它)', () => {
+    const stitched = collectPeriods(
+      facts({
+        PaymentsToAcquireProductiveAssets: [row('2025-01-27', '2025-04-27', 1_230_000_000)],
+      }),
+      TAG_CHAINS.capex,
+    );
+
+    expect(stitched.map((p) => p.tag)).toEqual(['PaymentsToAcquireProductiveAssets']);
+  });
+
+  test('三个 revenue tag 逐期缝成一条:各段都进来,重叠期不重复', () => {
+    const stitched = collectPeriods(
+      facts({
+        SalesRevenueNet: [row('2016-06-03', '2016-09-01', 3_217_000_000, { filed: '2016-10-01' })],
+        Revenues: [row('2016-12-02', '2017-03-02', 4_648_000_000, { filed: '2017-04-01' })],
+        RevenueFromContractWithCustomerExcludingAssessedTax: [MU_REV_YTD[0]!],
+      }),
+      TAG_CHAINS.revenue, // 走生产链:少一档 tag 这条测试就红
+    );
+
+    expect(stitched.map((p) => [p.end, p.tag])).toEqual([
+      ['2016-09-01', 'SalesRevenueNet'],
+      ['2017-03-02', 'Revenues'],
+      ['2025-11-27', 'RevenueFromContractWithCustomerExcludingAssessedTax'],
+    ]);
+  });
+});
+
+describe('tag 链的内容本身', () => {
+  // 期望清单**写死**,不能遍历 TAG_CHAINS —— 遍历是自指的:某档被删掉,循环就不测它,测试照样绿。
+  // 实测过这个后果:少了 SalesRevenueNet,MU 的 revenue 直接丢掉 2008–2016 整段而没人发现。
+  // 故意改链时这条会红,那正是它的用途:提醒你顺手确认「哪些公司靠这一档」。
+  const EXPECTED: Record<string, string[]> = {
+    revenue: [
+      'Revenues',
+      'RevenueFromContractWithCustomerExcludingAssessedTax',
+      'RevenueFromContractWithCustomerIncludingAssessedTax',
+      'SalesRevenueNet',
+    ],
+    cogs: ['CostOfRevenue', 'CostOfGoodsAndServicesSold'],
+    ocf: [
+      'NetCashProvidedByUsedInOperatingActivities',
+      'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations',
+    ],
+    capex: [
+      'PaymentsToAcquirePropertyPlantAndEquipment',
+      'PaymentsToAcquireProductiveAssets',
+      'PaymentsToAcquireOtherPropertyPlantAndEquipment',
+    ],
+  };
+
+  test('四条链一档不少(删档即红)', () => {
+    expect(TAG_CHAINS).toEqual(EXPECTED);
+  });
+
+  test('每一档单独出现时都能被命中(用生产链跑,删档即命中不到)', () => {
+    for (const [concept, chain] of Object.entries(EXPECTED)) {
+      const live = TAG_CHAINS[concept as keyof typeof TAG_CHAINS];
+      for (const tag of chain) {
+        const hit = collectPeriods(facts({ [tag]: [row('2025-01-27', '2025-04-27', 1)] }), live).map((p) => p.tag);
+        expect(hit, `${concept} 的 ${tag} 应被生产链命中`).toEqual([tag]);
+      }
+    }
   });
 });
 
@@ -208,6 +343,36 @@ test('派生量:毛利率百分点、金额百万美元、FCF 可负', () => {
   expect(gmTtm).toEqual([{ date: '2026-01-25', value: 60, fiscalQ: '2025Q4' }]);
   expect(capexTtm.at(-1)).toMatchObject({ date: '2026-01-25', value: 80 });
   expect(fcfTtm.at(-1)).toMatchObject({ date: '2026-01-25', value: -40 });
+});
+
+describe('尾部连续段裁剪', () => {
+  const p = (date: string) => ({ date, value: 1 });
+
+  test('孤岛段裁掉,只留最后一段连续的', () => {
+    // NVDA 实测形态:2012 四点 → 隔 9 年 → 2022-01-30 → 隔 21 个月 → 2023-10 起才真连续。
+    expect(
+      trailingContiguous([p('2012-01-29'), p('2012-04-29'), p('2022-01-30'), p('2023-10-29'), p('2024-01-28')]).map(
+        (x) => x.date,
+      ),
+    ).toEqual(['2023-10-29', '2024-01-28']);
+  });
+
+  test('缺一个季度(约 182 天)就断开 —— 阈值不能放宽到「多留点历史」', () => {
+    // 这条锁的是 maxGapDays:调到 200 会让「缺一季」的断档蒙混过关,图上多出一段假斜率。
+    expect(trailingContiguous([p('2025-01-31'), p('2025-07-31'), p('2025-10-31')]).map((x) => x.date)).toEqual([
+      '2025-07-31',
+      '2025-10-31',
+    ]);
+  });
+
+  test('全程连续则原样返回(MU 那种)', () => {
+    const s = [p('2025-04-27'), p('2025-07-27'), p('2025-10-26')];
+    expect(trailingContiguous(s)).toEqual(s);
+  });
+
+  test('空序列不炸', () => {
+    expect(trailingContiguous([])).toEqual([]);
+  });
 });
 
 describe('合计 FCF', () => {
