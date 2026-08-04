@@ -32,7 +32,7 @@ export const SEC_COMPANIES: Company[] = [
 ];
 
 /** 已通过逐家毛利率核对、可入库的标的。核对一家开一家 —— 未核对的进来会污染派生线。 */
-export const SEC_ACTIVE_TICKERS = ['NVDA', 'MU', 'MSFT', 'ORCL'];
+export const SEC_ACTIVE_TICKERS = ['NVDA', 'MU', 'MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META'];
 
 export const cikOf = (ticker: string): string | undefined => SEC_COMPANIES.find((c) => c.ticker === ticker)?.cik;
 export const sideOf = (ticker: string): SecSide | undefined => SEC_COMPANIES.find((c) => c.ticker === ticker)?.side;
