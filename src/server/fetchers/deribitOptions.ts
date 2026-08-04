@@ -13,18 +13,39 @@
  */
 import type { OptionContract, OptionChainSnapshot, OptionsChainClient } from '../jobs/optionsSnapshot';
 import { firstBy } from 'remeda';
-import { fetchWithTimeout } from './http';
+import { NonRetryableError, fetchWithTimeout, withRetry } from './http';
 
 const BASE = 'https://www.deribit.com/api/v2/public';
 const TICKER_CONCURRENCY = 10;
 
+/** 只重试传输层失败:429 限流与 5xx。其余 4xx 是「这个请求本身不对」,再打一次还是同样答复。 */
+export const isRetryableStatus = (status: number) => status === 429 || status >= 500;
+
+/** 裸调用,不重试。逐合约的 ticker 走这个 —— 那一层由 mapLimit 的 allSettled 兜着。 */
 async function get(path: string): Promise<any> {
   const res = await fetchWithTimeout(`${BASE}/${path}`);
-  if (!res.ok) throw new Error(`Deribit ${path} → HTTP ${res.status}`);
+  if (!res.ok) {
+    const msg = `Deribit ${path} → HTTP ${res.status}`;
+    throw isRetryableStatus(res.status) ? new Error(msg) : new NonRetryableError(msg);
+  }
+
   const j = (await res.json()) as { result?: unknown; error?: unknown };
-  if (j.error) throw new Error(`Deribit ${path} → ${JSON.stringify(j.error)}`);
+  if (j.error) throw new NonRetryableError(`Deribit ${path} → ${JSON.stringify(j.error)}`);
+
   return j.result;
 }
+
+/**
+ * 带一次重试。**只给那两个「一个请求对应一天一个数」的单点调用用**(get_instruments / get_index_price):
+ * 链是快照型不可回填,这两个各拿一次、抖一下那天就永久缺 —— get_instruments 挂了整条链没了
+ * (实测 2026-08-04:单次 15s 超时把整个 crypto job 拖挂,报 "The operation timed out.");
+ * get_index_price 挂了链还在(下面 try/catch 兜成 spot=null),但那天的现货价就永久没有。
+ *
+ * **不要给逐合约的 ticker 用**:那层本来就 allSettled 容错,缺几个合约不影响 25Δ 选取,
+ * 而给上百次调用各加「1.5s + 一整轮 15s 超时」会让 Deribit 抽风时单链墙钟翻倍
+ * (~300s → ~630s),而 crypto job 一天 5 个触发点、没有互斥锁。
+ */
+const getRetried = (path: string, delayMs?: number): Promise<any> => withRetry(() => get(path), delayMs);
 
 /**
  * 分批并发,避免一次性打太多请求触发限流。单合约容错:用 allSettled,
@@ -70,11 +91,15 @@ async function tickerToContract(inst: Instrument): Promise<OptionContract | null
   };
 }
 
-export function defaultDeribitOptionsClient(): OptionsChainClient {
+/** retryDelayMs 只为测试留口:验证「重试确实发生」的测试不该真等 1.5s。生产用默认值。 */
+export function defaultDeribitOptionsClient(retryDelayMs?: number): OptionsChainClient {
   return {
     async fetchChain(symbol, targetDte): Promise<OptionChainSnapshot> {
       const currency = symbol.toUpperCase(); // 'BTC' / 'ETH'
-      const all: Instrument[] = await get(`get_instruments?currency=${currency}&kind=option&expired=false`);
+      const all: Instrument[] = await getRetried(
+        `get_instruments?currency=${currency}&kind=option&expired=false`,
+        retryDelayMs,
+      );
       if (all.length === 0) throw new Error(`Deribit: ${currency} 无期权`);
 
       // 选到期日最接近(今天 + targetDte)的那个
@@ -94,7 +119,7 @@ export function defaultDeribitOptionsClient(): OptionsChainClient {
       // 别让现货请求失败丢掉已经抓到的整条链。
       let spot: number | null = null;
       try {
-        const idx = await get(`get_index_price?index_name=${currency.toLowerCase()}_usd`);
+        const idx = await getRetried(`get_index_price?index_name=${currency.toLowerCase()}_usd`, retryDelayMs);
         if (typeof idx?.index_price === 'number') spot = idx.index_price;
       } catch {
         // 现货失败,spot 保持 null

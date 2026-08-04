@@ -9,7 +9,13 @@
 # 行为:
 #   - 若 OpenD 已在跑(WS 端口已监听)→ 直接跑 job(理想稳态:OpenD 由 launchd 常驻)。
 #   - 否则用 OPEND_CMD 后台拉起 OpenD(nohup,脚本退出后继续活),等就绪 + 预热,跑 job,留着。
-#   - 没配 OPEND_CMD 且 OpenD 没在跑 → 警告后照样跑 job(期权组会失败,BTC/VRP 组照常)。
+#   - 没配 OPEND_CMD 且 OpenD 没在跑 → 警告后照样跑 job。
+#   - **OpenD 起不来 / 起来后中途自退 / qot 会话始终不就绪 → 一律只告警,照样跑 job**。
+#     任何一条路径都不 exit —— 一个 daemon 挂掉不该连坐掉不依赖它的抓取组。
+#     实测踩过(2026-08-04):这里曾 `exit 1`,OpenD 连崩三天 → MOVE / AI CDS / eris /
+#     VX / sox_fng 也停了三天,而 MOVE 是快照型、漏一天永久缺一格。
+#     ⚠ 期权组与 sox_putcall 照旧会失败(两者都是快照型,当天不记就永久丢),本脚本救不了。
+#       VRP 输入不失败:ETF 现货腿整体降级 Yahoo 后仍记 success(见 vrpInputs.ts)。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -88,9 +94,15 @@ wait_qot() {
 if port_open; then
   echo "OpenD 已在 $HOST:$PORT 运行。"
 elif [[ -n "${OPEND_CMD:-}" ]]; then
-  launch_opend || exit 1
+  # 起不来只告警,**不 exit** ——否则一个 daemon 起不来会连带停掉压根不需要 OpenD 的那几组
+  # (MOVE / AI CDS / eris / VX 期限结构 / sox_fng —— 注意是 sox_fng 不是 sox_*)。实测踩过(2026-08-04):OpenD 连崩三天,
+  # 这几组也跟着停了三天,而 MOVE 是快照型、漏一天永久缺一格(真丢了两天)。
+  # ⚠ 期权组与 sox_putcall 照旧会失败 —— 本改动救不了它们(VRP 输入不失败,ETF 腿降级 Yahoo),
+  # 而 sox_putcall 也是快照型(daily.ts:「put/call 是 OpenD 实时、当天不记就永久丢」)。
+  # 与下面「没配 OPEND_CMD」那条路对齐。
+  launch_opend || echo "警告:OpenD 起不来,期权 / sox_putcall 会失败,VRP 降级 Yahoo(其余组照跑)。" >&2
 else
-  echo "警告:OpenD 未运行且未配置 OPEND_CMD,期权组会失败(BTC/VRP 仍会跑)。" >&2
+  echo "警告:OpenD 未运行且未配置 OPEND_CMD,期权 / sox_putcall 会失败,VRP 降级 Yahoo(其余组照跑)。" >&2
 fi
 
 # qot 就绪门:端口开着才探(没 OpenD 的场景直接跳过,让非行情组照跑)。
@@ -99,7 +111,10 @@ if port_open; then
   if (( rc == 0 )); then
     echo "qot 会话就绪。"
   elif (( rc == 2 )); then
-    echo "OpenD 进程已退出,见 $LOG_DIR/opend.log" >&2; exit 1
+    # OpenD 中途自退(事故形态:先开端口、约 30s 后退)。**只告警不 exit** —— 同 A1:
+    # 期权组自己会记 failed,不该连坐掉 MOVE / AI CDS / eris / VX 期限结构 / sox_fng 那几组
+    # (是 sox_fng —— sox_putcall 走 OpenD 实时,和期权组同命,救不了)。
+    echo "警告:OpenD 进程已退出(见 $LOG_DIR/opend.log),期权 / sox_putcall 会失败,VRP 降级 Yahoo(其余组照跑)。" >&2
   elif [[ -z "$OPEND_PID" && -n "${OPEND_CMD:-}" ]]; then
     # 预先在跑的 OpenD 行情会话悬空(反复发作的老坑):受控重启一次自愈。
     # 只对"预先存在"的做 —— 本轮刚亲手拉起就不就绪,多半是账号/网络问题,再重启无益、徒增 crashpad。
@@ -110,15 +125,15 @@ if port_open; then
       if (( rc == 0 )); then
         echo "重启后 qot 会话就绪。"
       elif (( rc == 2 )); then
-        echo "OpenD 进程已退出,见 $LOG_DIR/opend.log" >&2; exit 1
+        echo "警告:重启后 OpenD 又退出(见 $LOG_DIR/opend.log),期权 / sox_putcall 会失败,VRP 降级 Yahoo(其余组照跑)。" >&2
       else
-        echo "警告:重启后 qot ${QOT_READY_TIMEOUT}s 仍未就绪,期权/VRP 组会失败或降级。" >&2
+        echo "警告:重启后 qot ${QOT_READY_TIMEOUT}s 仍未就绪,期权 / sox_putcall 会失败,VRP 降级 Yahoo。" >&2
       fi
     else
-      echo "警告:自愈重启未完成(见上),期权/VRP 组会失败或降级。" >&2
+      echo "警告:自愈重启未完成(见上),期权 / sox_putcall 会失败,VRP 降级 Yahoo。" >&2
     fi
   else
-    echo "警告:qot 会话 ${QOT_READY_TIMEOUT}s 未就绪(行情会话悬空),期权/VRP 组会失败或降级。重启 OpenD 可修。" >&2
+    echo "警告:qot 会话 ${QOT_READY_TIMEOUT}s 未就绪(行情会话悬空),期权 / sox_putcall 会失败,VRP 降级 Yahoo。重启 OpenD 可修。" >&2
   fi
 fi
 
