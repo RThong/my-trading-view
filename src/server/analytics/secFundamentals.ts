@@ -37,28 +37,44 @@ export type CompanyFacts = {
 };
 
 /**
- * 各科目的 tag 候选链。合并规则见 collectPeriods —— **先比 filed,filed 相同才按链序**,
- * 不是「靠前的直接占位」。故链序只是同 filed 时的裁决依据,不代表覆盖优先级。
+ * 各科目的 tag 候选链。**链序 = 口径优先级**(靠前的赢),合并规则见 collectPeriods。
  *
- * cogs 不放 `CostOfGoodsSold`:它不含服务成本,而跨 tag 是 filed 大者胜——某家若在重述里
- * 换用它,会盖掉更早 filed 的 `CostOfRevenue`,成本被低估、毛利率虚高。`CostOfGoodsAndServicesSold`
- * 已是「货+服务」口径,够覆盖 MSFT/ORCL 这类公司。哪家两档都不命中,会在开那家时的核对里暴露。
+ * ⚠️ 为什么链序赢而不是 filed 赢:**filed 解决的是版本(重述),tag 解决的是经济口径**,
+ * 两件事不能用一个比较器裁决。让 filed 跨 tag 竞争 = 让版本号去决定口径,实测会出错:
+ * AMZN 的 FY2016 —— `PaymentsToAcquirePropertyPlantAndEquipment` 6.737B(filed 2017-02-10)
+ * 对 `PaymentsToAcquireProductiveAssets` 7.804B(filed 2019-02-01),后者含自用软件/网站开发,
+ * 是**另一个口径**而不是同一个数的新版本;按 filed 挑就会在序列中间悄悄换口径。
+ * 版本问题在 periodsForTag 里(同 tag 内取 filed 最大)已经解决了。
+ * 同期两 tag 值不一致 → 交给 tagConflicts 报出来,不在这里静默裁决。
+ *
+ * 排除的两档(都是七家实测一期都没用到、且是已知陷阱):
+ *  · cogs 的 `CostOfGoodsSold`:不含服务成本(是子项,不是总额)。`CostOfGoodsAndServicesSold` 才是「货+服务」。
+ *  · revenue 的 `RevenueFromContractWithCustomerIncludingAssessedTax`:含代收税款,会抬高毛利率的分母。
+ *  · capex 的 `PaymentsToAcquireOtherPropertyPlantAndEquipment`:PP&E 里的「其他」子项,不是总额。
+ *
+ * 已知的同名不同义(靠 tagConflicts 兜住,别指望链序):`SalesRevenueNet` 对 AMZN 是总收入(185 期),
+ * 对 ORCL 是个值近 0 的残项(17 期,对着 22B 的总收入)。所以它排在链末,`Revenues` 优先。
  */
 export const TAG_CHAINS: Record<Concept, string[]> = {
-  revenue: [
-    'Revenues',
-    'RevenueFromContractWithCustomerExcludingAssessedTax',
-    'RevenueFromContractWithCustomerIncludingAssessedTax',
-    'SalesRevenueNet',
-  ],
+  revenue: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet'],
   cogs: ['CostOfRevenue', 'CostOfGoodsAndServicesSold'],
   ocf: ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'],
-  capex: [
-    'PaymentsToAcquirePropertyPlantAndEquipment',
-    'PaymentsToAcquireProductiveAssets',
-    'PaymentsToAcquireOtherPropertyPlantAndEquipment',
-  ],
+  capex: ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets'],
 };
+
+/**
+ * capex 两档不是同义词,是两个口径 —— 跨公司比 capex / FCF 绝对值时必须知道用的哪个:
+ *  · ppe:纯有形固定资产的现金购买(MU / MSFT / GOOGL / META)。
+ *  · productive_assets:PP&E **+ 软件及其他无形资产**(NVDA 那行原文是 "property and equipment
+ *    and intangible assets";AMZN 含自用软件/网站开发)。同样的生意,这一档会显得更重、FCF 更低。
+ * 拆不开:`PaymentsToAcquireIntangibleAssets` 七家实测一期都没有,没法从 companyfacts 减出纯 PP&E。
+ */
+export type CapexScope = 'ppe' | 'productive_assets';
+const CAPEX_SCOPE: Record<string, CapexScope> = {
+  PaymentsToAcquirePropertyPlantAndEquipment: 'ppe',
+  PaymentsToAcquireProductiveAssets: 'productive_assets',
+};
+export const capexScopeOf = (tagUsed: string): CapexScope | undefined => CAPEX_SCOPE[tagUsed];
 
 /** 四个科目缺一个就算不出 FCF(ocf−capex)或毛利率((revenue−cogs)/revenue)。job 的完整性守卫用。
  *  从 TAG_CHAINS 的键派生而非手写:加第 5 个科目时漏改会变成「静默不抽取」,正是要防的那类错。 */
@@ -93,24 +109,58 @@ function periodsForTag(facts: CompanyFacts, tag: string): Map<string, Period> {
 }
 
 /**
- * 逐期 fallback。同一 (start,end) 被多个 tag 覆盖时:**先比 filed(取重述后的最新值),
- * filed 相同才按 tag 链顺序定优先**。不能简单「靠前 tag 占位」——公司在重述时换过 tag 的话,
- * 靠前 tag 留着的就是被作废的旧值。
+ * 逐期 fallback:某期间由链里**最靠前的、有值的**那个 tag 提供(链序 = 口径优先级,见 TAG_CHAINS)。
+ * 版本/重述已在 periodsForTag 里按 filed 解决;这里只裁决口径,filed 不参与。
  */
 export function collectPeriods(facts: CompanyFacts, tags: string[]): Period[] {
   const merged = new Map<string, Period>();
 
-  tags.forEach((tag, rank) => {
+  for (const tag of tags) {
     for (const [key, p] of periodsForTag(facts, tag)) {
-      const prior = merged.get(key);
-      const priorRank = prior ? tags.indexOf(prior.tag) : Number.POSITIVE_INFINITY;
-      const better = !prior || p.filed > prior.filed || (p.filed === prior.filed && rank < priorRank);
-
-      if (better) merged.set(key, p);
+      if (!merged.has(key)) merged.set(key, p); // 靠前的先占位,后面的只填空缺
     }
-  });
+  }
 
   return [...merged.values()].sort((a, b) => a.end.localeCompare(b.end));
+}
+
+export type TagConflict = { concept: Concept; period: string; a: Period; b: Period };
+
+/** 冲突只看最近这么多个季度:更早的属于考古,报出来只会把真信号淹掉(实测 ORCL 有 17 期都在 2011 年前)。 */
+const CONFLICT_WINDOW_QUARTERS = 8;
+
+/**
+ * 同一期间被链里两个 tag 同时覆盖、**值还不一样** → 口径可能变了(或某档是子项 / 同名不同义),
+ * 链序保证了我们取的是优先级高的那个,但这件事本身要报出来让人去核。
+ *
+ * 只能在抓取时对着原始 facts 做 —— 库里只存了赢的那个值,输的那个没留,事后查不出来。
+ * 窗口相对「该公司最新期末」而不是相对今天:测试才有确定结果。
+ */
+export function tagConflicts(facts: CompanyFacts): TagConflict[] {
+  const byConcept = CONCEPTS.map(
+    (concept) => [concept, TAG_CHAINS[concept].map((t) => periodsForTag(facts, t))] as const,
+  );
+
+  const ends = byConcept.flatMap(([, maps]) => maps.flatMap((m) => [...m.values()].map((p) => p.end)));
+  if (ends.length === 0) return [];
+
+  const newest = ends.reduce((m, e) => (e > m ? e : m));
+  const cutoff = new Date(Date.parse(newest) - CONFLICT_WINDOW_QUARTERS * 91 * DAY_MS).toISOString().slice(0, 10);
+
+  return byConcept.flatMap(([concept, maps]) => {
+    // 期间取**并集**:某家可能压根没有链首那个 tag(如 AMZN 没有 Revenues),
+    // 只遍历 maps[0] 会漏掉后两档之间的冲突。
+    const periods = [...new Set(maps.flatMap((m) => [...m.keys()]))];
+
+    return periods.flatMap((period) => {
+      // covering 按链序,故 [0] 就是我们实际取的那个值。
+      const covering = maps.flatMap((m) => (m.has(period) ? [m.get(period)!] : []));
+      const chosen = covering[0]!;
+      const clash = covering.slice(1).find((p) => p.val !== chosen.val);
+
+      return clash && chosen.end >= cutoff ? [{ concept, period, a: chosen, b: clash }] : [];
+    });
+  });
 }
 
 /** 日历季度:取期间中点所在季度。NVDA 的 11 月~1 月财季中点在 12 月 → Q4,与 SEC 自己的 frame 口径一致。 */

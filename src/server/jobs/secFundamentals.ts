@@ -16,6 +16,8 @@ import {
   deriveSeries,
   aggregateFcf,
   seriesId,
+  capexScopeOf,
+  tagConflicts,
   BUYER_FCF_SERIES,
   CONCEPTS,
   type QuarterPoint,
@@ -96,6 +98,24 @@ function writeDerived(db: Database, active: string[], examine: string[]): { writ
   // 成员判据用 isAggregateMember(buyer 且在因果链内),不是光看 side ——
   // 目录里若有非链内的 buyer,光看 side 会让它静默把零轴垫高。
   const buyers = derived.filter(([t]) => isAggregateMember(t));
+
+  // ③ 买方之间 capex 口径必须一致,否则合计线的零轴位置不可比:
+  // ppe = 纯有形固定资产;productive_assets = 还含软件/无形资产(NVDA、AMZN 都在 2017/2020 永久换到后者)。
+  // 同样的生意,后者显得更重、FCF 更低。混着加总仍能读趋势,但读「离零轴多远」就会错。
+  const buyerScopes = new Map(
+    loaded
+      .filter(([t]) => isAggregateMember(t))
+      .flatMap(([t, rows]) => {
+        const latestCapex = rows.filter((r) => r.concept === 'capex').at(-1);
+        const scope = latestCapex && capexScopeOf(latestCapex.tagUsed);
+
+        return scope ? [[t, scope] as const] : [];
+      }),
+  );
+  if (new Set(buyerScopes.values()).size > 1) {
+    const detail = [...buyerScopes].map(([t, sc]) => `${t}=${sc}`).join(' / ');
+    problems.push(`买方 capex 口径不一致(${detail}):合计线仍可读趋势,但「离零轴多远」不可比`);
+  }
   problems.push(
     ...buyers
       .filter(([, d]) => d.fcfTtm.length === 0)
@@ -171,7 +191,20 @@ export async function updateSecFundamentals(
       // 而库里已有历史的那家若新申报一行都解析不出(四科目全换链外 tag / SEC 改了 facts 结构 /
       // 响应降级成空 JSON),最新一期仍是那条旧的、四科目齐全的期 → 体检一条不报 → 绿灯 +
       // 水位不前进 + 每周白拉几 MB。稳态下(库早就有数据)这是唯一会发生的形态。
-      const rows = extractFundamentals(ticker, await sec.companyFacts(cikOf(ticker)!));
+      const companyFacts = await sec.companyFacts(cikOf(ticker)!);
+
+      // tag 冲突只能在这里查:库里只存了链序赢的那个值,输的那个没留下,事后查不出来。
+      // 取值本身是安全的(链序 = 口径优先级),这条只是提醒去核「是不是换口径了」。
+      failed.push(
+        ...tagConflicts(companyFacts).map(
+          (c) =>
+            `${ticker}: ${c.concept} 在 ${c.period} 有两个 tag 值不一致 —— ` +
+            `取了 ${c.a.tag}=${c.a.val}(filed ${c.a.filed}),另有 ${c.b.tag}=${c.b.val}(filed ${c.b.filed});` +
+            '口径可能变了,去核一下该期报表原文',
+        ),
+      );
+
+      const rows = extractFundamentals(ticker, companyFacts);
       insertSecFundamentals(db, rows);
       rowsWritten += rows.length;
 

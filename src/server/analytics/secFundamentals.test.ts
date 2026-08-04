@@ -6,6 +6,8 @@ import {
   deriveSeries,
   extractFundamentals,
   TAG_CHAINS,
+  capexScopeOf,
+  tagConflicts,
   toQuarters,
   trailingContiguous,
   ttm,
@@ -191,22 +193,16 @@ describe('tag 链的内容本身', () => {
   // 实测过这个后果:少了 SalesRevenueNet,MU 的 revenue 直接丢掉 2008–2016 整段而没人发现。
   // 故意改链时这条会红,那正是它的用途:提醒你顺手确认「哪些公司靠这一档」。
   const EXPECTED: Record<string, string[]> = {
-    revenue: [
-      'Revenues',
-      'RevenueFromContractWithCustomerExcludingAssessedTax',
-      'RevenueFromContractWithCustomerIncludingAssessedTax',
-      'SalesRevenueNet',
-    ],
+    // 链序 = 口径优先级(靠前的赢)。已排除的三档都是「子项 / 含税」不是总额:
+    // CostOfGoodsSold(不含服务)、RevenueFromContract…IncludingAssessedTax(含代收税款)、
+    // PaymentsToAcquireOtherPropertyPlantAndEquipment(PP&E 的「其他」子项)。
+    revenue: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet'],
     cogs: ['CostOfRevenue', 'CostOfGoodsAndServicesSold'],
     ocf: [
       'NetCashProvidedByUsedInOperatingActivities',
       'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations',
     ],
-    capex: [
-      'PaymentsToAcquirePropertyPlantAndEquipment',
-      'PaymentsToAcquireProductiveAssets',
-      'PaymentsToAcquireOtherPropertyPlantAndEquipment',
-    ],
+    capex: ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets'],
   };
 
   test('四条链一档不少(删档即红)', () => {
@@ -266,28 +262,20 @@ describe('重述', () => {
     expect(periods[0]).toMatchObject({ val: 111, accn: 'new' });
   });
 
-  test('公司重述时换了 tag:filed 更新的胜出,不被靠前 tag 的旧值挡住', () => {
+  test('**跨 tag 不比 filed**:链序(口径优先级)赢,filed 再新也不能换口径', () => {
+    // filed 解决版本、tag 解决口径,不能用一个比较器裁决。实测反例:AMZN FY2016 的
+    // PaymentsToAcquirePropertyPlantAndEquipment 6.737B(filed 2017-02-10)对
+    // PaymentsToAcquireProductiveAssets 7.804B(filed 2019-02-01)—— 后者含自用软件,
+    // 是另一个口径而不是同一个数的新版本;按 filed 挑就会在序列中间悄悄换口径。
     const periods = collectPeriods(
       facts({
-        Revenues: [row('2025-01-27', '2025-04-27', 100, { filed: '2025-05-28', accn: 'old' })],
-        SalesRevenueNet: [row('2025-01-27', '2025-04-27', 111, { filed: '2026-05-20', accn: 'restated' })],
+        Revenues: [row('2025-01-27', '2025-04-27', 100, { filed: '2025-05-28', accn: 'chosen' })],
+        SalesRevenueNet: [row('2025-01-27', '2025-04-27', 111, { filed: '2026-05-20', accn: 'newer-but-other-scope' })],
       }),
       ['Revenues', 'SalesRevenueNet'], // Revenues 在链里更靠前
     );
 
-    expect(periods[0]).toMatchObject({ val: 111, accn: 'restated', tag: 'SalesRevenueNet' });
-  });
-
-  test('filed 相同则按 tag 链顺序定优先', () => {
-    const periods = collectPeriods(
-      facts({
-        Revenues: [row('2025-01-27', '2025-04-27', 100)],
-        SalesRevenueNet: [row('2025-01-27', '2025-04-27', 999)],
-      }),
-      ['Revenues', 'SalesRevenueNet'],
-    );
-
-    expect(periods[0]).toMatchObject({ val: 100, tag: 'Revenues' });
+    expect(periods[0]).toMatchObject({ val: 100, accn: 'chosen', tag: 'Revenues' });
   });
 });
 
@@ -428,4 +416,56 @@ test('extractFundamentals 打平四个科目', () => {
 
   expect(new Set(rows.map((r) => r.concept))).toEqual(new Set(['ocf', 'revenue']));
   expect(rows.every((r) => r.ticker === 'NVDA' && r.tagUsed && r.accn)).toBe(true);
+});
+
+describe('tagConflicts(同期两 tag 值不一致)', () => {
+  const both = (a: number, b: number, filedA = '2025-05-28', filedB = '2026-05-20') =>
+    facts({
+      Revenues: [row('2025-01-27', '2025-04-27', a, { filed: filedA })],
+      SalesRevenueNet: [row('2025-01-27', '2025-04-27', b, { filed: filedB })],
+    });
+
+  test('值不一致就报,并指出取的是哪个', () => {
+    const cs = tagConflicts(both(100, 111));
+
+    expect(cs).toHaveLength(1);
+    expect(cs[0]).toMatchObject({ concept: 'revenue', period: '2025-01-27~2025-04-27' });
+    expect(cs[0]!.a.tag).toBe('Revenues'); // a = 实际取的(链序优先)
+    expect(cs[0]!.b.tag).toBe('SalesRevenueNet');
+  });
+
+  test('值一致不报 —— 那只是同一个数换了 tag,不是换口径', () => {
+    expect(tagConflicts(both(100, 100))).toEqual([]);
+  });
+
+  test('只看最近 8 个季度:更早的冲突不报(否则会把真信号淹掉)', () => {
+    // 实测 ORCL 有 17 期 Revenues vs SalesRevenueNet 冲突,全在 2011 年前。
+    const old = facts({
+      Revenues: [
+        row('2010-01-01', '2010-03-31', 100, { filed: '2010-05-01' }),
+        row('2025-01-27', '2025-04-27', 500), // 最新期末,窗口基准
+      ],
+      SalesRevenueNet: [row('2010-01-01', '2010-03-31', 0, { filed: '2011-05-01' })],
+    });
+
+    expect(tagConflicts(old)).toEqual([]);
+  });
+
+  test('链首那档缺失时,后两档之间的冲突也要能查到(AMZN 没有 Revenues)', () => {
+    const noHead = facts({
+      RevenueFromContractWithCustomerExcludingAssessedTax: [row('2025-01-27', '2025-04-27', 100)],
+      SalesRevenueNet: [row('2025-01-27', '2025-04-27', 111, { filed: '2026-05-20' })],
+    });
+
+    expect(tagConflicts(noHead)).toHaveLength(1);
+  });
+});
+
+describe('capexScopeOf', () => {
+  test('两档 capex 是两个口径,不是同义词', () => {
+    expect(capexScopeOf('PaymentsToAcquirePropertyPlantAndEquipment')).toBe('ppe');
+    // NVDA 那行原文含 intangible assets、AMZN 含自用软件 → 同样的生意会显得更重、FCF 更低。
+    expect(capexScopeOf('PaymentsToAcquireProductiveAssets')).toBe('productive_assets');
+    expect(capexScopeOf('SomethingElse')).toBeUndefined();
+  });
 });
