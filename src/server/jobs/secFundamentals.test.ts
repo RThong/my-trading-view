@@ -138,13 +138,13 @@ describe('sec fundamentals job', () => {
     };
 
     const first = await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: partial });
-    expect(first.failed[0]).toMatch(/最新一期\(2026-01-25\)缺科目 revenue\/cogs/);
+    expect(first.failed[0]).toMatch(/最新一期\(2026-01-25\)缺\*\*判据必需\*\*科目 revenue\/cogs/);
     expect(getSecFundamentals(db, 'NVDA').length).toBeGreaterThan(0); // 拿到的行照样落库,可审计
 
     // 第二轮全 skip,体检仍须复发。
     const second = await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher('2026-02-25') });
     expect(second.skipped).toEqual(['NVDA']);
-    expect(second.failed[0]).toMatch(/最新一期\(2026-01-25\)缺科目 revenue\/cogs/);
+    expect(second.failed[0]).toMatch(/最新一期\(2026-01-25\)缺\*\*判据必需\*\*科目 revenue\/cogs/);
     db.close();
   });
 
@@ -193,7 +193,34 @@ describe('sec fundamentals job', () => {
     db.run(`DELETE FROM sec_fundamentals WHERE ticker = 'NVDA' AND concept = 'cogs' AND period_end = '2026-01-25'`);
 
     const r = await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher('2026-02-25') });
-    expect(r.failed.some((f) => /NVDA: 最新一期\(2026-01-25\)缺科目 cogs/.test(f))).toBe(true);
+    expect(r.failed.some((f) => /NVDA: 最新一期\(2026-01-25\)缺\*\*判据必需\*\*科目 cogs/.test(f))).toBe(true);
+    db.close();
+  });
+
+  test('必需科目按 side 分:买方缺 cogs 不报警(它的毛利率是配角)', async () => {
+    // 守卫该要求「判据真正用到的」。买方判据是 FCF(ocf−capex),毛利率由本业主导、是配角;
+    // 为配角科目常驻黄灯会把真信号淹掉。卖方反过来(见上一条:NVDA 缺 cogs 要报)。
+    const db = freshDb();
+    await updateSecFundamentals(db, { ...BOTH, fetcher: stubFetcher('2026-02-25') });
+    db.run(`DELETE FROM sec_fundamentals WHERE ticker = 'MSFT' AND concept = 'cogs'`);
+
+    const r = await updateSecFundamentals(db, { ...BOTH, fetcher: stubFetcher('2026-02-25') });
+
+    expect(r.failed.some((f) => /MSFT: 最新一期/.test(f))).toBe(false); // 买方缺 cogs → 不报
+    expect(getMarketSeries(db, 'SEC_MSFT_FCF_TTM').length).toBeGreaterThan(0); // FCF 照常
+    db.close();
+  });
+
+  test('已知结构性缺口(KNOWN_GAPS)完全不报 —— 换源才能修,报了也修不掉', async () => {
+    // ORCL 2018 后用公司自定义 XBRL 分项披露收入成本,companyfacts 不聚合 extension。
+    // 它是买方,cogs 本来就非必需;这条额外确认即使按必需算也被 KNOWN_GAPS 豁免。
+    const db = freshDb();
+    const opts = { tickers: ['ORCL'], activeTickers: ['ORCL'] };
+    await updateSecFundamentals(db, { ...opts, fetcher: stubFetcher('2026-02-25') });
+    db.run(`DELETE FROM sec_fundamentals WHERE ticker = 'ORCL' AND concept = 'cogs'`);
+
+    const r = await updateSecFundamentals(db, { ...opts, fetcher: stubFetcher('2026-02-25') });
+    expect(r.failed.some((f) => /ORCL.*cogs/.test(f))).toBe(false);
     db.close();
   });
 

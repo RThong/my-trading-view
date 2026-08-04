@@ -22,7 +22,14 @@ import {
   CONCEPTS,
   type QuarterPoint,
 } from '../analytics/secFundamentals';
-import { SEC_ACTIVE_TICKERS, cikOf, isAggregateMember } from '../../shared/secCompanies';
+import {
+  REQUIRED_CONCEPTS_BY_SIDE,
+  SEC_ACTIVE_TICKERS,
+  cikOf,
+  isAggregateMember,
+  knownGap,
+  sideOf,
+} from '../../shared/secCompanies';
 
 /**
  * SEC XBRL 财务 job。**不进 com.mtv.daily**(那是日频行情)——季频数据,每周跑一次足够,
@@ -76,18 +83,29 @@ function writeDerived(db: Database, active: string[], examine: string[]): { writ
   // 判据按**最新一期**而非全历史并集:某家若在新申报里把某科目换成链外 tag,老季度仍留在库里,
   // 按并集看四个科目全都「有过」→ 一条告警不报,而 TTM 因缺季不出新点、线静默停在旧日期。
   // 按最新一期看则立刻暴露。(rows 由 getSecFundamentals 按 period_end 升序返回。)
+  //
+  // 只对**该 side 判据真正用到的科目**报警(见 REQUIRED_CONCEPTS_BY_SIDE),且跳过已知结构性缺口
+  // (KNOWN_GAPS)—— 对一个换源才能修的东西每轮报警,只会把真信号淹掉。
   const problems = all
     .filter(([, rows]) => rows.length > 0)
     .flatMap(([ticker, rows]) => {
       const latest = rows.at(-1)?.periodEnd;
       const present = new Set(rows.filter((r) => r.periodEnd === latest).map((r) => r.concept));
-      const missing = CONCEPTS.filter((c) => !present.has(c));
+      const required = REQUIRED_CONCEPTS_BY_SIDE[sideOf(ticker) ?? 'buyer'];
+      const missing = CONCEPTS.filter((c) => required.includes(c) && !present.has(c) && !knownGap(ticker, c));
+
+      // 非必需科目缺失只记日志,不进 problems(不把 job 变黄)。已知缺口连日志都不记。
+      const soft = CONCEPTS.filter((c) => !required.includes(c) && !present.has(c) && !knownGap(ticker, c));
+      if (soft.length) console.warn(`[secFundamentals] ${ticker} 最新一期缺非必需科目 ${soft.join('/')}(该格会空)`);
 
       return missing.length
         ? [
-            `${ticker}: 最新一期(${latest ?? '无数据'})缺科目 ${missing.join('/')} —— ` +
-              '两种病因:① tag 链没覆盖到这家(可补 TAG_CHAINS);② 源本季根本没有这条行' +
-              '(补不了,常见于早年 capex;裁剪规则已保证图上不画假斜率)。先去 sec_fundamentals 看 tag_used 再判。',
+            `${ticker}: 最新一期(${latest ?? '无数据'})缺**判据必需**科目 ${missing.join('/')} —— ` +
+              '三种病因,处置方向不同:① mapping_gap:tag 链没覆盖到这家 → 补 TAG_CHAINS;' +
+              '② disclosure_absent:源本季根本没有这条行 → 补不了,接受缺格(裁剪规则已保证图上不画假斜率);' +
+              '③ source_capability_gap:数在 SEC 原始 XBRL 里、但是公司自定义(extension)概念,' +
+              'companyfacts 不聚合 → 换源才能修,确认后登记进 KNOWN_GAPS。' +
+              '先去 sec_fundamentals 看 tag_used、再对着该期 filing 原文判是哪一种。',
           ]
         : [];
     });

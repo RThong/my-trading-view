@@ -5,7 +5,7 @@ import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../lib/ch
 import { percentile, percentileRank } from '../../../shared/stats';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../chart/paneChart.types';
-import { SEC_BUYER_FCF_KEY, chainTickers, secKey, sideOf, type SecKind } from '../../../shared/secCompanies';
+import { SEC_BUYER_FCF_KEY, chainTickers, knownGap, secKey, sideOf, type SecKind } from '../../../shared/secCompanies';
 
 // 分位带阈值(自身历史):想改 5/95 更严就动这里。
 const PCTL_LO = 5;
@@ -691,6 +691,14 @@ const BUYER_FCF_READ = [
   '  · 破零 = ③→④ 的硬信号。届时看举债路径(长期负债)确认。',
 ].join('\n');
 
+// 每格依赖哪些科目 —— 用来把「已知结构性缺口」写进那一格的说明。
+// 一格空着而 desc 不解释,下个月自己会当成 bug 去查(ORCL 的毛利率就是这种)。
+const PANE_CONCEPTS: Record<SecKind, string[]> = {
+  gm: ['revenue', 'cogs'],
+  capex: ['capex'],
+  fcf: ['ocf', 'capex'],
+};
+
 const paneOf = (
   ticker: string,
   kind: SecKind,
@@ -698,16 +706,23 @@ const paneOf = (
   title: string,
   color: string,
   lines: Array<string | undefined>,
-): PaneSpec => ({
-  key: secKey(ticker, kind),
-  label,
-  title,
-  color,
-  ...(kind === 'fcf' ? { render: { kind: 'line' as const, baseline: 0 } } : {}),
-  // 不配 percentile:样本仅十余期,分位是噪声。
-  // 只丢 undefined —— '' 是段落分隔符,InfoTip 用 whitespace-pre-wrap 渲染,filter(Boolean) 会把它一起吃掉。
-  desc: lines.filter((l) => l !== undefined).join('\n'),
-});
+): PaneSpec => {
+  const gaps = PANE_CONCEPTS[kind].flatMap((c) => {
+    const why = knownGap(ticker, c);
+    return why ? [`⚠️ **这格是空的,而且不是 bug**:${ticker} 的 ${c} 拿不到 —— ${why}`] : [];
+  });
+
+  return {
+    key: secKey(ticker, kind),
+    label,
+    title,
+    color,
+    ...(kind === 'fcf' ? { render: { kind: 'line' as const, baseline: 0 } } : {}),
+    // 不配 percentile:样本仅十余期,分位是噪声。
+    // 只丢 undefined —— '' 是段落分隔符,InfoTip 用 whitespace-pre-wrap 渲染,filter(Boolean) 会把它一起吃掉。
+    desc: [...(gaps.length ? [...gaps, ''] : []), ...lines].filter((l) => l !== undefined).join('\n'),
+  };
+};
 
 function companyPanes(ticker: string): PaneSpec[] {
   const seller = sideOf(ticker) === 'seller';

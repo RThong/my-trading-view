@@ -32,7 +32,7 @@ export const SEC_COMPANIES: Company[] = [
 ];
 
 /** 已通过逐家毛利率核对、可入库的标的。核对一家开一家 —— 未核对的进来会污染派生线。 */
-export const SEC_ACTIVE_TICKERS = ['NVDA', 'MU', 'MSFT'];
+export const SEC_ACTIVE_TICKERS = ['NVDA', 'MU', 'MSFT', 'ORCL'];
 
 export const cikOf = (ticker: string): string | undefined => SEC_COMPANIES.find((c) => c.ticker === ticker)?.cik;
 export const sideOf = (ticker: string): SecSide | undefined => SEC_COMPANIES.find((c) => c.ticker === ticker)?.side;
@@ -51,6 +51,39 @@ export const chainTickers = (side: SecSide): string[] =>
  *  非链内的 buyer(如 AAPL 那种 FCF 由本业主导的),它会静默把零轴垫高、判据直接失效。 */
 export const isAggregateMember = (ticker: string): boolean =>
   SEC_COMPANIES.some((c) => c.ticker === ticker && c.inChain && c.side === 'buyer');
+
+// ── 各 side 的**必需科目**与已知结构性缺口 ────────────────────────────────────
+
+/**
+ * 完整性体检要求的科目,按 side 分 —— 守卫该要求「判据真正用到的」,不是「四个都齐」。
+ *  · buyer 的判据是 FCF(ocf − capex);它的毛利率由本业(云/广告/软件)主导,是配角。
+ *  · seller 的判据是毛利率(稀缺溢价);它的 FCF 不进合计线。
+ * 非必需科目缺了照样在日志里提一句,但不把 job 变黄 —— 常驻黄灯会把真信号淹掉。
+ */
+export const REQUIRED_CONCEPTS_BY_SIDE: Record<SecSide, string[]> = {
+  buyer: ['ocf', 'capex'],
+  seller: ['revenue', 'cogs'],
+};
+
+/**
+ * 已知的**结构性缺口**:这个 (ticker, concept) 在 companyfacts 里永远拿不到,报警也修不掉。
+ * 键是 `TICKER.concept`。命中就完全不报 —— 这不是「还没修」,是「换源才能修」,
+ * 而换源是另立需求。面板那格会空着,desc 里写明原因。
+ *
+ * ⚠️ 不要写成「SEC 里没有」:数在 SEC 的**原始 XBRL** 里,只是 companyfacts API
+ * 不聚合公司自定义(extension)概念。两件事的处置方向完全不同。
+ */
+export const KNOWN_GAPS: Record<string, string> = {
+  'ORCL.cogs':
+    'ORCL 2018 年后用公司自定义 XBRL 分项披露收入成本(实测 2026Q3 10-Q,accession ' +
+    '0001193125-26-101045:orcl:CloudAndSoftwareExpenses 4.776B + orcl:HardwareExpenses 0.183B + ' +
+    'orcl:ServicesExpense 1.133B = 6.092B,对营收 17.190B → 毛利率约 64.6%)。' +
+    'companyfacts 只聚合标准 taxonomy、不收 extension → 这条线要接原始 XBRL / DERA ZIP 才有,另立需求。' +
+    '注:ORCL 把无形资产摊销单列在这三个直接成本之外,真接入时口径与其他公司不同。' +
+    '组件还改过名(2019 年是 orcl:CloudServicesAndLicenseSupportExpenses)。',
+};
+
+export const knownGap = (ticker: string, concept: string): string | undefined => KNOWN_GAPS[`${ticker}.${concept}`];
 
 export const secKey = (ticker: string, kind: SecKind): string => `sec:${ticker}:${kind}`;
 export const SEC_BUYER_FCF_KEY = 'sec:buyerFcf';
