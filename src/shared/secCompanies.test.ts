@@ -14,8 +14,13 @@ describe('AI 链名单', () => {
     }
   });
 
-  test('AAPL 不在目录里(不在 AI 链上,FCF 由 iPhone 主导)', () => {
-    expect(SEC_COMPANIES.map((c) => c.ticker)).not.toContain('AAPL');
+  test('已剔除的标的不得回到目录里', () => {
+    const tickers = SEC_COMPANIES.map((c) => c.ticker);
+    // AAPL:不在 AI 链上(FCF 由 iPhone 主导)。DELL:整机厂,毛利率不反映芯片稀缺溢价。
+    // AVGO:合并 VMware 后毛利率是「硅片定价权 + 软件占比」的混合,当稀缺溢价用不干净。
+    for (const t of ['AAPL', 'DELL', 'AVGO']) expect(tickers).not.toContain(t);
+    // TSM / ASML:只报 20-F,实测四科目季度行均为 0 → 这条管线一个 TTM 点都算不出。
+    for (const t of ['TSM', 'ASML']) expect(tickers).not.toContain(t);
   });
 
   test('启用名单里的每一家都在目录里', () => {

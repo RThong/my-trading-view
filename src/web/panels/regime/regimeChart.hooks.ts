@@ -35,7 +35,7 @@ const SEC_CAVEAT =
   '\n源:SEC XBRL 财报实际值(非预期、非市场定价)。**季频、滞后 4~8 周、会因重述回改** —— ' +
   '用途是证实/证伪叙事,不是择时;不要用它解释当天的价格。';
 // 名单会变,所以只写**口径与条件**,不写「当前接了哪几家」——写状态的文案一定会过期。
-// 两侧名单现算,别在文案里写死 —— 名单一改文案就过期。只列因果链内的(备查的三家不是判据成员)。
+// 两侧名单现算,别在文案里写死 —— 名单一改文案就过期。只列因果链内的(备查的那几家不是判据成员)。
 const tickersOf = (side: 'buyer' | 'seller') => chainTickers(side).join('/');
 const SEC_ROSTER_CAVEAT =
   `AI 链按判据分两侧(见 shared/secCompanies 的 side):**买铲子的**(${tickersOf('buyer')} —— 花钱建算力)` +
@@ -658,6 +658,14 @@ const COMPANY_NOTES: Record<string, string> = {
     '同样的晶圆,价格涨落几乎全反映在毛利率上,增量收入接近全额毛利。',
 };
 
+// 买方侧共用:现金 capex ≠ 公司公布的 capex。实测 MSFT 2026Q2 —— 我们 35.80B、公司公布 41B,
+// 差的是**融资租赁**(不是投资活动的现金流出,本金还款走筹资活动)。约 1/8 的「capex」在这条线外。
+const SEC_LEASE_CAVEAT =
+  '⚠️ **口径:现金 capex,不含融资租赁**。取的是「现金买固定资产」那一组科目' +
+  '(逐期取 filed 最新的那个,见 TAG_CHAINS.capex —— 同一家不同季度可能命中不同 tag);' +
+  '公司新闻稿的「capex」通常是「capex + 融资租赁」,后者不是投资活动的现金流出。实测 MSFT 2026Q2:' +
+  '我们 35.8B vs 公司公布 41B,差额即租赁。**推论:FCF 还没转负,可能部分是因为租赁不在这条线里** —— ' +
+  '读买方 FCF 时要记得真实的资产获取速度比图上更快。';
 // 断档裁剪是后端统一做的(trailingContiguous),对**每条** sec 序列都生效(含毛利率)。
 // 各家/各科目的起点因此长短不一,必须在每一格都讲清楚,否则「怎么这条线只有几年」无处可查。
 const SEC_TRIM_NOTE =
@@ -719,6 +727,7 @@ function companyPanes(ticker: string): PaneSpec[] {
       '',
       seller ? SELLER_FCF : BUYER_FCF_READ,
       '',
+      ...(seller ? [] : [SEC_LEASE_CAVEAT, '']),
       SEC_TRIM_NOTE,
     ]),
     paneOf(ticker, 'capex', 'capex', `${ticker} TTM 资本开支(百万美元)`, '#60a5fa', [
@@ -728,6 +737,7 @@ function companyPanes(ticker: string): PaneSpec[] {
         ? '定位:配角,和上面两条对读 —— 卖铲子的自身 capex 相对其 OCF 微不足道,这正是「卖铲子 vs 买铲子」现金流结构差异的直观佐证。真正吃 FCF 的是买方。'
         : '判据:capex 的斜率就是 §6.14 的分子。它加速而 OCF 不跟上 = FCF 见顶的直接成因;要和同 tab 的 FCF 格对读,单看 capex 抬升不构成信号(收入同步扩张时是健康扩产)。',
       '',
+      ...(seller ? [] : [SEC_LEASE_CAVEAT, '']),
       SEC_TRIM_NOTE,
     ]),
   ];
@@ -746,6 +756,8 @@ const buyerAggregatePane: PaneSpec = {
     '',
     BUYER_FCF_READ,
     '  · 覆盖不全时读趋势不读绝对值:少一家买方,零轴的位置就没有可比性。',
+    '',
+    SEC_LEASE_CAVEAT,
     '',
     SEC_TRIM_NOTE,
   ].join('\n'),

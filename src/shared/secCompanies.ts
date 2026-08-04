@@ -1,5 +1,5 @@
 // AI 链的 SEC 名单。**前后端共用**:job 用它决定抓谁、算谁的合计;面板用它派生「一家一个横 tab」。
-// CIK 取自官方 company_tickers.json。TSM(0001046179)报 20-F、走 IFRS taxonomy,不在 us-gaap 里,另立需求。
+// CIK 取自官方 company_tickers.json。(TSM / ASML 为何进不来,见下方名单末尾的说明。)
 //
 // side 决定这家进哪条判据,**不是分类标签而是口径**:
 //  · buyer(花钱建算力)= §6.14「capex 有没有吃穿现金流」的对象,只有这一侧进买方合计 FCF。
@@ -7,14 +7,13 @@
 //    (实测 NVDA+MU 一度垫 +1290 亿),混进来会把零轴永远垫在下方,「跌破零轴」永远不成立。
 export type SecSide = 'buyer' | 'seller';
 
-// inChain=false:CIK 在目录里备查,但**不在这两条信号的因果链上**(DELL/INTC 的毛利率不反映 AI
-// 稀缺溢价),不建议开启用;面板文案不把它当判据成员列出,买方合计线也不收它(见 buyerTickers)。
+// inChain=false:CIK 在目录里备查,但**不在这两条信号的因果链上**(INTC 的毛利率不反映 AI 稀缺溢价),
+// 不建议开启用;面板文案不把它当判据成员列出,买方合计线也不收它(见 isAggregateMember)。
 type Company = { ticker: string; cik: string; side: SecSide; inChain?: boolean };
 
 export const SEC_COMPANIES: Company[] = [
   // 卖铲子:看毛利率
   { ticker: 'NVDA', cik: '1045810', side: 'seller', inChain: true },
-  { ticker: 'AVGO', cik: '1730168', side: 'seller', inChain: true },
   { ticker: 'MU', cik: '723125', side: 'seller', inChain: true }, // 美光:毛利率 = DRAM/NAND 价格周期的免费代理
   // 买铲子:进合计 FCF
   { ticker: 'MSFT', cik: '789019', side: 'buyer', inChain: true },
@@ -22,14 +21,18 @@ export const SEC_COMPANIES: Company[] = [
   { ticker: 'AMZN', cik: '1018724', side: 'buyer', inChain: true },
   { ticker: 'META', cik: '1326801', side: 'buyer', inChain: true },
   { ticker: 'ORCL', cik: '1341439', side: 'buyer', inChain: true },
-  // 以下两家备查但**不建议开**(inChain 省略 = false),开了只会给对应那条线加噪声。
-  // (AAPL 已移除:它压根不在 AI 链上,FCF 由 iPhone 主导。)
-  { ticker: 'DELL', cik: '1571996', side: 'seller' },
+  // 备查但**不建议开**(inChain 省略 = false),开了只会给对应那条线加噪声。
+  // 已移除:AAPL(不在 AI 链上,FCF 由 iPhone 主导)、DELL(整机厂,毛利率不反映芯片稀缺溢价)、
+  // AVGO(合并了 VMware,毛利率是「AI 硅片定价权 + 软件占比」的混合读数,当稀缺溢价用不干净)。
+  //
+  // TSM / ASML **不能进这条管线**:两家都只报 20-F(TSM 还走 ifrs-full taxonomy),
+  // 实测四个科目的季度行均为 0 → 一个 TTM 点都算不出。它们真正有价值的读数也不在 SEC ——
+  // TSM 是月营收(TWSE,每月 10 日)、ASML 是季度 net bookings(IR 季报),都要另立需求。
   { ticker: 'INTC', cik: '50863', side: 'seller' },
 ];
 
 /** 已通过逐家毛利率核对、可入库的标的。核对一家开一家 —— 未核对的进来会污染派生线。 */
-export const SEC_ACTIVE_TICKERS = ['NVDA', 'MU'];
+export const SEC_ACTIVE_TICKERS = ['NVDA', 'MU', 'MSFT'];
 
 export const cikOf = (ticker: string): string | undefined => SEC_COMPANIES.find((c) => c.ticker === ticker)?.cik;
 export const sideOf = (ticker: string): SecSide | undefined => SEC_COMPANIES.find((c) => c.ticker === ticker)?.side;
