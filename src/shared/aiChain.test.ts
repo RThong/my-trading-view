@@ -64,10 +64,15 @@ describe('源映射(表驱动)', () => {
   });
 
   test('格子种类按源分,不共用一张表', () => {
-    // TWSE 只给营收 → 不该给它 SEC 那四格(会画出四条永远空的线)。
     expect(kindsOf('TSM')).toEqual(SOURCE_KINDS.twse);
     expect(kindsOf('NVDA')).toEqual(SOURCE_KINDS.sec);
-    expect(kindsOf('TSM')).not.toContain('gm');
+
+    // TWSE 不给现金流 → 不该给它 FCF 那两格(会画出两条永远空的线)。
+    for (const k of ['fcf', 'fcfq', 'capex']) expect(kindsOf('TSM')).not.toContain(k);
+    // gm **两个源都有但口径不同**(TWSE 单季 / SEC 是 TTM),所以库里的 series_id 必须分开 ——
+    // 那一层由路由的 SERIES_ID 按源分层保证,这里只确认两侧都声明了 gm。
+    expect(kindsOf('TSM')).toContain('gm');
+    expect(kindsOf('NVDA')).toContain('gm');
   });
 
   test('对外键前缀与来源无关', () => {

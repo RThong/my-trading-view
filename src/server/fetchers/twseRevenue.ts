@@ -18,9 +18,15 @@ import type { TwseKind } from '../../shared/aiChain';
 
 const URL = 'https://openapi.twse.com.tw/v1/opendata/t187ap05_L';
 
+const INCOME_URL = 'https://openapi.twse.com.tw/v1/opendata/t187ap06_L_ci';
+
 /** 库里的 series_id。与 SEC 侧的 `SEC_*` 平行,前缀标出源 —— 一眼看出这条线的可审计程度不同。 */
-export const twseSeriesId = (ticker: string, kind: TwseKind): string =>
-  `TWSE_${ticker}_${kind === 'revM' ? 'REV_M' : 'REV_YOY'}`;
+const SERIES_SUFFIX: Record<TwseKind, string> = { revM: 'REV_M', revYoy: 'REV_YOY', gm: 'GM' };
+export const twseSeriesId = (ticker: string, kind: TwseKind): string => `TWSE_${ticker}_${SERIES_SUFFIX[kind]}`;
+
+/** 累计原始量(可审计留档,毛利率由它们差分而来)。不进面板,只在库里。 */
+export const twseYtdSeriesId = (ticker: string, what: 'rev' | 'cogs'): string =>
+  `TWSE_${ticker}_${what === 'rev' ? 'REV_YTD' : 'COGS_YTD'}`;
 
 // 民国年月(11506)→ 该月最后一天(2026-06-30)。序列按月末打点:月营收是整月的量,
 // 落在月末才不会和「月初就有这个数」的错觉混淆。
@@ -130,4 +136,61 @@ export async function fetchTwseMonthlyRevenue(
     latestMonthEnd,
     note: row['備註'] && row['備註'] !== '-' ? row['備註'] : null,
   };
+}
+
+// ── 季度综合损益(毛利率的来源)──────────────────────────────────────────────
+
+type IncomeRow = { 年度?: string; 季別?: string; 公司代號?: string; 營業收入?: string; 營業成本?: string };
+
+/** 民国年 + 季 → 季末日。台股季末固定在自然季末(和美股财年错开无关)。 */
+const QUARTER_END: Record<string, string> = { '1': '03-31', '2': '06-30', '3': '09-30', '4': '12-31' };
+
+export type TwseIncome = {
+  /** 季末日 */
+  periodEnd: string;
+  /** **年初至今累计**营收,百万新台币 —— 不是单季! */
+  revenueYtdTwdM: number;
+  /** 年初至今累计营业成本,百万新台币 */
+  cogsYtdTwdM: number;
+};
+
+/**
+ * 季度综合损益表(一般业),用来算毛利率。**免 key、官方**,与月营收同一个 OpenAPI。
+ *
+ * 三个必须知道的性质:
+ *  1. **金额是年初至今累计**,不是单季(实测 115Q2 的光寶科 96.1B 千元 ≈ 其半年营收)。
+ *     单季要拿相邻两季的累计相减 —— 所以库里存累计原始量,毛利率在 job 里差分出来。
+ *  2. **只有最新一季**,和月营收一样是快照型、不可回填。
+ *  3. **同一季里各公司陆续申报**(截止日是季后 45 天左右)。实测 2026-08-05 那天 115Q2
+ *     只有 82 家在表里,台积电还没交。所以「表里没有这家」是**正常状态**,不是错误 ——
+ *     与月营收那个端点相反(那个是全体同时出,缺了就说明源出问题)。
+ */
+export async function fetchTwseQuarterlyIncome(
+  twseCode: string,
+  doFetch: FetchFn = fetchWithTimeout,
+): Promise<TwseIncome | null> {
+  const res = await doFetch(INCOME_URL, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`TWSE t187ap06_L_ci → HTTP ${res.status}`);
+
+  const all = (await res.json()) as IncomeRow[];
+  if (!Array.isArray(all) || all.length === 0) throw new Error('TWSE t187ap06_L_ci 返回空数组(源结构可能变了)');
+
+  const row = all.find((r) => r['公司代號'] === twseCode);
+  if (!row) return null; // 本季还没交 —— 正常,下轮再看
+
+  const mmdd = QUARTER_END[String(row['季別'] ?? '')];
+  const rocYear = Number(row['年度']);
+  if (!mmdd || !Number.isFinite(rocYear)) {
+    throw new Error(`TWSE ${twseCode}: 年度/季別无法解析(${row['年度']}/${row['季別']})`);
+  }
+
+  const revenueYtdTwdM = toMillion(row['營業收入']);
+  const cogsYtdTwdM = toMillion(row['營業成本']);
+  // 营收有值而成本没有 → 算不出毛利率。抛出来而不是静默跳过:一般业必有营业成本,
+  // 缺了说明这家用了别的报表模板(金融/金控等各有各的端点),该换端点而不是等下轮。
+  if (revenueYtdTwdM === null || cogsYtdTwdM === null) {
+    throw new Error(`TWSE ${twseCode}: 累计营收或营业成本缺值(营收=${row['營業收入']} 成本=${row['營業成本']})`);
+  }
+
+  return { periodEnd: `${rocYear + 1911}-${mmdd}`, revenueYtdTwdM, cogsYtdTwdM };
 }

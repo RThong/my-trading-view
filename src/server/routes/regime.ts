@@ -27,9 +27,11 @@ import {
   FUND_KEY_PREFIX,
   SEC_BUYER_FCF_KEY,
   SEC_BUYER_FCFQ_KEY,
+  type SOURCE_KINDS,
   fundKey,
   kindsOf,
-  type FundKind,
+  sourceOf,
+  type ChainSource,
   type SecLag,
 } from '../../shared/aiChain';
 
@@ -55,43 +57,52 @@ let cache: { at: number; body: RegimeBody } | null = null;
  * 序列按**启用名单 × 该家 source 的格子种类**派生(见 shared/aiChain 的 SOURCE_KINDS),
  * 键由 fundKey 生成、与面板同源:加公司或加源都不用改这里。
  */
-// kind → 库里 series_id。写成查表而非分支:漏加一档是编译错误(Record 要求键齐),
-// 不是静默落到某个默认序列。SEC 那几档走 SEC_* 命名,TWSE 走 TWSE_*。
-const SERIES_ID: Record<FundKind, (ticker: string) => string> = {
-  gm: (t) => secSeriesId(t, 'GM'),
-  capex: (t) => secSeriesId(t, 'CAPEX'),
-  fcf: (t) => secSeriesId(t, 'FCF'),
-  fcfq: (t) => secSeriesId(t, 'FCFQ'),
-  revM: (t) => twseSeriesId(t, 'revM'),
-  revYoy: (t) => twseSeriesId(t, 'revYoy'),
+/**
+ * (source, kind) → 库里 series_id。**必须按源分层**:`gm` 在两个源里同名但不同口径
+ * (SEC 是 TTM、TWSE 是单季),库里也是两个不同的 series_id。
+ * 写成嵌套查表而非分支:每个源的 kind 键必须齐(类型要求),漏一档是编译错误。
+ */
+const SERIES_ID: { [S in ChainSource]: Record<(typeof SOURCE_KINDS)[S][number], (ticker: string) => string> } = {
+  sec: {
+    gm: (t) => secSeriesId(t, 'GM'),
+    capex: (t) => secSeriesId(t, 'CAPEX'),
+    fcf: (t) => secSeriesId(t, 'FCF'),
+    fcfq: (t) => secSeriesId(t, 'FCFQ'),
+  },
+  twse: {
+    gm: (t) => twseSeriesId(t, 'gm'),
+    revM: (t) => twseSeriesId(t, 'revM'),
+    revYoy: (t) => twseSeriesId(t, 'revYoy'),
+  },
 };
 
 /**
- * 读时裁断档(trailingContiguous)只对**等间隔序列**成立:折线会把断档两端连成一条
- * 斜率是编的直线,而这组判据全在读斜率。
- *
- * 月营收那两条**不能裁**:它是快照型源攒出来的,首次接入就只有「当月/上月/去年当月」
- * 三个点,中间天然有 11 个月的空档 —— 裁了只剩最近两个点,同比线更是只有一个点。
- * 月营收的读法是「逐点对比同月」而不是读斜率,断档不构成假斜率。
+ * 要不要裁断档(trailingContiguous)。判据是**这条线用折线还是柱状画**,不是数据来自哪个源:
+ * 折线会把断档两端连成一条斜率是编的直线;柱状不连,空档就是没有柱子。
+ * (面板那侧的画法见 RENDER_BY_KIND —— 两处必须一致,不然要么白裁、要么留假斜率。)
  */
-const TRIM_GAPS: Record<FundKind, boolean> = {
-  gm: true,
-  capex: true,
-  fcf: true,
-  fcfq: true,
-  revM: false,
-  revYoy: false,
+const TRIM_GAPS: { [S in ChainSource]: Record<(typeof SOURCE_KINDS)[S][number], boolean> } = {
+  // SEC 那四格里 fcfq 是柱状,但它是**等间隔季频、不缺季**,裁不裁都一样,保持一致写 true。
+  sec: { gm: true, capex: true, fcf: true, fcfq: true },
+  // TWSE 毛利率是折线的季频比率:缺一季 = 182 天 > maxGapDays,会连出假斜率 → 要裁。
+  // 月营收那两条是柱状,而且快照攒的中间必然空 11 个月 → 不能裁(裁了三个点只剩两个)。
+  twse: { gm: true, revM: false, revYoy: false },
 };
 
 function readSecSeries(db: Database): { series: Record<string, Point[]>; unavailable: string[]; lag: SecLag[] } {
   const defs = [
-    ...ACTIVE_TICKERS.flatMap((ticker) =>
-      kindsOf(ticker).map((kind) => ({
+    ...ACTIVE_TICKERS.flatMap((ticker) => {
+      const source = sourceOf(ticker);
+      // 按源取那张表:同名的 gm 在两个源里指向不同的 series_id。
+      const ids: Record<string, (t: string) => string> = SERIES_ID[source];
+      const trims: Record<string, boolean> = TRIM_GAPS[source];
+
+      return kindsOf(ticker).map((kind) => ({
         out: fundKey(ticker, kind),
-        id: SERIES_ID[kind](ticker),
-        trim: TRIM_GAPS[kind],
-      })),
-    ),
+        id: ids[kind]!(ticker),
+        trim: trims[kind] ?? true,
+      }));
+    }),
     { out: SEC_BUYER_FCF_KEY, id: BUYER_FCF_SERIES, trim: true },
     { out: SEC_BUYER_FCFQ_KEY, id: BUYER_FCFQ_SERIES, trim: true },
   ];

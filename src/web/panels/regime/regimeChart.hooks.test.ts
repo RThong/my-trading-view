@@ -170,18 +170,32 @@ test('secLagNote:买方合计格受任一买方滞后影响;卖方滞后不影�
 
 // 面板的格子按 source 分派(见 SOURCE_PANES)。这条锁住「加了非 SEC 源的公司,
 // 不会被套上 SEC 那四格」—— 套错了会画出四条永远空的线,而空线不报错。
-test('dimPanes:走 TWSE 的公司只出月营收两格,不出毛利率/FCF', () => {
+test('dimPanes:走 TWSE 的公司出「毛利率 + 月营收两格」,不出 FCF(源不给现金流)', () => {
   const twse = dimPanes('fundamentals:TSM');
-  expect(twse.map((p) => p.key)).toEqual(['fund:TSM:revYoy', 'fund:TSM:revM']);
+  expect(twse.map((p) => p.key)).toEqual(['fund:TSM:gm', 'fund:TSM:revYoy', 'fund:TSM:revM']);
 
   const sec = dimPanes('fundamentals:NVDA');
   expect(sec.map((p) => p.key)).toEqual(['fund:NVDA:gm', 'fund:NVDA:fcf', 'fund:NVDA:fcfq', 'fund:NVDA:capex']);
 });
 
-test('dimPanes:TWSE 那两格的说明必须写清「不可回填」与币种', () => {
-  // 这两条是读图时最容易踩的:点之间距离不均(快照攒的)、金额是新台币不是美元。
-  for (const p of dimPanes('fundamentals:TSM')) {
-    expect(p.desc).toContain('百万新台币');
-    expect(p.desc).toContain('补不了历史');
-  }
+test('dimPanes:TWSE 各格的说明必须写清币种;月营收那两格还要写「不可回填」', () => {
+  const panes = dimPanes('fundamentals:TSM');
+
+  // 币种是所有格子的共同坑:新台币不是美元,不能和别的 tab 比大小。
+  for (const p of panes) expect(p.desc).toContain('百万新台币');
+
+  // 「补不了历史」只属于月营收那两格(季度那格的坑是「本季可能还没申报」)。
+  for (const p of panes.filter((x) => x.key !== 'fund:TSM:gm')) expect(p.desc).toContain('补不了历史');
+  expect(panes.find((p) => p.key === 'fund:TSM:gm')!.desc).toContain('本季还没申报');
+});
+
+// 折线只连点 —— 断档两端会被连成一条斜率是编的直线。月营收是快照攒的、中间必然有空档,
+// 实测接入首日就画出一条 2025-06 → 2026-05 的假匀速上升,所以这两格必须是柱状。
+test('dimPanes:月营收两格画柱状不画折线(断档不得连成假斜率)', () => {
+  const byKey = Object.fromEntries(dimPanes('fundamentals:TSM').map((p) => [p.key, p]));
+
+  expect(byKey['fund:TSM:revM']!.render).toEqual({ kind: 'signed' });
+  expect(byKey['fund:TSM:revYoy']!.render).toEqual({ kind: 'signed' });
+  // 毛利率是比率、等间隔季频,折线才对(它由路由端裁断档兜住)。
+  expect(byKey['fund:TSM:gm']!.render).toBeUndefined();
 });

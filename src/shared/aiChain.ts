@@ -80,7 +80,10 @@ export const activeBySource = (source: ChainSource): string[] => ACTIVE_TICKERS.
  */
 export const SOURCE_KINDS = {
   sec: ['gm', 'capex', 'fcf', 'fcfq'],
-  twse: ['revM', 'revYoy'],
+  // gm 与 SEC 那侧同名但**不同口径**:TWSE 走季度综合损益表(营收 − 营业成本)、单季值;
+  // SEC 那侧是 TTM。同名是故意的 —— 面板标签一致,读法差异写在各自的 desc 里。
+  // 库里的 series_id 因此必须按源分开(TWSE_*_GM vs SEC_*_GM_TTM),见路由的 SERIES_ID。
+  twse: ['gm', 'revM', 'revYoy'],
 } as const satisfies Record<ChainSource, readonly string[]>;
 
 export type SecKind = (typeof SOURCE_KINDS)['sec'][number];
