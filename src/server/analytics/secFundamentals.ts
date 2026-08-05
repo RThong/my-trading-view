@@ -54,6 +54,24 @@ export type CompanyFacts = {
  *
  * 已知的同名不同义(靠 tagConflicts 兜住,别指望链序):`SalesRevenueNet` 对 AMZN 是总收入(185 期),
  * 对 ORCL 是个值近 0 的残项(17 期,对着 22B 的总收入)。所以它排在链末,`Revenues` 优先。
+ *
+ * ── 全量实测:链内每一对 tag 在重叠期间的差额(七家 × 四科目,21 组比较)────────────
+ * 结论:**17 组差额恰好为 0** —— 那些 tag 切换只是改标签,不是换口径。剩 4 组有真差异,
+ * 链序都裁对了。别再按 tag 字面去推「哪个更宽」,得量(NVDA 的 capex 就是反例:
+ * 行文写成 "property and equipment and intangible assets",三个重叠期差额全为 0)。
+ *
+ * 4 组真差异:
+ *  · AMZN capex,重叠 1 期(FY2016):6.737B vs 7.804B(+15.8%)。真差口径,见 CAPEX_SCOPE。
+ *  · MSFT revenue,`RevenueFromContract…` vs `SalesRevenueNet`,重叠 10 期中 3 期不一致,
+ *    最大 2017Q2:25.605B vs 23.317B(−8.9%)。这是 **ASC 606 重述前后两个会计基础**,
+ *    链序取前者 = 取与今天可比的那个基础(2018 年后全是 606)。取 `SalesRevenueNet` 反而会
+ *    在序列中间留下基础跳变。实测毛利率线在切换点(2016-12-31)无台阶(61.5→62.4→63.1→64.5,
+ *    因为 cogs 同期也是重述基础)。**这正是「链序赢而非 filed 赢」的第二个证据**。
+ *  · ORCL revenue,`Revenues` vs `RevenueFromContract…`,14 期中 5 期不一致,最大 −1.0%。同上,取前者。
+ *  · ORCL revenue,`Revenues` vs `SalesRevenueNet`,14 期全不一致,最大 22.430B vs 0.000B —— 上面那个残项。
+ *
+ * 顺带证伪一个担心:`…ContinuingOperations` 那档(MU/MSFT/ORCL 都命中过)会不会漏掉终止经营?
+ * 三家共 34 个重叠期,**差额全为 0** —— 这几家在这些期间没有终止经营,两个 tag 是同一个数。
  */
 export const TAG_CHAINS: Record<Concept, string[]> = {
   revenue: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet'],
