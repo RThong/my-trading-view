@@ -30,6 +30,7 @@ import {
   REQUIRED_CONCEPTS_BY_SIDE,
   SEC_ACTIVE_TICKERS,
   cikOf,
+  expectedCapexScope,
   isAggregateMember,
   knownGap,
   sideOf,
@@ -121,23 +122,24 @@ function writeDerived(db: Database, active: string[], examine: string[]): { writ
   // 目录里若有非链内的 buyer,光看 side 会让它静默把零轴垫高。
   const buyers = derived.filter(([t]) => isAggregateMember(t));
 
-  // ③ 买方之间 capex 口径必须一致,否则合计线的零轴位置不可比:
-  // ppe = 纯有形固定资产;productive_assets = 还含软件/无形资产(NVDA、AMZN 都在 2017/2020 永久换到后者)。
-  // 同样的生意,后者显得更重、FCF 更低。混着加总仍能读趋势,但读「离零轴多远」就会错。
-  const buyerScopes = new Map(
-    loaded
+  // ③ 买方 capex 口径**偏离声明**才报。不报「大家不一致」——AMZN 2017 后就没有纯 PP&E tag 可选,
+  // 那个不一致永远存在,报了就是永久黄灯(见 CAPEX_SCOPE_EXPECTED)。不可比本身写在面板文案里。
+  // 值得报的是换档:合计线的零轴位置随之变了,必须有人看一眼那家的报表原文。
+  problems.push(
+    ...loaded
       .filter(([t]) => isAggregateMember(t))
       .flatMap(([t, rows]) => {
         const latestCapex = rows.filter((r) => r.concept === 'capex').at(-1);
         const scope = latestCapex && capexScopeOf(latestCapex.tagUsed);
+        const want = expectedCapexScope(t);
+        if (!scope || scope === want) return [];
 
-        return scope ? [[t, scope] as const] : [];
+        return [
+          `${t}: capex 口径从声明的 ${want} 变成 ${scope}(最新一期 tag=${latestCapex!.tagUsed})—— ` +
+            '合计线的零轴位置不再可比,核一下该家报表原文,再改 CAPEX_SCOPE_EXPECTED',
+        ];
       }),
   );
-  if (new Set(buyerScopes.values()).size > 1) {
-    const detail = [...buyerScopes].map(([t, sc]) => `${t}=${sc}`).join(' / ');
-    problems.push(`买方 capex 口径不一致(${detail}):合计线仍可读趋势,但「离零轴多远」不可比`);
-  }
   problems.push(
     ...buyers
       .filter(([, d]) => d.fcfTtm.length === 0)

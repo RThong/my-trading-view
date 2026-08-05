@@ -89,6 +89,24 @@ export const KNOWN_GAPS: Record<string, string> = {
 export const knownGap = (ticker: string, concept: string): string | undefined => KNOWN_GAPS[`${ticker}.${concept}`];
 
 /**
+ * 各家 capex 的**已知口径**(analytics 的 CapexScope 值)。未列出的按 `ppe`。
+ *
+ * 为什么要声明而不是直接报「大家不一致」:AMZN 2017-03-31 之后就不再披露 us-gaap 的纯 PP&E tag
+ * (companyfacts 实测:ppe 覆盖到 2017-03-31,productive_assets 从 2016-12-31 起到今天),
+ * **没有可选项** —— 这个不一致永远存在,报成 failed 就是一盏永久黄灯,会把真信号淹掉
+ * (同 REQUIRED_CONCEPTS_BY_SIDE 的理由)。
+ *
+ * 真正值得报的是**偏离声明**:某家的 tag 换了档(如 AMZN 哪天又开始报纯 PP&E,
+ * 或第五家买方切过去)。那时口径变了,合计线的可比性也变了,必须有人看一眼。
+ * 不可比本身写在面板文案里(见 regimeChart.hooks 的 SEC_LEASE_CAVEAT),不靠告警提醒。
+ */
+export const CAPEX_SCOPE_EXPECTED: Record<string, string> = {
+  AMZN: 'productive_assets',
+};
+
+export const expectedCapexScope = (ticker: string): string => CAPEX_SCOPE_EXPECTED[ticker] ?? 'ppe';
+
+/**
  * 「远端已交更新的 10-Q/10-K,但我们库里还没有那一期」。后端由 sec_watermark 与
  * sec_fundamentals 比 filed 得出(见 storage/repository 的 getSecLag),前端据此在那一格
  * 标注「这条线不是最新已报季度」—— 否则读图的人会把三个月前的点当成最新读数。

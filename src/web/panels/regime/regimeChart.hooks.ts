@@ -684,6 +684,16 @@ const SEC_LEASE_CAVEAT =
   '  · NVDA:它自己的 FCF 还要再减「PP&E/无形资产的本金还款」→ 我们偏高。\n' +
   '  · AMZN:它把**处置与激励回款净掉**了(TTM 差约 40 亿)→ 我们的 FCF 反而**偏低**。\n' +
   '这些调整项多是公司自定义 XBRL(extension),companyfacts 拿不到,所以统一用总额、不做各家特调。\n' +
+  '\n' +
+  '⚠️ **还有一层:AMZN 的 capex 口径本身就比另四家宽**,不只是调整项的差别。它命中的是 ' +
+  '`PaymentsToAcquireProductiveAssets`(PP&E + 自用软件/网站开发),另四家是纯 PP&E。' +
+  '换 tag 时留的唯一重叠期(FY2016)实测 **+15.8%**(6.737B vs 7.804B)。\n' +
+  '  · **没有可选项**:AMZN 2017-03-31 之后就不再披露 us-gaap 的纯 PP&E tag,不是我们选错了 tag。\n' +
+  '  · 也**无法更新这个百分比**:实例里没有任何自用软件分项(只有两个 extension:' +
+  'VideoAndMusicContentCapitalizedCosts / ProceedsFromPropertyPlantAndEquipmentSalesAndIncentives),减不出纯 PP&E。\n' +
+  '  · 后果:**合计线读趋势成立,读「离零轴还有多远」时 AMZN 那部分偏保守**(capex 记多了 → FCF 记少了)。\n' +
+  '  · 对照:NVDA 2020 也换过同一个 tag,但三个重叠期差额**全为 0** —— 换 tag 不等于换口径,得量。\n' +
+  '\n' +
   '**读法:比趋势与相对变化,别拿绝对值去对新闻稿**;要看某一家的公司口径 FCF,去它的财报。';
 // 断档裁剪是后端统一做的(trailingContiguous),对**每条** sec 序列都生效(含毛利率)。
 // 各家/各科目的起点因此长短不一,必须在每一格都讲清楚,否则「怎么这条线只有几年」无处可查。

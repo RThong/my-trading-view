@@ -64,10 +64,22 @@ export const TAG_CHAINS: Record<Concept, string[]> = {
 
 /**
  * capex 两档不是同义词,是两个口径 —— 跨公司比 capex / FCF 绝对值时必须知道用的哪个:
- *  · ppe:纯有形固定资产的现金购买(MU / MSFT / GOOGL / META)。
- *  · productive_assets:PP&E **+ 软件及其他无形资产**(NVDA 那行原文是 "property and equipment
- *    and intangible assets";AMZN 含自用软件/网站开发)。同样的生意,这一档会显得更重、FCF 更低。
- * 拆不开:`PaymentsToAcquireIntangibleAssets` 七家实测一期都没有,没法从 companyfacts 减出纯 PP&E。
+ *  · ppe:纯有形固定资产的现金购买(MU / MSFT / ORCL / GOOGL / META)。
+ *  · productive_assets:PP&E + 软件及其他无形资产(AMZN 含自用软件/网站开发)。
+ *
+ * **两档的实际差额靠重叠期量,不靠字面**(两家换 tag 时都留了重叠期,实测结论相反):
+ *  · AMZN 换于 2017,唯一重叠期 FY2016:ppe 6.737B vs productive 7.804B → **+15.8%**,真差口径。
+ *  · NVDA 换于 2020,三个重叠期(2019-10-27 / 2020-04-26 / 2020-07-26)**差额全为 0** ——
+ *    它只是改了标签(行文写成 "property and equipment and intangible assets"),数没变。
+ *    所以别按字面认定「NVDA 这档更宽」。
+ *
+ * 换 tag 那一刻会在序列里留断口,但**两家的断口都已被 trailingContiguous 裁在可见段之外**
+ * (AMZN 可见段自 2018-06-30 起,换 tag 前后中间还缺了四个季度)。
+ *
+ * 拆不开:`PaymentsToAcquireIntangibleAssets` 七家实测一期都没有;AMZN 2026Q2 的实例里也没有任何
+ * 自用软件分项(只有 `amzn:VideoAndMusicContentCapitalizedCosts` 与
+ * `amzn:ProceedsFromPropertyPlantAndEquipmentSalesAndIncentives` 两个 extension)
+ * → 减不出纯 PP&E,那 +15.8% 也无法更新到今天。
  */
 export type CapexScope = 'ppe' | 'productive_assets';
 const CAPEX_SCOPE: Record<string, CapexScope> = {

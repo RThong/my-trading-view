@@ -310,11 +310,11 @@ describe('sec fundamentals job', () => {
     );
     db.close();
   });
-test("companyfacts 落后于 submissions → 读申报实例补上那一期", async () => {
+  test('companyfacts 落后于 submissions → 读申报实例补上那一期', async () => {
     // 稳态下最常见的缺口(实测 META 2026Q2:10-Q 已交,companyfacts 六天后仍没这期)。
     // 实例只报本年累计现金流,减掉的上一季在 companyfacts 里 —— 故必须合并后再算。
     const db = freshDb();
-    await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher("2026-02-25") });
+    await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher('2026-02-25') });
 
     // 远端出了 2026-05-20 的新申报,但 companyfacts 还是旧的那四期。
     const instance = [
@@ -328,36 +328,36 @@ test("companyfacts 落后于 submissions → 读申报实例补上那一期", as
       // 带维度的那条值不同,漏掉过滤会串口径。
       '<us-gaap:PaymentsToAcquirePropertyPlantAndEquipment contextRef="c2" unitRef="u1">999000000</us-gaap:PaymentsToAcquirePropertyPlantAndEquipment>',
       '</xbrl>',
-    ].join("");
+    ].join('');
 
     const r = await updateSecFundamentals(db, {
       ...SELLER_ONLY,
       fetcher: {
-        latestFiling: async () => filingOf("2026-05-20"),
+        latestFiling: async () => filingOf('2026-05-20'),
         companyFacts: async () => NVDA_FACTS,
         filingInstance: async () => instance,
       },
     });
 
-    expect(r.fetched).toEqual(["NVDA"]);
-    expect(r.fallback).toEqual(["NVDA(10-Q 2026-05-20)"]);
-    const q = getSecFundamentals(db, "NVDA").filter((x) => x.periodEnd === "2026-04-26");
-    expect(q.find((x) => x.concept === "ocf")?.value).toBe(25e9);
-    expect(q.find((x) => x.concept === "capex")?.value).toBe(3e9); // 不是 999e6
-    expect(q[0]?.filed).toBe("2026-05-20"); // 溯源列指向那份申报,不是 companyfacts
+    expect(r.fetched).toEqual(['NVDA']);
+    expect(r.fallback).toEqual(['NVDA(10-Q 2026-05-20)']);
+    const q = getSecFundamentals(db, 'NVDA').filter((x) => x.periodEnd === '2026-04-26');
+    expect(q.find((x) => x.concept === 'ocf')?.value).toBe(25e9);
+    expect(q.find((x) => x.concept === 'capex')?.value).toBe(3e9); // 不是 999e6
+    expect(q[0]?.filed).toBe('2026-05-20'); // 溯源列指向那份申报,不是 companyfacts
   });
 
-  test("兜底也拿不到 → 主症状(companyfacts 落后)仍要报,不被兜底的错盖掉", async () => {
+  test('兜底也拿不到 → 主症状(companyfacts 落后)仍要报,不被兜底的错盖掉', async () => {
     const db = freshDb();
-    await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher("2026-02-25") });
+    await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher('2026-02-25') });
 
     const r = await updateSecFundamentals(db, {
       ...SELLER_ONLY,
       fetcher: {
-        latestFiling: async () => filingOf("2026-05-20"),
+        latestFiling: async () => filingOf('2026-05-20'),
         companyFacts: async () => NVDA_FACTS,
         filingInstance: async () => {
-          throw new Error("目录里没有 _htm.xml 实例");
+          throw new Error('目录里没有 _htm.xml 实例');
         },
       },
     });
@@ -365,5 +365,51 @@ test("companyfacts 落后于 submissions → 读申报实例补上那一期", as
     expect(r.failed.some((f) => /申报实例兜底失败/.test(f))).toBe(true);
     expect(r.failed.some((f) => /companyfacts 与申报实例都没贡献新一期的行/.test(f))).toBe(true);
     expect(r.fetched).toEqual([]);
+  });
+  test('capex 口径:AMZN 的 productive_assets 是已声明状态 → 不报;买方换档 → 报', async () => {
+    // 不可比本身永远存在(AMZN 2017 后没有纯 PP&E tag 可选),报成 failed 就是永久黄灯。
+    const withCapexTag = (tag: string): CompanyFacts => ({
+      facts: {
+        'us-gaap': {
+          Revenues: ytd([25e9, 50e9, 75e9, 100e9]),
+          CostOfRevenue: ytd([10e9, 20e9, 30e9, 40e9]),
+          NetCashProvidedByUsedInOperatingActivities: ytd(cumulative(50e9)),
+          [tag]: ytd(cumulative(20e9)),
+        },
+      },
+    });
+    const fetcherFor = (tag: string) => ({
+      latestFiling: async () => filingOf('2026-02-25'),
+      companyFacts: async () => withCapexTag(tag),
+      filingInstance: noInstance,
+    });
+    const scopeProblems = (r: { failed: string[] }) => r.failed.filter((f) => /capex 口径/.test(f));
+
+    // AMZN 用 productive_assets = 声明值 → 静默(而它与 MSFT 的 ppe 确实不可比,照样不报)。
+    const db = freshDb();
+    const ok = await updateSecFundamentals(db, {
+      tickers: ['AMZN', 'MSFT'],
+      activeTickers: ['AMZN', 'MSFT'],
+      fetcher: {
+        latestFiling: async () => filingOf('2026-02-25'),
+        companyFacts: async (cik: string) =>
+          withCapexTag(
+            cik === MSFT_CIK ? 'PaymentsToAcquirePropertyPlantAndEquipment' : 'PaymentsToAcquireProductiveAssets',
+          ),
+        filingInstance: noInstance,
+      },
+    });
+    expect(scopeProblems(ok)).toEqual([]);
+    db.close();
+
+    // MSFT 声明是 ppe,却命中 productive_assets → 换档,必须报。
+    const db2 = freshDb();
+    const flipped = await updateSecFundamentals(db2, {
+      tickers: ['MSFT'],
+      activeTickers: ['MSFT'],
+      fetcher: fetcherFor('PaymentsToAcquireProductiveAssets'),
+    });
+    expect(scopeProblems(flipped)[0]).toMatch(/MSFT: capex 口径从声明的 ppe 变成 productive_assets/);
+    db2.close();
   });
 });
