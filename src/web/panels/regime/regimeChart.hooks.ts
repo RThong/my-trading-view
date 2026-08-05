@@ -730,7 +730,8 @@ const paneOf = (
   kind: SecKind,
   label: string,
   title: string,
-  color: string,
+  // signed(符号柱)不需要 color —— 正绿负红由 signed 分支决定,图例留空用默认色,与 vxTermSpread 一致。
+  color: string | undefined,
   lines: Array<string | undefined>,
 ): PaneSpec => {
   const gaps = PANE_CONCEPTS[kind].flatMap((c) => {
@@ -743,7 +744,13 @@ const paneOf = (
     label,
     title,
     color,
-    ...(kind === 'fcf' || kind === 'fcfq' ? { render: { kind: 'line' as const, baseline: 0 } } : {}),
+    // 单季是**离散的期间读数**且正负是重点 → 符号柱(正绿负红,零基线),不是折线。
+    // TTM 仍用折线:它是连续的滚动量,折线才对。
+    ...(kind === 'fcfq'
+      ? { render: { kind: 'signed' as const } }
+      : kind === 'fcf'
+        ? { render: { kind: 'line' as const, baseline: 0 } }
+        : {}),
     // 不配 percentile:样本仅十余期,分位是噪声。
     // 只丢 undefined —— '' 是段落分隔符,InfoTip 用 whitespace-pre-wrap 渲染,filter(Boolean) 会把它一起吃掉。
     desc: [...(gaps.length ? [...gaps, ''] : []), ...lines].filter((l) => l !== undefined).join('\n'),
@@ -771,7 +778,7 @@ function companyPanes(ticker: string): PaneSpec[] {
       ...(seller ? [] : [SEC_LEASE_CAVEAT, '']),
       SEC_TRIM_NOTE,
     ]),
-    paneOf(ticker, 'fcfq', '单季 FCF', `${ticker} 单季自由现金流(百万美元)`, '#f97316', [
+    paneOf(ticker, 'fcfq', '单季 FCF', `${ticker} 单季自由现金流(百万美元)`, undefined, [
       `定义:${ticker} **单季**自由现金流 = 该季经营现金流 − 该季资本开支(不是 TTM)。` + SEC_CAVEAT,
       '',
       SEC_QUARTERLY_READ,
@@ -796,8 +803,7 @@ const buyerQuarterlyPane: PaneSpec = {
   key: SEC_BUYER_FCFQ_KEY,
   label: '买方合计(单季)',
   title: 'AI 链买方合计 **单季** 自由现金流(百万美元)',
-  color: '#f97316',
-  render: { kind: 'line', baseline: 0 },
+  render: { kind: 'signed' }, // 符号柱:正绿负红、零基线;颜色由 signed 分支给,不配 color
   desc: [
     '定义:买方各家**单季** FCF 之和(不是 TTM),按日历季度对齐。' + SEC_CAVEAT,
     '',
