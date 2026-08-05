@@ -6,7 +6,9 @@ set -euo pipefail
 # ── 改这里即可 ────────────────────────────────────────────────────────────────
 HOURS=(11 12 20 21 22)        # 触发小时(JST 本地时区);日频两个 job 共用
 EQUITY_WEEKDAYS=(2 3 4 5 6)   # 股票 job 跑的星期(1=周一 … 7=周日);加密 job 天天跑(24/7)
-SEC_WEEKDAY=6                 # SEC 基本面 job:季频数据,每周一次即可(财报季集中在 1/4/7/10 月中下旬)
+# SEC 基本面 job:数据是季频,但**时效要日频** —— 公司交完 10-Q 到 companyfacts 吃进通常只隔一天,
+# 每周才查一次会白等最多 6 天,把「转折发生」推迟到下一周才看见。天天查代价极小:
+# job 先比 submissions 的 filed,没新申报就 no-op(几百 KB),多数天本来就该是空转。
 SEC_HOURS=(13 19)             # 单独挑空档,别和日频那几个点撞;两个点兜「错过一次还有下次」
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -93,12 +95,13 @@ cat > "$LA/com.mtv.sec.plist" <<EOF
 <plist version="1.0">
 <dict>
     <key>Label</key><string>com.mtv.sec</string>
-    <!-- 由 scripts/gen-cron.sh 生成,勿手改。SEC XBRL 财务:季频数据,每周一次。
+    <!-- 由 scripts/gen-cron.sh 生成,勿手改。SEC XBRL 财务:天天 × SEC_HOURS 触发(无 Weekday)。
+         数据是季频但时效要日频 —— 财报交上来次日就想拿到,每周一次会白等最多 6 天。
          job 自己先比 submissions 的 filed,没新申报就 no-op,不拉几 MB 的 companyfacts。
          需要 .env 里的 SEC_USER_AGENT(Bun 按 WorkingDirectory 自动加载 .env)。 -->
     <key>StartCalendarInterval</key>
     <array>
-$(for h in "${SEC_HOURS[@]}"; do printf '        <dict><key>Weekday</key><integer>%s</integer><key>Hour</key><integer>%s</integer><key>Minute</key><integer>0</integer></dict>\n' "$SEC_WEEKDAY" "$h"; done)
+$(for h in "${SEC_HOURS[@]}"; do printf '        <dict><key>Hour</key><integer>%s</integer><key>Minute</key><integer>0</integer></dict>\n' "$h"; done)
     </array>
     <key>ProgramArguments</key>
     <array>
@@ -122,4 +125,4 @@ for label in com.mtv.daily com.mtv.crypto com.mtv.sec; do
   launchctl bootout "gui/$U/$label" 2>/dev/null || true
   launchctl bootstrap "gui/$U" "$LA/$label.plist"
 done
-echo "已生成并重载 com.mtv.daily / com.mtv.crypto / com.mtv.sec,触发小时 = ${HOURS[*]}(股票星期 ${EQUITY_WEEKDAYS[*]};SEC 星期 ${SEC_WEEKDAY} 的 ${SEC_HOURS[*]} 点)"
+echo "已生成并重载 com.mtv.daily / com.mtv.crypto / com.mtv.sec,触发小时 = ${HOURS[*]}(股票星期 ${EQUITY_WEEKDAYS[*]};SEC 天天 ${SEC_HOURS[*]} 点)"
