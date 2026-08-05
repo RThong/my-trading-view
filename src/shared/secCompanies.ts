@@ -88,6 +88,18 @@ export const KNOWN_GAPS: Record<string, string> = {
 
 export const knownGap = (ticker: string, concept: string): string | undefined => KNOWN_GAPS[`${ticker}.${concept}`];
 
+/**
+ * 「远端已交更新的 10-Q/10-K,但我们库里还没有那一期」。后端由 sec_watermark 与
+ * sec_fundamentals 比 filed 得出(见 storage/repository 的 getSecLag),前端据此在那一格
+ * 标注「这条线不是最新已报季度」—— 否则读图的人会把三个月前的点当成最新读数。
+ */
+export type SecLag = {
+  ticker: string;
+  remoteFiled: string; // submissions 里最新定期报告的申报日
+  localFiled: string | null; // 我们已有的最新申报日;null = 这家一行都没有
+  latestPeriodEnd: string | null; // 我们已有的最新期末,用来在文案里说清「截至哪一期」
+};
+
 export const secKey = (ticker: string, kind: SecKind): string => `sec:${ticker}:${kind}`;
 export const SEC_BUYER_FCF_KEY = 'sec:buyerFcf';
 export const SEC_BUYER_FCFQ_KEY = 'sec:buyerFcfQ';

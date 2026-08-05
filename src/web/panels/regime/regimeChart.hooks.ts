@@ -9,10 +9,12 @@ import {
   SEC_BUYER_FCF_KEY,
   SEC_BUYER_FCFQ_KEY,
   chainTickers,
+  isAggregateMember,
   knownGap,
   secKey,
   sideOf,
   type SecKind,
+  type SecLag,
 } from '../../../shared/secCompanies';
 
 // 分位带阈值(自身历史):想改 5/95 更严就动这里。
@@ -53,7 +55,12 @@ const SEC_ROSTER_CAVEAT =
   '故**买方一家都没开时这格是空的** —— 空 = 判据还没有数据,不是「FCF 为零」。';
 
 export type RegimePoint = { date: string; value: number };
-export type RegimeData = { series: Record<string, RegimePoint[]>; unavailable: string[]; ohlc?: Record<string, Bar[]> };
+export type RegimeData = {
+  series: Record<string, RegimePoint[]>;
+  unavailable: string[];
+  ohlc?: Record<string, Bar[]>;
+  secLag?: SecLag[];
+};
 
 const NO_DATA: RegimeData = { series: {}, unavailable: [] }; // 稳定空引用,避免 render 抖动
 const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
@@ -933,6 +940,28 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
     };
     return [bgSpec, lineSpec]; // bg 先建 → 画在线的下层
   });
+}
+
+/**
+ * 「公司已申报、SEC 还没提供那一期」的滞后提示(基本面维度专用)。
+ *
+ * 判据**不看期末日期差** —— 各家财年季末天然错开两三个月(实测 NVDA 的最新期落后 AMZN 整季
+ * 是正常的:它下一季 8 月底才申报),日期差分不清「还没到财报期」和「交了但 SEC 没吃进」。
+ * 只有后端拿 submissions 的 filed 与库里 MAX(filed) 比出来的才是确定结论,即 data.secLag。
+ *
+ * 为什么必须显示:滞后时那条线的末端是三个月前的读数,而这组判据全在读「最新一季转没转负」,
+ * 不标注就会把旧点当成最新(实测 META 停在 2026Q1 的 +13.2B,而 Q2 实际是 +1.7B)。
+ * 合计那格是**全员齐才出点**,任何一家滞后都顶住整条线的末端,故照样提示。
+ */
+export function secLagNote(data: RegimeData, dim: RegimeDim): string | undefined {
+  if (!data.secLag?.length || !dim.startsWith('fundamentals:')) return undefined;
+
+  const who = dim.slice('fundamentals:'.length);
+  const mine = data.secLag.filter((l) => (who === 'buyer' ? isAggregateMember(l.ticker) : l.ticker === who));
+  if (!mine.length) return undefined;
+
+  const one = (l: SecLag) => `${l.ticker} 截至 ${l.latestPeriodEnd ?? '无数据'}(${l.remoteFiled} 已申报,SEC 未提供)`;
+  return `⚠️ 数据滞后:${mine.map(one).join(';')}`;
 }
 
 /** 各序列最新值在自身历史里的百分位(徽标用,如 { cor1m: 'P3' })。仅 percentile 的 pane 产出。 */

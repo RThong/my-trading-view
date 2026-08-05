@@ -90,3 +90,14 @@ CREATE TABLE IF NOT EXISTS sec_fundamentals (
     PRIMARY KEY (ticker, period_end, concept)
 );
 CREATE INDEX IF NOT EXISTS idx_sec_fundamentals_ticker ON sec_fundamentals(ticker);
+
+-- SEC submissions 的远端水位:每轮 job 无条件记「远端最新 10-Q/10-K 的申报日」(拉不拉
+-- companyfacts 都记)。为什么单独存:光看 sec_fundamentals 分不清「这家还没到财报期」和
+-- 「财报已交但 companyfacts 还没吃进」—— 各家财年季末天然错开两三个月,日期差本身不构成
+-- 判据(实测 NVDA 的最新期落后 AMZN 整季是正常的:它下一季 8 月底才申报)。有了远端 filed,
+-- 与本地 MAX(filed) 一比就是确定结论,面板据此标注「这条线不是最新已报季度」。
+CREATE TABLE IF NOT EXISTS sec_watermark (
+    ticker        TEXT NOT NULL PRIMARY KEY,
+    remote_filed  TEXT NOT NULL,      -- submissions 里最新 10-Q/10-K 的申报日
+    checked_at    TEXT NOT NULL
+);

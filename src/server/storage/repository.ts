@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import type { JobStatus } from '../../shared/types';
+import type { SecLag } from '../../shared/secCompanies';
 
 // bun:sqlite 的具名参数值域(标量,非递归),与其 SQLQueryBindings 的 Record 分支一致。
 type NamedParams = Record<string, string | bigint | NodeJS.TypedArray | number | boolean | null>;
@@ -345,6 +346,43 @@ export function getLatestSecFiled(db: Database, ticker: string): string | null {
     d: string | null;
   };
   return row?.d ?? null;
+}
+
+export function putSecWatermark(db: Database, ticker: string, remoteFiled: string): void {
+  db.run(
+    `INSERT INTO sec_watermark (ticker, remote_filed, checked_at) VALUES (?, ?, ?)
+     ON CONFLICT(ticker) DO UPDATE SET remote_filed = excluded.remote_filed, checked_at = excluded.checked_at`,
+    [ticker, remoteFiled, new Date().toISOString()],
+  );
+}
+
+/**
+ * 远端已有更新申报、但我们库里还没有那一期的公司。用 filed 比而非 period_end 比 ——
+ * 各家财年季末天然错开,期末日期差不构成判据(见 schema.sql 的 sec_watermark 注释)。
+ * 只返回落后的那几家:没落后的不需要在面板上说什么。
+ */
+export function getSecLag(db: Database): SecLag[] {
+  const rows = db
+    .query(`
+    SELECT w.ticker, w.remote_filed, MAX(f.filed) AS local_filed, MAX(f.period_end) AS latest_period_end
+    FROM sec_watermark w LEFT JOIN sec_fundamentals f ON f.ticker = w.ticker
+    GROUP BY w.ticker
+    HAVING local_filed IS NULL OR w.remote_filed > local_filed
+    ORDER BY w.ticker
+  `)
+    .all() as Array<{
+    ticker: string;
+    remote_filed: string;
+    local_filed: string | null;
+    latest_period_end: string | null;
+  }>;
+
+  return rows.map((r) => ({
+    ticker: r.ticker,
+    remoteFiled: r.remote_filed,
+    localFiled: r.local_filed,
+    latestPeriodEnd: r.latest_period_end,
+  }));
 }
 
 export function getJobHealth(db: Database): JobStatus[] {

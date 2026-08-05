@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { buildRegimeSpecs, regimePercentiles, type RegimeData } from './regimeChart.hooks';
+import { buildRegimeSpecs, regimePercentiles, secLagNote, type RegimeData } from './regimeChart.hooks';
 
 const data: RegimeData = {
   series: {
@@ -147,4 +147,23 @@ test('valuation:cape 分位只用 pctlSince(2000+)窗口,线仍画全部', () =>
   // (含 1995 会是 4 点 → P88,借此证明窗口生效)
   const pctls = regimePercentiles({ series: { cape }, unavailable: [] }, 'valuation');
   expect(pctls.cape).toBe('P83');
+});
+
+// SEC 滞后提示:判据只认后端算好的 secLag,不做任何日期差推断(各家财年季末天然错开)。
+const LAG = { ticker: 'META', remoteFiled: '2026-07-30', localFiled: '2026-04-30', latestPeriodEnd: '2026-03-31' };
+const withLag = (secLag: (typeof LAG)[]): RegimeData => ({ series: {}, unavailable: [], secLag });
+
+test('secLagNote:落后的那家 tab 出提示,其余 tab 与非基本面维度不出', () => {
+  expect(secLagNote(withLag([LAG]), 'fundamentals:META')).toContain('META 截至 2026-03-31');
+  expect(secLagNote(withLag([LAG]), 'fundamentals:META')).toContain('2026-07-30 已申报');
+  expect(secLagNote(withLag([LAG]), 'fundamentals:AMZN')).toBeUndefined();
+  expect(secLagNote(withLag([LAG]), 'liquidity')).toBeUndefined();
+  expect(secLagNote({ series: {}, unavailable: [] }, 'fundamentals:META')).toBeUndefined();
+});
+
+test('secLagNote:买方合计格受任一买方滞后影响;卖方滞后不影响它', () => {
+  // 合计是全员齐才出点,买方 META 落后就顶住整条线末端 → 必须提示。
+  expect(secLagNote(withLag([LAG]), 'fundamentals:buyer')).toContain('META');
+  // MU 是卖方,不进合计 → 合计那格不该因它报警。
+  expect(secLagNote(withLag([{ ...LAG, ticker: 'MU' }]), 'fundamentals:buyer')).toBeUndefined();
 });

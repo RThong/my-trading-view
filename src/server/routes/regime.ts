@@ -13,7 +13,7 @@ import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
 import { subtractAligned, divideAligned, yoyPct, scale, type Point } from '../analytics/regime';
 import { computeSpread } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
-import { getMarketSeries } from '../storage/repository';
+import { getMarketSeries, getSecLag } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
 import {
   BUYER_FCF_SERIES,
@@ -28,11 +28,17 @@ import {
   SEC_KINDS,
   secKey,
   type SecKind,
+  type SecLag,
 } from '../../shared/secCompanies';
 
 // 后端不 import web 的 Bar(跨边界);内联 OHLC 形状,JSON 与前端 chart 的 Bar 一致。
 type OhlcBar = { time: string; open: number; high: number; low: number; close: number };
-type RegimeBody = { series: Record<string, Point[]>; unavailable: string[]; ohlc?: Record<string, OhlcBar[]> };
+type RegimeBody = {
+  series: Record<string, Point[]>;
+  unavailable: string[];
+  ohlc?: Record<string, OhlcBar[]>;
+  secLag?: SecLag[];
+};
 
 // 内存 TTL 缓存:现拉全部外部源约 1.3s,重复打开走缓存瞬时返回。
 // 只缓存全成功的响应(降级响应不缓存,下次刷新重试),避免瞬时反爬失败被粘住。
@@ -58,7 +64,7 @@ const ID_SEGMENT: Record<SecKind, 'GM' | 'CAPEX' | 'FCF' | 'FCFQ'> = {
   fcfq: 'FCFQ',
 };
 
-function readSecSeries(db: Database): { series: Record<string, Point[]>; unavailable: string[] } {
+function readSecSeries(db: Database): { series: Record<string, Point[]>; unavailable: string[]; lag: SecLag[] } {
   const defs = [
     ...SEC_ACTIVE_TICKERS.flatMap((ticker) =>
       SEC_KINDS.map((kind) => ({ out: secKey(ticker, kind), id: secSeriesId(ticker, ID_SEGMENT[kind]) })),
@@ -76,7 +82,10 @@ function readSecSeries(db: Database): { series: Record<string, Point[]>; unavail
     else unavailable.push(out);
   }
 
-  return { series, unavailable };
+  // 只保留启用名单里的:名单外的公司(曾启用过、水位还留在库里)不该在面板上冒出来。
+  const lag = getSecLag(db).filter((l) => (SEC_ACTIVE_TICKERS as readonly string[]).includes(l.ticker));
+
+  return { series, unavailable, lag };
 }
 
 /**
@@ -95,6 +104,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
         ...cache.body,
         series: { ...cache.body.series, ...sec.series },
         unavailable: [...cache.body.unavailable.filter((n) => !n.startsWith('sec')), ...sec.unavailable],
+        secLag: sec.lag,
       });
     } finally {
       db.close();
@@ -177,6 +187,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
 
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
+  let secLag: SecLag[] = [];
 
   // 有值 → 落对外序列;否则记入 unavailable。收敛 5 处「存在性分支」,读时一目了然。
   // (传 undefined 表示该序列缺失/为空;直接源用存在性、派生/库源用长度决定是否传值。)
@@ -261,11 +272,12 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     const sec = readSecSeries(db);
     for (const [out, rows] of Object.entries(sec.series)) put(out, rows);
     unavailable.push(...sec.unavailable);
+    secLag = sec.lag;
   } finally {
     db.close();
   }
 
-  const body: RegimeBody = { series, unavailable, ohlc };
+  const body: RegimeBody = { series, unavailable, ohlc, secLag };
   // 只缓存全成功(降级响应不缓存,下次重试)。例外:SEC 那几条是季频、靠单独的周 job 攒,
   // 从没跑过 job 的库里它们必然缺——不能让这个常态把整条路由的缓存永久关掉。
   if (unavailable.every((n) => n.startsWith('sec'))) cache = { at: Date.now(), body };

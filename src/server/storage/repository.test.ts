@@ -1,7 +1,15 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { migrate } from './db';
-import { startJobRun, finishJobRun, getJobHealth, getTodaySucceededJobs } from './repository';
+import {
+  startJobRun,
+  finishJobRun,
+  getJobHealth,
+  getTodaySucceededJobs,
+  putSecWatermark,
+  getSecLag,
+  insertSecFundamentals,
+} from './repository';
 
 function freshDb(): Database {
   const db = new Database(':memory:');
@@ -82,5 +90,48 @@ describe('getTodaySucceededJobs', () => {
       ['options', yest, yest],
     );
     expect(getTodaySucceededJobs(db)).toEqual([]);
+  });
+});
+
+describe('getSecLag', () => {
+  let db: Database;
+  beforeEach(() => {
+    db = freshDb();
+  });
+
+  const row = (ticker: string, periodEnd: string, filed: string) => ({
+    ticker,
+    periodEnd,
+    concept: 'ocf',
+    value: 1,
+    tagUsed: 'NetCashProvidedByUsedInOperatingActivities',
+    form: '10-Q',
+    accn: `acc-${ticker}-${periodEnd}`,
+    filed,
+    fiscalQ: '2026Q1',
+  });
+
+  test('远端 filed 更新 → 报滞后;远端与本地齐平 → 不报(即便期末落后整季)', () => {
+    // A:远端已交但我们没那期(META 实测形态)。B:期末比 A 旧整季,但远端就到那儿 —— 正常,不该报。
+    insertSecFundamentals(db, [row('A', '2026-03-31', '2026-04-30'), row('B', '2025-12-31', '2026-01-28')]);
+    putSecWatermark(db, 'A', '2026-07-30');
+    putSecWatermark(db, 'B', '2026-01-28');
+
+    expect(getSecLag(db)).toEqual([
+      { ticker: 'A', remoteFiled: '2026-07-30', localFiled: '2026-04-30', latestPeriodEnd: '2026-03-31' },
+    ]);
+  });
+
+  test('一行都没有的公司也算滞后(localFiled 为 null)', () => {
+    putSecWatermark(db, 'C', '2026-07-30');
+    expect(getSecLag(db)).toEqual([
+      { ticker: 'C', remoteFiled: '2026-07-30', localFiled: null, latestPeriodEnd: null },
+    ]);
+  });
+
+  test('putSecWatermark 同 ticker 覆盖不重复', () => {
+    putSecWatermark(db, 'A', '2026-04-30');
+    putSecWatermark(db, 'A', '2026-07-30');
+    expect(getSecLag(db).map((l) => l.remoteFiled)).toEqual(['2026-07-30']);
   });
 });

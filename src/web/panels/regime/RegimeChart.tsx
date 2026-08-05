@@ -7,6 +7,7 @@ import {
   regimePercentiles,
   derivePaneMeta,
   dimPanes,
+  secLagNote,
   type RegimeDim,
 } from './regimeChart.hooks';
 import { PaneChartView } from '../chart/PaneChartView';
@@ -26,9 +27,13 @@ export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Inter
   const { order, collapsed, move, toggle, cells, hovering, tops, drawing, toggleDrawing, selection, deleteSelected } =
     usePaneChartStack(containerRef, paneDefs, paneCount, specs, { storageKey: `regime:${dim}` });
 
-  // 本维度里在 unavailable 中的序列 → 右上角提示。
+  // 右上角提示:序列缺失 + SEC 滞后。两者可同时成立(某格空着、另一家又落后一季)。
   const missing = panes.map((p) => p.key).filter((k) => data.unavailable.includes(k));
-  const note = missing.length ? `暂不可用: ${missing.map((k) => seriesName[k]).join(', ')}` : undefined;
+  const notes = [
+    missing.length ? `暂不可用: ${missing.map((k) => seriesName[k]).join(', ')}` : undefined,
+    secLagNote(data, dim),
+  ].filter((n) => n !== undefined);
+  const note = notes.length ? notes.join(' · ') : undefined;
   const badges = regimePercentiles(data, dim); // 当前分位徽标(仅 percentile pane 非空)
 
   return (

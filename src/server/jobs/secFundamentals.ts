@@ -5,6 +5,7 @@ import {
   insertMarketSeries,
   getSecFundamentals,
   getLatestSecFiled,
+  putSecWatermark,
   getMarketSeriesByPrefix,
   startJobRun,
   finishJobRun,
@@ -192,6 +193,9 @@ export async function updateSecFundamentals(
       let remoteFiled: string | null = null;
       if (!opts.force) {
         remoteFiled = await sec.latestFiledDate(cikOf(ticker)!);
+        // 无条件记远端水位(不管后面拉不拉 companyfacts):面板要靠它区分「这家还没到财报期」
+        // 和「财报已交但 companyfacts 还没吃进」。放在 skip 判定之前,否则稳态下永远不更新。
+        if (remoteFiled) putSecWatermark(db, ticker, remoteFiled);
 
         // 拿不到定期报告申报日 ≠ 正常跳过。大盘股必然有 10-Q/10-K,拿不到说明源出问题
         // (SEC 改了 filings.recent 结构 / 字段更名 / 响应降级)。若归入 skipped,每家都 null 时
