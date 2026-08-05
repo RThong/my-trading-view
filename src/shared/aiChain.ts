@@ -1,5 +1,4 @@
-// AI 链的 SEC 名单。**前后端共用**:job 用它决定抓谁、算谁的合计;面板用它派生「一家一个横 tab」。
-// CIK 取自官方 company_tickers.json。(TSM / ASML 为何进不来,见下方名单末尾的说明。)
+// AI 链名单。**前后端共用**:job 用它决定抓谁、走哪个源;面板用它派生「一家一个横 tab」。
 //
 // side 决定这家进哪条判据,**不是分类标签而是口径**:
 //  · buyer(花钱建算力)= §6.14「capex 有没有吃穿现金流」的对象,只有这一侧进买方合计 FCF。
@@ -7,17 +6,33 @@
 //    (实测 NVDA+MU 一度垫 +1290 亿),混进来会把零轴永远垫在下方,「跌破零轴」永远不成立。
 export type SecSide = 'buyer' | 'seller';
 
+/**
+ * 数据源。**不是所有公司都能走 SEC** —— 非美国发行人只报 20-F/6-K,拿不到季度 XBRL,
+ * 所以名单里每家自带 source,job / 路由 / 面板都按 source 查表分派(见 SOURCE_KINDS)。
+ *  · sec  = data.sec.gov companyfacts(季度四科目 → 毛利率/capex/FCF/单季 FCF)
+ *  · twse = 台湾证交所 OpenAPI(月营收 + 月营收同比;官方、T+10 天)
+ * 加新源时:加一个 ChainSource 值 → 在 SOURCE_KINDS 补它的格子 → 在 job 的分派表补 updater
+ *          → 在面板的分派表补 pane 构造。四处都是查表,漏一处是编译错误而不是静默降级。
+ */
+export type ChainSource = 'sec' | 'twse';
+
+// 判别联合:SEC 那侧必须有 cik、TWSE 那侧必须有 twseCode —— 让「加了公司但忘了标识符」不可表达。
 // inChain=false:已启用、有 tab 可看,但**不作判据成员**——面板的名单文案不把它列进去,
 // 买方合计线也不收它(见 isAggregateMember)。给 INTC 用:它的毛利率是**供给侧读数**,
 // 与 NVDA/MU 的「稀缺溢价」符号相反(INTC 毛利率修复 = 新产能进场 = 溢价见顶的旁证),
 // 混在同一句「见顶回落 = 供给追上需求」里会读反。理由写在 COMPANY_NOTES.INTC。
-type Company = { ticker: string; cik: string; side: SecSide; inChain?: boolean };
+type Common = { ticker: string; side: SecSide; inChain?: boolean };
+type Company = (Common & { source?: 'sec'; cik: string }) | (Common & { source: 'twse'; twseCode: string });
 
 export const SEC_COMPANIES: Company[] = [
   // 卖铲子:看毛利率
   { ticker: 'NVDA', cik: '1045810', side: 'seller', inChain: true },
   { ticker: 'MU', cik: '723125', side: 'seller', inChain: true }, // 美光:毛利率 = DRAM/NAND 价格周期的免费代理
   { ticker: 'AMD', cik: '2488', side: 'seller', inChain: true }, // 加速器侧的第二家,与 NVDA 对读(见 COMPANY_NOTES)
+  // 代工:走 TWSE 而不是 SEC。TSM 的 SEC 侧实测只有**半年频**(180/181 天)且最新一期停在
+  // 2024-12-31(ifrs-full 命名空间下四科目都在,但期间粒度和时效都不能用)。
+  // TWSE 月营收反而是整条链里最快的读数(每月 10 日左右,T+10)。
+  { ticker: 'TSM', twseCode: '2330', source: 'twse', side: 'seller', inChain: true },
   // 买铲子:进合计 FCF
   { ticker: 'MSFT', cik: '789019', side: 'buyer', inChain: true },
   { ticker: 'GOOGL', cik: '1652044', side: 'buyer', inChain: true },
@@ -28,25 +43,53 @@ export const SEC_COMPANIES: Company[] = [
   // 已移除:AAPL(不在 AI 链上,FCF 由 iPhone 主导)、DELL(整机厂,毛利率不反映芯片稀缺溢价)、
   // AVGO(合并了 VMware,毛利率是「AI 硅片定价权 + 软件占比」的混合读数,当稀缺溢价用不干净)。
   //
-  // TSM / ASML **不能进这条管线**:两家都只报 20-F(TSM 还走 ifrs-full taxonomy),
-  // 实测四个科目的季度行均为 0 → 一个 TTM 点都算不出。它们真正有价值的读数也不在 SEC ——
-  // TSM 是月营收(TWSE,每月 10 日)、ASML 是季度 net bookings(IR 季报),都要另立需求。
+  // 还进不来的:ASML(只报 20-F;有价值的是季度 net bookings,在 IR 季报里,另立需求)、
+  // SK 海力士(2026-07 才在美上市,companyfacts 无财务 XBRL;它的 6-K 只有营收与营业利润、
+  // **没有营业成本**,算不出毛利率 → 要毛利率得走韩国 DART,需要一个免费 API key)。
   { ticker: 'INTC', cik: '50863', side: 'seller' },
 ];
 
-/** 已通过逐家毛利率核对、可入库的标的。核对一家开一家 —— 未核对的进来会污染派生线。 */
-export const SEC_ACTIVE_TICKERS = ['NVDA', 'MU', 'AMD', 'INTC', 'MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META'];
+/** 已逐家核对过、可入库的标的。核对一家开一家 —— 未核对的进来会污染派生线。 */
+export const ACTIVE_TICKERS = ['NVDA', 'MU', 'AMD', 'INTC', 'TSM', 'MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META'];
 
-export const cikOf = (ticker: string): string | undefined => SEC_COMPANIES.find((c) => c.ticker === ticker)?.cik;
-export const sideOf = (ticker: string): SecSide | undefined => SEC_COMPANIES.find((c) => c.ticker === ticker)?.side;
+const find = (ticker: string) => SEC_COMPANIES.find((c) => c.ticker === ticker);
+
+export const cikOf = (ticker: string): string | undefined => {
+  const c = find(ticker);
+  return c && (c.source ?? 'sec') === 'sec' ? (c as { cik: string }).cik : undefined;
+};
+export const twseCodeOf = (ticker: string): string | undefined => {
+  const c = find(ticker);
+  return c?.source === 'twse' ? c.twseCode : undefined;
+};
+export const sideOf = (ticker: string): SecSide | undefined => find(ticker)?.side;
+/** source 省略即 'sec' —— 多数公司走 SEC,不必每行都写。 */
+export const sourceOf = (ticker: string): ChainSource => find(ticker)?.source ?? 'sec';
+/** 某个源下、当前启用的标的(job 分派用)。 */
+export const activeBySource = (source: ChainSource): string[] => ACTIVE_TICKERS.filter((t) => sourceOf(t) === source);
 
 // ── 对外序列键(路由与面板必须用同一套,故在此定义一次)────────────────────────
 
-// fcfq = **单季** FCF(不是 TTM)。判据是「跌破零轴」,而 TTM 要四季累积才跌破 ——
-// 实测 Alphabet 2026Q2 单季 −5.9B(IPO 以来首次为负)时 TTM 还有 +53.3B,按现在的烧钱速度
-// 推算 TTM 要到 2026Q4 才跌破零轴,**晚半年**。所以两个口径都得画。
-export type SecKind = 'gm' | 'capex' | 'fcf' | 'fcfq';
-export const SEC_KINDS: SecKind[] = ['gm', 'capex', 'fcf', 'fcfq'];
+/**
+ * 每个源产出哪几种格子。**不同源的格子种类不同**,不能共用一张 kind 列表:
+ * SEC 给四科目 → 能算毛利率/capex/FCF;TWSE 只给营收 → 只有月营收与同比。
+ *
+ * fcfq = **单季** FCF(不是 TTM)。判据是「跌破零轴」,而 TTM 要四季累积才跌破 ——
+ * 实测 Alphabet 2026Q2 单季 −5.9B(IPO 以来首次为负)时 TTM 还有 +53.3B,按当时的烧钱速度
+ * 推算 TTM 要到 2026Q4 才跌破零轴,**晚半年**。所以两个口径都得画。
+ */
+export const SOURCE_KINDS = {
+  sec: ['gm', 'capex', 'fcf', 'fcfq'],
+  twse: ['revM', 'revYoy'],
+} as const satisfies Record<ChainSource, readonly string[]>;
+
+export type SecKind = (typeof SOURCE_KINDS)['sec'][number];
+export type TwseKind = (typeof SOURCE_KINDS)['twse'][number];
+export type FundKind = SecKind | TwseKind;
+
+export const SEC_KINDS: readonly SecKind[] = SOURCE_KINDS.sec;
+/** 这家会有哪几个格子 —— 面板与路由都从这里派生,加源不用改它们。 */
+export const kindsOf = (ticker: string): readonly FundKind[] => SOURCE_KINDS[sourceOf(ticker)];
 
 /** 因果链内的标的(面板文案列出这些,不列备查的那几家)。 */
 export const chainTickers = (side: SecSide): string[] =>
@@ -121,6 +164,12 @@ export type SecLag = {
   latestPeriodEnd: string | null; // 我们已有的最新期末,用来在文案里说清「截至哪一期」
 };
 
-export const secKey = (ticker: string, kind: SecKind): string => `sec:${ticker}:${kind}`;
-export const SEC_BUYER_FCF_KEY = 'sec:buyerFcf';
-export const SEC_BUYER_FCFQ_KEY = 'sec:buyerFcfQ';
+/**
+ * 面板/路由之间传数据用的键。前缀 `fund:` 表示「基本面序列」,**与来源无关** ——
+ * 早先叫 `sec:`,加了 TWSE 源之后那个前缀就成了谎(`sec:TSM:revM` 的数据来自台湾证交所)。
+ * 路由的缓存规则也按这个前缀判断,改前缀时两处要一起改。
+ */
+export const fundKey = (ticker: string, kind: FundKind): string => `fund:${ticker}:${kind}`;
+export const FUND_KEY_PREFIX = 'fund:';
+export const SEC_BUYER_FCF_KEY = 'fund:buyerFcf';
+export const SEC_BUYER_FCFQ_KEY = 'fund:buyerFcfQ';

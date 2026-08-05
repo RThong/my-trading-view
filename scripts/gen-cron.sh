@@ -95,7 +95,7 @@ cat > "$LA/com.mtv.sec.plist" <<EOF
 <plist version="1.0">
 <dict>
     <key>Label</key><string>com.mtv.sec</string>
-    <!-- 由 scripts/gen-cron.sh 生成,勿手改。SEC XBRL 财务:天天 × SEC_HOURS 触发(无 Weekday)。
+    <!-- 由 scripts/gen-cron.sh 生成,勿手改。AI 链基本面(SEC + TWSE 分源):天天 × SEC_HOURS 触发(无 Weekday)。
          数据是季频但时效要日频 —— 财报交上来次日就想拿到,每周一次会白等最多 6 天。
          job 自己先比 submissions 的 filed,没新申报就 no-op,不拉几 MB 的 companyfacts。
          需要 .env 里的 SEC_USER_AGENT(Bun 按 WorkingDirectory 自动加载 .env)。 -->
@@ -107,7 +107,7 @@ $(for h in "${SEC_HOURS[@]}"; do printf '        <dict><key>Hour</key><integer>%
     <array>
         <string>/opt/homebrew/bin/bun</string>
         <string>run</string>
-        <string>$ROOT/src/server/jobs/secFundamentals.ts</string>
+        <string>$ROOT/src/server/jobs/aiChainFundamentals.ts</string>
     </array>
     <key>WorkingDirectory</key><string>$ROOT</string>
     <key>EnvironmentVariables</key>

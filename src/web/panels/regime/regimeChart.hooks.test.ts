@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { buildRegimeSpecs, regimePercentiles, secLagNote, type RegimeData } from './regimeChart.hooks';
+import { buildRegimeSpecs, dimPanes, regimePercentiles, secLagNote, type RegimeData } from './regimeChart.hooks';
 
 const data: RegimeData = {
   series: {
@@ -166,4 +166,22 @@ test('secLagNote:买方合计格受任一买方滞后影响;卖方滞后不影�
   expect(secLagNote(withLag([LAG]), 'fundamentals:buyer')).toContain('META');
   // MU 是卖方,不进合计 → 合计那格不该因它报警。
   expect(secLagNote(withLag([{ ...LAG, ticker: 'MU' }]), 'fundamentals:buyer')).toBeUndefined();
+});
+
+// 面板的格子按 source 分派(见 SOURCE_PANES)。这条锁住「加了非 SEC 源的公司,
+// 不会被套上 SEC 那四格」—— 套错了会画出四条永远空的线,而空线不报错。
+test('dimPanes:走 TWSE 的公司只出月营收两格,不出毛利率/FCF', () => {
+  const twse = dimPanes('fundamentals:TSM');
+  expect(twse.map((p) => p.key)).toEqual(['fund:TSM:revYoy', 'fund:TSM:revM']);
+
+  const sec = dimPanes('fundamentals:NVDA');
+  expect(sec.map((p) => p.key)).toEqual(['fund:NVDA:gm', 'fund:NVDA:fcf', 'fund:NVDA:fcfq', 'fund:NVDA:capex']);
+});
+
+test('dimPanes:TWSE 那两格的说明必须写清「不可回填」与币种', () => {
+  // 这两条是读图时最容易踩的:点之间距离不均(快照攒的)、金额是新台币不是美元。
+  for (const p of dimPanes('fundamentals:TSM')) {
+    expect(p.desc).toContain('百万新台币');
+    expect(p.desc).toContain('补不了历史');
+  }
 });

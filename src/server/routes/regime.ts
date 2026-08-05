@@ -21,15 +21,17 @@ import {
   seriesId as secSeriesId,
   trailingContiguous,
 } from '../analytics/secFundamentals';
+import { twseSeriesId } from '../fetchers/twseRevenue';
 import {
-  SEC_ACTIVE_TICKERS,
+  ACTIVE_TICKERS,
+  FUND_KEY_PREFIX,
   SEC_BUYER_FCF_KEY,
   SEC_BUYER_FCFQ_KEY,
-  SEC_KINDS,
-  secKey,
-  type SecKind,
+  fundKey,
+  kindsOf,
+  type FundKind,
   type SecLag,
-} from '../../shared/secCompanies';
+} from '../../shared/aiChain';
 
 // 后端不 import web 的 Bar(跨边界);内联 OHLC 形状,JSON 与前端 chart 的 Bar 一致。
 type OhlcBar = { time: string; open: number; high: number; low: number; close: number };
@@ -47,43 +49,65 @@ const TTL_MS = 6 * 60 * 60 * 1000;
 let cache: { at: number; body: RegimeBody } | null = null;
 
 /**
- * SEC 基本面派生量(季频,jobs/secFundamentals 维护)。库里没有就归 unavailable,该 pane 留空——
- * 这几条不像行情那样天天更新,job 没跑过是常态,不该整页失败。
+ * AI 链基本面派生量(季频/月频,jobs/aiChainFundamentals 维护)。库里没有就归 unavailable,
+ * 该 pane 留空 —— 这几条不像行情那样天天更新,job 没跑过是常态,不该整页失败。
  *
- * 序列按**启用名单**派生(一家三条 + 一条买方合计),键由 shared/secCompanies 的 secKey 生成,
- * 与面板同源,加公司不用改这里。
- *
- * 每条都过 trailingContiguous:源缺 Q4 capex 会让单季序列断成孤岛,折线会把断档连成一条
- * 斜率是编的直线,而这组判据全在读斜率。库里原始行全保留,只在读时裁。
+ * 序列按**启用名单 × 该家 source 的格子种类**派生(见 shared/aiChain 的 SOURCE_KINDS),
+ * 键由 fundKey 生成、与面板同源:加公司或加源都不用改这里。
  */
-// 对外键的 kind → 库里 series_id 的段名。写成查表:漏加一档是编译错误,不是静默落到 FCF。
-const ID_SEGMENT: Record<SecKind, 'GM' | 'CAPEX' | 'FCF' | 'FCFQ'> = {
-  gm: 'GM',
-  capex: 'CAPEX',
-  fcf: 'FCF',
-  fcfq: 'FCFQ',
+// kind → 库里 series_id。写成查表而非分支:漏加一档是编译错误(Record 要求键齐),
+// 不是静默落到某个默认序列。SEC 那几档走 SEC_* 命名,TWSE 走 TWSE_*。
+const SERIES_ID: Record<FundKind, (ticker: string) => string> = {
+  gm: (t) => secSeriesId(t, 'GM'),
+  capex: (t) => secSeriesId(t, 'CAPEX'),
+  fcf: (t) => secSeriesId(t, 'FCF'),
+  fcfq: (t) => secSeriesId(t, 'FCFQ'),
+  revM: (t) => twseSeriesId(t, 'revM'),
+  revYoy: (t) => twseSeriesId(t, 'revYoy'),
+};
+
+/**
+ * 读时裁断档(trailingContiguous)只对**等间隔序列**成立:折线会把断档两端连成一条
+ * 斜率是编的直线,而这组判据全在读斜率。
+ *
+ * 月营收那两条**不能裁**:它是快照型源攒出来的,首次接入就只有「当月/上月/去年当月」
+ * 三个点,中间天然有 11 个月的空档 —— 裁了只剩最近两个点,同比线更是只有一个点。
+ * 月营收的读法是「逐点对比同月」而不是读斜率,断档不构成假斜率。
+ */
+const TRIM_GAPS: Record<FundKind, boolean> = {
+  gm: true,
+  capex: true,
+  fcf: true,
+  fcfq: true,
+  revM: false,
+  revYoy: false,
 };
 
 function readSecSeries(db: Database): { series: Record<string, Point[]>; unavailable: string[]; lag: SecLag[] } {
   const defs = [
-    ...SEC_ACTIVE_TICKERS.flatMap((ticker) =>
-      SEC_KINDS.map((kind) => ({ out: secKey(ticker, kind), id: secSeriesId(ticker, ID_SEGMENT[kind]) })),
+    ...ACTIVE_TICKERS.flatMap((ticker) =>
+      kindsOf(ticker).map((kind) => ({
+        out: fundKey(ticker, kind),
+        id: SERIES_ID[kind](ticker),
+        trim: TRIM_GAPS[kind],
+      })),
     ),
-    { out: SEC_BUYER_FCF_KEY, id: BUYER_FCF_SERIES },
-    { out: SEC_BUYER_FCFQ_KEY, id: BUYER_FCFQ_SERIES },
+    { out: SEC_BUYER_FCF_KEY, id: BUYER_FCF_SERIES, trim: true },
+    { out: SEC_BUYER_FCFQ_KEY, id: BUYER_FCFQ_SERIES, trim: true },
   ];
 
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
 
-  for (const { out, id } of defs) {
-    const rows = trailingContiguous(getMarketSeries(db, id));
+  for (const { out, id, trim } of defs) {
+    const raw = getMarketSeries(db, id);
+    const rows = trim ? trailingContiguous(raw) : raw;
     if (rows.length) series[out] = rows;
     else unavailable.push(out);
   }
 
   // 只保留启用名单里的:名单外的公司(曾启用过、水位还留在库里)不该在面板上冒出来。
-  const lag = getSecLag(db).filter((l) => (SEC_ACTIVE_TICKERS as readonly string[]).includes(l.ticker));
+  const lag = getSecLag(db).filter((l) => ACTIVE_TICKERS.includes(l.ticker));
 
   return { series, unavailable, lag };
 }
@@ -103,7 +127,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
       return c.json({
         ...cache.body,
         series: { ...cache.body.series, ...sec.series },
-        unavailable: [...cache.body.unavailable.filter((n) => !n.startsWith('sec')), ...sec.unavailable],
+        unavailable: [...cache.body.unavailable.filter((n) => !n.startsWith(FUND_KEY_PREFIX)), ...sec.unavailable],
         secLag: sec.lag,
       });
     } finally {
@@ -280,6 +304,6 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const body: RegimeBody = { series, unavailable, ohlc, secLag };
   // 只缓存全成功(降级响应不缓存,下次重试)。例外:SEC 那几条是季频、靠单独的周 job 攒,
   // 从没跑过 job 的库里它们必然缺——不能让这个常态把整条路由的缓存永久关掉。
-  if (unavailable.every((n) => n.startsWith('sec'))) cache = { at: Date.now(), body };
+  if (unavailable.every((n) => n.startsWith(FUND_KEY_PREFIX))) cache = { at: Date.now(), body };
   return c.json(body);
 });

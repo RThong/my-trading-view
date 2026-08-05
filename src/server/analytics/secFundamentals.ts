@@ -443,7 +443,7 @@ export function deriveSeries(rows: SecFundamentalRow[]): DerivedSeries {
 /** TTM 三条用 `_TTM` 后缀;单季那条是 `_FCF_Q`(不是 TTM,别混)。 */
 export const seriesId = (ticker: string, kind: 'GM' | 'CAPEX' | 'FCF' | 'FCFQ'): string =>
   kind === 'FCFQ' ? `SEC_${ticker}_FCF_Q` : `SEC_${ticker}_${kind}_TTM`;
-/** §6.14 判据线:**只汇总买方**(见 shared/secCompanies 的 side)。卖方混进来会让「跌破零轴」永远不成立。 */
+/** §6.14 判据线:**只汇总买方**(见 shared/aiChain 的 side)。卖方混进来会让「跌破零轴」永远不成立。 */
 export const BUYER_FCF_SERIES = 'SEC_BUYER_FCF_TTM';
 /** 买方**单季** FCF 合计:判据「跌破零轴」的早期读数(TTM 晚半年)。 */
 export const BUYER_FCFQ_SERIES = 'SEC_BUYER_FCF_Q';

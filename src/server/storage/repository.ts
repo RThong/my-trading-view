@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import type { JobStatus } from '../../shared/types';
-import type { SecLag } from '../../shared/secCompanies';
+import type { SecLag } from '../../shared/aiChain';
 
 // bun:sqlite 的具名参数值域(标量,非递归),与其 SQLQueryBindings 的 Record 分支一致。
 type NamedParams = Record<string, string | bigint | NodeJS.TypedArray | number | boolean | null>;

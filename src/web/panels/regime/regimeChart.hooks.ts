@@ -11,11 +11,13 @@ import {
   chainTickers,
   isAggregateMember,
   knownGap,
-  secKey,
+  fundKey,
   sideOf,
-  type SecKind,
+  sourceOf,
+  type ChainSource,
+  type FundKind,
   type SecLag,
-} from '../../../shared/secCompanies';
+} from '../../../shared/aiChain';
 
 // 分位带阈值(自身历史):想改 5/95 更严就动这里。
 const PCTL_LO = 5;
@@ -48,7 +50,7 @@ const SEC_CAVEAT =
 // 两侧名单现算,别在文案里写死 —— 名单一改文案就过期。只列因果链内的(备查的那几家不是判据成员)。
 const tickersOf = (side: 'buyer' | 'seller') => chainTickers(side).join('/');
 const SEC_ROSTER_CAVEAT =
-  `AI 链按判据分两侧(见 shared/secCompanies 的 side):**买铲子的**(${tickersOf('buyer')} —— 花钱建算力)` +
+  `AI 链按判据分两侧(见 shared/aiChain 的 side):**买铲子的**(${tickersOf('buyer')} —— 花钱建算力)` +
   `进这条合计线;**卖铲子的**(${tickersOf('seller')} —— 收钱)只看毛利率、**不进**这条线。` +
   '分侧不是分类洁癖:卖方在涨价周期里正 FCF 极大,混进来会把零轴永远垫在下方,判据直接失效。' +
   '线上只汇总「已启用且属买方」的那几家(名单按「逐家核对毛利率后才开」推进),' +
@@ -756,16 +758,19 @@ const BUYER_FCF_READ = [
 
 // 每格依赖哪些科目 —— 用来把「已知结构性缺口」写进那一格的说明。
 // 一格空着而 desc 不解释,下个月自己会当成 bug 去查(ORCL 的毛利率就是这种)。
-const PANE_CONCEPTS: Record<SecKind, string[]> = {
+// TWSE 那两格是空数组:KNOWN_GAPS 记的是 companyfacts 的科目缺口,与 TWSE 源无关。
+const PANE_CONCEPTS: Record<FundKind, string[]> = {
   gm: ['revenue', 'cogs'],
   capex: ['capex'],
   fcf: ['ocf', 'capex'],
   fcfq: ['ocf', 'capex'],
+  revM: [],
+  revYoy: [],
 };
 
 const paneOf = (
   ticker: string,
-  kind: SecKind,
+  kind: FundKind,
   label: string,
   title: string,
   // signed(符号柱)不需要 color —— 正绿负红由 signed 分支决定,图例留空用默认色,与 vxTermSpread 一致。
@@ -778,7 +783,7 @@ const paneOf = (
   });
 
   return {
-    key: secKey(ticker, kind),
+    key: fundKey(ticker, kind),
     label,
     title,
     color,
@@ -794,6 +799,56 @@ const paneOf = (
     desc: [...(gaps.length ? [...gaps, ''] : []), ...lines].filter((l) => l !== undefined).join('\n'),
   };
 };
+
+/** TWSE 月营收那两格共用的读法与口径。 */
+const TWSE_CAVEAT =
+  '\n源:台湾证交所(TWSE)「营业收入汇总表」公开端点,**官方、免 key**。' +
+  '每月 10 日左右出上月数(**T+10**)—— 这是整条 AI 链里最快的读数,比任何季报早一个月以上。' +
+  '金额单位是**百万新台币**(源给千元,已除 1000),不是美元,别和其他 tab 的美元数直接比大小。';
+
+const TWSE_SNAPSHOT_NOTE =
+  '⚠️ **这条线只能往前攒,补不了历史**。端点只返回最新一个月;台交所的历史月报页有反爬' +
+  '(实测返回「FOR SECURITY REASONS, THIS PAGE CAN NOT BE ACCESSED」)。' +
+  '好在一次调用能拿到**三个点**(当月 / 上月 / 去年当月),所以接入当天就有同比可读,' +
+  '但**中间会有约 11 个月的空档**,要等按月攒满。\n' +
+  '因此这两格**不做断档裁剪**(其余 SEC 那些格子会裁):月营收的读法是「拿今年某月对去年同月」,' +
+  '不是读斜率,断档不会造出假斜率。看到点之间距离不均是正常的。';
+
+const TWSE_REV_READ = [
+  '判据:卖铲子一侧的**需求强度即时读数**。代工厂的月营收 = 上游产能的实际出货,',
+  '比任何人的指引都硬 —— 它已经发生了,不是预期。',
+  '  · 同比持续 +40% 以上 = 需求还在扩张,链条上游没松。',
+  '  · 同比逐月走平/回落 = 拐点的**最早**信号(比季报早一个月,比 FCF 转负早几个季度)。',
+  '实测 2026-06:同比 +67.9%,源附的备注写「因先進製程產品需求增加所致」。',
+  '',
+  '⚠️ **只能同比同月比,不能顺序比**:代工厂月营收有强季节性(消费电子拉货节奏),',
+  '顺序看会把季节当趋势。也别拿单月绝对值当趋势 —— 一个月里的工作日天数、汇率都会晃。',
+].join('\n');
+
+/** 走 TWSE 源的公司(目前只有 TSM):月营收 + 月营收同比。**没有毛利率/FCF** —— 源不给成本与现金流。 */
+function twseCompanyPanes(ticker: string): PaneSpec[] {
+  const note = COMPANY_NOTES[ticker];
+
+  return [
+    paneOf(ticker, 'revYoy', '月营收同比', `${ticker} 月营收同比(%)`, undefined, [
+      `定义:${ticker} 当月营收对去年同月的增减(%)。**取源自己算的值**,不是我们除出来的 ——` +
+        '源在同一条记录里给了这个字段,而我们攒的历史可能还缺去年那个月。' +
+        TWSE_CAVEAT,
+      '',
+      TWSE_REV_READ,
+      '',
+      TWSE_SNAPSHOT_NOTE,
+      ...(note ? ['', note] : []),
+    ]),
+    paneOf(ticker, 'revM', '月营收', `${ticker} 月营收(百万新台币)`, '#eab308', [
+      `定义:${ticker} 单月合并营收。` + TWSE_CAVEAT,
+      '',
+      '定位:同比那格的原始量。看绝对水平与「有没有再创新高」;判断方向请看同比那格。',
+      '',
+      TWSE_SNAPSHOT_NOTE,
+    ]),
+  ];
+}
 
 function companyPanes(ticker: string): PaneSpec[] {
   const seller = sideOf(ticker) === 'seller';
@@ -875,12 +930,21 @@ const buyerAggregatePane: PaneSpec = {
   ].join('\n'),
 };
 
+/**
+ * source → 那家有哪几格。查表而非分支:加源时漏加一档是编译错误(Record 要求键齐),
+ * 不是静默给它套上 SEC 那四格(那会画出四条永远空的线)。与 shared/aiChain 的 SOURCE_KINDS 配对。
+ */
+const SOURCE_PANES: Record<ChainSource, (ticker: string) => PaneSpec[]> = {
+  sec: companyPanes,
+  twse: twseCompanyPanes,
+};
+
 /** dim → panes。基本面维度按名单现算(引用每次新建,故 RegimeChart 里要 useMemo 化的地方已由 dim 固定)。 */
 export function dimPanes(dim: RegimeDim): PaneSpec[] {
   if (!dim.startsWith('fundamentals:')) return REGIME_DIMS[dim as FixedDim].panes;
 
   const who = dim.slice('fundamentals:'.length);
-  return who === 'buyer' ? [buyerAggregatePane, buyerQuarterlyPane] : companyPanes(who);
+  return who === 'buyer' ? [buyerAggregatePane, buyerQuarterlyPane] : SOURCE_PANES[sourceOf(who)](who);
 }
 
 /** 从 panes[] 派生 PaneChartView 需要的平行 map(pane 定义 / 命名 / 配色 / 说明)。 */

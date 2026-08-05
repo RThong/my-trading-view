@@ -1,5 +1,4 @@
 import type { Database } from 'bun:sqlite';
-import { openDb, migrate } from '../storage/db';
 import {
   insertSecFundamentals,
   insertMarketSeries,
@@ -7,8 +6,6 @@ import {
   getLatestSecFiled,
   putSecWatermark,
   getMarketSeriesByPrefix,
-  startJobRun,
-  finishJobRun,
   type MarketSeriesRow,
 } from '../storage/repository';
 import { createSecFetcher, type LatestFiling } from '../fetchers/secXbrl';
@@ -28,22 +25,22 @@ import {
 } from '../analytics/secFundamentals';
 import {
   REQUIRED_CONCEPTS_BY_SIDE,
-  SEC_ACTIVE_TICKERS,
+  activeBySource,
   cikOf,
   expectedCapexScope,
   isAggregateMember,
   knownGap,
   sideOf,
-} from '../../shared/secCompanies';
+} from '../../shared/aiChain';
 
 /**
- * SEC XBRL 财务 job。**不进 com.mtv.daily**(那是日频行情)——季频数据,每周跑一次足够,
- * 财报季集中在 1/4/7/10 月中下旬,其余周 submissions 一比对就 no-op。
+ * SEC XBRL 财务:AI 链里**走 SEC 这一路**的公司(名单里 source 省略或为 'sec' 的那些)。
+ * 非美国发行人走别的源,见 jobs/twseRevenue 与 shared/aiChain 的 ChainSource。
  *
  * 流程:submissions(几百 KB)比 filed → 有新 10-Q/10-K 才拉 companyfacts(几 MB)
  *      → 归一化成单季行落 sec_fundamentals → 派生 TTM 三条 + 合计 FCF 写 market_series。
  *
- * 直接运行:bun run src/server/jobs/secFundamentals.ts [--force] [TICKER...]
+ * CLI 入口是 jobs/aiChainFundamentals.ts(按源分派),不是本文件。
  */
 
 type Fetcher = ReturnType<typeof createSecFetcher>;
@@ -173,7 +170,7 @@ function writeDerived(db: Database, active: string[], examine: string[]): { writ
 
 export async function updateSecFundamentals(
   db: Database,
-  // activeTickers 只为测试留口(要验买/卖分侧就必须能换名单);CLI 不传,取 SEC_ACTIVE_TICKERS。
+  // activeTickers 只为测试留口(要验买/卖分侧就必须能换名单);CLI 不传,取名单里走 SEC 的那些。
   opts: { tickers?: string[]; force?: boolean; fetcher?: Fetcher; activeTickers?: string[] } = {},
 ): Promise<{
   fetched: string[];
@@ -183,7 +180,7 @@ export async function updateSecFundamentals(
   rowsWritten: number;
   seriesWritten: number;
 }> {
-  const active = opts.activeTickers ?? SEC_ACTIVE_TICKERS;
+  const active = opts.activeTickers ?? activeBySource('sec');
   const tickers = opts.tickers ?? active;
   const sec = opts.fetcher ?? createSecFetcher();
 
@@ -290,46 +287,4 @@ export async function updateSecFundamentals(
   return { fetched, skipped, failed, fallback, rowsWritten, seriesWritten: written };
 }
 
-if (import.meta.main) {
-  const args = process.argv.slice(2);
-  const force = args.includes('--force');
-  const tickers = args.filter((a) => !a.startsWith('--'));
-
-  const db = openDb();
-  migrate(db);
-  const runId = startJobRun(db, 'sec_fundamentals');
-
-  try {
-    const r = await updateSecFundamentals(db, { force, tickers: tickers.length ? tickers : undefined });
-
-    // records_written 记「实际写进库的总行数」= 原始单季行 + 派生序列点。
-    // 状态:**「正确地跳过」算成功**——多数周本就该全 skip。只有「一家都没跑通」(fetched 与
-    // skipped 双空,如 UA 没配导致每家都抛)才报红;其余有失败的情况记 partial 黄灯。
-    const recordsWritten = r.rowsWritten + r.seriesWritten;
-    const error = r.failed.join('; ');
-    // 「一个数都没拿到」就该红:既包括每家都抛错(fetched/skipped 双空),也包括拉到了但
-    // 全员解析出 0 行(rowsWritten 为 0)—— 后者是 tag 链全不命中,比网络挂了更需要人看。
-    const nothingWorked =
-      (r.fetched.length === 0 && r.skipped.length === 0) || (r.fetched.length > 0 && r.rowsWritten === 0);
-    // nothingWorked 必须先判:放在 `failed.length === 0 ? success : …` 后面会被短路掉,
-    // 「拉到了但一行没落」正是 failed 为空却该报红的情形。
-    finishJobRun(
-      db,
-      runId,
-      nothingWorked
-        ? { status: 'failed', error: error || '一个数都没拿到(见日志)', recordsWritten }
-        : r.failed.length
-          ? { status: 'partial', recordsWritten, error }
-          : { status: 'success', recordsWritten },
-    );
-    console.log(
-      `SEC fundamentals: fetched=[${r.fetched}] skipped=[${r.skipped}] failed=[${r.failed}]` +
-        `${r.fallback.length ? ` 申报实例兜底=[${r.fallback}]` : ''} rows=${r.rowsWritten} series=${r.seriesWritten}`,
-    );
-  } catch (e) {
-    finishJobRun(db, runId, { status: 'failed', error: String(e) });
-    throw e;
-  } finally {
-    db.close();
-  }
-}
+// CLI 入口在 jobs/aiChainFundamentals.ts —— 那里按源分派(本文件只管 SEC 那一路)。

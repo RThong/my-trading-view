@@ -36,7 +36,7 @@ const facts = (ocfFy: number, capexFy: number): CompanyFacts => ({
   },
 });
 
-// NVDA 是卖方、MSFT 是买方(见 shared/secCompanies 的 side):两家给不同 FCF,才能验出合计只汇买方。
+// NVDA 是卖方、MSFT 是买方(见 shared/aiChain 的 side):两家给不同 FCF,才能验出合计只汇买方。
 const NVDA_FACTS = facts(80e9, 4e9); // FCF = 76,000 百万
 const MSFT_FACTS = facts(50e9, 20e9); // FCF = 30,000 百万
 const MSFT_CIK = '789019';

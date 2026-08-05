@@ -11,7 +11,7 @@
     "job:daily": "bun run src/server/jobs/daily.ts",
     "job:daily:opend": "scripts/daily-with-opend.sh",
     "job:crypto": "bun run src/server/jobs/cryptoDaily.ts",
-    "job:sec": "bun run src/server/jobs/secFundamentals.ts",
+    "job:sec": "bun run src/server/jobs/aiChainFundamentals.ts",
     "db:migrate": "bun run src/server/storage/db.ts migrate",
     "test": "bun test",
     "lint": "biome check",
