@@ -7,14 +7,17 @@
 //    (实测 NVDA+MU 一度垫 +1290 亿),混进来会把零轴永远垫在下方,「跌破零轴」永远不成立。
 export type SecSide = 'buyer' | 'seller';
 
-// inChain=false:CIK 在目录里备查,但**不在这两条信号的因果链上**(INTC 的毛利率不反映 AI 稀缺溢价),
-// 不建议开启用;面板文案不把它当判据成员列出,买方合计线也不收它(见 isAggregateMember)。
+// inChain=false:已启用、有 tab 可看,但**不作判据成员**——面板的名单文案不把它列进去,
+// 买方合计线也不收它(见 isAggregateMember)。给 INTC 用:它的毛利率是**供给侧读数**,
+// 与 NVDA/MU 的「稀缺溢价」符号相反(INTC 毛利率修复 = 新产能进场 = 溢价见顶的旁证),
+// 混在同一句「见顶回落 = 供给追上需求」里会读反。理由写在 COMPANY_NOTES.INTC。
 type Company = { ticker: string; cik: string; side: SecSide; inChain?: boolean };
 
 export const SEC_COMPANIES: Company[] = [
   // 卖铲子:看毛利率
   { ticker: 'NVDA', cik: '1045810', side: 'seller', inChain: true },
   { ticker: 'MU', cik: '723125', side: 'seller', inChain: true }, // 美光:毛利率 = DRAM/NAND 价格周期的免费代理
+  { ticker: 'AMD', cik: '2488', side: 'seller', inChain: true }, // 加速器侧的第二家,与 NVDA 对读(见 COMPANY_NOTES)
   // 买铲子:进合计 FCF
   { ticker: 'MSFT', cik: '789019', side: 'buyer', inChain: true },
   { ticker: 'GOOGL', cik: '1652044', side: 'buyer', inChain: true },
@@ -32,7 +35,7 @@ export const SEC_COMPANIES: Company[] = [
 ];
 
 /** 已通过逐家毛利率核对、可入库的标的。核对一家开一家 —— 未核对的进来会污染派生线。 */
-export const SEC_ACTIVE_TICKERS = ['NVDA', 'MU', 'MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META'];
+export const SEC_ACTIVE_TICKERS = ['NVDA', 'MU', 'AMD', 'INTC', 'MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META'];
 
 export const cikOf = (ticker: string): string | undefined => SEC_COMPANIES.find((c) => c.ticker === ticker)?.cik;
 export const sideOf = (ticker: string): SecSide | undefined => SEC_COMPANIES.find((c) => c.ticker === ticker)?.side;

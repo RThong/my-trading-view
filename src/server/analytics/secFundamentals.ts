@@ -76,6 +76,22 @@ export type CompanyFacts = {
 export const TAG_CHAINS: Record<Concept, string[]> = {
   revenue: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet'],
   cogs: ['CostOfRevenue', 'CostOfGoodsAndServicesSold'],
+  // ocf 取**总额优先**。这一条试过反过来排,更糟,记下来免得再试一遍:
+  //
+  // 动机是对齐 capex —— us-gaap 的 `PaymentsToAcquirePropertyPlantAndEquipment` 按构造只含持续经营
+  // (终止经营那部分走公司自定义 extension)。实测 AMD H1 2025:OCF 总额 2.950B =
+  // 持续 2.401B + 终止 0.549B;capex(us-gaap)0.494B,另有
+  // amd:PaymentsToAcquirePropertyPlantAndEquipmentFromDiscontinuedOperation 0.022B。
+  // 所以「总额 OCF − 持续经营 capex」确实把终止经营的经营现金流白算进了 FCF(FY2025 共 1.216B)。
+  //
+  // 但**把持续经营排到前面会更糟**:那个 tag 是「有终止经营才报」,报得不全 ——
+  // AMD 的 Q1(2024-12-29~2025-03-29)只有总额 0.939B,没有持续经营那一行。逐期 fallback
+  // 于是给 Q1 取总额、给 H1 取持续经营,差分出 2.401 − 0.939 = 1.462B,**两条腿基础不同**,
+  // 正是本文件开头警告的「在序列中间悄悄换口径」。宁可整条线一致地偏一点,不要中间换基础。
+  //
+  // 结论:统一用总额,把偏差当**已量化的口径说明**处理(见 COMPANY_NOTES.AMD)。
+  // 盲区:某家有终止经营时,它的 FCF 会虚高「终止经营的经营现金流」那一块。AMD 是卖方、
+  // FCF 是配角格,影响有限;哪天**买方**出现终止经营(会进合计线),得在这里重新决策。
   ocf: ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'],
   capex: ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets'],
 };
@@ -160,6 +176,20 @@ export type TagConflict = { concept: Concept; period: string; a: Period; b: Peri
 const CONFLICT_WINDOW_QUARTERS = 8;
 
 /**
+ * 不报的 tag 对:**差额有确定含义、且链序已按含义裁决**,报出来只是噪声。
+ * 这里只有一对:ocf 的「持续经营 vs 总额」——差额恒等于终止经营的经营现金流,不是「口径变了」。
+ * 链序已刻意取持续经营那档以对齐 capex(见 TAG_CHAINS.ocf)。AMD 有终止经营,这一对会一直差,
+ * 报了就是一盏两年不灭的黄灯(同 CAPEX_SCOPE_EXPECTED 的理由)。
+ *
+ * ⚠️ 只豁免这一对。其余任何两档不一致仍要报 —— 那些差额没有确定含义,必须有人去核报表原文。
+ */
+const CONFLICT_EXEMPT = new Set([
+  'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations|NetCashProvidedByUsedInOperatingActivities',
+]);
+
+const exemptPair = (a: string, b: string) => CONFLICT_EXEMPT.has(`${a}|${b}`) || CONFLICT_EXEMPT.has(`${b}|${a}`);
+
+/**
  * 同一期间被链里两个 tag 同时覆盖、**值还不一样** → 口径可能变了(或某档是子项 / 同名不同义),
  * 链序保证了我们取的是优先级高的那个,但这件事本身要报出来让人去核。
  *
@@ -186,7 +216,7 @@ export function tagConflicts(facts: CompanyFacts): TagConflict[] {
       // covering 按链序,故 [0] 就是我们实际取的那个值。
       const covering = maps.flatMap((m) => (m.has(period) ? [m.get(period)!] : []));
       const chosen = covering[0]!;
-      const clash = covering.slice(1).find((p) => p.val !== chosen.val);
+      const clash = covering.slice(1).find((p) => p.val !== chosen.val && !exemptPair(chosen.tag, p.tag));
 
       return clash && chosen.end >= cutoff ? [{ concept, period, a: chosen, b: clash }] : [];
     });

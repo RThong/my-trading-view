@@ -201,6 +201,8 @@ describe('tag 链的内容本身', () => {
     // PaymentsToAcquireOtherPropertyPlantAndEquipment(PP&E 的「其他」子项)。
     revenue: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet'],
     cogs: ['CostOfRevenue', 'CostOfGoodsAndServicesSold'],
+    // ocf 是**总额在前**。试过反过来(为对齐只含持续经营的 capex),更糟:持续经营那个 tag
+    // 「有终止经营才报」,AMD 的 Q1 就没有 → 逐期 fallback 会在同一个差分组里换基础。见 TAG_CHAINS.ocf。
     ocf: [
       'NetCashProvidedByUsedInOperatingActivities',
       'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations',
@@ -533,5 +535,49 @@ describe('parseXbrlInstance / mergeFacts(申报实例兜底)', () => {
     // 合并顺序不该影响结果 —— 裁决靠 filed,不靠谁先进数组。
     expect(collectPeriods(mergeFacts(older, newer), ['Revenues'])[0]!.val).toBe(111);
     expect(collectPeriods(mergeFacts(newer, older), ['Revenues'])[0]!.val).toBe(111);
+  });
+});
+
+describe('ocf 两档并存(终止经营)—— AMD FY2025 实测形态', () => {
+  // 真实数据(companyfacts,filed 2026-08-05 / 2026-05-06):
+  //   总额:Q1 0.939B、H1 2.950B      持续经营:Q1 **不报**、H1 2.401B(差额 0.549B = 终止经营 OCF)
+  //   capex(us-gaap,只含持续经营):Q1 0.212B、H1 0.494B
+  const amdShape = facts({
+    NetCashProvidedByUsedInOperatingActivities: [
+      row('2024-12-29', '2025-03-29', 939_000_000),
+      row('2024-12-29', '2025-06-28', 2_950_000_000),
+    ],
+    // 注意:持续经营那档没有 Q1 —— 它是「有终止经营才报」,所以报得不全。
+    NetCashProvidedByUsedInOperatingActivitiesContinuingOperations: [row('2024-12-29', '2025-06-28', 2_401_000_000)],
+    PaymentsToAcquirePropertyPlantAndEquipment: [
+      row('2024-12-29', '2025-03-29', 212_000_000),
+      row('2024-12-29', '2025-06-28', 494_000_000),
+    ],
+  });
+
+  test('整条线一致用总额:Q2 = 2.950 − 0.939,不会和只报了 H1 的持续经营那档串基础', () => {
+    const rows = extractFundamentals('AMD', amdShape);
+    const q2 = (c: string) => rows.find((r) => r.concept === c && r.periodEnd === '2025-06-28')!;
+
+    expect(q2('ocf').tagUsed).toBe('NetCashProvidedByUsedInOperatingActivities');
+    expect(q2('ocf').value).toBe(2_011_000_000); // 2.950 − 0.939
+    expect(q2('capex').value).toBe(282_000_000); // 0.494 − 0.212
+    expect(q2('ocf').value - q2('capex').value).toBe(1_729_000_000); // 与库里 AMD 单季 FCF 一致
+
+    // 反过来排(持续经营在前)会取 2.401 − 0.939 = 1.462B:H1 用持续、Q1 用总额,
+    // 同一个差分组里换了基础。这条断言就是为了别再改回去。
+    expect(q2('ocf').value).not.toBe(1_462_000_000);
+  });
+
+  test('这一对的差额不报冲突 —— 差额恒等于终止经营 OCF,不是「口径变了」', () => {
+    expect(tagConflicts(amdShape)).toEqual([]);
+  });
+
+  test('豁免只覆盖这一对:revenue 两档不一致仍要报', () => {
+    const clash = facts({
+      Revenues: [row('2024-12-29', '2025-06-28', 100)],
+      SalesRevenueNet: [row('2024-12-29', '2025-06-28', 90)],
+    });
+    expect(tagConflicts(clash).map((c) => c.concept)).toEqual(['revenue']);
   });
 });
