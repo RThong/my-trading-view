@@ -5,7 +5,15 @@ import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../lib/ch
 import { percentile, percentileRank } from '../../../shared/stats';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../chart/paneChart.types';
-import { SEC_BUYER_FCF_KEY, chainTickers, knownGap, secKey, sideOf, type SecKind } from '../../../shared/secCompanies';
+import {
+  SEC_BUYER_FCF_KEY,
+  SEC_BUYER_FCFQ_KEY,
+  chainTickers,
+  knownGap,
+  secKey,
+  sideOf,
+  type SecKind,
+} from '../../../shared/secCompanies';
 
 // 分位带阈值(自身历史):想改 5/95 更严就动这里。
 const PCTL_LO = 5;
@@ -672,6 +680,19 @@ const SEC_LEASE_CAVEAT =
   '**读法:比趋势与相对变化,别拿绝对值去对新闻稿**;要看某一家的公司口径 FCF,去它的财报。';
 // 断档裁剪是后端统一做的(trailingContiguous),对**每条** sec 序列都生效(含毛利率)。
 // 各家/各科目的起点因此长短不一,必须在每一格都讲清楚,否则「怎么这条线只有几年」无处可查。
+// 单季那格共用:为什么要它、以及它的陷阱。
+const SEC_QUARTERLY_READ = [
+  '**为什么单独画单季**:判据是「跌破零轴」,而 TTM 要四个季度累积才跌破 —— 转折看晚最多一年。',
+  '实测:Alphabet 2026Q2 单季 FCF −5.9B(IPO 以来首次为负),而当时 TTM 还有 +53.3B;',
+  '按当时的烧钱速度推,TTM 要到 2026Q4 才跌破零轴,**晚半年**(而且那还是假设烧钱不加速)。',
+  'TTM 线上看不出这件事 —— 相邻 TTM 相减是「同比同季变化」(中间三项抵消,剩 Q(t)−Q(t−4)),不是当季值。',
+  '',
+  '⚠️ **只能同比同季比,不能顺序比**。单季受财年季节性影响极大(实测 MSFT 单季 FCF 在 5.9~25.7 之间摆、',
+  'AMZN 的 Q4 +14.9 对 Q1 −18.2)—— 顺序看会把季节当成趋势。要判恶化,拿今年 Q1 对去年 Q1。',
+  '',
+  '分工:TTM 看**水平**(还有多厚)与**斜率**(同比在改善还是恶化);这条看**转折时点**。',
+].join('\n');
+
 const SEC_TRIM_NOTE =
   '⚠️ 只画**最近一段连续序列**:XBRL 里某些季度的原始行根本不存在(常见于早年,如 NVDA FY2013–FY2021 ' +
   '没有年度 capex 行、Q4 无从还原;毛利率也会因某季缺 revenue/cogs 而断),单季序列就断成孤岛。' +
@@ -701,6 +722,7 @@ const PANE_CONCEPTS: Record<SecKind, string[]> = {
   gm: ['revenue', 'cogs'],
   capex: ['capex'],
   fcf: ['ocf', 'capex'],
+  fcfq: ['ocf', 'capex'],
 };
 
 const paneOf = (
@@ -721,7 +743,7 @@ const paneOf = (
     label,
     title,
     color,
-    ...(kind === 'fcf' ? { render: { kind: 'line' as const, baseline: 0 } } : {}),
+    ...(kind === 'fcf' || kind === 'fcfq' ? { render: { kind: 'line' as const, baseline: 0 } } : {}),
     // 不配 percentile:样本仅十余期,分位是噪声。
     // 只丢 undefined —— '' 是段落分隔符,InfoTip 用 whitespace-pre-wrap 渲染,filter(Boolean) 会把它一起吃掉。
     desc: [...(gaps.length ? [...gaps, ''] : []), ...lines].filter((l) => l !== undefined).join('\n'),
@@ -749,6 +771,14 @@ function companyPanes(ticker: string): PaneSpec[] {
       ...(seller ? [] : [SEC_LEASE_CAVEAT, '']),
       SEC_TRIM_NOTE,
     ]),
+    paneOf(ticker, 'fcfq', '单季 FCF', `${ticker} 单季自由现金流(百万美元)`, '#f97316', [
+      `定义:${ticker} **单季**自由现金流 = 该季经营现金流 − 该季资本开支(不是 TTM)。` + SEC_CAVEAT,
+      '',
+      SEC_QUARTERLY_READ,
+      '',
+      ...(seller ? [] : [SEC_LEASE_CAVEAT, '']),
+      SEC_TRIM_NOTE,
+    ]),
     paneOf(ticker, 'capex', 'capex', `${ticker} TTM 资本开支(百万美元)`, '#60a5fa', [
       `定义:${ticker} TTM 资本开支(购置固定资产付现)。` + SEC_CAVEAT,
       '',
@@ -761,6 +791,25 @@ function companyPanes(ticker: string): PaneSpec[] {
     ]),
   ];
 }
+
+const buyerQuarterlyPane: PaneSpec = {
+  key: SEC_BUYER_FCFQ_KEY,
+  label: '买方合计(单季)',
+  title: 'AI 链买方合计 **单季** 自由现金流(百万美元)',
+  color: '#f97316',
+  render: { kind: 'line', baseline: 0 },
+  desc: [
+    '定义:买方各家**单季** FCF 之和(不是 TTM),按日历季度对齐。' + SEC_CAVEAT,
+    '',
+    '⚠️ 口径先读这条:' + SEC_ROSTER_CAVEAT,
+    '',
+    SEC_QUARTERLY_READ,
+    '',
+    SEC_LEASE_CAVEAT,
+    '',
+    SEC_TRIM_NOTE,
+  ].join('\n'),
+};
 
 const buyerAggregatePane: PaneSpec = {
   key: SEC_BUYER_FCF_KEY,
@@ -787,7 +836,7 @@ export function dimPanes(dim: RegimeDim): PaneSpec[] {
   if (!dim.startsWith('fundamentals:')) return REGIME_DIMS[dim as FixedDim].panes;
 
   const who = dim.slice('fundamentals:'.length);
-  return who === 'buyer' ? [buyerAggregatePane] : companyPanes(who);
+  return who === 'buyer' ? [buyerAggregatePane, buyerQuarterlyPane] : companyPanes(who);
 }
 
 /** 从 panes[] 派生 PaneChartView 需要的平行 map(pane 定义 / 命名 / 配色 / 说明)。 */

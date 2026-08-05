@@ -15,8 +15,20 @@ import { computeSpread } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
-import { BUYER_FCF_SERIES, seriesId as secSeriesId, trailingContiguous } from '../analytics/secFundamentals';
-import { SEC_ACTIVE_TICKERS, SEC_BUYER_FCF_KEY, SEC_KINDS, secKey, type SecKind } from '../../shared/secCompanies';
+import {
+  BUYER_FCF_SERIES,
+  BUYER_FCFQ_SERIES,
+  seriesId as secSeriesId,
+  trailingContiguous,
+} from '../analytics/secFundamentals';
+import {
+  SEC_ACTIVE_TICKERS,
+  SEC_BUYER_FCF_KEY,
+  SEC_BUYER_FCFQ_KEY,
+  SEC_KINDS,
+  secKey,
+  type SecKind,
+} from '../../shared/secCompanies';
 
 // 后端不 import web 的 Bar(跨边界);内联 OHLC 形状,JSON 与前端 chart 的 Bar 一致。
 type OhlcBar = { time: string; open: number; high: number; low: number; close: number };
@@ -39,7 +51,12 @@ let cache: { at: number; body: RegimeBody } | null = null;
  * 斜率是编的直线,而这组判据全在读斜率。库里原始行全保留,只在读时裁。
  */
 // 对外键的 kind → 库里 series_id 的段名。写成查表:漏加一档是编译错误,不是静默落到 FCF。
-const ID_SEGMENT: Record<SecKind, 'GM' | 'CAPEX' | 'FCF'> = { gm: 'GM', capex: 'CAPEX', fcf: 'FCF' };
+const ID_SEGMENT: Record<SecKind, 'GM' | 'CAPEX' | 'FCF' | 'FCFQ'> = {
+  gm: 'GM',
+  capex: 'CAPEX',
+  fcf: 'FCF',
+  fcfq: 'FCFQ',
+};
 
 function readSecSeries(db: Database): { series: Record<string, Point[]>; unavailable: string[] } {
   const defs = [
@@ -47,6 +64,7 @@ function readSecSeries(db: Database): { series: Record<string, Point[]>; unavail
       SEC_KINDS.map((kind) => ({ out: secKey(ticker, kind), id: secSeriesId(ticker, ID_SEGMENT[kind]) })),
     ),
     { out: SEC_BUYER_FCF_KEY, id: BUYER_FCF_SERIES },
+    { out: SEC_BUYER_FCFQ_KEY, id: BUYER_FCFQ_SERIES },
   ];
 
   const series: Record<string, Point[]> = {};

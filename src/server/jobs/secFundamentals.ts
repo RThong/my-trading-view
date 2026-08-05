@@ -19,6 +19,7 @@ import {
   capexScopeOf,
   tagConflicts,
   BUYER_FCF_SERIES,
+  BUYER_FCFQ_SERIES,
   CONCEPTS,
   type QuarterPoint,
 } from '../analytics/secFundamentals';
@@ -67,11 +68,11 @@ function writeDerived(db: Database, active: string[], examine: string[]): { writ
   const loaded = all.filter(([t, rows]) => active.includes(t) && rows.length > 0);
   const derived = loaded.map(([ticker, rows]) => [ticker, deriveSeries(rows)] as const);
 
-  const perTicker: MarketSeriesRow[] = derived.flatMap(([ticker, { gmTtm, capexTtm, fcfTtm }]) => {
-    const asRows = (kind: 'GM' | 'CAPEX' | 'FCF', points: QuarterPoint[]) =>
+  const perTicker: MarketSeriesRow[] = derived.flatMap(([ticker, { gmTtm, capexTtm, fcfTtm, fcfQ }]) => {
+    const asRows = (kind: 'GM' | 'CAPEX' | 'FCF' | 'FCFQ', points: QuarterPoint[]) =>
       points.map((p) => ({ seriesId: seriesId(ticker, kind), obsDate: p.date, value: p.value }));
 
-    return [...asRows('GM', gmTtm), ...asRows('CAPEX', capexTtm), ...asRows('FCF', fcfTtm)];
+    return [...asRows('GM', gmTtm), ...asRows('CAPEX', capexTtm), ...asRows('FCF', fcfTtm), ...asRows('FCFQ', fcfQ)];
   });
 
   // ① 完整性体检:**每轮从库里查**,不挂在「这一轮有没有抓到东西」上。
@@ -141,9 +142,12 @@ function writeDerived(db: Database, active: string[], examine: string[]): { writ
   );
 
   const aggregate = aggregateFcf(new Map(buyers.filter(([, d]) => d.fcfTtm.length > 0).map(([t, d]) => [t, d.fcfTtm])));
+  // 单季合计同一套日历季度对齐;它是判据的早期读数(TTM 要四季累积才跌破零轴)。
+  const aggregateQ = aggregateFcf(new Map(buyers.filter(([, d]) => d.fcfQ.length > 0).map(([t, d]) => [t, d.fcfQ])));
   const desired = [
     ...perTicker,
     ...aggregate.map((p) => ({ seriesId: BUYER_FCF_SERIES, obsDate: p.date, value: p.value })),
+    ...aggregateQ.map((p) => ({ seriesId: BUYER_FCFQ_SERIES, obsDate: p.date, value: p.value })),
   ];
 
   const stored = getMarketSeriesByPrefix(db, SEC_SERIES_PREFIX);

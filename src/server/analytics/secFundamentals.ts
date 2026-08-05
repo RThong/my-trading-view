@@ -260,11 +260,14 @@ function combine(a: QuarterPoint[], b: QuarterPoint[], f: (x: number, y: number)
   });
 }
 
-type DerivedSeries = { gmTtm: QuarterPoint[]; capexTtm: QuarterPoint[]; fcfTtm: QuarterPoint[] };
+type DerivedSeries = { gmTtm: QuarterPoint[]; capexTtm: QuarterPoint[]; fcfTtm: QuarterPoint[]; fcfQ: QuarterPoint[] };
 
 /** 单季行 → 三条 TTM 派生量。毛利率单位百分点,金额单位百万美元(与 netLiquidity 等现有序列一致)。 */
 export function deriveSeries(rows: SecFundamentalRow[]): DerivedSeries {
   const of = (c: Concept) => ttm(rows.filter((r) => r.concept === c));
+  // 单季:直接用库里的单季行(TTM 就是在它之上加出来的),不用重算。
+  const quarterly = (c: Concept): QuarterPoint[] =>
+    rows.filter((r) => r.concept === c).map((r) => ({ date: r.periodEnd, value: r.value, fiscalQ: r.fiscalQ }));
 
   const [revenue, cogs, ocf, capex] = [of('revenue'), of('cogs'), of('ocf'), of('capex')];
 
@@ -272,12 +275,19 @@ export function deriveSeries(rows: SecFundamentalRow[]): DerivedSeries {
     gmTtm: combine(revenue, cogs, (rev, cost) => ((rev - cost) / rev) * 100),
     capexTtm: capex.map((p) => ({ ...p, value: p.value / MILLION })),
     fcfTtm: combine(ocf, capex, (o, c) => (o - c) / MILLION),
+    // 单季 FCF:转折**当季**就能看见。TTM 看不出来 —— 相邻 TTM 相减是「同比同季变化」
+    // (中间三项抵消,剩 Q(t)−Q(t−4)),不是当季值。
+    fcfQ: combine(quarterly('ocf'), quarterly('capex'), (o, c) => (o - c) / MILLION),
   };
 }
 
-export const seriesId = (ticker: string, kind: 'GM' | 'CAPEX' | 'FCF'): string => `SEC_${ticker}_${kind}_TTM`;
+/** TTM 三条用 `_TTM` 后缀;单季那条是 `_FCF_Q`(不是 TTM,别混)。 */
+export const seriesId = (ticker: string, kind: 'GM' | 'CAPEX' | 'FCF' | 'FCFQ'): string =>
+  kind === 'FCFQ' ? `SEC_${ticker}_FCF_Q` : `SEC_${ticker}_${kind}_TTM`;
 /** §6.14 判据线:**只汇总买方**(见 shared/secCompanies 的 side)。卖方混进来会让「跌破零轴」永远不成立。 */
 export const BUYER_FCF_SERIES = 'SEC_BUYER_FCF_TTM';
+/** 买方**单季** FCF 合计:判据「跌破零轴」的早期读数(TTM 晚半年)。 */
+export const BUYER_FCFQ_SERIES = 'SEC_BUYER_FCF_Q';
 
 /**
  * 只保留**尾部连续段**:从最后一点往前走,相邻点间隔超过 maxGapDays 就断开。

@@ -39,8 +39,11 @@ export const sideOf = (ticker: string): SecSide | undefined => SEC_COMPANIES.fin
 
 // ── 对外序列键(路由与面板必须用同一套,故在此定义一次)────────────────────────
 
-export type SecKind = 'gm' | 'capex' | 'fcf';
-export const SEC_KINDS: SecKind[] = ['gm', 'capex', 'fcf'];
+// fcfq = **单季** FCF(不是 TTM)。判据是「跌破零轴」,而 TTM 要四季累积才跌破 ——
+// 实测 Alphabet 2026Q2 单季 −5.9B(IPO 以来首次为负)时 TTM 还有 +53.3B,按现在的烧钱速度
+// 推算 TTM 要到 2026Q4 才跌破零轴,**晚半年**。所以两个口径都得画。
+export type SecKind = 'gm' | 'capex' | 'fcf' | 'fcfq';
+export const SEC_KINDS: SecKind[] = ['gm', 'capex', 'fcf', 'fcfq'];
 
 /** 因果链内的标的(面板文案列出这些,不列备查的那几家)。 */
 export const chainTickers = (side: SecSide): string[] =>
@@ -87,3 +90,4 @@ export const knownGap = (ticker: string, concept: string): string | undefined =>
 
 export const secKey = (ticker: string, kind: SecKind): string => `sec:${ticker}:${kind}`;
 export const SEC_BUYER_FCF_KEY = 'sec:buyerFcf';
+export const SEC_BUYER_FCFQ_KEY = 'sec:buyerFcfQ';
