@@ -35,17 +35,32 @@ async function getJson<T>(url: string, doFetch: FetchFn, timeoutMs?: number): Pr
   return (await res.json()) as T;
 }
 
-type Submissions = { filings?: { recent?: { form?: string[]; filingDate?: string[] } } };
+type Submissions = {
+  filings?: { recent?: { form?: string[]; filingDate?: string[]; accessionNumber?: string[] } };
+};
+
+/** submissions 里最新的那份定期报告。accn 用于 companyfacts 落后时直接去读申报实例。 */
+export type LatestFiling = { filed: string; form: string; accn: string };
+
+const archiveDir = (cik: string, accn: string) =>
+  `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accn.replace(/-/g, '')}`;
+
+type FilingIndex = { directory?: { item?: Array<{ name?: string }> } };
 
 export function createSecFetcher(doFetch: FetchFn = fetchWithTimeout) {
   return {
-    /** 最近一次 10-Q/10-K 的申报日(YYYY-MM-DD);无定期报告返回 null。 */
-    async latestFiledDate(cik: string): Promise<string | null> {
+    /** 最新一次 10-Q/10-K(按申报日最大);无定期报告返回 null。 */
+    async latestFiling(cik: string): Promise<LatestFiling | null> {
       const body = await getJson<Submissions>(`https://data.sec.gov/submissions/${cikPath(cik)}.json`, doFetch);
-      const { form = [], filingDate = [] } = body.filings?.recent ?? {};
+      const { form = [], filingDate = [], accessionNumber = [] } = body.filings?.recent ?? {};
 
-      const dates = form.flatMap((f, i) => (PERIODIC_FORMS.has(f) && filingDate[i] ? [filingDate[i]!] : []));
-      return dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
+      const periodic = form.flatMap((f, i) =>
+        PERIODIC_FORMS.has(f) && filingDate[i] && accessionNumber[i]
+          ? [{ filed: filingDate[i]!, form: f, accn: accessionNumber[i]! }]
+          : [],
+      );
+
+      return periodic.length ? periodic.reduce((a, b) => (a.filed >= b.filed ? a : b)) : null;
     },
 
     async companyFacts(cik: string): Promise<CompanyFacts> {
@@ -54,6 +69,31 @@ export function createSecFetcher(doFetch: FetchFn = fetchWithTimeout) {
         doFetch,
         FACTS_TIMEOUT_MS,
       );
+    },
+
+    /**
+     * 单份申报的 XBRL 实例原文(**只在 companyfacts 落后时用**,见 job 的兜底分支)。
+     * 两个请求:先 index.json 找实例文件名,再拉实例本身。
+     *
+     * 实例名靠 `_htm.xml` 后缀认 —— 这是 EDGAR 从 inline XBRL 抽出的实例文档,
+     * 与同目录的 `_cal/_def/_lab/_pre.xml`(linkbase)和 FilingSummary.xml 区分开。
+     * 2019 年起定期报告强制 inline XBRL,七家实测都有这个文件;找不到就抛,让上层记 failed。
+     */
+    async filingInstance(cik: string, accn: string): Promise<string> {
+      const dir = archiveDir(cik, accn);
+      const idx = await getJson<FilingIndex>(`${dir}/index.json`, doFetch);
+
+      const name = idx.directory?.item?.find((it) => it.name?.endsWith('_htm.xml'))?.name;
+      if (!name) throw new Error(`SEC filing ${accn}: 目录里没有 _htm.xml 实例`);
+
+      const res = await doFetch(
+        `${dir}/${name}`,
+        { headers: { 'User-Agent': userAgent(), Accept: '*/*' } },
+        FACTS_TIMEOUT_MS,
+      );
+      if (!res.ok) throw new Error(`SEC request failed: ${res.status} ${dir}/${name}`);
+
+      return res.text();
     },
   };
 }

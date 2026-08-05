@@ -42,12 +42,23 @@ const MSFT_FACTS = facts(50e9, 20e9); // FCF = 30,000 百万
 const MSFT_CIK = '789019';
 const NVDA_CIK = '1045810';
 
+/** 合法但一条 fact 都没有的实例:兜底跑完仍拿不到新一期,该报红。 */
+const EMPTY_INSTANCE = '<?xml version="1.0"?><xbrl xmlns="http://www.xbrl.org/2003/instance"></xbrl>';
+
+/** 无实例可读:兜底分支若被触发就抛,让「本该不走兜底」的测试失败而不是静默通过。 */
+const noInstance = async (): Promise<string> => {
+  throw new Error('本轮不该读申报实例');
+};
+
+const filingOf = (filed: string | null) => (filed ? { filed, form: '10-Q', accn: `accn-${filed}` } : null);
+
 const stubFetcher = (filed: string | null, onFacts?: (cik: string) => void) => ({
-  latestFiledDate: async () => filed,
+  latestFiling: async () => filingOf(filed),
   companyFacts: async (cik: string) => {
     onFacts?.(cik);
     return cik === MSFT_CIK ? MSFT_FACTS : NVDA_FACTS;
   },
+  filingInstance: noInstance,
 });
 
 // 一卖一买,且两者都在启用名单里。
@@ -126,7 +137,7 @@ describe('sec fundamentals job', () => {
     // 若体检挂在抓取那一轮,这家从此永远没有毛利率线却再也没人提。
     const db = freshDb();
     const partial = {
-      latestFiledDate: async () => '2026-02-25',
+      latestFiling: async () => filingOf('2026-02-25'),
       companyFacts: async () => ({
         facts: {
           'us-gaap': {
@@ -135,6 +146,7 @@ describe('sec fundamentals job', () => {
           },
         },
       }),
+      filingInstance: noInstance,
     };
 
     const first = await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: partial });
@@ -155,15 +167,16 @@ describe('sec fundamentals job', () => {
     const r = await updateSecFundamentals(db, {
       ...BOTH,
       fetcher: {
-        latestFiledDate: async (cik: string) => {
+        latestFiling: async (cik: string) => {
           if (cik === NVDA_CIK) throw new Error('network down');
-          return '2026-02-25';
+          return filingOf('2026-02-25');
         },
         companyFacts: async () => ({}),
+        filingInstance: async () => EMPTY_INSTANCE,
       },
     });
 
-    expect(r.failed.some((f) => /MSFT: companyfacts 没贡献任何新一期的行/.test(f))).toBe(true);
+    expect(r.failed.some((f) => /MSFT: companyfacts 与申报实例都没贡献新一期的行/.test(f))).toBe(true);
     expect(r.fetched).toEqual([]); // 一行没落不算抓到
     expect(r.failed.some((f) => /NVDA: 最新一期/.test(f))).toBe(false); // 从没抓过 ≠ tag 有问题
     db.close();
@@ -176,10 +189,14 @@ describe('sec fundamentals job', () => {
     await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher('2026-02-25') });
 
     // 远端出了更新的申报,但 companyfacts 解析不出任何行(tag 全换 / SEC 改结构 / 响应降级)。
-    const broken = { latestFiledDate: async () => '2026-05-20', companyFacts: async () => ({}) };
+    const broken = {
+      latestFiling: async () => filingOf('2026-05-20'),
+      companyFacts: async () => ({}),
+      filingInstance: async () => EMPTY_INSTANCE,
+    };
     const r = await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: broken });
 
-    expect(r.failed.some((f) => /NVDA: companyfacts 没贡献任何新一期的行/.test(f))).toBe(true);
+    expect(r.failed.some((f) => /NVDA: companyfacts 与申报实例都没贡献新一期的行/.test(f))).toBe(true);
     expect(r.fetched).toEqual([]);
     expect(r.rowsWritten).toBe(0);
     db.close();
@@ -263,11 +280,12 @@ describe('sec fundamentals job', () => {
   test('单家抓取失败只记 failed,不中断整轮', async () => {
     const db = freshDb();
     const boom = {
-      latestFiledDate: async (cik: string) => {
+      latestFiling: async (cik: string) => {
         if (cik === NVDA_CIK) throw new Error('network down');
-        return '2026-02-25';
+        return filingOf('2026-02-25');
       },
       companyFacts: async (cik: string) => (cik === MSFT_CIK ? MSFT_FACTS : NVDA_FACTS),
+      filingInstance: noInstance,
     };
 
     const r = await updateSecFundamentals(db, { ...BOTH, fetcher: boom });
@@ -291,5 +309,61 @@ describe('sec fundamentals job', () => {
       /unknown SEC ticker/,
     );
     db.close();
+  });
+test("companyfacts 落后于 submissions → 读申报实例补上那一期", async () => {
+    // 稳态下最常见的缺口(实测 META 2026Q2:10-Q 已交,companyfacts 六天后仍没这期)。
+    // 实例只报本年累计现金流,减掉的上一季在 companyfacts 里 —— 故必须合并后再算。
+    const db = freshDb();
+    await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher("2026-02-25") });
+
+    // 远端出了 2026-05-20 的新申报,但 companyfacts 还是旧的那四期。
+    const instance = [
+      '<xbrl xmlns="http://www.xbrl.org/2003/instance">',
+      '<unit id="u1"><measure>iso4217:USD</measure></unit>',
+      '<context id="c1"><period><startDate>2026-01-26</startDate><endDate>2026-04-26</endDate></period></context>',
+      '<context id="c2"><entity><segment><xbrldi:explicitMember dimension="d">m</xbrldi:explicitMember></segment></entity>' +
+        '<period><startDate>2026-01-26</startDate><endDate>2026-04-26</endDate></period></context>',
+      '<us-gaap:NetCashProvidedByUsedInOperatingActivities contextRef="c1" unitRef="u1">25000000000</us-gaap:NetCashProvidedByUsedInOperatingActivities>',
+      '<us-gaap:PaymentsToAcquirePropertyPlantAndEquipment contextRef="c1" unitRef="u1">3000000000</us-gaap:PaymentsToAcquirePropertyPlantAndEquipment>',
+      // 带维度的那条值不同,漏掉过滤会串口径。
+      '<us-gaap:PaymentsToAcquirePropertyPlantAndEquipment contextRef="c2" unitRef="u1">999000000</us-gaap:PaymentsToAcquirePropertyPlantAndEquipment>',
+      '</xbrl>',
+    ].join("");
+
+    const r = await updateSecFundamentals(db, {
+      ...SELLER_ONLY,
+      fetcher: {
+        latestFiling: async () => filingOf("2026-05-20"),
+        companyFacts: async () => NVDA_FACTS,
+        filingInstance: async () => instance,
+      },
+    });
+
+    expect(r.fetched).toEqual(["NVDA"]);
+    expect(r.fallback).toEqual(["NVDA(10-Q 2026-05-20)"]);
+    const q = getSecFundamentals(db, "NVDA").filter((x) => x.periodEnd === "2026-04-26");
+    expect(q.find((x) => x.concept === "ocf")?.value).toBe(25e9);
+    expect(q.find((x) => x.concept === "capex")?.value).toBe(3e9); // 不是 999e6
+    expect(q[0]?.filed).toBe("2026-05-20"); // 溯源列指向那份申报,不是 companyfacts
+  });
+
+  test("兜底也拿不到 → 主症状(companyfacts 落后)仍要报,不被兜底的错盖掉", async () => {
+    const db = freshDb();
+    await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher("2026-02-25") });
+
+    const r = await updateSecFundamentals(db, {
+      ...SELLER_ONLY,
+      fetcher: {
+        latestFiling: async () => filingOf("2026-05-20"),
+        companyFacts: async () => NVDA_FACTS,
+        filingInstance: async () => {
+          throw new Error("目录里没有 _htm.xml 实例");
+        },
+      },
+    });
+
+    expect(r.failed.some((f) => /申报实例兜底失败/.test(f))).toBe(true);
+    expect(r.failed.some((f) => /companyfacts 与申报实例都没贡献新一期的行/.test(f))).toBe(true);
+    expect(r.fetched).toEqual([]);
   });
 });

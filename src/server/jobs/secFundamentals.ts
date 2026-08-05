@@ -11,9 +11,11 @@ import {
   finishJobRun,
   type MarketSeriesRow,
 } from '../storage/repository';
-import { createSecFetcher } from '../fetchers/secXbrl';
+import { createSecFetcher, type LatestFiling } from '../fetchers/secXbrl';
 import {
   extractFundamentals,
+  parseXbrlInstance,
+  mergeFacts,
   deriveSeries,
   aggregateFcf,
   seriesId,
@@ -171,7 +173,14 @@ export async function updateSecFundamentals(
   db: Database,
   // activeTickers 只为测试留口(要验买/卖分侧就必须能换名单);CLI 不传,取 SEC_ACTIVE_TICKERS。
   opts: { tickers?: string[]; force?: boolean; fetcher?: Fetcher; activeTickers?: string[] } = {},
-): Promise<{ fetched: string[]; skipped: string[]; failed: string[]; rowsWritten: number; seriesWritten: number }> {
+): Promise<{
+  fetched: string[];
+  skipped: string[];
+  failed: string[];
+  fallback: string[];
+  rowsWritten: number;
+  seriesWritten: number;
+}> {
   const active = opts.activeTickers ?? SEC_ACTIVE_TICKERS;
   const tickers = opts.tickers ?? active;
   const sec = opts.fetcher ?? createSecFetcher();
@@ -183,6 +192,7 @@ export async function updateSecFundamentals(
   const fetched: string[] = [];
   const skipped: string[] = [];
   const failed: string[] = [];
+  const fallback: string[] = []; // 走了申报实例兜底才拿到新一期的那几家(值得在日志里看见)
   let rowsWritten = 0;
 
   // 逐家串行:SEC 限速 10 req/s,且 companyfacts 有几 MB,并发没意义。
@@ -190,27 +200,28 @@ export async function updateSecFundamentals(
   for (const ticker of tickers) {
     try {
       // --force 跳过整段 filed 比对(连 submissions 都不打):它就是「不管水位,重拉一遍」的逃生口。
-      let remoteFiled: string | null = null;
+      let latest: LatestFiling | null = null;
       if (!opts.force) {
-        remoteFiled = await sec.latestFiledDate(cikOf(ticker)!);
+        latest = await sec.latestFiling(cikOf(ticker)!);
         // 无条件记远端水位(不管后面拉不拉 companyfacts):面板要靠它区分「这家还没到财报期」
         // 和「财报已交但 companyfacts 还没吃进」。放在 skip 判定之前,否则稳态下永远不更新。
-        if (remoteFiled) putSecWatermark(db, ticker, remoteFiled);
+        if (latest) putSecWatermark(db, ticker, latest.filed);
 
         // 拿不到定期报告申报日 ≠ 正常跳过。大盘股必然有 10-Q/10-K,拿不到说明源出问题
         // (SEC 改了 filings.recent 结构 / 字段更名 / 响应降级)。若归入 skipped,每家都 null 时
         // 会变成「永远绿灯、永远零写入」的假绿。记 failed 但仍不拉几 MB。
-        if (!remoteFiled) {
+        if (!latest) {
           failed.push(`${ticker}: submissions 里没有 10-Q/10-K 申报日(源结构可能变了),未拉 companyfacts`);
           continue;
         }
 
         const localFiled = getLatestSecFiled(db, ticker);
-        if (localFiled && remoteFiled <= localFiled) {
+        if (localFiled && latest.filed <= localFiled) {
           skipped.push(ticker);
           continue;
         }
       }
+      const remoteFiled = latest?.filed ?? null;
 
       // 拿到的行一律落库(可审计)。科目完整性搬到 writeDerived 每轮从库里体检(那里才能复发),
       // 但**这一轮有没有拿到东西必须在这里判**:writeDerived 只看得见「库里最新一期」,
@@ -236,10 +247,28 @@ export async function updateSecFundamentals(
 
       // 判据用「水位有没有推到远端 filed」而非 rows.length —— 后者盖不住「拉到了但新那一期没解析出来」。
       // remoteFiled 只在非 force 路径有(force 连 submissions 都不打),故 force 时退回 rows.length。
-      const advanced = remoteFiled ? (getLatestSecFiled(db, ticker) ?? '') >= remoteFiled : rows.length > 0;
-      if (!advanced) {
+      const advanced = () => (remoteFiled ? (getLatestSecFiled(db, ticker) ?? '') >= remoteFiled : rows.length > 0);
+
+      // companyfacts 落后于 submissions 时,直接读那份申报的 XBRL 实例补上(见 parseXbrlInstance)。
+      // 只在这个分支打两个额外请求,稳态零开销。**必须与 companyfacts 合并再算**:
+      // 现金流多数只报本年累计,单季靠差分 —— 减掉的上一季在 companyfacts 里。
+      // 兜底自身的失败单独记:直接往外抛会让 catch 只报「没找到实例」,
+      // 盖掉真正的主症状(companyfacts 落后),下面那条诊断必须还能发出来。
+      if (!advanced() && latest) {
+        try {
+          const patch = parseXbrlInstance(await sec.filingInstance(cikOf(ticker)!, latest.accn), latest);
+          const patched = extractFundamentals(ticker, mergeFacts(companyFacts, patch));
+          insertSecFundamentals(db, patched);
+          rowsWritten += patched.length;
+          if (advanced()) fallback.push(`${ticker}(${latest.form} ${latest.filed})`);
+        } catch (e) {
+          failed.push(`${ticker}: 申报实例兜底失败(${e instanceof Error ? e.message : String(e)})`);
+        }
+      }
+
+      if (!advanced()) {
         failed.push(
-          `${ticker}: companyfacts 没贡献任何新一期的行(远端 filed=${remoteFiled ?? '未查'});` +
+          `${ticker}: companyfacts 与申报实例都没贡献新一期的行(远端 filed=${remoteFiled ?? '未查'});` +
             'tag 链或 SEC 响应结构可能变了,水位不会前进 → 下次仍会重拉',
         );
         continue;
@@ -256,7 +285,7 @@ export async function updateSecFundamentals(
   const { written, problems } = writeDerived(db, active, fetched);
   failed.push(...problems);
 
-  return { fetched, skipped, failed, rowsWritten, seriesWritten: written };
+  return { fetched, skipped, failed, fallback, rowsWritten, seriesWritten: written };
 }
 
 if (import.meta.main) {
@@ -292,7 +321,8 @@ if (import.meta.main) {
           : { status: 'success', recordsWritten },
     );
     console.log(
-      `SEC fundamentals: fetched=[${r.fetched}] skipped=[${r.skipped}] failed=[${r.failed}] rows=${r.rowsWritten} series=${r.seriesWritten}`,
+      `SEC fundamentals: fetched=[${r.fetched}] skipped=[${r.skipped}] failed=[${r.failed}]` +
+        `${r.fallback.length ? ` 申报实例兜底=[${r.fallback}]` : ''} rows=${r.rowsWritten} series=${r.seriesWritten}`,
     );
   } catch (e) {
     finishJobRun(db, runId, { status: 'failed', error: String(e) });

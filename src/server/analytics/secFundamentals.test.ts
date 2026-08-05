@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import {
   aggregateFcf,
   calendarQuarter,
   collectPeriods,
   deriveSeries,
   extractFundamentals,
+  parseXbrlInstance,
+  mergeFacts,
   TAG_CHAINS,
   capexScopeOf,
   tagConflicts,
@@ -467,5 +470,68 @@ describe('capexScopeOf', () => {
     // NVDA 那行原文含 intangible assets、AMZN 含自用软件 → 同样的生意会显得更重、FCF 更低。
     expect(capexScopeOf('PaymentsToAcquireProductiveAssets')).toBe('productive_assets');
     expect(capexScopeOf('SomethingElse')).toBeUndefined();
+  });
+});
+
+describe('parseXbrlInstance / mergeFacts(申报实例兜底)', () => {
+  // 真实片段:META 2026Q2 10-Q(accession 0001628280-26-050705)的实例摘录 ——
+  // 保留了真命名空间、真 context id、以及两个带 <segment> 的反例 context。
+  const xml = readFileSync(new URL('./__fixtures__/meta-20260630-excerpt.xml', import.meta.url), 'utf8');
+  const META_FILING = { accn: '0001628280-26-050705', form: '10-Q', filed: '2026-07-30' };
+
+  test('只收无维度的 duration context —— 分部数据不能混进合并口径', () => {
+    const facts = parseXbrlInstance(xml, META_FILING);
+    const revenue = facts.facts!['us-gaap']!.RevenueFromContractWithCustomerExcludingAssessedTax!.units!.USD!;
+    const vals = new Set(revenue.map((r) => r.val));
+
+    expect(vals.has(60_801_000_000)).toBe(true); // 合并口径的本季收入
+    // 59.363B 是「广告」分部那条(带 explicitMember)。漏掉维度过滤就会与总额争同一期间。
+    expect(vals.has(59_363_000_000)).toBe(false);
+  });
+
+  test('unit 按 iso4217:USD 认,不靠 id 命名(实测 META 用 usd、MSFT 用 U_USD)', () => {
+    const facts = parseXbrlInstance(xml, META_FILING);
+    // 换成别的 id 名照样要能认出来 —— 只改命名不改口径。
+    const renamed = parseXbrlInstance(xml.replace(/"usd"/g, '"U_USD"'), META_FILING);
+    expect(Object.keys(renamed.facts!['us-gaap']!)).toEqual(Object.keys(facts.facts!['us-gaap']!));
+  });
+
+  test('与 companyfacts 合并后算出本季:现金流只有累计,减掉的上一季来自 companyfacts', () => {
+    // 实例里现金流只有 H1(2026-01-01~06-30);Q1 在 companyfacts 里。分开算得不出 Q2。
+    const q1 = (val: number) => ({
+      units: {
+        USD: [{ start: '2026-01-01', end: '2026-03-31', val, accn: 'q1', form: '10-Q', filed: '2026-04-30' }],
+      },
+    });
+    const companyFacts = {
+      facts: {
+        'us-gaap': {
+          NetCashProvidedByUsedInOperatingActivities: q1(32_226_000_000),
+          PaymentsToAcquirePropertyPlantAndEquipment: q1(18_997_000_000),
+        },
+      },
+    };
+
+    const onlyInstance = extractFundamentals('META', parseXbrlInstance(xml, META_FILING));
+    expect(onlyInstance.find((r) => r.periodEnd === '2026-06-30' && r.concept === 'ocf')).toBeUndefined();
+
+    const merged = extractFundamentals('META', mergeFacts(companyFacts, parseXbrlInstance(xml, META_FILING)));
+    const q2 = (concept: string) => merged.find((r) => r.periodEnd === '2026-06-30' && r.concept === concept)?.value;
+
+    expect(q2('ocf')).toBe(64_088_000_000 - 32_226_000_000); // 31.862B
+    expect(q2('capex')).toBe(49_113_000_000 - 18_997_000_000); // 30.116B
+    expect(q2('revenue')).toBe(60_801_000_000); // 利润表本来就有单季行,不用差分
+  });
+
+  test('mergeFacts 不覆盖 companyfacts 的重述值:同期取 filed 最大', () => {
+    const row = (val: number, filed: string) => ({
+      units: { USD: [{ start: '2026-01-01', end: '2026-03-31', val, accn: `a-${filed}`, form: '10-Q', filed }] },
+    });
+    const older = { facts: { 'us-gaap': { Revenues: row(100, '2026-04-30') } } };
+    const newer = { facts: { 'us-gaap': { Revenues: row(111, '2026-07-30') } } };
+
+    // 合并顺序不该影响结果 —— 裁决靠 filed,不靠谁先进数组。
+    expect(collectPeriods(mergeFacts(older, newer), ['Revenues'])[0]!.val).toBe(111);
+    expect(collectPeriods(mergeFacts(newer, older), ['Revenues'])[0]!.val).toBe(111);
   });
 });

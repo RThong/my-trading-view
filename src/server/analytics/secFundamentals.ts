@@ -215,6 +215,105 @@ export function toQuarters(periods: Period[]): QuarterFact[] {
   return [...byEnd.values()].sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
 }
 
+// ── 申报实例兜底 ───────────────────────────────────────────────────────────────
+
+/**
+ * 单份申报的 XBRL 实例 → CompanyFacts 形状。**只在 companyfacts 落后于 submissions 时用**
+ * (实测 META 的 2026Q2:10-Q 已于 2026-07-30 交上,companyfacts 六天后仍没这一期)。
+ *
+ * 为什么能安全地和 companyfacts 混:产出的是同一个形状,进的是同一条
+ * collectPeriods → toQuarters 流水线,同期去重仍按 filed 最大 —— companyfacts 后来补上时
+ * 自然覆盖。它不是第二个真相源,是**同一个源的更早入口**。
+ *
+ * 筛选规则(为什么够):
+ *  · **只要无维度的 context**。实例里同一个 tag 会重复几十次(META 的收入 56 条),多数是分部/
+ *    地区/股份类别拆分,全部带 `<segment>`。滤掉后剩的就是合并口径那几条(实测 META 的收入
+ *    只剩本季 / 去年同季 / 本年累计 / 去年累计 4 条,与 companyfacts 给的一致)。
+ *  · **只要 duration context**(有 startDate/endDate)。资产负债表那些时点值是 instant,本来就不要。
+ *  · 只要链里那几个 tag、单位 USD。
+ *
+ * 不解析 presentation linkbase:这四个科目都是主报表顶层行,附注里的重复披露一律带维度,
+ * 上面第一条已经滤掉。真出现「无维度但含义不同」的重复,值会不一致 → tagConflicts 报出来。
+ */
+export type FilingMeta = { accn: string; form: string; filed: string };
+
+// context 块:命名空间前缀可有可无(实测 META 用默认命名空间 `<context id="c-1">`,
+// 别的公司可能是 `<xbrli:context>`)。
+const CONTEXT_RE = /<(?:[\w.-]+:)?context\s+id="([^"]+)"([\s\S]*?)<\/(?:[\w.-]+:)?context\s*>/g;
+const START_RE = /<(?:[\w.-]+:)?startDate>\s*([\d-]+)\s*</;
+const END_RE = /<(?:[\w.-]+:)?endDate>\s*([\d-]+)\s*</;
+
+/** context id → 期间。带 segment(分部/地区/股份类别)的与 instant 的一律不收。 */
+function durationContexts(xml: string): Map<string, { start: string; end: string }> {
+  const out = new Map<string, { start: string; end: string }>();
+
+  for (const m of xml.matchAll(CONTEXT_RE)) {
+    const [, id = '', body = ''] = m;
+    if (/<(?:[\w.-]+:)?segment[\s>]/.test(body)) continue;
+
+    const start = START_RE.exec(body)?.[1];
+    const end = END_RE.exec(body)?.[1];
+    if (start && end) out.set(id, { start, end });
+  }
+
+  return out;
+}
+
+// unit 的 id 是申报人自取的,**不能靠名字猜**:实测 META 用 `usd`、MSFT/ORCL 用 `U_USD`。
+// 按 <measure>iso4217:USD</measure> 认,才是口径本身而不是命名习惯。
+const UNIT_RE = /<(?:[\w.-]+:)?unit\s+id="([^"]+)"([\s\S]*?)<\/(?:[\w.-]+:)?unit\s*>/g;
+
+function usdUnits(xml: string): Set<string> {
+  const ids = [...xml.matchAll(UNIT_RE)].flatMap(([, id = '', body = '']) =>
+    /<(?:[\w.-]+:)?measure>\s*(?:[\w.-]+:)?USD\s*</i.test(body) ? [id] : [],
+  );
+
+  return new Set(ids);
+}
+
+export function parseXbrlInstance(xml: string, meta: FilingMeta): CompanyFacts {
+  const contexts = durationContexts(xml);
+  const usd = usdUnits(xml);
+  const tags = CONCEPTS.flatMap((c) => TAG_CHAINS[c]);
+
+  const entries = tags.flatMap((tag) => {
+    // 自闭合(nil)的事实不匹配 —— 正是要跳过的。
+    const re = new RegExp(`<us-gaap:${tag}\\s([^>]*)>\\s*(-?[\\d.]+)\\s*</us-gaap:${tag}\\s*>`, 'g');
+
+    const rows = [...xml.matchAll(re)].flatMap(([, attrs = '', raw = '']) => {
+      const ctx = /contextRef="([^"]+)"/.exec(attrs)?.[1];
+      const unit = /unitRef="([^"]+)"/.exec(attrs)?.[1] ?? '';
+      const period = ctx ? contexts.get(ctx) : undefined;
+      if (!period || !usd.has(unit)) return [];
+
+      const val = Number(raw);
+      return Number.isFinite(val) ? [{ ...period, val, ...meta }] : [];
+    });
+
+    return rows.length ? [[tag, { units: { USD: rows } }] as const] : [];
+  });
+
+  return { facts: { 'us-gaap': Object.fromEntries(entries) } };
+}
+
+/**
+ * 两份 facts 合并(companyfacts + 单份申报实例)。必须先合并再走 collectPeriods:
+ * 现金流多数只报累计,单季靠差分算 —— 实例里只有本年累计(META 的 H1),
+ * 减掉的那个 Q1 在 companyfacts 里,分开跑两遍差分算不出本季。
+ */
+export function mergeFacts(...parts: CompanyFacts[]): CompanyFacts {
+  const merged: Record<string, { units?: Record<string, FactRow[]> }> = {};
+
+  for (const p of parts) {
+    for (const [tag, node] of Object.entries(p.facts?.['us-gaap'] ?? {})) {
+      const usd = [...(merged[tag]?.units?.USD ?? []), ...(node.units?.USD ?? [])];
+      merged[tag] = { units: { USD: usd } };
+    }
+  }
+
+  return { facts: { 'us-gaap': merged } };
+}
+
 /** companyfacts → 四个科目的单季行(可直接落 sec_fundamentals)。 */
 export function extractFundamentals(ticker: string, facts: CompanyFacts): SecFundamentalRow[] {
   return CONCEPTS.flatMap((concept) =>
