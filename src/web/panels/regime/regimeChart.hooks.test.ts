@@ -170,23 +170,46 @@ test('secLagNote:买方合计格受任一买方滞后影响;卖方滞后不影�
 
 // 面板的格子按 source 分派(见 SOURCE_PANES)。这条锁住「加了非 SEC 源的公司,
 // 不会被套上 SEC 那四格」—— 套错了会画出四条永远空的线,而空线不报错。
-test('dimPanes:走 TWSE 的公司出「毛利率 + 月营收两格」,不出 FCF(源不给现金流)', () => {
+test('dimPanes:TSM 六格 = sec6k 四格 + twse 两格,gm 不重复', () => {
   const twse = dimPanes('fundamentals:TSM');
-  expect(twse.map((p) => p.key)).toEqual(['fund:TSM:gm', 'fund:TSM:revYoy', 'fund:TSM:revM']);
+  expect(twse.map((p) => p.key)).toEqual([
+    'fund:TSM:gm',
+    'fund:TSM:fcf',
+    'fund:TSM:fcfq',
+    'fund:TSM:capex',
+    'fund:TSM:revYoy',
+    'fund:TSM:revM',
+  ]);
 
   const sec = dimPanes('fundamentals:NVDA');
   expect(sec.map((p) => p.key)).toEqual(['fund:NVDA:gm', 'fund:NVDA:fcf', 'fund:NVDA:fcfq', 'fund:NVDA:capex']);
 });
 
-test('dimPanes:TWSE 各格的说明必须写清币种;月营收那两格还要写「不可回填」', () => {
-  const panes = dimPanes('fundamentals:TSM');
+test('dimPanes:TSM 的金额格用新台币,别家用美元', () => {
+  const money = (dim: string, key: string) => dimPanes(dim as never).find((p) => p.key === key)!;
 
-  // 币种是所有格子的共同坑:新台币不是美元,不能和别的 tab 比大小。
-  for (const p of panes) expect(p.desc).toContain('百万新台币');
+  // 币种混淆是这一格最容易踩的坑:TSM 的数比别家大一个数量级纯粹因为汇率。
+  expect(money('fundamentals:TSM', 'fund:TSM:fcf').title).toContain('百万新台币');
+  expect(money('fundamentals:NVDA', 'fund:NVDA:fcf').title).toContain('百万美元');
+});
 
-  // 「补不了历史」只属于月营收那两格(季度那格的坑是「本季可能还没申报」)。
-  for (const p of panes.filter((x) => x.key !== 'fund:TSM:gm')) expect(p.desc).toContain('补不了历史');
-  expect(panes.find((p) => p.key === 'fund:TSM:gm')!.desc).toContain('本季还没申报');
+test('dimPanes:TSM 走 6-K 那条的格子要交代「不是 XBRL、是 IFRS」', () => {
+  // 没有 tag 级溯源、口径是 IFRS —— 两条都影响和别家的可比性,必须写在格子里。
+  for (const key of ['fund:TSM:gm', 'fund:TSM:fcf', 'fund:TSM:fcfq', 'fund:TSM:capex']) {
+    const desc = dimPanes('fundamentals:TSM').find((p) => p.key === key)!.desc!;
+    expect(desc).toContain('不是 XBRL');
+    expect(desc).toContain('IFRS');
+  }
+});
+
+test('dimPanes:月营收那两格要写清币种与「不可回填」', () => {
+  const monthly = dimPanes('fundamentals:TSM').filter((p) => /revM|revYoy/.test(p.key));
+
+  expect(monthly).toHaveLength(2);
+  for (const p of monthly) {
+    expect(p.desc).toContain('百万新台币');
+    expect(p.desc).toContain('补不了历史');
+  }
 });
 
 // 折线只连点 —— 断档两端会被连成一条斜率是编的直线。月营收是快照攒的、中间必然有空档,

@@ -13,7 +13,9 @@ import {
   knownGap,
   fundKey,
   sideOf,
-  sourceOf,
+  sourcesOf,
+  currencyOf,
+  hasSource,
   type ChainSource,
   type FundKind,
   type SecLag,
@@ -685,12 +687,13 @@ const COMPANY_NOTES: Record<string, string> = {
     '不改成持续经营口径是因为那档「有终止经营才报」、Q1 就缺,换过去会在同一个差分组里换基础' +
     '(详见 TAG_CHAINS.ocf)。**2026 起已归零**(H1 2026 终止经营 OCF = 0),只影响 FY2025 那几点。',
   TSM:
-    '定位:**整条链的物理瓶颈**,也是这套面板里唯一走非 SEC 源的一家(台湾证交所,见各格说明)。\n' +
-    '· 月营收(T+10)是**全链最快的读数** —— 比任何季报早一个月以上,而且是已发生的出货量、不是指引。' +
-    '实测 2026-06:NT$442,680M、同比 +67.9%,源附备注「因先進製程產品需求增加所致」。\n' +
-    '· 和 NVDA 对读:NVDA 的营收是 TSM 出货的下游结果,**TSM 月营收转弱会先于 NVDA 季报体现**。\n' +
-    '⚠️ 没有 FCF 那两格:TWSE 这两个端点只给营收与营业成本,不给现金流。' +
-    'TSM 的 SEC 侧(20-F/6-K)实测只有**半年频**且最新一期停在 2024-12-31,补不了这个缺。',
+    '定位:**整条链的物理瓶颈**,也是这套面板里唯一**两个源各管一半**的一家 ——\n' +
+    '· 季度四格(毛利率/FCF/单季 FCF/capex)来自它交给 EDGAR 的季度合并财报 6-K,T+45,可回填到 2023Q1。\n' +
+    '· 月营收两格来自台湾证交所,**T+10,全链最快** —— 比任何季报早一个月以上,而且是已发生的出货量、' +
+    '不是指引。实测 2026-06:NT$442,680M、同比 +67.9%,源附备注「因先進製程產品需求增加所致」。\n' +
+    '· 两个源交叉验证过:H1 2025 营收 6-K 报 1,773,045,533 千元,与 TWSE 月营收累计**完全一致**。\n' +
+    '· 和 NVDA 对读:NVDA 的营收是 TSM 出货的下游结果,**TSM 月营收转弱会先于 NVDA 季报体现**;' +
+    '毛利率则是「代工端议价权」,实测 2025Q2 58.6% → 2026Q1 66.2%,一路抬升。',
   INTC:
     '⚠️ **不是判据成员**(名单文案里不列它,合计线也不收它),放这里是当**供给侧的反向读数**。\n' +
     '· 符号和 NVDA/MU 相反:那两家「毛利率见顶回落 = 供给追上需求」;INTC 是' +
@@ -898,37 +901,55 @@ function twseCompanyPanes(ticker: string): PaneSpec[] {
   ];
 }
 
+/** 金额格的单位标签。TSM 报表是新台币,和别家的美元数**不能比大小**。 */
+const MONEY_UNIT: Record<'USD' | 'TWD', string> = { USD: '百万美元', TWD: '百万新台币' };
+
+/**
+ * 走 sec6k 源(季度合并财报 6-K)的额外口径说明 —— 数据不是 companyfacts 的 XBRL,
+ * 是解析 HTML 报表来的,而且是 IFRS 而非 US GAAP。这两点都影响可比性。
+ */
+const SEC6K_CAVEAT =
+  '\n⚠️ **这家的四个科目来自另一条源**:它是外国发行人,只报 20-F/6-K,companyfacts 里' +
+  '只有半年/全年且停在 2024-12-31。所以走它交给 EDGAR 的**季度合并财报 6-K**(`tsm-fs*`),' +
+  '解析 HTML 报表得到 —— 官方原文、可回填(实测 13 份、2023Q1 起),但**不是 XBRL**,' +
+  '所以没有 tag 级溯源(库里 tag_used 是为复用下游算法借的 us-gaap 名字,真溯源看同行的 accn)。\n' +
+  '· 口径是 **IFRS** 而非 US GAAP,币种是**新台币** —— 跨公司比绝对值前先看单位。\n' +
+  '· 时效约季后 45 天(实测 2026-03-31 那期 2026-05-15 交)。要更快的读数看月营收那两格(T+10)。';
+
 function companyPanes(ticker: string): PaneSpec[] {
   const seller = sideOf(ticker) === 'seller';
   const note = COMPANY_NOTES[ticker];
+  const unit = MONEY_UNIT[currencyOf(ticker)];
+  // 走 6-K 那条的公司要多一段口径说明;走 companyfacts 的不用。
+  const srcNote = hasSource(ticker, 'sec6k') ? SEC6K_CAVEAT : '';
 
   return [
     paneOf(ticker, 'gm', '毛利率', `${ticker} TTM 毛利率(%)`, '#eab308', [
-      `定义:${ticker} TTM 毛利率 =(营收 − 营业成本)/ 营收。` + SEC_CAVEAT,
+      `定义:${ticker} TTM 毛利率 =(营收 − 营业成本)/ 营收。` + SEC_CAVEAT + srcNote,
       '',
       seller ? SELLER_GM : BUYER_GM,
       '',
       SEC_TRIM_NOTE,
       ...(note ? ['', note] : []),
     ]),
-    paneOf(ticker, 'fcf', 'FCF', `${ticker} TTM 自由现金流(百万美元)`, '#22c55e', [
-      `定义:${ticker} TTM 自由现金流 = 经营现金流 − 资本开支。` + SEC_CAVEAT,
+    paneOf(ticker, 'fcf', 'FCF', `${ticker} TTM 自由现金流(${unit})`, '#22c55e', [
+      `定义:${ticker} TTM 自由现金流 = 经营现金流 − 资本开支。` + SEC_CAVEAT + srcNote,
       '',
       seller ? SELLER_FCF : BUYER_FCF_READ,
       '',
       ...(seller ? [] : [SEC_LEASE_CAVEAT, '']),
       SEC_TRIM_NOTE,
     ]),
-    paneOf(ticker, 'fcfq', '单季 FCF', `${ticker} 单季自由现金流(百万美元)`, undefined, [
-      `定义:${ticker} **单季**自由现金流 = 该季经营现金流 − 该季资本开支(不是 TTM)。` + SEC_CAVEAT,
+    paneOf(ticker, 'fcfq', '单季 FCF', `${ticker} 单季自由现金流(${unit})`, undefined, [
+      `定义:${ticker} **单季**自由现金流 = 该季经营现金流 − 该季资本开支(不是 TTM)。` + SEC_CAVEAT + srcNote,
       '',
       SEC_QUARTERLY_READ,
       '',
       ...(seller ? [] : [SEC_LEASE_CAVEAT, '']),
       SEC_TRIM_NOTE,
     ]),
-    paneOf(ticker, 'capex', 'capex', `${ticker} TTM 资本开支(百万美元)`, '#60a5fa', [
-      `定义:${ticker} TTM 资本开支(购置固定资产付现)。` + SEC_CAVEAT,
+    paneOf(ticker, 'capex', 'capex', `${ticker} TTM 资本开支(${unit})`, '#60a5fa', [
+      `定义:${ticker} TTM 资本开支(购置固定资产付现)。` + SEC_CAVEAT + srcNote,
       '',
       seller
         ? '定位:配角,和上面两条对读 —— 卖铲子的自身 capex 相对其 OCF 微不足道,这正是「卖铲子 vs 买铲子」现金流结构差异的直观佐证。真正吃 FCF 的是买方。'
@@ -984,6 +1005,9 @@ const buyerAggregatePane: PaneSpec = {
  */
 const SOURCE_PANES: Record<ChainSource, (ticker: string) => PaneSpec[]> = {
   sec: companyPanes,
+  // sec6k 的原始行落进同一张表、派生同一套 SEC_* 序列 → 格子构造也是同一个
+  // (只在说明里多一段口径差异,见 SEC6K_CAVEAT)。
+  sec6k: companyPanes,
   twse: twseCompanyPanes,
 };
 
@@ -992,7 +1016,14 @@ export function dimPanes(dim: RegimeDim): PaneSpec[] {
   if (!dim.startsWith('fundamentals:')) return REGIME_DIMS[dim as FixedDim].panes;
 
   const who = dim.slice('fundamentals:'.length);
-  return who === 'buyer' ? [buyerAggregatePane, buyerQuarterlyPane] : SOURCE_PANES[sourceOf(who)](who);
+  if (who === 'buyer') return [buyerAggregatePane, buyerQuarterlyPane];
+
+  // 一家可能走多个源(TSM:季度四格来自 sec6k、月营收两格来自 twse)—— 各源的格子按 sources
+  // 顺序拼起来。同一个 key 只留一次:sec 与 sec6k 共用 companyPanes,同时声明两者时会重。
+  const seen = new Set<string>();
+  return sourcesOf(who)
+    .flatMap((s) => SOURCE_PANES[s](who))
+    .filter((p) => !seen.has(p.key) && seen.add(p.key));
 }
 
 /** 从 panes[] 派生 PaneChartView 需要的平行 map(pane 定义 / 命名 / 配色 / 说明)。 */

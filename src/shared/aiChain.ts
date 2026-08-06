@@ -7,32 +7,62 @@
 export type SecSide = 'buyer' | 'seller';
 
 /**
- * 数据源。**不是所有公司都能走 SEC** —— 非美国发行人只报 20-F/6-K,拿不到季度 XBRL,
- * 所以名单里每家自带 source,job / 路由 / 面板都按 source 查表分派(见 SOURCE_KINDS)。
- *  · sec  = data.sec.gov companyfacts(季度四科目 → 毛利率/capex/FCF/单季 FCF)
- *  · twse = 台湾证交所 OpenAPI(月营收 + 月营收同比;官方、T+10 天)
- * 加新源时:加一个 ChainSource 值 → 在 SOURCE_KINDS 补它的格子 → 在 job 的分派表补 updater
- *          → 在面板的分派表补 pane 构造。四处都是查表,漏一处是编译错误而不是静默降级。
+ * 数据源。**不是所有公司都能走 SEC companyfacts** —— 非美国发行人只报 20-F/6-K,
+ * 拿不到季度 XBRL。所以名单里每家自带 sources,job / 路由 / 面板都按 source 查表分派。
+ *  · sec   = data.sec.gov companyfacts(季度四科目 → 毛利率/capex/FCF/单季 FCF)
+ *  · sec6k = TSM 交给 EDGAR 的季度合并财报 6-K(`tsm-fs*`)。HTML 报表,不是 XBRL,
+ *            但**能回填**(实测 13 份、2023Q1 起)且**含现金流**,所以四个科目全有。
+ *  · twse  = 台湾证交所 OpenAPI 月营收(官方、T+10 天,全链最快;不可回填)
+ * 加新源时:加一个 ChainSource 值 → SOURCE_KINDS 补它的格子 → SOURCE_NEEDS 声明它要哪个
+ *          标识符 → job 的分派表补 updater → 面板的分派表补 pane 构造。全是查表。
  */
-export type ChainSource = 'sec' | 'twse';
+export type ChainSource = 'sec' | 'sec6k' | 'twse';
 
-// 判别联合:SEC 那侧必须有 cik、TWSE 那侧必须有 twseCode —— 让「加了公司但忘了标识符」不可表达。
+/**
+ * 每个源要哪个标识符。**一家可以同时走多个源**(TSM:毛利率/FCF 走 sec6k、月营收走 twse)——
+ * 各测度的最佳来源本来就不同,硬塞进一个 source 会逼着二选一。
+ * 类型上两个标识符都可选,由 aiChain.test 的不变式测试保证「声明了源就得有对应标识符」——
+ * 判别联合表达不了「多源」这件事,而漏标识符会在 job 里变成运行时错误,故用测试兜。
+ */
+export const SOURCE_NEEDS: Record<ChainSource, 'cik' | 'twseCode'> = {
+  sec: 'cik',
+  sec6k: 'cik',
+  twse: 'twseCode',
+};
+
 // inChain=false:已启用、有 tab 可看,但**不作判据成员**——面板的名单文案不把它列进去,
 // 买方合计线也不收它(见 isAggregateMember)。给 INTC 用:它的毛利率是**供给侧读数**,
 // 与 NVDA/MU 的「稀缺溢价」符号相反(INTC 毛利率修复 = 新产能进场 = 溢价见顶的旁证),
 // 混在同一句「见顶回落 = 供给追上需求」里会读反。理由写在 COMPANY_NOTES.INTC。
-type Common = { ticker: string; side: SecSide; inChain?: boolean };
-type Company = (Common & { source?: 'sec'; cik: string }) | (Common & { source: 'twse'; twseCode: string });
+type Company = {
+  ticker: string;
+  side: SecSide;
+  inChain?: boolean;
+  /** 省略 = ['sec']。多数公司只走一个源。 */
+  sources?: ChainSource[];
+  cik?: string;
+  twseCode?: string;
+  /** 报表币种,省略 = 'USD'。面板标题与说明按它写单位 —— 新台币的数不能和美元的比大小。 */
+  currency?: 'USD' | 'TWD';
+};
 
 export const SEC_COMPANIES: Company[] = [
   // 卖铲子:看毛利率
   { ticker: 'NVDA', cik: '1045810', side: 'seller', inChain: true },
   { ticker: 'MU', cik: '723125', side: 'seller', inChain: true }, // 美光:毛利率 = DRAM/NAND 价格周期的免费代理
   { ticker: 'AMD', cik: '2488', side: 'seller', inChain: true }, // 加速器侧的第二家,与 NVDA 对读(见 COMPANY_NOTES)
-  // 代工:走 TWSE 而不是 SEC。TSM 的 SEC 侧实测只有**半年频**(180/181 天)且最新一期停在
-  // 2024-12-31(ifrs-full 命名空间下四科目都在,但期间粒度和时效都不能用)。
-  // TWSE 月营收反而是整条链里最快的读数(每月 10 日左右,T+10)。
-  { ticker: 'TSM', twseCode: '2330', source: 'twse', side: 'seller', inChain: true },
+  // 代工:**两个源各管一半**。companyfacts 那条不行(ifrs-full 下四科目都在,但期间只有
+  // 半年/全年、且最新一期停在 2024-12-31),所以季度四科目走它交给 EDGAR 的季度合并财报 6-K,
+  // 月营收走 TWSE(T+10,全链最快)。报表币种是新台币。
+  {
+    ticker: 'TSM',
+    cik: '1046179',
+    twseCode: '2330',
+    sources: ['sec6k', 'twse'],
+    side: 'seller',
+    inChain: true,
+    currency: 'TWD',
+  },
   // 买铲子:进合计 FCF
   { ticker: 'MSFT', cik: '789019', side: 'buyer', inChain: true },
   { ticker: 'GOOGL', cik: '1652044', side: 'buyer', inChain: true },
@@ -54,19 +84,31 @@ export const ACTIVE_TICKERS = ['NVDA', 'MU', 'AMD', 'INTC', 'TSM', 'MSFT', 'ORCL
 
 const find = (ticker: string) => SEC_COMPANIES.find((c) => c.ticker === ticker);
 
-export const cikOf = (ticker: string): string | undefined => {
-  const c = find(ticker);
-  return c && (c.source ?? 'sec') === 'sec' ? (c as { cik: string }).cik : undefined;
-};
-export const twseCodeOf = (ticker: string): string | undefined => {
-  const c = find(ticker);
-  return c?.source === 'twse' ? c.twseCode : undefined;
-};
+/** sources 省略即 ['sec'] —— 多数公司只走 companyfacts,不必每行都写。 */
+export const sourcesOf = (ticker: string): ChainSource[] => find(ticker)?.sources ?? ['sec'];
+export const hasSource = (ticker: string, source: ChainSource): boolean => sourcesOf(ticker).includes(source);
+
+/** cik 只在这家真的走某个吃 cik 的源时才给 —— 否则 SEC job 会拿它去 companyfacts 白打一轮。 */
+export const cikOf = (ticker: string): string | undefined => (hasSource(ticker, 'sec') ? find(ticker)?.cik : undefined);
+/** sec6k 也吃 cik,但走的是 EDGAR Archives 而不是 companyfacts,故单独一个取值口。 */
+export const sec6kCikOf = (ticker: string): string | undefined =>
+  hasSource(ticker, 'sec6k') ? find(ticker)?.cik : undefined;
+export const twseCodeOf = (ticker: string): string | undefined =>
+  hasSource(ticker, 'twse') ? find(ticker)?.twseCode : undefined;
+
 export const sideOf = (ticker: string): SecSide | undefined => find(ticker)?.side;
-/** source 省略即 'sec' —— 多数公司走 SEC,不必每行都写。 */
-export const sourceOf = (ticker: string): ChainSource => find(ticker)?.source ?? 'sec';
-/** 某个源下、当前启用的标的(job 分派用)。 */
-export const activeBySource = (source: ChainSource): string[] => ACTIVE_TICKERS.filter((t) => sourceOf(t) === source);
+export const currencyOf = (ticker: string): 'USD' | 'TWD' => find(ticker)?.currency ?? 'USD';
+
+/** 某个源下、当前启用的标的(job 分派用)。一家可能出现在多个源里。 */
+export const activeBySource = (source: ChainSource): string[] => ACTIVE_TICKERS.filter((t) => hasSource(t, source));
+
+/**
+ * 原始行落在 `sec_fundamentals` 表里的那些源 —— 派生量(TTM / 毛利率 / FCF)对它们是同一套算法,
+ * 所以 writeDerived 的范围是这个并集,不是单个源。少了 sec6k 那家的线永远不出。
+ */
+export const SEC_TABLE_SOURCES: ChainSource[] = ['sec', 'sec6k'];
+export const activeInSecTable = (): string[] =>
+  ACTIVE_TICKERS.filter((t) => SEC_TABLE_SOURCES.some((s) => hasSource(t, s)));
 
 // ── 对外序列键(路由与面板必须用同一套,故在此定义一次)────────────────────────
 
@@ -80,10 +122,9 @@ export const activeBySource = (source: ChainSource): string[] => ACTIVE_TICKERS.
  */
 export const SOURCE_KINDS = {
   sec: ['gm', 'capex', 'fcf', 'fcfq'],
-  // gm 与 SEC 那侧同名但**不同口径**:TWSE 走季度综合损益表(营收 − 营业成本)、单季值;
-  // SEC 那侧是 TTM。同名是故意的 —— 面板标签一致,读法差异写在各自的 desc 里。
-  // 库里的 series_id 因此必须按源分开(TWSE_*_GM vs SEC_*_GM_TTM),见路由的 SERIES_ID。
-  twse: ['gm', 'revM', 'revYoy'],
+  // sec6k 产出的原始行落进同一张 sec_fundamentals 表,派生量走同一套算法 → 格子种类相同。
+  sec6k: ['gm', 'capex', 'fcf', 'fcfq'],
+  twse: ['revM', 'revYoy'],
 } as const satisfies Record<ChainSource, readonly string[]>;
 
 export type SecKind = (typeof SOURCE_KINDS)['sec'][number];
@@ -91,8 +132,14 @@ export type TwseKind = (typeof SOURCE_KINDS)['twse'][number];
 export type FundKind = SecKind | TwseKind;
 
 export const SEC_KINDS: readonly SecKind[] = SOURCE_KINDS.sec;
-/** 这家会有哪几个格子 —— 面板与路由都从这里派生,加源不用改它们。 */
-export const kindsOf = (ticker: string): readonly FundKind[] => SOURCE_KINDS[sourceOf(ticker)];
+
+/**
+ * 这家会有哪几个格子 = 它各个源的格子并集(去重,按 sources 顺序)。
+ * 面板与路由都从这里派生,加源/加公司都不用改它们。
+ */
+export const kindsOf = (ticker: string): readonly FundKind[] => [
+  ...new Set(sourcesOf(ticker).flatMap((s) => SOURCE_KINDS[s] as readonly FundKind[])),
+];
 
 /** 因果链内的标的(面板文案列出这些,不列备查的那几家)。 */
 export const chainTickers = (side: SecSide): string[] =>

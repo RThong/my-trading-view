@@ -26,6 +26,7 @@ import {
 import {
   REQUIRED_CONCEPTS_BY_SIDE,
   activeBySource,
+  activeInSecTable,
   cikOf,
   expectedCapexScope,
   isAggregateMember,
@@ -61,7 +62,11 @@ const key = (r: MarketSeriesRow) => `${r.seriesId}@${r.obsDate}=${r.value}`;
  *
  * 删而不是只 upsert:名单缩小或历史点减少时,旧点会残留成一条口径不一的线,upsert 清不掉。
  */
-function writeDerived(db: Database, active: string[], examine: string[]): { written: number; problems: string[] } {
+export function writeDerivedSecSeries(
+  db: Database,
+  active: string[],
+  examine: string[],
+): { written: number; problems: string[] } {
   // 体检范围 = 启用名单 ∪ 本轮抓过的(单跑核对某家时它还没进启用名单,但那正是最该体检的时刻)。
   const all = [...new Set([...active, ...examine])].map((t) => [t, getSecFundamentals(db, t)] as const);
 
@@ -281,7 +286,7 @@ export async function updateSecFundamentals(
 
   // 无条件重算但只在结果有变化时才写(见 writeDerived):没变化的那几周仍是零写入。
   // 完整性问题每轮复发,并入 failed —— 有问题时 job 记 partial,状态灯不会绿。
-  const { written, problems } = writeDerived(db, active, fetched);
+  const { written, problems } = writeDerivedSecSeries(db, activeInSecTable(), fetched);
   failed.push(...problems);
 
   return { fetched, skipped, failed, fallback, rowsWritten, seriesWritten: written };

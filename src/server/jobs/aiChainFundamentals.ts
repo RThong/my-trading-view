@@ -2,7 +2,8 @@ import { openDb, migrate } from '../storage/db';
 import { startJobRun, finishJobRun } from '../storage/repository';
 import { updateSecFundamentals } from './secFundamentals';
 import { updateTwseRevenue } from './twseRevenue';
-import { ACTIVE_TICKERS, sourceOf, type ChainSource } from '../../shared/aiChain';
+import { updateSec6kReports } from './tsmcReports';
+import { ACTIVE_TICKERS, hasSource, type ChainSource } from '../../shared/aiChain';
 
 /**
  * AI 链基本面 job 的**统一入口**:按名单里每家的 source 分派到对应的更新器。
@@ -20,7 +21,11 @@ import { ACTIVE_TICKERS, sourceOf, type ChainSource } from '../../shared/aiChain
  */
 
 /** job_run 里各源记的名字。分开记:TWSE 挂了不该把 SEC 那条状态灯也弄黄。 */
-const JOB_NAMES: Record<ChainSource, string> = { sec: 'sec_fundamentals', twse: 'twse_revenue' };
+const JOB_NAMES: Record<ChainSource, string> = {
+  sec: 'sec_fundamentals',
+  sec6k: 'sec6k_reports',
+  twse: 'twse_revenue',
+};
 
 type Outcome = {
   fetched: string[];
@@ -55,8 +60,21 @@ const RUNNERS: Record<ChainSource, Runner> = {
     };
   },
 
+  async sec6k(db, tickers, force) {
+    const only = tickers?.filter((t) => hasSource(t, 'sec6k'));
+    const r = await updateSec6kReports(db, { force, tickers: only });
+    return {
+      fetched: r.fetched,
+      skipped: r.skipped,
+      failed: r.failed,
+      written: r.rowsWritten + r.seriesWritten,
+      nothingWorked: r.fetched.length === 0 && r.skipped.length === 0,
+      log: `SEC6K: fetched=[${r.fetched}] skipped=[${r.skipped}] failed=[${r.failed}] rows=${r.rowsWritten} series=${r.seriesWritten}`,
+    };
+  },
+
   async twse(db, tickers, force) {
-    const only = tickers?.filter((t) => sourceOf(t) === 'twse');
+    const only = tickers?.filter((t) => hasSource(t, 'twse'));
     // 指定了 TICKER 但没有一个走 TWSE → 本源无事可做,不该记一条空 run。
     const r = await updateTwseRevenue(db, { force, tickers: only });
     return {
@@ -82,7 +100,7 @@ if (import.meta.main) {
 
   // 只跑「本轮真的有活」的源:指定了 TICKER 时,没被指到的源整个跳过,不记空 run。
   const sources = (Object.keys(RUNNERS) as ChainSource[]).filter(
-    (s) => !tickers || tickers.some((t) => sourceOf(t) === s),
+    (s) => !tickers || tickers.some((t) => hasSource(t, s)),
   );
 
   const db = openDb();
