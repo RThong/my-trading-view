@@ -66,6 +66,15 @@ export const flattenHtml = (html: string): string =>
     .replace(/[ \t\r\n]+/g, ' ');
 
 /**
+ * 一个行标签和它的第一个数字之间最多隔几个单元格。表格里通常是 `标签|$|数字`(隔 1~2 格),
+ * 留 8 格余量。**这个上限是必需的守卫**:没有它,标签匹配到散文时会一路扫到下一张表,
+ * 把别人的数字当成自己的 —— 实测踩过:「Gross profit」先命中指引句
+ * 「Gross profit margin is expected to be between 65% and 67%」,然后扫到表格里 Net sales 的
+ * 1,270,381,算出 cogs = 0。
+ */
+const MAX_CELLS_TO_FIRST_NUMBER = 8;
+
+/**
  * 从某个行标签起,顺序取前 n 个「数字单元格」的值。
  * 负号有**两种写法**,都得吃:`(350,762,799)` 与 `(628,052,531|)`(右括号被拆到下一格)。
  */
@@ -78,6 +87,8 @@ function numsAfter(txt: string, label: string, n: number, from = 0): number[] {
   for (let k = 0; k < cells.length && out.length < n; k++) {
     const c = cells[k]!.trim();
     if (!/^\(?[\d,]+\)?$/.test(c) || !/\d/.test(c)) continue;
+    // 第一个数字离标签太远 = 这不是那一行,是标签撞进了散文里。宁可空着让上层抛。
+    if (out.length === 0 && k > MAX_CELLS_TO_FIRST_NUMBER) return [];
 
     const neg = c.startsWith('(') || cells[k + 1]?.trim() === ')';
     out.push((neg ? -1 : 1) * Number(c.replace(/[(),]/g, '')));
@@ -171,6 +182,73 @@ export function toCompanyFacts(rows: Array<{ filing: FsFiling; ytd: TsmcYtd }>):
   return { facts: { 'us-gaap': Object.fromEntries(entries) } };
 }
 
+// ── 财报稿(T+16,只有营收与毛利)────────────────────────────────────────────
+
+/**
+ * 财报稿 6-K 里那张「consolidated results」小表。**比合并报表早约一个月**
+ * (实测申报日 T+16~17 对报表的 T+45),代价是只有利润表顶部几行 —— **没有现金流**,
+ * 所以 FCF 还是得等报表。
+ *
+ * ⚠️ 三件事和报表那条不同,混了就是数量级错误或口径错误:
+ *  1. **单位是 NT$ million**(报表是 thousand)。相差 1000 倍。
+ *  2. 值是**单季**,不是年初至今累计 —— 直接当单季行落库,不进差分。
+ *  3. 数字**未经会计师核阅、未经董事会通过**(原文 "figures have not been approved by
+ *     Board of Directors")。报表到了会按 filed 更大覆盖它,差异由 job 比对报警。
+ *
+ * 给的是毛利(Gross profit)而不是成本,故 cogs = 营收 − 毛利。
+ */
+export type TsmcRelease = { periodEnd: string; revenueM: number; cogsM: number };
+
+const RELEASE_UNIT_RE = /\(Unit[^)]*NT\$\s*million/i;
+
+export function parseEarningsRelease(html: string, periodEnd: string): TsmcRelease {
+  const txt = flattenHtml(html);
+
+  // 单位必须自己确认过才敢用 —— 这张表若哪天改成千元,静默换算就是 1000 倍错误。
+  // 这个表头同时当**表格锚点**:文里前半段是散文与下季指引,「Gross profit」会先撞上
+  // 「Gross profit margin is expected to be between 65% and 67%」。实测踩过,算出 cogs = 0。
+  const unitAt = txt.search(RELEASE_UNIT_RE);
+  if (unitAt < 0) throw new Error('TSM 财报稿:没确认到「Unit: NT$ million」表头,拒绝按百万换算');
+
+  const table = txt.slice(unitAt);
+  const rev = numsAfter(table, 'Net sales', 1);
+  const gross = numsAfter(table, 'Gross profit', 1);
+  if (rev[0] === undefined || gross[0] === undefined) throw new Error('TSM 财报稿:Net sales / Gross profit 没解析出来');
+  // 毛利不可能 >= 营收;相等就说明两个标签命中了同一格(正是上面那个坑的症状)。
+  if (gross[0] >= rev[0]) throw new Error(`TSM 财报稿:毛利(${gross[0]})不小于营收(${rev[0]}),解析对错了行`);
+
+  return { periodEnd, revenueM: rev[0], cogsM: rev[0] - gross[0] };
+}
+
+const MILLIONS_TO_UNITS = 1_000_000;
+
+/** 财报稿 → **直接单季行**(start 是本季初)。下游的「直接单季行优先于差分」会自然接住。 */
+export function releaseToCompanyFacts(rows: Array<{ filing: FsFiling; rel: TsmcRelease }>): CompanyFacts {
+  const quarterStart = (periodEnd: string) => {
+    const [y, m] = periodEnd.split('-').map(Number);
+    return `${y}-${String(m! - 2).padStart(2, '0')}-01`; // 06-30 → 04-01
+  };
+
+  const mk = (concept: 'revenueM' | 'cogsM'): FactRow[] =>
+    rows.map(({ filing, rel }) => ({
+      start: quarterStart(rel.periodEnd),
+      end: rel.periodEnd,
+      val: rel[concept] * MILLIONS_TO_UNITS,
+      accn: filing.accn,
+      form: '10-Q', // 同 toCompanyFacts:为了进 periodsForTag 的定期报告白名单
+      filed: filing.filed,
+    }));
+
+  return {
+    facts: {
+      'us-gaap': {
+        [AS_TAG.revenue]: { units: { USD: mk('revenueM') } },
+        [AS_TAG.cogs]: { units: { USD: mk('cogsM') } },
+      },
+    },
+  };
+}
+
 // ── 抓取 ──────────────────────────────────────────────────────────────────────
 
 export function createTsmcFetcher(doFetch: FetchFn = fetchWithTimeout) {
@@ -220,6 +298,57 @@ export function createTsmcFetcher(doFetch: FetchFn = fetchWithTimeout) {
       if (!doc?.name) throw new Error(`TSM 6-K ${accn}: 目录里没有合并报表正文`);
 
       return (await get(`${dir}/${doc.name}`, doFetch, REPORT_TIMEOUT_MS)).text();
+    },
+
+    /**
+     * 财报稿 6-K,按期末升序。封面名形如 `tsm-20260716x6k.htm` —— 这个模式是稳定的,
+     * 而月营收(`tsm-revenue*`)、月度例行(`tsm-monthend*`)、报表(`tsm-fs*`)都另有前缀,
+     * 不会混进来。
+     */
+    async listEarningsReleases(cik: string): Promise<FsFiling[]> {
+      const body = (await (
+        await get(`https://data.sec.gov/submissions/CIK${cik.padStart(10, '0')}.json`, doFetch)
+      ).json()) as Submissions;
+      const {
+        form = [],
+        filingDate = [],
+        reportDate = [],
+        accessionNumber = [],
+        primaryDocument = [],
+      } = body.filings?.recent ?? {};
+
+      return primaryDocument
+        .flatMap((doc, i) =>
+          form[i] === '6-K' &&
+          /^tsm-\d{8}x6k\.htm$/i.test(doc ?? '') &&
+          reportDate[i] &&
+          accessionNumber[i] &&
+          filingDate[i]
+            ? [{ accn: accessionNumber[i]!, filed: filingDate[i]!, periodEnd: reportDate[i]! }]
+            : [],
+        )
+        .sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
+    },
+
+    /**
+     * 财报稿里那份 EX-99.1 正文。附件名实测是 `a{季}q{年}e_withguidancexfinal.htm`
+     * (跨 6 个季度一致),但仍留内容兜底:按名字挑不中就在其余 htm 里找含那张表的。
+     */
+    async fetchRelease(cik: string, accn: string): Promise<string> {
+      const dir = `${ARCHIVES}/${Number(cik)}/${accn.replace(/-/g, '')}`;
+      const idx = (await (await get(`${dir}/index.json`, doFetch)).json()) as DirIndex;
+
+      const htms = (idx.directory?.item ?? [])
+        .map((i) => i.name ?? '')
+        .filter((n) => /\.htm$/i.test(n) && !/index/i.test(n) && !/^tsm-/i.test(n));
+      // 命名模式优先,其余按体积从大到小试 —— 那张表在 EX-99.1 里,不在 6-K 封面。
+      const ordered = [...htms.filter((n) => /^a\dq\d\de/i.test(n)), ...htms.filter((n) => !/^a\dq\d\de/i.test(n))];
+
+      for (const name of ordered) {
+        const html = await (await get(`${dir}/${name}`, doFetch)).text();
+        if (/Net sales/i.test(html) && /Gross profit/i.test(html)) return html;
+      }
+      throw new Error(`TSM 财报稿 ${accn}: 没有一份附件含「Net sales / Gross profit」那张表`);
     },
   };
 }

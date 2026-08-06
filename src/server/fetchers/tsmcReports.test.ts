@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { parseTsmcReport, toCompanyFacts, type FsFiling } from './tsmcReports';
+import {
+  parseEarningsRelease,
+  parseTsmcReport,
+  releaseToCompanyFacts,
+  toCompanyFacts,
+  type FsFiling,
+} from './tsmcReports';
 import { extractFundamentals } from '../analytics/secFundamentals';
 
 // 三种列结构各造一份最小片段。真实报表 4MB,这里只留决定解析对错的那几行。
-const cell = (xs: (string | number)[]) => xs.map(String).join('|');
-
 /** Q1 / 年报:利润表两列(本期 + 去年同期),每列「金额 + %」两格。 */
 const twoCol = (rev: number, cogs: number, ocf: number, capex: number) =>
   `<p>CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME</p><table><tr><td>2026</td><td>2025</td></tr>` +
@@ -104,5 +108,85 @@ describe('toCompanyFacts', () => {
 
     // 实测 Q2 2025 单季营收 933,791,869 千元 = 1,773,045,533 − 839,253,664。
     expect(q2.value).toBe(933_791_869_000);
+  });
+});
+
+// ── 财报稿(T+16)─────────────────────────────────────────────────────────────
+
+/** 财报稿的真实形状:**指引散文在前、表格在后**,而指引里有「Gross profit margin」。 */
+const release = (rev: number, gross: number, unit = 'NT$ million') =>
+  `<p>TSMC Reports Second Quarter EPS of NT$27.25</p>` +
+  `<p>Gross margin for the quarter was 67.7%, operating margin was 60.3%.</p>` +
+  // ⚠️ 这句是坑:它在表格之前,且含「Gross profit」。
+  `<p>Gross profit margin is expected to be between 65% and 67%</p>` +
+  `<p>Operating profit margin is expected to be between 56% and 58%.</p>` +
+  `<p>TSMC's 2026 second quarter consolidated results (Unit: ${unit}, except for EPS)</p><table>` +
+  `<tr><td>2Q26</td><td>2Q25</td><td>YoY %</td><td>1Q26</td><td>QoQ %</td></tr>` +
+  `<tr><td>Net sales</td><td>${rev.toLocaleString('en-US')}</td><td>933,792</td><td>36.0</td><td>1,134,103</td><td>12.0</td></tr>` +
+  `<tr><td>Gross profit</td><td>${gross.toLocaleString('en-US')}</td><td>547,369</td><td>57.2</td><td>751,295</td><td>14.5</td></tr>` +
+  `<tr><td>Income from operations</td><td>766,603</td><td>463,423</td><td>65.4</td><td>658,966</td><td>16.3</td></tr>` +
+  `</table>`;
+
+describe('parseEarningsRelease', () => {
+  test('锚在「Unit」表头之后 —— 否则 Gross profit 会命中前面的指引句', () => {
+    // 实测踩过:不锚定时 gross 扫到表格里 Net sales 的 1,270,381,算出 cogs = 0。
+    const r = parseEarningsRelease(release(1_270_381, 860_311), '2026-06-30');
+
+    expect(r).toEqual({ periodEnd: '2026-06-30', revenueM: 1_270_381, cogsM: 410_070 });
+    // 与合并报表交叉验证:410,070 百万 = 报表的 410,070,xxx 千元。
+    expect(((r.revenueM - r.cogsM) / r.revenueM) * 100).toBeCloseTo(67.72, 2);
+  });
+
+  test('单位不是 million 就抛 —— 静默按百万换算是 1000 倍错误', () => {
+    expect(() => parseEarningsRelease(release(1, 0, 'NT$ thousand'), '2026-06-30')).toThrow(/拒绝按百万换算/);
+  });
+
+  test('毛利 >= 营收 就抛(两个标签命中同一格的症状)', () => {
+    expect(() => parseEarningsRelease(release(1_270_381, 1_270_381), '2026-06-30')).toThrow(/不小于营收/);
+  });
+
+  test('只有散文没有表 → 抛,不硬凑出一个数', () => {
+    // 两个标签都会扫到后面那个孤立的 999 → 被「毛利不小于营收」拦下。
+    // (距离守卫拦不住这一例:整段散文是**一个**单元格,数字反而离得近。两条守卫互补。)
+    const prose =
+      '<p>(Unit: NT$ million)</p><p>Net sales grew strongly this quarter across all of our leading-edge nodes ' +
+      'and advanced packaging services, with particular strength in high performance computing.</p>' +
+      '<p>Gross profit also improved.</p><table><tr><td>999</td></tr></table>';
+    expect(() => parseEarningsRelease(prose, '2026-06-30')).toThrow();
+  });
+
+  test('距离守卫:标签与数字之间隔了 8 个以上非空单元格 → 当作没找到', () => {
+    // 空单元格不算距离(flattenHtml 会把连续的 | 折成一个),所以这里用文字单元格制造距离。
+    const filler = Array.from({ length: 10 }, (_, i) => `<td>note ${i}</td>`).join('');
+    const far =
+      `<p>(Unit: NT$ million)</p><table><tr><td>Net sales</td>${filler}<td>1,270,381</td></tr>` +
+      '<tr><td>Gross profit</td><td>860,311</td></tr></table>';
+    expect(() => parseEarningsRelease(far, '2026-06-30')).toThrow(/没解析出来/);
+  });
+});
+
+describe('releaseToCompanyFacts', () => {
+  const f: FsFiling = { accn: 'rel', filed: '2026-07-16', periodEnd: '2026-06-30' };
+  const rel = { periodEnd: '2026-06-30', revenueM: 1_270_381, cogsM: 410_070 };
+
+  test('百万 → 元,且是**直接单季行**(start 为本季初),不进 YTD 差分', () => {
+    const facts = releaseToCompanyFacts([{ filing: f, rel }]);
+    const row = facts.facts!['us-gaap']!.Revenues!.units!.USD![0]!;
+
+    expect(row.val).toBe(1_270_381_000_000);
+    expect(row.start).toBe('2026-04-01'); // 06-30 → 04-01,不是 01-01
+    expect(row.end).toBe('2026-06-30');
+  });
+
+  test('只给营收与成本 —— 现金流不在财报稿里,FCF 仍得等报表', () => {
+    const tags = Object.keys(releaseToCompanyFacts([{ filing: f, rel }]).facts!['us-gaap']!);
+    expect(tags).toEqual(['Revenues', 'CostOfRevenue']);
+  });
+
+  test('落库后单季值直接可用(无需相邻期相减)', () => {
+    const out = extractFundamentals('TSM', releaseToCompanyFacts([{ filing: f, rel }]));
+    const rev = out.find((r) => r.concept === 'revenue')!;
+
+    expect(rev).toMatchObject({ periodEnd: '2026-06-30', value: 1_270_381_000_000, accn: 'rel' });
   });
 });
