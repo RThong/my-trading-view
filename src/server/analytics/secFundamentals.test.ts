@@ -312,7 +312,7 @@ describe('TTM', () => {
   });
 });
 
-test('派生量:毛利率百分点、金额百万美元、FCF 可负', () => {
+describe('派生量', () => {
   const mk = (concept: string, vals: number[]) =>
     ['2025-04-27', '2025-07-27', '2025-10-26', '2026-01-25'].map((periodEnd, i) => ({
       ticker: 'X',
@@ -326,16 +326,30 @@ test('派生量:毛利率百分点、金额百万美元、FCF 可负', () => {
       fiscalQ: ['2025Q1', '2025Q2', '2025Q3', '2025Q4'][i]!,
     }));
 
-  const { gmTtm, capexTtm, fcfTtm } = deriveSeries([
-    ...mk('revenue', [100e6, 100e6, 100e6, 100e6]),
-    ...mk('cogs', [40e6, 40e6, 40e6, 40e6]),
-    ...mk('ocf', [10e6, 10e6, 10e6, 10e6]),
-    ...mk('capex', [20e6, 20e6, 20e6, 20e6]),
-  ]);
+  test('毛利率百分点、金额百万美元、FCF 可负', () => {
+    const { gmTtm, capexTtm, fcfTtm } = deriveSeries([
+      ...mk('revenue', [100e6, 100e6, 100e6, 100e6]),
+      ...mk('cogs', [40e6, 40e6, 40e6, 40e6]),
+      ...mk('ocf', [10e6, 10e6, 10e6, 10e6]),
+      ...mk('capex', [20e6, 20e6, 20e6, 20e6]),
+    ]);
 
-  expect(gmTtm).toEqual([{ date: '2026-01-25', value: 60, fiscalQ: '2025Q4' }]);
-  expect(capexTtm.at(-1)).toMatchObject({ date: '2026-01-25', value: 80 });
-  expect(fcfTtm.at(-1)).toMatchObject({ date: '2026-01-25', value: -40 });
+    expect(gmTtm).toEqual([{ date: '2026-01-25', value: 60, fiscalQ: '2025Q4' }]);
+    expect(capexTtm.at(-1)).toMatchObject({ date: '2026-01-25', value: 80 });
+    expect(fcfTtm.at(-1)).toMatchObject({ date: '2026-01-25', value: -40 });
+  });
+
+  // ORCL 实测形态:CostOfRevenue 在 2009 那几期被标成恰好 0(当季实际约 15 亿),
+  // 差分出的 0−0 也是 0。照单全收会让 TTM 成本少一截、毛利率虚高,而且**不报错**。
+  test('恰好为 0 的科目行不进派生 —— 宁可断档,不要一条虚高的毛利率', () => {
+    const { gmTtm } = deriveSeries([
+      ...mk('revenue', [100e6, 100e6, 100e6, 100e6]),
+      ...mk('cogs', [40e6, 0, 40e6, 40e6]),
+    ]);
+
+    // 收下那个 0 会算出 70%(真值 60%)。丢掉它 → 成本只剩三季 → TTM 无窗口 → 断档。
+    expect(gmTtm).toEqual([]);
+  });
 });
 
 describe('尾部连续段裁剪', () => {

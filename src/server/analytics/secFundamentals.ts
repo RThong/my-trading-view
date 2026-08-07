@@ -421,12 +421,29 @@ function combine(a: QuarterPoint[], b: QuarterPoint[], f: (x: number, y: number)
 
 type DerivedSeries = { gmTtm: QuarterPoint[]; capexTtm: QuarterPoint[]; fcfTtm: QuarterPoint[]; fcfQ: QuarterPoint[] };
 
+/**
+ * 恰好为 0 的单季值一律当缺数据丢掉。**不是「这季真的是 0」,是 tag 的假身份**,两种来源:
+ *  · 直接标的 0 —— ORCL 2009-02-28 / 2009-11-30 的 `CostOfRevenue` 就是 0,而当季真实成本约 15 亿:
+ *    成本那时记在 `CostOfServices` 下,这个 tag 只是留着占位。
+ *  · 差分出的 0 —— 两条累计行同为 0(ORCL FY2009)相减,或某期换 tag 导致两腿是同一个数。
+ * 危害在于**不报错**:成本吞掉一季 → TTM 少一截 → 毛利率虚高,图上就是一根真假难辨的尖刺,
+ * 而这组判据读的正是毛利率的斜率。丢掉 → 断档 → 一眼看得出是缺数据(同 trailingContiguous 的理由)。
+ *
+ * 库里原始行保留,只在派生时丢:落库那层要能溯源到底是哪次申报给的这个 0。
+ *
+ * 上限:某家真有一季 capex 恰好为 0 会被误丢。当前名单全是重资产大盘股,四个科目都不可能。
+ * 哪天进了轻资产标的,这里要改成按 concept 区分。
+ */
+const dropSuspectZero = (rows: SecFundamentalRow[]): SecFundamentalRow[] => rows.filter((r) => r.value !== 0);
+
 /** 单季行 → 三条 TTM 派生量。毛利率单位百分点,金额单位百万美元(与 netLiquidity 等现有序列一致)。 */
 export function deriveSeries(rows: SecFundamentalRow[]): DerivedSeries {
-  const of = (c: Concept) => ttm(rows.filter((r) => r.concept === c));
+  const clean = dropSuspectZero(rows);
+
+  const of = (c: Concept) => ttm(clean.filter((r) => r.concept === c));
   // 单季:直接用库里的单季行(TTM 就是在它之上加出来的),不用重算。
   const quarterly = (c: Concept): QuarterPoint[] =>
-    rows.filter((r) => r.concept === c).map((r) => ({ date: r.periodEnd, value: r.value, fiscalQ: r.fiscalQ }));
+    clean.filter((r) => r.concept === c).map((r) => ({ date: r.periodEnd, value: r.value, fiscalQ: r.fiscalQ }));
 
   const [revenue, cogs, ocf, capex] = [of('revenue'), of('cogs'), of('ocf'), of('capex')];
 
