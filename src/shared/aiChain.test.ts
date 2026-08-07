@@ -38,8 +38,6 @@ describe('AI 链名单', () => {
     // AAPL:不在 AI 链上(FCF 由 iPhone 主导)。DELL:整机厂,毛利率不反映芯片稀缺溢价。
     // AVGO:合并 VMware 后毛利率是「硅片定价权 + 软件占比」的混合,当稀缺溢价用不干净。
     for (const t of ['AAPL', 'DELL', 'AVGO']) expect(tickers).not.toContain(t);
-    // ASML:只报 20-F,这条管线一个 TTM 点都算不出;有价值的读数(季度 net bookings)在 IR 季报里。
-    expect(tickers).not.toContain('ASML');
   });
 
   test('启用名单里的每一家都在目录里', () => {
@@ -75,9 +73,11 @@ describe('源映射(表驱动)', () => {
   });
 
   test('分源名单:一家可出现在多个源里,并集覆盖全体启用名单', () => {
-    expect(activeBySource('sec6k')).toEqual(['TSM']);
+    expect(activeBySource('sec6k')).toEqual(['TSM', 'ASML']);
     expect(activeBySource('twse')).toEqual(['TSM']);
-    expect(activeBySource('sec')).not.toContain('TSM'); // 否则 SEC job 抛「unknown SEC ticker」
+    // 走 sec6k 的两家不能同时出现在 sec 那一路 —— 否则 SEC job 会拿它们去 companyfacts
+    // 白打一轮(那里只有年频),还会因为没有 10-Q 而报 failed。
+    for (const t of ['TSM', 'ASML']) expect(activeBySource('sec')).not.toContain(t);
 
     const union = new Set([...activeBySource('sec'), ...activeBySource('sec6k'), ...activeBySource('twse')]);
     expect([...union].sort()).toEqual([...ACTIVE_TICKERS].sort());
@@ -138,7 +138,7 @@ describe('面板分组', () => {
     // 直接卖加速器的两家,毛利率可横向比。
     expect(activeByGroup('accelerator')).toEqual(['NVDA', 'AMD']);
     // 代工 + 存储:都是「供给跟不跟得上」那一层。
-    expect(activeByGroup('upstream')).toEqual(['MU', 'TSM']);
+    expect(activeByGroup('upstream')).toEqual(['MU', 'TSM', 'ASML']);
     expect(activeByGroup('watch')).toEqual(['INTC']);
     expect(activeByGroup('cloud')).toEqual(['MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META']);
   });

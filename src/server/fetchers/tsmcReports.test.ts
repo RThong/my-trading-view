@@ -169,13 +169,18 @@ describe('releaseToCompanyFacts', () => {
   const f: FsFiling = { accn: 'rel', filed: '2026-07-16', periodEnd: '2026-06-30' };
   const rel = { periodEnd: '2026-06-30', revenueM: 1_270_381, cogsM: 410_070 };
 
-  test('百万 → 元,且是**直接单季行**(start 为本季初),不进 YTD 差分', () => {
+  test('百万 → 元,且是**直接单季行**(约 91 天跨度),不进 YTD 差分', () => {
     const facts = releaseToCompanyFacts([{ filing: f, rel }]);
     const row = facts.facts!['us-gaap']!.Revenues!.units!.USD![0]!;
 
     expect(row.val).toBe(1_270_381_000_000);
-    expect(row.start).toBe('2026-04-01'); // 06-30 → 04-01,不是 01-01
     expect(row.end).toBe('2026-06-30');
+    // start 表达的是「这是一个季度」而非精确季初:只有一期时退回「期末 − 91 天」。
+    // 关键是**不能是当年 1-1**(那会被当成 YTD 去差分)。
+    expect(row.start).not.toBe('2026-01-01');
+    const days = (Date.parse(row.end) - Date.parse(row.start!)) / 86_400_000;
+    expect(days).toBeGreaterThan(80);
+    expect(days).toBeLessThan(100);
   });
 
   test('只给营收与成本 —— 现金流不在财报稿里,FCF 仍得等报表', () => {

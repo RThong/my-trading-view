@@ -2,7 +2,7 @@ import { openDb, migrate } from '../storage/db';
 import { startJobRun, finishJobRun } from '../storage/repository';
 import { updateSecFundamentals } from './secFundamentals';
 import { updateTwseRevenue } from './twseRevenue';
-import { updateSec6kReports } from './tsmcReports';
+import { updateSec6kReports } from './sec6kReports';
 import { ACTIVE_TICKERS, hasSource, type ChainSource } from '../../shared/aiChain';
 
 /**

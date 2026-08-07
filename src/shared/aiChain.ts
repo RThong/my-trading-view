@@ -63,7 +63,7 @@ type Company = {
   cik?: string;
   twseCode?: string;
   /** 报表币种,省略 = 'USD'。面板标题与说明按它写单位 —— 新台币的数不能和美元的比大小。 */
-  currency?: 'USD' | 'TWD';
+  currency?: 'USD' | 'TWD' | 'EUR';
 };
 
 export const SEC_COMPANIES: Company[] = [
@@ -84,6 +84,19 @@ export const SEC_COMPANIES: Company[] = [
     group: 'upstream',
     currency: 'TWD',
   },
+  // 设备:同样是 FPI(荷兰),同样只能走季报 6-K。但比 TSM 好办 —— 它用 **US GAAP** 报、
+  // 报表**单季直给**(不用差分)、**T+16**(不是 T+45),而且报表自己印了毛利率可作自校验。
+  // ⚠️ 它 2026 年起**停发净订单(net bookings)**,最后一次是 2025Q4 —— 原先「ASML 的价值
+  // 在季度订单」那个理由已不成立,现在读的是已发生的出货与它自己的扩产,不是领先指标。
+  {
+    ticker: 'ASML',
+    cik: '937966',
+    sources: ['sec6k'],
+    side: 'seller',
+    inChain: true,
+    group: 'upstream',
+    currency: 'EUR',
+  },
   // 买铲子:进合计 FCF
   { ticker: 'MSFT', cik: '789019', side: 'buyer', inChain: true, group: 'cloud' },
   { ticker: 'GOOGL', cik: '1652044', side: 'buyer', inChain: true, group: 'cloud' },
@@ -94,14 +107,13 @@ export const SEC_COMPANIES: Company[] = [
   // 已移除:AAPL(不在 AI 链上,FCF 由 iPhone 主导)、DELL(整机厂,毛利率不反映芯片稀缺溢价)、
   // AVGO(合并了 VMware,毛利率是「AI 硅片定价权 + 软件占比」的混合读数,当稀缺溢价用不干净)。
   //
-  // 还进不来的:ASML(只报 20-F;有价值的是季度 net bookings,在 IR 季报里,另立需求)、
-  // SK 海力士(2026-07 才在美上市,companyfacts 无财务 XBRL;它的 6-K 只有营收与营业利润、
+  // 还进不来的:SK 海力士(2026-07 才在美上市,companyfacts 无财务 XBRL;它的 6-K 只有营收与营业利润、
   // **没有营业成本**,算不出毛利率 → 要毛利率得走韩国 DART,需要一个免费 API key)。
   { ticker: 'INTC', cik: '50863', side: 'seller', group: 'watch' },
 ];
 
 /** 已逐家核对过、可入库的标的。核对一家开一家 —— 未核对的进来会污染派生线。 */
-export const ACTIVE_TICKERS = ['NVDA', 'MU', 'AMD', 'INTC', 'TSM', 'MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META'];
+export const ACTIVE_TICKERS = ['NVDA', 'MU', 'AMD', 'INTC', 'TSM', 'ASML', 'MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META'];
 
 const find = (ticker: string) => SEC_COMPANIES.find((c) => c.ticker === ticker);
 
@@ -121,7 +133,7 @@ export const sideOf = (ticker: string): SecSide | undefined => find(ticker)?.sid
 export const groupOf = (ticker: string): ChainGroup | undefined => find(ticker)?.group;
 /** 某组里当前启用的标的,保持名单原顺序。 */
 export const activeByGroup = (group: ChainGroup): string[] => ACTIVE_TICKERS.filter((t) => groupOf(t) === group);
-export const currencyOf = (ticker: string): 'USD' | 'TWD' => find(ticker)?.currency ?? 'USD';
+export const currencyOf = (ticker: string): 'USD' | 'TWD' | 'EUR' => find(ticker)?.currency ?? 'USD';
 
 /** 某个源下、当前启用的标的(job 分派用)。一家可能出现在多个源里。 */
 export const activeBySource = (source: ChainSource): string[] => ACTIVE_TICKERS.filter((t) => hasSource(t, source));

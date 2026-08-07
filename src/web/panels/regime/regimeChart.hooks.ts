@@ -694,6 +694,17 @@ const COMPANY_NOTES: Record<string, string> = {
     '· 两个源交叉验证过:H1 2025 营收 6-K 报 1,773,045,533 千元,与 TWSE 月营收累计**完全一致**。\n' +
     '· 和 NVDA 对读:NVDA 的营收是 TSM 出货的下游结果,**TSM 月营收转弱会先于 NVDA 季报体现**;' +
     '毛利率则是「代工端议价权」,实测 2025Q2 58.6% → 2026Q1 66.2%,一路抬升。',
+  ASML:
+    '定位:**上游产能的最上游** —— EUV 光刻机的唯一供应商。它的出货是 TSM/存储厂真正扩产的物理前置。\n' +
+    '⚠️ **不要照 NVDA/MU 那套读它的毛利率**:ASML 是垄断,定价权一直在,毛利率长期稳在 50~54%,' +
+    '不随周期摆 —— 「见顶回落 = 供给追上需求」那条判据对它基本无效。\n' +
+    '真正有信息量的是另外两个:**营收**(已发生的设备出货 = 产能什么时候真的到位)、' +
+    '**capex**(它自己扩不扩产 = 对未来需求的下注)。\n' +
+    '⚠️ **领先指标已经没了**:ASML **2026 年起停止披露净订单(net bookings)**,最后一次是 2025Q4' +
+    '(实测 2026Q1/Q2 的新闻稿全文无 booking 字样,只剩一句「order intake remained extremely strong」)。' +
+    '所以这里能看到的全是**已发生**的,看不到未兑现的需求。\n' +
+    '⚠️ 单季 FCF 摆动极大(实测 2026Q1 −2,588 → Q2 +1,404 百万欧元),那是**营运资本节奏**' +
+    '(为 2027 扩产备料吃现金),不是 §6.14 那种「capex 吃穿现金流」—— 形状像,成因完全不同。',
   INTC:
     '⚠️ **不是判据成员**(名单文案里不列它,合计线也不收它),放这里是当**供给侧的反向读数**。\n' +
     '· 符号和 NVDA/MU 相反:那两家「毛利率见顶回落 = 供给追上需求」;INTC 是' +
@@ -902,30 +913,43 @@ function twseCompanyPanes(ticker: string): PaneSpec[] {
 }
 
 /** 金额格的单位标签。TSM 报表是新台币,和别家的美元数**不能比大小**。 */
-const MONEY_UNIT: Record<'USD' | 'TWD', string> = { USD: '百万美元', TWD: '百万新台币' };
+const MONEY_UNIT: Record<'USD' | 'TWD' | 'EUR', string> = { USD: '百万美元', TWD: '百万新台币', EUR: '百万欧元' };
 
 /**
  * 走 sec6k 源(季度合并财报 6-K)的额外口径说明 —— 数据不是 companyfacts 的 XBRL,
  * 是解析 HTML 报表来的,而且是 IFRS 而非 US GAAP。这两点都影响可比性。
  */
 const SEC6K_CAVEAT =
-  '\n⚠️ **这家的四个科目来自另一条源**:它是外国发行人,只报 20-F/6-K,companyfacts 里' +
-  '只有半年/全年且停在 2024-12-31。所以走它交给 EDGAR 的**季度合并财报 6-K**(`tsm-fs*`),' +
-  '解析 HTML 报表得到 —— 官方原文、可回填(实测 13 份、2023Q1 起),但**不是 XBRL**,' +
-  '所以没有 tag 级溯源(库里 tag_used 是为复用下游算法借的 us-gaap 名字,真溯源看同行的 accn)。\n' +
-  '· 口径是 **IFRS** 而非 US GAAP,币种是**新台币** —— 跨公司比绝对值前先看单位。\n' +
-  '· 时效:**毛利率约 T+16,FCF/capex 约 T+45**,两格会差一个季度 —— 不是 bug。\n' +
-  '  财报稿(T+16)只给营收与毛利,现金流一定要等合并报表(T+45,台湾证交法 45 日的法定期限)。\n' +
-  '  所以毛利率走「财报稿先补、报表到了按 filed 更大覆盖」;财报稿是**未经会计师核阅**的\n' +
-  '  管理层数,job 每轮拿它和最近一个已核阅季度对一次,差超 0.5% 就报警(实测只差舍入)。\n' +
-  '· 要更快的读数看月营收那两格(T+10)。';
+  '\n⚠️ **这家的四个科目来自另一条源**:它是**外国私人发行人(FPI)**,豁免 10-Q,季报以 6-K 提交' +
+  '且**不强制 XBRL 标记** —— companyfacts 因此只有年频。所以走它交给 EDGAR 的季报 6-K,' +
+  '解析 HTML 报表得到:官方原文、可回填,但**不是 XBRL**,没有 tag 级溯源' +
+  '(库里 tag_used 是为复用下游算法借的 us-gaap 名字,真溯源看同行的 accn)。\n' +
+  '· 跨公司比绝对值前先看单位 —— 币种见本格标题。';
+
+/** 走 6-K 那条的各家,各自的口径与时效差异。 */
+const SEC6K_NOTES: Record<string, string> = {
+  TSM:
+    '· 口径是 **IFRS** 而非 US GAAP。报表只给年初至今累计,单季由相邻两期相减还原。\n' +
+    '· 时效:**毛利率约 T+16,FCF/capex 约 T+45**,两格会差一个季度 —— 不是 bug。' +
+    '财报稿(T+16)只给营收与毛利,现金流一定要等合并报表(T+45,台湾证交法 45 日的法定期限)。' +
+    '毛利率走「财报稿先补、报表到了按 filed 更大覆盖」;财报稿是**未经会计师核阅**的管理层数,' +
+    'job 每轮拿它和最近一个已核阅季度对一次,差超 0.5% 就报警(实测只差舍入)。',
+  ASML:
+    '· 口径**真的是 US GAAP**(ASML 是少见的用美国准则报的外国发行人),币种欧元。\n' +
+    '· 报表**单季直给**,不用差分;**T+16~17** 就出(实测 2026-06-28 那期 07-15 交),' +
+    '四个科目同时到位 —— 没有 TSM 那种「毛利率先到、FCF 后到」的错位。\n' +
+    '· 解析有自校验:报表自己印了本期毛利率,算出来的对不上就抛(它的本期在**第 2 列**,' +
+    '与 TSM 相反,取错列不会报错只会静默拿到去年的数)。',
+};
 
 function companyPanes(ticker: string): PaneSpec[] {
   const seller = sideOf(ticker) === 'seller';
   const note = COMPANY_NOTES[ticker];
   const unit = MONEY_UNIT[currencyOf(ticker)];
   // 走 6-K 那条的公司要多一段口径说明;走 companyfacts 的不用。
-  const srcNote = hasSource(ticker, 'sec6k') ? SEC6K_CAVEAT : '';
+  const srcNote = hasSource(ticker, 'sec6k')
+    ? SEC6K_CAVEAT + (SEC6K_NOTES[ticker] ? `\n${SEC6K_NOTES[ticker]}` : '')
+    : '';
 
   return [
     paneOf(ticker, 'gm', '毛利率', `${ticker} TTM 毛利率(%)`, '#eab308', [

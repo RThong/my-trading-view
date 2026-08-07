@@ -1,5 +1,17 @@
-import { fetchWithTimeout } from './http';
-import type { CompanyFacts, FactRow } from '../analytics/secFundamentals';
+import {
+  AS_TAG,
+  defaultFetch,
+  fetchReportDoc,
+  flattenHtml,
+  get,
+  listQuarterly6K,
+  numsAfter,
+  toCompanyFacts as packFacts,
+  type FetchFn,
+  type FsFiling,
+  type Sec6kValues,
+} from './sec6k';
+import type { CompanyFacts } from '../analytics/secFundamentals';
 
 /**
  * TSM 交给 EDGAR 的**季度合并财报 6-K**(主文件名形如 `tsm-fsx20260515x6k.htm`)。
@@ -16,88 +28,11 @@ import type { CompanyFacts, FactRow } from '../analytics/secFundamentals';
  * 时效:季后约 45 天(实测 2026-03-31 那期 2026-05-15 交)。要更快的读数看 TWSE 月营收(T+10)。
  */
 
-const ARCHIVES = 'https://www.sec.gov/Archives/edgar/data';
+/** 一份季报 6-K 的定位信息(从 sec6k 转出,方便本模块的调用方只 import 一处)。 */
+export type { FsFiling } from './sec6k';
 
-function userAgent(): string {
-  const ua = process.env.SEC_USER_AGENT;
-  if (!ua) throw new Error('SEC_USER_AGENT is required (格式:「应用名 邮箱」,见 .env.example)');
-
-  return ua;
-}
-
-type FetchFn = (url: string, init?: RequestInit, timeoutMs?: number) => Promise<Response>;
-
-// 合并报表有 4MB 级,默认 15s 在慢网下会临界超时。
-const REPORT_TIMEOUT_MS = 60_000;
-
-async function get(url: string, doFetch: FetchFn, timeoutMs?: number): Promise<Response> {
-  const res = await doFetch(url, { headers: { 'User-Agent': userAgent(), Accept: '*/*' } }, timeoutMs);
-  if (!res.ok) throw new Error(`SEC request failed: ${res.status} ${url}`);
-
-  return res;
-}
-
-type Submissions = {
-  filings?: {
-    recent?: {
-      form?: string[];
-      filingDate?: string[];
-      reportDate?: string[];
-      accessionNumber?: string[];
-      primaryDocument?: string[];
-    };
-  };
-};
-
-/** 一份季报 6-K 的定位信息。periodEnd 直接取 submissions 的 reportDate —— 不用从正文猜期间。 */
-export type FsFiling = { accn: string; filed: string; periodEnd: string };
-
-type DirIndex = { directory?: { item?: Array<{ name?: string; size?: number | string }> } };
-
-// ── 解析 ──────────────────────────────────────────────────────────────────────
-
-/** HTML → 以 `|` 保留单元格边界的扁平文本。表格结构全靠这些竖线定位。 */
-export const flattenHtml = (html: string): string =>
-  html
-    .replace(/<[^>]+>/g, '|')
-    .replace(/&nbsp;|&#160;/g, ' ')
-    .replace(/&#\d+;/g, ' ')
-    .replace(/\|+/g, '|')
-    .replace(/[ \t\r\n]+/g, ' ');
-
-/**
- * 一个行标签和它的第一个数字之间最多隔几个单元格。表格里通常是 `标签|$|数字`(隔 1~2 格),
- * 留 8 格余量。**这个上限是必需的守卫**:没有它,标签匹配到散文时会一路扫到下一张表,
- * 把别人的数字当成自己的 —— 实测踩过:「Gross profit」先命中指引句
- * 「Gross profit margin is expected to be between 65% and 67%」,然后扫到表格里 Net sales 的
- * 1,270,381,算出 cogs = 0。
- */
-const MAX_CELLS_TO_FIRST_NUMBER = 8;
-
-/**
- * 从某个行标签起,顺序取前 n 个「数字单元格」的值。
- * 负号有**两种写法**,都得吃:`(350,762,799)` 与 `(628,052,531|)`(右括号被拆到下一格)。
- */
-function numsAfter(txt: string, label: string, n: number, from = 0): number[] {
-  const i = txt.indexOf(label, from);
-  if (i < 0) return [];
-
-  const cells = txt.slice(i + label.length, i + label.length + 1500).split('|');
-  const out: number[] = [];
-  for (let k = 0; k < cells.length && out.length < n; k++) {
-    const c = cells[k]!.trim();
-    if (!/^\(?[\d,]+\)?$/.test(c) || !/\d/.test(c)) continue;
-    // 第一个数字离标签太远 = 这不是那一行,是标签撞进了散文里。宁可空着让上层抛。
-    if (out.length === 0 && k > MAX_CELLS_TO_FIRST_NUMBER) return [];
-
-    const neg = c.startsWith('(') || cells[k + 1]?.trim() === ')';
-    out.push((neg ? -1 : 1) * Number(c.replace(/[(),]/g, '')));
-  }
-  return out;
-}
-
-/** 一份报告里抽出的**年初至今累计**四科目(千元新台币)。单季由 job 差分还原。 */
-export type TsmcYtd = { revenue: number; cogs: number; ocf: number; capex: number };
+/** 一份报告里抽出的**年初至今累计**四科目(千元新台币)。单季由下游差分还原。 */
+export type TsmcYtd = Sec6kValues;
 
 /**
  * 解析一份合并报表。**一律取 YTD 列**,单季交给下游差分 —— 这样三种列结构走同一条路径:
@@ -142,45 +77,19 @@ export function parseTsmcReport(html: string): TsmcYtd {
 // ── CompanyFacts 合成 ─────────────────────────────────────────────────────────
 
 /**
- * 借用 us-gaap 的 tag 名,让这些行能走 extractFundamentals 那条链。
- * **不是说 TSM 报的是 us-gaap** —— 它是 IFRS。这里只是复用下游的科目映射,
- * 落库后 `tag_used` 会显示这几个名字,溯源要看同行的 accn(指向那份 6-K)。
- */
-const AS_TAG = {
-  revenue: 'Revenues',
-  cogs: 'CostOfRevenue',
-  ocf: 'NetCashProvidedByUsedInOperatingActivities',
-  capex: 'PaymentsToAcquirePropertyPlantAndEquipment',
-} as const;
-
-/** 累计期的起点 = 当年 1 月 1 日(TSM 财年 = 日历年)。差分靠「同 start 分组」,故必须一致。 */
-const yearStart = (periodEnd: string) => `${periodEnd.slice(0, 4)}-01-01`;
-
-/**
  * 报表原文是**千元**新台币("In Thousands of New Taiwan Dollars"),而下游 deriveSeries 除以
  * 1e6 是按「基础货币单位」算的(companyfacts 给的是元)。不乘这 1000,轴会标着「百万新台币」
  * 而实际是十亿 —— 差三个数量级。踩过一次:FCF TTM 显示 1056 而真值是 1,056,000 百万。
  */
 const THOUSANDS_TO_UNITS = 1000;
 
-export function toCompanyFacts(rows: Array<{ filing: FsFiling; ytd: TsmcYtd }>): CompanyFacts {
-  const entries = Object.entries(AS_TAG).map(([concept, tag]) => {
-    const usd: FactRow[] = rows.map(({ filing, ytd }) => ({
-      start: yearStart(filing.periodEnd),
-      end: filing.periodEnd,
-      val: ytd[concept as keyof TsmcYtd] * THOUSANDS_TO_UNITS,
-      accn: filing.accn,
-      // 6-K 不是定期报告,而 periodsForTag 只收 10-Q/10-K —— 标成 10-Q 让它进得去。
-      // 这是**刻意的伪装**:TSM 的季报在功能上等同 10-Q,只是外国发行人用 6-K 交。
-      form: '10-Q',
-      filed: filing.filed,
-    }));
-
-    return [tag, { units: { USD: usd } }] as const;
-  });
-
-  return { facts: { 'us-gaap': Object.fromEntries(entries) } };
-}
+/** 累计口径(`ytd`):start 填当年 1-1,单季由 toQuarters 相邻相减还原。 */
+export const toCompanyFacts = (rows: Array<{ filing: FsFiling; ytd: TsmcYtd }>): CompanyFacts =>
+  packFacts(
+    rows.map(({ filing, ytd }) => ({ filing, values: ytd })),
+    'ytd',
+    THOUSANDS_TO_UNITS,
+  );
 
 // ── 财报稿(T+16,只有营收与毛利)────────────────────────────────────────────
 
@@ -222,126 +131,61 @@ export function parseEarningsRelease(html: string, periodEnd: string): TsmcRelea
 
 const MILLIONS_TO_UNITS = 1_000_000;
 
-/** 财报稿 → **直接单季行**(start 是本季初)。下游的「直接单季行优先于差分」会自然接住。 */
+/**
+ * 财报稿 → **直接单季行**(start 是本季初)。下游的「直接单季行优先于差分」会自然接住。
+ * 只有营收与成本 —— 财报稿里没有现金流,FCF 仍得等合并报表。
+ */
 export function releaseToCompanyFacts(rows: Array<{ filing: FsFiling; rel: TsmcRelease }>): CompanyFacts {
-  const quarterStart = (periodEnd: string) => {
-    const [y, m] = periodEnd.split('-').map(Number);
-    return `${y}-${String(m! - 2).padStart(2, '0')}-01`; // 06-30 → 04-01
-  };
-
-  const mk = (concept: 'revenueM' | 'cogsM'): FactRow[] =>
+  // ocf/capex 填 0 只是为了套用共享的打包函数,随后把这两个 tag 摘掉 —— 留着会被当成
+  // 「本季经营现金流为零」,那是个会静默污染 FCF 的假值。
+  // 注:这里通常只有 1~2 期,起始日会退回「期末 − 91 天」,对「是不是一个季度」的判定足够。
+  const full = packFacts(
     rows.map(({ filing, rel }) => ({
-      start: quarterStart(rel.periodEnd),
-      end: rel.periodEnd,
-      val: rel[concept] * MILLIONS_TO_UNITS,
-      accn: filing.accn,
-      form: '10-Q', // 同 toCompanyFacts:为了进 periodsForTag 的定期报告白名单
-      filed: filing.filed,
-    }));
+      filing,
+      values: { revenue: rel.revenueM, cogs: rel.cogsM, ocf: 0, capex: 0 },
+    })),
+    'quarter',
+    MILLIONS_TO_UNITS,
+  );
+  const gaap = full.facts!['us-gaap']!;
 
   return {
-    facts: {
-      'us-gaap': {
-        [AS_TAG.revenue]: { units: { USD: mk('revenueM') } },
-        [AS_TAG.cogs]: { units: { USD: mk('cogsM') } },
-      },
-    },
+    facts: { 'us-gaap': { [AS_TAG.revenue]: gaap[AS_TAG.revenue]!, [AS_TAG.cogs]: gaap[AS_TAG.cogs]! } },
   };
 }
 
 // ── 抓取 ──────────────────────────────────────────────────────────────────────
 
-export function createTsmcFetcher(doFetch: FetchFn = fetchWithTimeout) {
+/** 报表那份 6-K 的封面名前缀。月营收 `tsm-revenue*`、月度例行 `tsm-monthend*` 都不会混进来。 */
+const TSM_FS_DOC = /^tsm-fs/i;
+/** 财报稿封面名。 */
+const TSM_RELEASE_DOC = /^tsm-\d{8}x6k\.htm$/i;
+/** 报表目录里要排除的:6-K 封面与母公司单独报表(uncons/standalone,口径不同)。 */
+const NOT_THE_REPORT = /^tsm-fs|standalone|uncons/i;
+
+export function createTsmcFetcher(doFetch: FetchFn = defaultFetch) {
   return {
-    /** 全部季度财报 6-K,按期末升序。primaryDocument 以 `tsm-fs` 开头是它们的稳定标志。 */
-    async listFsFilings(cik: string): Promise<FsFiling[]> {
-      const body = (await (
-        await get(`https://data.sec.gov/submissions/CIK${cik.padStart(10, '0')}.json`, doFetch)
-      ).json()) as Submissions;
-      const {
-        form = [],
-        filingDate = [],
-        reportDate = [],
-        accessionNumber = [],
-        primaryDocument = [],
-      } = body.filings?.recent ?? {};
+    listFsFilings: (cik: string): Promise<FsFiling[]> => listQuarterly6K(cik, TSM_FS_DOC, doFetch),
 
-      return primaryDocument
-        .flatMap((doc, i) =>
-          form[i] === '6-K' && /^tsm-fs/i.test(doc ?? '') && reportDate[i] && accessionNumber[i] && filingDate[i]
-            ? [{ accn: accessionNumber[i]!, filed: filingDate[i]!, periodEnd: reportDate[i]! }]
-            : [],
-        )
-        .sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
-    },
+    fetchReport: async (cik: string, accn: string): Promise<string> =>
+      (await fetchReportDoc(cik, accn, NOT_THE_REPORT, doFetch)).html,
 
-    /**
-     * 取某份 6-K 里的合并报表正文。
-     *
-     * **不按文件名认**:命名不稳定(实测出现过 `tsmc2023q1.htm`、`a0515.htm`、拼错的
-     * `consolidatd`、以及 workiva 前缀)。改成「排除 6-K 封面与母公司单独报表后取最大那份」——
-     * 合并报表 4MB 级,封面十几 KB,量级差三个数量级。
-     */
-    async fetchReport(cik: string, accn: string): Promise<string> {
-      const dir = `${ARCHIVES}/${Number(cik)}/${accn.replace(/-/g, '')}`;
-      const idx = (await (await get(`${dir}/index.json`, doFetch)).json()) as DirIndex;
-
-      const doc = (idx.directory?.item ?? [])
-        .filter(
-          (i) =>
-            /\.htm$/i.test(i.name ?? '') &&
-            !/^tsm-fs/i.test(i.name ?? '') &&
-            !/index/i.test(i.name ?? '') &&
-            !/standalone|uncons/i.test(i.name ?? ''),
-        )
-        .sort((a, b) => Number(b.size ?? 0) - Number(a.size ?? 0))[0];
-      if (!doc?.name) throw new Error(`TSM 6-K ${accn}: 目录里没有合并报表正文`);
-
-      return (await get(`${dir}/${doc.name}`, doFetch, REPORT_TIMEOUT_MS)).text();
-    },
-
-    /**
-     * 财报稿 6-K,按期末升序。封面名形如 `tsm-20260716x6k.htm` —— 这个模式是稳定的,
-     * 而月营收(`tsm-revenue*`)、月度例行(`tsm-monthend*`)、报表(`tsm-fs*`)都另有前缀,
-     * 不会混进来。
-     */
-    async listEarningsReleases(cik: string): Promise<FsFiling[]> {
-      const body = (await (
-        await get(`https://data.sec.gov/submissions/CIK${cik.padStart(10, '0')}.json`, doFetch)
-      ).json()) as Submissions;
-      const {
-        form = [],
-        filingDate = [],
-        reportDate = [],
-        accessionNumber = [],
-        primaryDocument = [],
-      } = body.filings?.recent ?? {};
-
-      return primaryDocument
-        .flatMap((doc, i) =>
-          form[i] === '6-K' &&
-          /^tsm-\d{8}x6k\.htm$/i.test(doc ?? '') &&
-          reportDate[i] &&
-          accessionNumber[i] &&
-          filingDate[i]
-            ? [{ accn: accessionNumber[i]!, filed: filingDate[i]!, periodEnd: reportDate[i]! }]
-            : [],
-        )
-        .sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
-    },
+    listEarningsReleases: (cik: string): Promise<FsFiling[]> => listQuarterly6K(cik, TSM_RELEASE_DOC, doFetch),
 
     /**
      * 财报稿里那份 EX-99.1 正文。附件名实测是 `a{季}q{年}e_withguidancexfinal.htm`
      * (跨 6 个季度一致),但仍留内容兜底:按名字挑不中就在其余 htm 里找含那张表的。
+     * 这里不能用「取最大」那招 —— 财报稿目录里最大的 htm 是投资者演示,不是那张表。
      */
     async fetchRelease(cik: string, accn: string): Promise<string> {
-      const dir = `${ARCHIVES}/${Number(cik)}/${accn.replace(/-/g, '')}`;
-      const idx = (await (await get(`${dir}/index.json`, doFetch)).json()) as DirIndex;
+      const dir = `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accn.replace(/-/g, '')}`;
+      const idx = (await (await get(`${dir}/index.json`, doFetch)).json()) as {
+        directory?: { item?: Array<{ name?: string }> };
+      };
 
       const htms = (idx.directory?.item ?? [])
         .map((i) => i.name ?? '')
         .filter((n) => /\.htm$/i.test(n) && !/index/i.test(n) && !/^tsm-/i.test(n));
-      // 命名模式优先,其余按体积从大到小试 —— 那张表在 EX-99.1 里,不在 6-K 封面。
       const ordered = [...htms.filter((n) => /^a\dq\d\de/i.test(n)), ...htms.filter((n) => !/^a\dq\d\de/i.test(n))];
 
       for (const name of ordered) {
