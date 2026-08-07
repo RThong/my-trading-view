@@ -11,9 +11,9 @@ import { SoxFngPanel } from './panels/industry/SoxFngPanel';
 import type { RegimeDim } from './panels/regime/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
 import { MARKET_CATALOG } from '../shared/marketCatalog';
-import { ACTIVE_TICKERS } from '../shared/aiChain';
+import { GROUP_LABELS, GROUP_ORDER, activeByGroup } from '../shared/aiChain';
 
-export type TabDef = { id: string; label: string; render: (interval: Interval) => ReactNode };
+export type TabDef = { id: string; label: string; group?: string; render: (interval: Interval) => ReactNode };
 export type Perspective = { id: string; label: string; tabs: TabDef[] };
 
 // ── tab 工厂:注意 tab id 与面板 source 是两回事(如收益曲线 / 期限走势可指向同一 source)──
@@ -22,9 +22,10 @@ const assetTab = (id: string, label: string, underlying: string, vrpUnderlying?:
   label,
   render: (interval) => <AssetChart interval={interval} underlying={underlying} vrpUnderlying={vrpUnderlying} />,
 });
-const regimeTab = (id: string, label: string, dim: RegimeDim): TabDef => ({
+const regimeTab = (id: string, label: string, dim: RegimeDim, group?: string): TabDef => ({
   id,
   label,
+  group,
   render: (interval) => <RegimeChart dim={dim} interval={interval} />,
 });
 const curveTab = (id: string, label: string, source: string): TabDef => ({
@@ -114,11 +115,16 @@ export const PERSPECTIVES: Perspective[] = [
     label: '基本面',
     // AI 链财务。一家一个横 tab,**格子由那家的 source 决定**(见 aiChain 的 SOURCE_KINDS):
     // 走 SEC 的四格(毛利率/FCF/单季 FCF/capex),走 TWSE 的两格(月营收同比/月营收)。
-    // 「买方合计」不属于任何一家,单独一个 tab 排在最前 —— 它才是 §6.14 的判据线。
-    // tab 由启用名单派生:开一家公司只改 ACTIVE_TICKERS,这里和路由都不用动。
+    //
+    // 横 tab **按 GROUP_ORDER 分组并重排**,顺序即资金流向(云厂商花钱 → 算力芯片 → 上游产能),
+    // 与名单里的存储顺序无关。分组的意义是「同组能横向比、跨组不能」——
+    // 分组本身在 aiChain 的 ChainGroup 上,加公司只改那里,这里不用动。
+    // 「买方合计」不属于任何一家,单独成组排在最前 —— 它才是 §6.14 的判据线。
     tabs: [
-      regimeTab('buyer', '买方合计', 'fundamentals:buyer'),
-      ...ACTIVE_TICKERS.map((t) => regimeTab(t.toLowerCase(), t, `fundamentals:${t}`)),
+      regimeTab('buyer', '买方合计', 'fundamentals:buyer', '判据'),
+      ...GROUP_ORDER.flatMap((g) =>
+        activeByGroup(g).map((t) => regimeTab(t.toLowerCase(), t, `fundamentals:${t}`, GROUP_LABELS[g])),
+      ),
     ],
   },
 

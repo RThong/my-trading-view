@@ -4,6 +4,9 @@ import {
   SEC_COMPANIES,
   SOURCE_KINDS,
   SOURCE_NEEDS,
+  GROUP_LABELS,
+  GROUP_ORDER,
+  activeByGroup,
   activeBySource,
   activeInSecTable,
   cikOf,
@@ -110,5 +113,37 @@ describe('源映射(表驱动)', () => {
     expect(hasSource('TSM', 'sec6k')).toBe(true);
     expect(hasSource('TSM', 'sec')).toBe(false);
     expect(hasSource('NVDA', 'sec6k')).toBe(false);
+  });
+});
+
+describe('面板分组', () => {
+  test('每家都归了组,且组与 side/inChain 不矛盾', () => {
+    for (const c of SEC_COMPANIES) {
+      expect(c.group, `${c.ticker} 没归组`).toBeTruthy();
+      // 买方必在云厂商组:它们的判据是 FCF,和卖方那几组读法完全不同。
+      if (c.side === 'buyer') expect(c.group, `${c.ticker} 是买方却不在 cloud`).toBe('cloud');
+      // 非链内的只能进备查 —— 否则它会混在判据组里被当成成员读。
+      if (!c.inChain) expect(c.group, `${c.ticker} 非链内却不在 watch`).toBe('watch');
+      if (c.group === 'cloud') expect(c.side).toBe('buyer');
+    }
+  });
+
+  test('分组是启用名单的一个划分:不重不漏', () => {
+    const all = GROUP_ORDER.flatMap((g) => activeByGroup(g));
+    expect([...all].sort()).toEqual([...ACTIVE_TICKERS].sort());
+    expect(new Set(all).size).toBe(all.length); // 不重
+  });
+
+  test('组内成员符合各自的读法', () => {
+    // 直接卖加速器的两家,毛利率可横向比。
+    expect(activeByGroup('accelerator')).toEqual(['NVDA', 'AMD']);
+    // 代工 + 存储:都是「供给跟不跟得上」那一层。
+    expect(activeByGroup('upstream')).toEqual(['MU', 'TSM']);
+    expect(activeByGroup('watch')).toEqual(['INTC']);
+    expect(activeByGroup('cloud')).toEqual(['MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META']);
+  });
+
+  test('每组都有中文名(缺了 tab 条上会出现空标签)', () => {
+    for (const g of GROUP_ORDER) expect(GROUP_LABELS[g]).toBeTruthy();
   });
 });

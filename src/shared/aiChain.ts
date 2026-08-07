@@ -34,10 +34,30 @@ export const SOURCE_NEEDS: Record<ChainSource, 'cik' | 'twseCode'> = {
 // 买方合计线也不收它(见 isAggregateMember)。给 INTC 用:它的毛利率是**供给侧读数**,
 // 与 NVDA/MU 的「稀缺溢价」符号相反(INTC 毛利率修复 = 新产能进场 = 溢价见顶的旁证),
 // 混在同一句「见顶回落 = 供给追上需求」里会读反。理由写在 COMPANY_NOTES.INTC。
+/**
+ * 面板上的分组。**按「这一格该怎么读」分,不是按行业分** —— 同组的 tab 可以互相比,
+ * 跨组的不能(口径与符号都不同)。顺序即资金流向:云厂商花钱 → 算力芯片收钱 → 上游产能。
+ *  · cloud       买铲子。判据是 FCF 会不会转负(§6.14),它们的毛利率是配角。
+ *  · accelerator 直接卖加速器。毛利率 = 定价权,组内可横向比(NVDA vs AMD)。
+ *  · upstream    代工与存储。物理瓶颈那一层;各自读法不同(TSM 看产能、MU 看价格周期),
+ *                但都属于「供给能不能跟上」这一问,故同组。
+ *  · watch       备查,**不作判据成员**。目前只有 INTC:它的毛利率符号与稀缺溢价相反。
+ */
+export type ChainGroup = 'cloud' | 'accelerator' | 'upstream' | 'watch';
+
+export const GROUP_ORDER: ChainGroup[] = ['cloud', 'accelerator', 'upstream', 'watch'];
+export const GROUP_LABELS: Record<ChainGroup, string> = {
+  cloud: '云厂商',
+  accelerator: '算力芯片',
+  upstream: '上游产能',
+  watch: '备查',
+};
+
 type Company = {
   ticker: string;
   side: SecSide;
   inChain?: boolean;
+  group: ChainGroup;
   /** 省略 = ['sec']。多数公司只走一个源。 */
   sources?: ChainSource[];
   cik?: string;
@@ -48,9 +68,9 @@ type Company = {
 
 export const SEC_COMPANIES: Company[] = [
   // 卖铲子:看毛利率
-  { ticker: 'NVDA', cik: '1045810', side: 'seller', inChain: true },
-  { ticker: 'MU', cik: '723125', side: 'seller', inChain: true }, // 美光:毛利率 = DRAM/NAND 价格周期的免费代理
-  { ticker: 'AMD', cik: '2488', side: 'seller', inChain: true }, // 加速器侧的第二家,与 NVDA 对读(见 COMPANY_NOTES)
+  { ticker: 'NVDA', cik: '1045810', side: 'seller', inChain: true, group: 'accelerator' },
+  { ticker: 'MU', cik: '723125', side: 'seller', inChain: true, group: 'upstream' }, // 美光:毛利率 = DRAM/NAND 价格周期的免费代理
+  { ticker: 'AMD', cik: '2488', side: 'seller', inChain: true, group: 'accelerator' }, // 加速器侧的第二家,与 NVDA 对读(见 COMPANY_NOTES)
   // 代工:**两个源各管一半**。companyfacts 那条不行(ifrs-full 下四科目都在,但期间只有
   // 半年/全年、且最新一期停在 2024-12-31),所以季度四科目走它交给 EDGAR 的季度合并财报 6-K,
   // 月营收走 TWSE(T+10,全链最快)。报表币种是新台币。
@@ -61,14 +81,15 @@ export const SEC_COMPANIES: Company[] = [
     sources: ['sec6k', 'twse'],
     side: 'seller',
     inChain: true,
+    group: 'upstream',
     currency: 'TWD',
   },
   // 买铲子:进合计 FCF
-  { ticker: 'MSFT', cik: '789019', side: 'buyer', inChain: true },
-  { ticker: 'GOOGL', cik: '1652044', side: 'buyer', inChain: true },
-  { ticker: 'AMZN', cik: '1018724', side: 'buyer', inChain: true },
-  { ticker: 'META', cik: '1326801', side: 'buyer', inChain: true },
-  { ticker: 'ORCL', cik: '1341439', side: 'buyer', inChain: true },
+  { ticker: 'MSFT', cik: '789019', side: 'buyer', inChain: true, group: 'cloud' },
+  { ticker: 'GOOGL', cik: '1652044', side: 'buyer', inChain: true, group: 'cloud' },
+  { ticker: 'AMZN', cik: '1018724', side: 'buyer', inChain: true, group: 'cloud' },
+  { ticker: 'META', cik: '1326801', side: 'buyer', inChain: true, group: 'cloud' },
+  { ticker: 'ORCL', cik: '1341439', side: 'buyer', inChain: true, group: 'cloud' },
   // 备查但**不建议开**(inChain 省略 = false),开了只会给对应那条线加噪声。
   // 已移除:AAPL(不在 AI 链上,FCF 由 iPhone 主导)、DELL(整机厂,毛利率不反映芯片稀缺溢价)、
   // AVGO(合并了 VMware,毛利率是「AI 硅片定价权 + 软件占比」的混合读数,当稀缺溢价用不干净)。
@@ -76,7 +97,7 @@ export const SEC_COMPANIES: Company[] = [
   // 还进不来的:ASML(只报 20-F;有价值的是季度 net bookings,在 IR 季报里,另立需求)、
   // SK 海力士(2026-07 才在美上市,companyfacts 无财务 XBRL;它的 6-K 只有营收与营业利润、
   // **没有营业成本**,算不出毛利率 → 要毛利率得走韩国 DART,需要一个免费 API key)。
-  { ticker: 'INTC', cik: '50863', side: 'seller' },
+  { ticker: 'INTC', cik: '50863', side: 'seller', group: 'watch' },
 ];
 
 /** 已逐家核对过、可入库的标的。核对一家开一家 —— 未核对的进来会污染派生线。 */
@@ -97,6 +118,9 @@ export const twseCodeOf = (ticker: string): string | undefined =>
   hasSource(ticker, 'twse') ? find(ticker)?.twseCode : undefined;
 
 export const sideOf = (ticker: string): SecSide | undefined => find(ticker)?.side;
+export const groupOf = (ticker: string): ChainGroup | undefined => find(ticker)?.group;
+/** 某组里当前启用的标的,保持名单原顺序。 */
+export const activeByGroup = (group: ChainGroup): string[] => ACTIVE_TICKERS.filter((t) => groupOf(t) === group);
 export const currencyOf = (ticker: string): 'USD' | 'TWD' => find(ticker)?.currency ?? 'USD';
 
 /** 某个源下、当前启用的标的(job 分派用)。一家可能出现在多个源里。 */
