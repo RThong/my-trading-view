@@ -11,6 +11,7 @@ import {
 import { createSecFetcher, type LatestFiling } from '../fetchers/secXbrl';
 import {
   extractFundamentals,
+  financeLeaseShare,
   parseXbrlInstance,
   mergeFacts,
   deriveSeries,
@@ -29,6 +30,7 @@ import {
   activeInSecTable,
   cikOf,
   expectedCapexScope,
+  financeLeaseCeiling,
   isAggregateMember,
   knownGap,
   sideOf,
@@ -244,6 +246,19 @@ export async function updateSecFundamentals(
             '口径可能变了,去核一下该期报表原文',
         ),
       );
+
+      // 融资租赁漏计:同 tagConflicts,**只能在这里对着原始 facts 做** —— 这个科目不落库
+      // (为什么不做成序列见 analytics 的 financeLeaseShare)。只查买方:卖方的租赁不进合计线。
+      const lease = isAggregateMember(ticker) ? financeLeaseShare(companyFacts) : undefined;
+      const ceiling = financeLeaseCeiling(ticker);
+      if (lease && ceiling !== undefined && lease.share > ceiling) {
+        const pct = (x: number) => `${Math.round(x * 100)}%`;
+        failed.push(
+          `${ticker}: 融资租赁新增 ROU 占该财年现金 capex ${pct(lease.share)}(财年止 ${lease.fy}),` +
+            `超过声明的 ${pct(ceiling)} —— 租来的产能不进 ocf−capex(取得非现金、本金走筹资),` +
+            '买方合计线的零轴被垫高了这么多。核一下该家现金流量表的补充披露,再改 FINANCE_LEASE_SHARE_CEILING',
+        );
+      }
 
       const rows = extractFundamentals(ticker, companyFacts);
       insertSecFundamentals(db, rows);

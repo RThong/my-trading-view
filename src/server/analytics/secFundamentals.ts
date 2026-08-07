@@ -223,6 +223,50 @@ export function tagConflicts(facts: CompanyFacts): TagConflict[] {
   });
 }
 
+// ── 融资租赁漏计守卫 ───────────────────────────────────────────────────────────
+
+/**
+ * 走**融资租赁**取得的产能,在 `ocf − capex` 里**完全不出现**:取得时是非现金交易(不进 capex),
+ * 本金还款走筹资活动,只有利息进经营。所以同一笔资产改成租的,当年 FCF 就比买的好看一整笔,
+ * 而且不是延后 —— 是永远不来。(经营租赁不同:付款全额走经营 → OCF 会吃掉 → FCF 迟早反映。)
+ *
+ * ⚠️ **必须用「新增 ROU」比 capex,不能用「本金支付」比** —— 这个陷阱掉过一次:
+ * 本金支付只反映**旧租约**的现金流(MSFT 最近财年 31 亿),而这批租约是新签的、还没开始还;
+ * 新增 ROU(246 亿)才是与年度 capex 同量纲的流量。拿存量的现金流去比流量,差一个数量级,
+ * 会得出「只占 2.7%,是噪声」的错误结论。
+ *
+ * **为什么只报比例、不做成序列**(量过之后的结论,别再试):
+ *  · 量级不翻符号 —— 最近一个财年五家买方合计约 358 亿(MSFT 246 + ORCL 49 + AMZN 40 +
+ *    GOOGL 16 + META 6),对当时的买方合计 TTM FCF +1,259 亿,是按 −250 亿/季的斜率
+ *    **把零轴穿越提前约 1.4 个季度**。这是口径说明的量级,不是判据失效的量级。
+ *  · **数据画不出干净的线** —— ORCL 只有 FY 与 9M、**一个季度数都没有**;META 断在 2025-12-31。
+ *    合计线要求每季每家都有点(见 aggregateFcf),做出来只能静默丢掉 ORCL,
+ *    或者把年度点连成一条不存在的匀速线(同「折线只连点,断档必造假斜率」那条坑)。
+ * 所以这里只做**偏离声明式**告警,量化结论写在面板文案(SEC_LEASE_CAVEAT)里。
+ */
+const FINANCE_LEASE_ADD_TAG = 'RightOfUseAssetObtainedInExchangeForFinanceLeaseLiability';
+
+/** 一个财年 350~380 天(各家财年周历不同,52/53 周都有)。 */
+const isFiscalYearLength = (d: number): boolean => d >= 350 && d <= 380;
+
+/**
+ * 最近一个完整财年的「融资租赁新增 ROU / 现金 capex」。任一方缺该财年 → undefined(不猜)。
+ * 只在抓取时对着原始 facts 做:这个科目**不落库**(不做成序列,理由见上),事后查不出来。
+ */
+export function financeLeaseShare(facts: CompanyFacts): { fy: string; share: number } | undefined {
+  const fiscalYears = (tags: string[]) =>
+    collectPeriods(facts, tags).filter((p) => isFiscalYearLength(durationDays(p.start, p.end)));
+
+  const latestLease = fiscalYears([FINANCE_LEASE_ADD_TAG]).at(-1);
+  if (!latestLease) return undefined;
+
+  // 必须**同一财年比同一财年**:两个不同期末的数相除得出的比例没有含义。
+  const capex = fiscalYears(TAG_CHAINS.capex).find((p) => p.end === latestLease.end);
+  if (!capex || capex.val === 0) return undefined;
+
+  return { fy: latestLease.end, share: latestLease.val / capex.val };
+}
+
 /** 日历季度:取期间中点所在季度。NVDA 的 11 月~1 月财季中点在 12 月 → Q4,与 SEC 自己的 frame 口径一致。 */
 export function calendarQuarter(start: string, end: string): string {
   const mid = new Date((Date.parse(start) + Date.parse(end)) / 2);

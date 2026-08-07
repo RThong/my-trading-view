@@ -412,4 +412,46 @@ describe('sec fundamentals job', () => {
     expect(scopeProblems(flipped)[0]).toMatch(/MSFT: capex 口径从声明的 ppe 变成 productive_assets/);
     db2.close();
   });
+
+  test('融资租赁漏计:超声明档才报,跨财年不相除,卖方不查', async () => {
+    // 走融资租赁取得的产能不进 ocf−capex(取得非现金、本金走筹资),会把买方合计线的零轴垫高。
+    // MSFT 两个财年内从 1~2% 跳到 21% —— 所以守的是**跳变**,不是「大家不一致」(同 capex 口径那条)。
+    const BASE = {
+      Revenues: ytd([25e9, 50e9, 75e9, 100e9]),
+      CostOfRevenue: ytd([10e9, 20e9, 30e9, 40e9]),
+      NetCashProvidedByUsedInOperatingActivities: ytd(cumulative(50e9)),
+      PaymentsToAcquirePropertyPlantAndEquipment: ytd(cumulative(20e9)), // capex 全年 20e9
+    };
+    // ytd() 的 FY 那一期是 2025-01-27~2026-01-25;租赁按财年单行报(实测各家都只有年频或年+季混合)。
+    const leaseOf = (val: number, start = '2025-01-27', end = '2026-01-25') => ({
+      units: { USD: [{ start, end, val, accn: 'L', form: '10-K' as const, filed: '2026-02-25' }] },
+    });
+    const fetcherWith = (lease: ReturnType<typeof leaseOf>) => ({
+      latestFiling: async () => filingOf('2026-02-25'),
+      companyFacts: async (): Promise<CompanyFacts> => ({
+        facts: { 'us-gaap': { ...BASE, RightOfUseAssetObtainedInExchangeForFinanceLeaseLiability: lease } },
+      }),
+      filingInstance: noInstance,
+    });
+    const leaseProblems = async (tickers: string[], lease: ReturnType<typeof leaseOf>) => {
+      const db = freshDb();
+      const r = await updateSecFundamentals(db, { tickers, activeTickers: tickers, fetcher: fetcherWith(lease) });
+      db.close();
+      return r.failed.filter((f) => /融资租赁新增 ROU/.test(f));
+    };
+
+    // 8e9 / 20e9 = 40% > MSFT 声明的 30% → 报
+    expect((await leaseProblems(['MSFT'], leaseOf(8e9)))[0]).toMatch(
+      /MSFT: 融资租赁新增 ROU 占该财年现金 capex 40%\(财年止 2026-01-25\),超过声明的 30%/,
+    );
+
+    // 2e9 = 10%,在声明档内 → 不报。常驻黄灯会把真信号淹掉(同 CAPEX_SCOPE_EXPECTED 的理由)。
+    expect(await leaseProblems(['MSFT'], leaseOf(2e9))).toEqual([]);
+
+    // 租赁那个财年(止 2025-01-25)capex 没有对应财年 → 不猜、不拿两个不同期末的数相除。
+    expect(await leaseProblems(['MSFT'], leaseOf(8e9, '2024-01-27', '2025-01-25'))).toEqual([]);
+
+    // 卖方压根不查:它的租赁不影响买方合计线的零轴。
+    expect(await leaseProblems(['NVDA'], leaseOf(8e9))).toEqual([]);
+  });
 });

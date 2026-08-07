@@ -239,6 +239,36 @@ export const CAPEX_SCOPE_EXPECTED: Record<string, string> = {
 export const expectedCapexScope = (ticker: string): string => CAPEX_SCOPE_EXPECTED[ticker] ?? 'ppe';
 
 /**
+ * 各买方「融资租赁新增 ROU / 该财年现金 capex」的**已声明档位**(上限)。只报**超出声明**的。
+ *
+ * 为什么需要这张表:走融资租赁取得的产能在 `ocf − capex` 里完全不出现(取得非现金、本金走筹资,
+ * 只有利息进经营)—— 一家把采购改成租赁,当年 FCF 就无偿好看一整笔,而且不是延后是永远不来。
+ * **MSFT 最近两个财年从 1~2% 跳到 21%,跳的时候没有任何人知道。** 这张表就是为了下次跳的时候有人知道。
+ *
+ * 同 CAPEX_SCOPE_EXPECTED 的思路:不报「大家不一致」(那是一盏永久黄灯,会把真信号淹掉),
+ * 只报偏离。值是实测值向上留一档余量,**不是精确值** —— 目的是抓跳变,不是抓小数点。
+ * 实测(新增 ROU / **同财年**现金 capex,守卫对真 companyfacts 跑出来的):
+ *   MSFT 21.2%(财年止 2026-06-30) · ORCL 8.9% · AMZN 2.3% · GOOGL 1.8% · META 0.9%
+ *
+ * ⚠️ 这条守卫**只在「有新申报、真的拉了 companyfacts」那一轮报**(同 tagConflicts,原因也相同:
+ * 这个科目不落库,事后查不出来)。稳态下水位不动 → 整段跳过 → 不报。所以它的可见性是
+ * 「一个季度一次、在吃进新 10-K 的那天让 job 变黄」,不是「每轮复发」(那是完整性体检的性质)。
+ * 改了下面的值不会立刻复查,要下一份定期报告进来才生效 —— 想立刻验就 `--force` 单跑那一家。
+ *
+ * 量化后的判据影响写在面板文案里(见 regimeChart.hooks 的 SEC_LEASE_CAVEAT),不靠告警传达 ——
+ * 告警只回答「有没有变」,不回答「有多重要」。为什么不做成序列见 analytics 的 financeLeaseShare。
+ */
+export const FINANCE_LEASE_SHARE_CEILING: Record<string, number> = {
+  MSFT: 0.3,
+  ORCL: 0.15,
+  AMZN: 0.05,
+  GOOGL: 0.05,
+  META: 0.05,
+};
+
+export const financeLeaseCeiling = (ticker: string): number | undefined => FINANCE_LEASE_SHARE_CEILING[ticker];
+
+/**
  * 「远端已交更新的 10-Q/10-K,但我们库里还没有那一期」。后端由 sec_watermark 与
  * sec_fundamentals 比 filed 得出(见 storage/repository 的 getSecLag),前端据此在那一格
  * 标注「这条线不是最新已报季度」—— 否则读图的人会把三个月前的点当成最新读数。
