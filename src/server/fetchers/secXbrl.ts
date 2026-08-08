@@ -37,11 +37,14 @@ async function getJson<T>(url: string, doFetch: FetchFn, timeoutMs?: number): Pr
 }
 
 type Submissions = {
-  filings?: { recent?: { form?: string[]; filingDate?: string[]; accessionNumber?: string[] } };
+  filings?: { recent?: { form?: string[]; filingDate?: string[]; reportDate?: string[]; accessionNumber?: string[] } };
 };
 
 /** submissions 里最新的那份定期报告。accn 用于 companyfacts 落后时直接去读申报实例。 */
 export type LatestFiling = { filed: string; form: string; accn: string };
+
+/** 一份定期报告的定位信息。periodEnd 取 submissions 的 reportDate = 该份覆盖到的期末。 */
+export type PeriodicFiling = LatestFiling & { periodEnd: string };
 
 const archiveDir = (cik: string, accn: string) =>
   `https://www.sec.gov/Archives/edgar/data/${Number(cik)}/${accn.replace(/-/g, '')}`;
@@ -62,6 +65,24 @@ export function createSecFetcher(doFetch: FetchFn = fetchWithTimeout) {
       );
 
       return periodic.length ? periodic.reduce((a, b) => (a.filed >= b.filed ? a : b)) : null;
+    },
+
+    /**
+     * 全部 10-Q/10-K(含修订件),按期末升序。**只给一次性回填用**(jobs/secBackfillInstances):
+     * 日常 job 只需要最新那一份,不必把整张清单摊开。
+     * 丢掉 reportDate 撞上 filingDate 的 —— 老申报里 SEC 有时把申报日填进 reportDate,那不是期末。
+     */
+    async periodicFilings(cik: string): Promise<PeriodicFiling[]> {
+      const body = await getJson<Submissions>(`https://data.sec.gov/submissions/${cikPath(cik)}.json`, doFetch);
+      const { form = [], filingDate = [], reportDate = [], accessionNumber = [] } = body.filings?.recent ?? {};
+
+      return form
+        .flatMap((f, i) =>
+          isPeriodicForm(f) && filingDate[i] && accessionNumber[i] && reportDate[i] && reportDate[i] !== filingDate[i]
+            ? [{ filed: filingDate[i]!, form: f, accn: accessionNumber[i]!, periodEnd: reportDate[i]! }]
+            : [],
+        )
+        .sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
     },
 
     async companyFacts(cik: string): Promise<CompanyFacts> {

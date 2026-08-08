@@ -49,7 +49,9 @@ import {
  * CLI 入口是 jobs/aiChainFundamentals.ts(按源分派),不是本文件。
  */
 
-type Fetcher = ReturnType<typeof createSecFetcher>;
+// 只声明**这条 job 真的用到的**三个方法,不写成整个 createSecFetcher 的返回类型:
+// 否则 fetcher 上加一个只给别处用的方法(如回填用的 periodicFilings),这里所有测试桩都得跟着补。
+type Fetcher = Pick<ReturnType<typeof createSecFetcher>, 'latestFiling' | 'companyFacts' | 'filingInstance'>;
 
 const SEC_SERIES_PREFIX = 'SEC_';
 const SEC_SERIES_PREFIX_ESCAPED = 'SEC\\_'; // LIKE 的 `_` 是通配符,转义后才是字面下划线

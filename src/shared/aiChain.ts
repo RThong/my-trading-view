@@ -241,6 +241,26 @@ export const KNOWN_GAPS: Record<string, string> = {
 export const knownGap = (ticker: string, concept: string): string | undefined => KNOWN_GAPS[`${ticker}.${concept}`];
 
 /**
+ * 各家用**公司自定义(extension)概念**报的科目。键 `TICKER.concept`,值是实例里的元素全名。
+ *
+ * 为什么需要这张表:companyfacts **只聚合标准 taxonomy,不收 extension** —— 公司拿自定义概念
+ * 报的那几期,在 API 里直接消失,而且**不报错**。实测 NVDA:FY2023 的三份 10-Q 把 capex 标成
+ * `nvda:PurchasesOfPropertyAndEquipmentAndIntangibleAssets`(2022Q1 = 3.61 亿),FY2024 起才换回
+ * `us-gaap:PaymentsToAcquireProductiveAssets` —— 于是 companyfacts 里那三期是空的,TTM 凑不满
+ * 四季、整段作废,再被断档裁剪砍掉,NVDA 的 capex/FCF 线只剩 11 点(MSFT 有 69)。
+ *
+ * ⚠️ **只有 jobs/secBackfillInstances 用它**(读原始申报实例回填),日常 job 不碰 ——
+ * 每轮为几十份历史申报各拉 1~2MB 实例不划算,而这类缺口是历史事实、补一次就好。
+ * 加一档之前先用实例确认元素全名:extension 名字各家各年都不一样,猜不中就是白拉。
+ */
+export const EXTENSION_TAGS: Record<string, string[]> = {
+  'NVDA.capex': ['nvda:PurchasesOfPropertyAndEquipmentAndIntangibleAssets'],
+};
+
+export const extensionTags = (ticker: string, concept: string): string[] =>
+  EXTENSION_TAGS[`${ticker}.${concept}`] ?? [];
+
+/**
  * 各家 capex 的**已知口径**(analytics 的 CapexScope 值)。未列出的按 `ppe`。
  *
  * 为什么要声明而不是直接报「大家不一致」:AMZN 2017-03-31 之后就不再披露 us-gaap 的纯 PP&E tag

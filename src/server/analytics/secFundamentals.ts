@@ -381,14 +381,29 @@ function usdUnits(xml: string): Set<string> {
   return new Set(ids);
 }
 
-export function parseXbrlInstance(xml: string, meta: FilingMeta): CompanyFacts {
+/**
+ * 额外要抓的**公司自定义(extension)概念** —— 元素全名(带前缀,如
+ * `nvda:PurchasesOfPropertyAndEquipmentAndIntangibleAssets`)→ 落到链里哪个 tag 名下。
+ *
+ * 为什么需要:companyfacts 只聚合标准 taxonomy,公司拿自定义概念报的那几期在 API 里直接
+ * 消失且不报错(实测 NVDA FY2023 的 capex)。实例里有,所以回填这条路能走。
+ * 映射到链内 tag 而不是自成一档:下游的去重/差分/TTM 全部照旧,一行不用改。
+ */
+export type ExtensionMap = Record<string, string>;
+
+export function parseXbrlInstance(xml: string, meta: FilingMeta, extensions: ExtensionMap = {}): CompanyFacts {
   const contexts = durationContexts(xml);
   const usd = usdUnits(xml);
-  const tags = CONCEPTS.flatMap((c) => TAG_CHAINS[c]);
 
-  const entries = tags.flatMap((tag) => {
+  // [元素全名, 落到哪个 tag]。标准科目前缀恒为 us-gaap:,extension 的前缀各家自取。
+  const targets: Array<[string, string]> = [
+    ...CONCEPTS.flatMap((c) => TAG_CHAINS[c].map((t) => [`us-gaap:${t}`, t] as [string, string])),
+    ...Object.entries(extensions),
+  ];
+
+  const entries = targets.flatMap(([element, tag]) => {
     // 自闭合(nil)的事实不匹配 —— 正是要跳过的。
-    const re = new RegExp(`<us-gaap:${tag}\\s([^>]*)>\\s*(-?[\\d.]+)\\s*</us-gaap:${tag}\\s*>`, 'g');
+    const re = new RegExp(`<${element}\\s([^>]*)>\\s*(-?[\\d.]+)\\s*</${element}\\s*>`, 'g');
 
     const rows = [...xml.matchAll(re)].flatMap(([, attrs = '', raw = '']) => {
       const ctx = /contextRef="([^"]+)"/.exec(attrs)?.[1];
@@ -400,10 +415,17 @@ export function parseXbrlInstance(xml: string, meta: FilingMeta): CompanyFacts {
       return Number.isFinite(val) ? [{ ...period, val, ...meta }] : [];
     });
 
-    return rows.length ? [[tag, { units: { USD: rows } }] as const] : [];
+    return rows.length ? [[tag, rows] as const] : [];
   });
 
-  return { facts: { 'us-gaap': Object.fromEntries(entries) } };
+  // 同一个 tag 可能同时被标准元素和 extension 命中(换标那年会重叠)——合并而不是后者覆盖前者,
+  // 去重照旧交给 periodsForTag 按 filed 裁。
+  const merged: Record<string, { units: { USD: FactRow[] } }> = {};
+  for (const [tag, rows] of entries) {
+    merged[tag] = { units: { USD: [...(merged[tag]?.units.USD ?? []), ...rows] } };
+  }
+
+  return { facts: { 'us-gaap': merged } };
 }
 
 /**
