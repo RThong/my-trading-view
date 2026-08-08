@@ -920,7 +920,12 @@ function twseCompanyPanes(ticker: string): PaneSpec[] {
 }
 
 /** 金额格的单位标签。TSM 报表是新台币,和别家的美元数**不能比大小**。 */
-const MONEY_UNIT: Record<'USD' | 'TWD' | 'EUR', string> = { USD: '百万美元', TWD: '百万新台币', EUR: '百万欧元' };
+const MONEY_UNIT: Record<'USD' | 'TWD' | 'EUR' | 'KRW', string> = {
+  USD: '百万美元',
+  TWD: '百万新台币',
+  EUR: '百万欧元',
+  KRW: '百万韩元',
+};
 
 /**
  * 走 sec6k 源(季度合并财报 6-K)的额外口径说明 —— 数据不是 companyfacts 的 XBRL,
@@ -932,6 +937,20 @@ const SEC6K_CAVEAT =
   '解析 HTML 报表得到:官方原文、可回填,但**不是 XBRL**,没有 tag 级溯源' +
   '(库里 tag_used 是为复用下游算法借的 us-gaap 名字,真溯源看同行的 accn)。\n' +
   '· 跨公司比绝对值前先看单位 —— 币种见本格标题。';
+
+/**
+ * 走 dart 源(韩国金融监督院公示)的口径说明。它和 6-K 那条不是一回事:数据是**结构化的**
+ * (按 IFRS 标准 account_id 取,不解析 HTML),但**完全不在 SEC 体系内**。
+ */
+const DART_CAVEAT =
+  '\n⚠️ **这家的四个科目来自韩国 DART**(금융감독원 전자공시),不是 SEC。它 2026-07 才在美上市,' +
+  'SEC 侧**零财务 XBRL** —— companyfacts 只有 5 个非财务 tag,6-K 与英文财报稿都只给' +
+  '营收 / 营业利润 / 净利,**没有营业成本、没有现金流**,所以毛利率和 FCF 在 SEC 那边根本算不出来。\n' +
+  '· 口径 **K-IFRS 合并**(fs_div=CFS),币种**韩元** —— 别和别家的美元数直接比大小。\n' +
+  '· 取数按 **IFRS 标准 account_id**,不按科目中文名:实测「기타영업외수익」会被误当营收、' +
+  '「유형자산의 처분」(处分)会被误当 capex 且符号相反。\n' +
+  '· **时效 T+45**(韩国分기보고서法定期限),比 6-K 的 T+25 慢 —— 但 6-K 那条给不出这两格要的科目。\n' +
+  '· 报表给年初至今累计,单季由相邻两期相减还原;可回填到 **2016 年**。';
 
 /** 走 6-K 那条的各家,各自的口径与时效差异。 */
 const SEC6K_NOTES: Record<string, string> = {
@@ -953,10 +972,12 @@ function companyPanes(ticker: string): PaneSpec[] {
   const seller = sideOf(ticker) === 'seller';
   const note = COMPANY_NOTES[ticker];
   const unit = MONEY_UNIT[currencyOf(ticker)];
-  // 走 6-K 那条的公司要多一段口径说明;走 companyfacts 的不用。
+  // 非 companyfacts 的源要多一段口径说明:数据不是 SEC 的 XBRL,可审计程度与会计准则都不同。
   const srcNote = hasSource(ticker, 'sec6k')
     ? SEC6K_CAVEAT + (SEC6K_NOTES[ticker] ? `\n${SEC6K_NOTES[ticker]}` : '')
-    : '';
+    : hasSource(ticker, 'dart')
+      ? DART_CAVEAT
+      : '';
 
   return [
     paneOf(ticker, 'gm', '毛利率', `${ticker} TTM 毛利率(%)`, '#eab308', [
@@ -1040,6 +1061,8 @@ const buyerAggregatePane: PaneSpec = {
  */
 const SOURCE_PANES: Record<ChainSource, (ticker: string) => PaneSpec[]> = {
   sec: companyPanes,
+  // dart 的原始行落进同一张表、派生同一套 SEC_* 序列 → 格子构造也是同一个,只在说明里多一段口径差异。
+  dart: companyPanes,
   // sec6k 的原始行落进同一张表、派生同一套 SEC_* 序列 → 格子构造也是同一个
   // (只在说明里多一段口径差异,见 SEC6K_CAVEAT)。
   sec6k: companyPanes,

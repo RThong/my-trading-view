@@ -3,6 +3,7 @@ import { startJobRun, finishJobRun } from '../storage/repository';
 import { updateSecFundamentals } from './secFundamentals';
 import { updateTwseRevenue } from './twseRevenue';
 import { updateSec6kReports } from './sec6kReports';
+import { updateDartFinancials } from './dartFinancials';
 import { ACTIVE_TICKERS, hasSource, type ChainSource } from '../../shared/aiChain';
 
 /**
@@ -25,6 +26,7 @@ const JOB_NAMES: Record<ChainSource, string> = {
   sec: 'sec_fundamentals',
   sec6k: 'sec6k_reports',
   twse: 'twse_revenue',
+  dart: 'dart_financials',
 };
 
 type Outcome = {
@@ -74,6 +76,20 @@ const RUNNERS: Record<ChainSource, Runner> = {
       written: r.rowsWritten + r.seriesWritten,
       nothingWorked: r.fetched.length === 0 && r.skipped.length === 0,
       log: `SEC6K: fetched=[${r.fetched}] skipped=[${r.skipped}] failed=[${r.failed}] rows=${r.rowsWritten} series=${r.seriesWritten}`,
+    };
+  },
+
+  async dart(db, tickers, force) {
+    const only = tickers?.filter((t) => hasSource(t, 'dart'));
+    const r = await updateDartFinancials(db, { force, tickers: only });
+    return {
+      fetched: r.fetched,
+      skipped: r.skipped,
+      failed: r.failed,
+      written: r.rowsWritten + r.seriesWritten,
+      // 缺 key 也走 skipped —— 那是「没配」不是「挂了」,不该报红。
+      nothingWorked: r.fetched.length === 0 && r.skipped.length === 0,
+      log: `DART: fetched=[${r.fetched}] skipped=[${r.skipped}] failed=[${r.failed}] rows=${r.rowsWritten} series=${r.seriesWritten}`,
     };
   },
 

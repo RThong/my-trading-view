@@ -13,10 +13,12 @@ export type SecSide = 'buyer' | 'seller';
  *  · sec6k = TSM 交给 EDGAR 的季度合并财报 6-K(`tsm-fs*`)。HTML 报表,不是 XBRL,
  *            但**能回填**(实测 13 份、2023Q1 起)且**含现金流**,所以四个科目全有。
  *  · twse  = 台湾证交所 OpenAPI 月营收(官方、T+10 天,全链最快;不可回填)
+ *  · dart  = 韩国金融监督院 DART 的季度全表(SK 海力士唯一可行源 —— 它的 SEC 侧零财务 XBRL、
+ *            6-K 只有营收与营业利润,算不出毛利率与 FCF)。要免费 key,T+45,可回填到 2016
  * 加新源时:加一个 ChainSource 值 → SOURCE_KINDS 补它的格子 → SOURCE_NEEDS 声明它要哪个
  *          标识符 → job 的分派表补 updater → 面板的分派表补 pane 构造。全是查表。
  */
-export type ChainSource = 'sec' | 'sec6k' | 'twse';
+export type ChainSource = 'sec' | 'sec6k' | 'twse' | 'dart';
 
 /**
  * 每个源要哪个标识符。**一家可以同时走多个源**(TSM:毛利率/FCF 走 sec6k、月营收走 twse)——
@@ -24,10 +26,11 @@ export type ChainSource = 'sec' | 'sec6k' | 'twse';
  * 类型上两个标识符都可选,由 aiChain.test 的不变式测试保证「声明了源就得有对应标识符」——
  * 判别联合表达不了「多源」这件事,而漏标识符会在 job 里变成运行时错误,故用测试兜。
  */
-export const SOURCE_NEEDS: Record<ChainSource, 'cik' | 'twseCode'> = {
+export const SOURCE_NEEDS: Record<ChainSource, 'cik' | 'twseCode' | 'dartCorpCode'> = {
   sec: 'cik',
   sec6k: 'cik',
   twse: 'twseCode',
+  dart: 'dartCorpCode',
 };
 
 // inChain=false:已启用、有 tab 可看,但**不作判据成员**——面板的名单文案不把它列进去,
@@ -62,8 +65,10 @@ type Company = {
   sources?: ChainSource[];
   cik?: string;
   twseCode?: string;
+  /** DART 的 8 位고유번호(≠ 종목코드)。SK 海力士 = 00164779,종목코드 000660。 */
+  dartCorpCode?: string;
   /** 报表币种,省略 = 'USD'。面板标题与说明按它写单位 —— 新台币的数不能和美元的比大小。 */
-  currency?: 'USD' | 'TWD' | 'EUR';
+  currency?: 'USD' | 'TWD' | 'EUR' | 'KRW';
 };
 
 export const SEC_COMPANIES: Company[] = [
@@ -107,13 +112,37 @@ export const SEC_COMPANIES: Company[] = [
   // 已移除:AAPL(不在 AI 链上,FCF 由 iPhone 主导)、DELL(整机厂,毛利率不反映芯片稀缺溢价)、
   // AVGO(合并了 VMware,毛利率是「AI 硅片定价权 + 软件占比」的混合读数,当稀缺溢价用不干净)。
   //
-  // 还进不来的:SK 海力士(2026-07 才在美上市,companyfacts 无财务 XBRL;它的 6-K 只有营收与营业利润、
-  // **没有营业成本**,算不出毛利率 → 要毛利率得走韩国 DART,需要一个免费 API key)。
+  // 存储的第二家。**唯一走 dart 源的** —— 它 2026-07 才在美上市,SEC 侧零财务 XBRL
+  // (companyfacts 只有 `ffd` 命名空间 5 个 tag),6-K 与英文财报稿都只给营收/营业利润/净利,
+  // **没有营业成本、没有现金流**。四科目只能从韩国 DART 拿(T+45,可回填到 2016)。
+  // 与 MU 对读:同为存储,DRAM/NAND 价格周期的两个独立读数;它的 HBM 占比更高。
+  {
+    ticker: 'SKHY',
+    dartCorpCode: '00164779',
+    sources: ['dart'],
+    side: 'seller',
+    inChain: true,
+    group: 'upstream',
+    currency: 'KRW',
+  },
   { ticker: 'INTC', cik: '50863', side: 'seller', group: 'watch' },
 ];
 
 /** 已逐家核对过、可入库的标的。核对一家开一家 —— 未核对的进来会污染派生线。 */
-export const ACTIVE_TICKERS = ['NVDA', 'MU', 'AMD', 'INTC', 'TSM', 'ASML', 'MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META'];
+export const ACTIVE_TICKERS = [
+  'NVDA',
+  'MU',
+  'AMD',
+  'INTC',
+  'TSM',
+  'ASML',
+  'SKHY',
+  'MSFT',
+  'ORCL',
+  'GOOGL',
+  'AMZN',
+  'META',
+];
 
 const find = (ticker: string) => SEC_COMPANIES.find((c) => c.ticker === ticker);
 
@@ -128,12 +157,14 @@ export const sec6kCikOf = (ticker: string): string | undefined =>
   hasSource(ticker, 'sec6k') ? find(ticker)?.cik : undefined;
 export const twseCodeOf = (ticker: string): string | undefined =>
   hasSource(ticker, 'twse') ? find(ticker)?.twseCode : undefined;
+export const dartCorpCodeOf = (ticker: string): string | undefined =>
+  hasSource(ticker, 'dart') ? find(ticker)?.dartCorpCode : undefined;
 
 export const sideOf = (ticker: string): SecSide | undefined => find(ticker)?.side;
 export const groupOf = (ticker: string): ChainGroup | undefined => find(ticker)?.group;
 /** 某组里当前启用的标的,保持名单原顺序。 */
 export const activeByGroup = (group: ChainGroup): string[] => ACTIVE_TICKERS.filter((t) => groupOf(t) === group);
-export const currencyOf = (ticker: string): 'USD' | 'TWD' | 'EUR' => find(ticker)?.currency ?? 'USD';
+export const currencyOf = (ticker: string): 'USD' | 'TWD' | 'EUR' | 'KRW' => find(ticker)?.currency ?? 'USD';
 
 /** 某个源下、当前启用的标的(job 分派用)。一家可能出现在多个源里。 */
 export const activeBySource = (source: ChainSource): string[] => ACTIVE_TICKERS.filter((t) => hasSource(t, source));
@@ -143,7 +174,7 @@ export const activeBySource = (source: ChainSource): string[] => ACTIVE_TICKERS.
  * 所以 writeDerived 的范围是这个并集,不是单个源。少了 sec6k 那家的线永远不出。
  */
 export const activeInSecTable = (): string[] =>
-  ACTIVE_TICKERS.filter((t) => hasSource(t, 'sec') || hasSource(t, 'sec6k'));
+  ACTIVE_TICKERS.filter((t) => hasSource(t, 'sec') || hasSource(t, 'sec6k') || hasSource(t, 'dart'));
 
 // ── 对外序列键(路由与面板必须用同一套,故在此定义一次)────────────────────────
 
@@ -160,6 +191,8 @@ export const SOURCE_KINDS = {
   // sec6k 产出的原始行落进同一张 sec_fundamentals 表,派生量走同一套算法 → 格子种类相同。
   sec6k: ['gm', 'capex', 'fcf', 'fcfq'],
   twse: ['revM', 'revYoy'],
+  // dart 的原始行同样落进 sec_fundamentals、派生同一套 SEC_* 序列 → 格子种类与 sec 相同。
+  dart: ['gm', 'capex', 'fcf', 'fcfq'],
 } as const satisfies Record<ChainSource, readonly string[]>;
 
 export type SecKind = (typeof SOURCE_KINDS)['sec'][number];

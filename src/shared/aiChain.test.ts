@@ -77,11 +77,17 @@ describe('源映射(表驱动)', () => {
   test('分源名单:一家可出现在多个源里,并集覆盖全体启用名单', () => {
     expect(activeBySource('sec6k')).toEqual(['TSM', 'ASML']);
     expect(activeBySource('twse')).toEqual(['TSM']);
-    // 走 sec6k 的两家不能同时出现在 sec 那一路 —— 否则 SEC job 会拿它们去 companyfacts
-    // 白打一轮(那里只有年频),还会因为没有 10-Q 而报 failed。
-    for (const t of ['TSM', 'ASML']) expect(activeBySource('sec')).not.toContain(t);
+    expect(activeBySource('dart')).toEqual(['SKHY']);
+    // 走 sec6k / dart 的那几家不能同时出现在 sec 那一路 —— 否则 SEC job 会拿它们去 companyfacts
+    // 白打一轮(TSM/ASML 那里只有年频、SKHY 压根没有财务 XBRL),还会因为没有 10-Q 而报 failed。
+    for (const t of ['TSM', 'ASML', 'SKHY']) expect(activeBySource('sec')).not.toContain(t);
 
-    const union = new Set([...activeBySource('sec'), ...activeBySource('sec6k'), ...activeBySource('twse')]);
+    const union = new Set([
+      ...activeBySource('sec'),
+      ...activeBySource('sec6k'),
+      ...activeBySource('twse'),
+      ...activeBySource('dart'),
+    ]);
     expect([...union].sort()).toEqual([...ACTIVE_TICKERS].sort());
   });
 
@@ -140,7 +146,8 @@ describe('面板分组', () => {
     // 直接卖加速器的两家,毛利率可横向比。
     expect(activeByGroup('accelerator')).toEqual(['NVDA', 'AMD']);
     // 代工 + 存储:都是「供给跟不跟得上」那一层。
-    expect(activeByGroup('upstream')).toEqual(['MU', 'TSM', 'ASML']);
+    // 存储两家(MU / SKHY)+ 代工 + 设备。MU 与 SKHY 是 DRAM/NAND 周期的两个独立读数。
+    expect(activeByGroup('upstream')).toEqual(['MU', 'TSM', 'ASML', 'SKHY']);
     expect(activeByGroup('watch')).toEqual(['INTC']);
     expect(activeByGroup('cloud')).toEqual(['MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META']);
   });
