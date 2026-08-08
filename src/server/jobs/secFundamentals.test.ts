@@ -12,13 +12,59 @@ function freshDb(): Database {
 }
 
 // 一年四期 YTD(四个科目齐全),够算出一个 TTM 点。四期累计 → 单季各为 1/4。
+// accn 与 filingOf 生成的一致 —— 真实 companyfacts 里两者本就是同一个号。
 const ytd = (vals: [number, number, number, number]) => ({
   units: {
     USD: [
-      { start: '2025-01-27', end: '2025-04-27', val: vals[0], accn: 'a', form: '10-Q', filed: '2025-05-28' },
-      { start: '2025-01-27', end: '2025-07-27', val: vals[1], accn: 'b', form: '10-Q', filed: '2025-08-27' },
-      { start: '2025-01-27', end: '2025-10-26', val: vals[2], accn: 'c', form: '10-Q', filed: '2025-11-19' },
-      { start: '2025-01-27', end: '2026-01-25', val: vals[3], accn: 'd', form: '10-K', filed: '2026-02-25' },
+      {
+        start: '2025-01-27',
+        end: '2025-04-27',
+        val: vals[0],
+        accn: 'accn-2025-05-28',
+        form: '10-Q',
+        filed: '2025-05-28',
+      },
+      {
+        start: '2025-01-27',
+        end: '2025-07-27',
+        val: vals[1],
+        accn: 'accn-2025-08-27',
+        form: '10-Q',
+        filed: '2025-08-27',
+      },
+      {
+        start: '2025-01-27',
+        end: '2025-10-26',
+        val: vals[2],
+        accn: 'accn-2025-11-19',
+        form: '10-Q',
+        filed: '2025-11-19',
+      },
+      {
+        start: '2025-01-27',
+        end: '2026-01-25',
+        val: vals[3],
+        accn: 'accn-2026-02-25',
+        form: '10-K',
+        filed: '2026-02-25',
+      },
+    ],
+  },
+});
+
+/** 上一年四期 + 新的一季(2026-04-26),用来验「真的吃进了新一期」。 */
+const nextQ = (fy: number) => ({
+  units: {
+    USD: [
+      ...ytd([fy / 4, fy / 2, (fy * 3) / 4, fy]).units.USD,
+      {
+        start: '2026-01-26',
+        end: '2026-04-26',
+        val: fy / 4,
+        accn: 'accn-2026-05-20',
+        form: '10-Q',
+        filed: '2026-05-20',
+      },
     ],
   },
 });
@@ -454,4 +500,199 @@ describe('sec fundamentals job', () => {
     // 卖方压根不查:它的租赁不影响买方合计线的零轴。
     expect(await leaseProblems(['NVDA'], leaseOf(8e9))).toEqual([]);
   });
+});
+
+describe('advanced 判据:期末推进 vs 只重述旧期', () => {
+  /** 同一批期间,但换成新的 accn/filed —— 模拟「新申报只重述了旧期,没带来新一季」。 */
+  const restated = (filed: string) => ({
+    units: {
+      USD: [
+        { start: '2025-01-27', end: '2025-04-27', val: 25e9, accn: `accn-${filed}`, form: '10-Q', filed },
+        { start: '2025-01-27', end: '2025-07-27', val: 50e9, accn: `accn-${filed}`, form: '10-Q', filed },
+        { start: '2025-01-27', end: '2025-10-26', val: 75e9, accn: `accn-${filed}`, form: '10-Q', filed },
+        { start: '2025-01-27', end: '2026-01-25', val: 100e9, accn: `accn-${filed}`, form: '10-Q', filed },
+      ],
+    },
+  });
+
+  const restatedFacts = (filed: string): CompanyFacts => ({
+    facts: {
+      'us-gaap': {
+        Revenues: restated(filed),
+        CostOfRevenue: restated(filed),
+        NetCashProvidedByUsedInOperatingActivities: restated(filed),
+        PaymentsToAcquirePropertyPlantAndEquipment: restated(filed),
+      },
+    },
+  });
+
+  /**
+   * 回归:判据曾用 MAX(filed),后来用 accn —— 两者**都会被比较期带偏**。一份 10-Q 在
+   * companyfacts 里同时贡献本季与去年同季,后者也带着新的 filed/accn 落库,于是新一季即使
+   * 被期间长度或差分规则挡住,判据照样为真 → 兜底不跑、假绿灯、面板不标滞后。
+   */
+  test('新申报只重述旧期、没带来新期末 → 必须报(不能算 advanced)', async () => {
+    const db = freshDb();
+    await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher('2026-02-25') });
+    // 模拟 v4→v5 迁移后的旧库:有历史数据,但 processed_filed 还是 NULL。
+    // 这一步是关键 —— 若 job 不在拉取**之前**就地播种,下面的守卫会只复发一轮。
+    db.run(`UPDATE sec_watermark SET processed_filed = NULL WHERE ticker = 'NVDA'`);
+
+    const r = await updateSecFundamentals(db, {
+      ...SELLER_ONLY,
+      fetcher: {
+        latestFiling: async () => filingOf('2026-05-20'),
+        companyFacts: async () => restatedFacts('2026-05-20'),
+        filingInstance: async () => EMPTY_INSTANCE,
+      },
+    });
+
+    expect(r.failed.some((f) => /NVDA: companyfacts 与申报实例都没贡献新一期的行/.test(f))).toBe(true);
+    expect(r.fetched).toEqual([]);
+
+    // **守卫必须每轮复发**。回归:skip 判据一旦 OR 进 sec_fundamentals 的 MAX(filed),
+    // 上一轮那些**比较期**行已带着新 filed 落库 → 水位追平远端 → 这一轮直接 skip、
+    // failed 变空、job 转绿,而库里最新一期永远停在旧的那一季且再没人提 —— 正是要防的假绿灯。
+    let pulled = 0;
+    const again = await updateSecFundamentals(db, {
+      ...SELLER_ONLY,
+      fetcher: {
+        latestFiling: async () => filingOf('2026-05-20'),
+        companyFacts: async () => {
+          pulled += 1;
+          return restatedFacts('2026-05-20');
+        },
+        filingInstance: async () => EMPTY_INSTANCE,
+      },
+    });
+
+    expect(again.skipped).toEqual([]);
+    expect(pulled).toBe(1);
+    expect(again.failed.some((f) => /NVDA: companyfacts 与申报实例都没贡献新一期的行/.test(f))).toBe(true);
+    db.close();
+  });
+
+  /** 修订件合法地只重述旧期、不带来新期末,期末判据对它不成立 → 退回「这份申报有没有贡献行」。 */
+  test('10-Q/A 只重述旧期 → 不报(期末判据对修订件不成立)', async () => {
+    const db = freshDb();
+    await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher('2026-02-25') });
+
+    const r = await updateSecFundamentals(db, {
+      ...SELLER_ONLY,
+      fetcher: {
+        latestFiling: async () => ({ filed: '2026-05-20', form: '10-Q/A', accn: 'accn-2026-05-20' }),
+        companyFacts: async () => restatedFacts('2026-05-20'),
+        filingInstance: noInstance, // 兜底不该被触发
+      },
+    });
+
+    expect(r.failed).toEqual([]);
+    expect(r.fetched).toEqual(['NVDA']);
+    db.close();
+  });
+
+  /**
+   * 回归:存在**不带财务 XBRL 的修订件**(只补 Part III / 重发附件的 10-K/A)。它一行都不落
+   * 是合法形态,但 latestFiling 按 filed 最大会选中它 —— 若把「没贡献行」判成失败,就是
+   * 常驻黄灯 + 天天重拉几 MB companyfacts + 面板永久假滞后,要等下一份 10-Q 才自愈。
+   */
+  test('修订件不带财务 XBRL(一行都没贡献)→ 不报失败,且下一轮不再重拉', async () => {
+    const db = freshDb();
+    await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher('2026-02-25') });
+
+    // companyfacts 里没有这份 /A 的任何事实,期末也没往前走。
+    const amendment = {
+      latestFiling: async () => ({ filed: '2026-03-10', form: '10-K/A', accn: 'accn-2026-03-10' }),
+      companyFacts: async () => NVDA_FACTS,
+      filingInstance: noInstance, // 兜底不该被触发
+    };
+    const r = await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: amendment });
+    expect(r.failed).toEqual([]);
+
+    // 关键:水位要靠 processed_filed 前进 —— 靠 sec_fundamentals 的 MAX(filed)(仍停在 02-25)
+    // 永远追不上 03-10,下一轮会再拉一次几 MB。
+    let pulled = 0;
+    const next = await updateSecFundamentals(db, {
+      ...SELLER_ONLY,
+      fetcher: {
+        ...amendment,
+        companyFacts: async () => {
+          pulled += 1;
+          return NVDA_FACTS;
+        },
+      },
+    });
+
+    expect(next.skipped).toEqual(['NVDA']);
+    expect(pulled).toBe(0);
+    db.close();
+  });
+});
+
+describe('--force 与水位', () => {
+  /**
+   * 回归:force 曾经连 submissions 都不打,于是 force 成功吃进新一季后 processed_filed 不前进。
+   * 此后每一轮普通运行:不 skip → 拉几 MB → 期末已不再前进 → 判 failed。**永久红灯 + 每轮重拉**,
+   * 要等下一份 10-Q(最长约三个月)。而文档里恰恰写着「想立刻验就 --force 单跑那一家」。
+   */
+  test('force 吃进新一季后,后续普通轮次应正常 skip(不是永久 failed)', async () => {
+    const db = freshDb();
+    await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher('2026-02-25') });
+
+    // 远端出了新一季,用户直接 --force 单跑核对。
+    const nextQuarter: CompanyFacts = {
+      facts: {
+        'us-gaap': {
+          Revenues: nextQ(125e9),
+          CostOfRevenue: nextQ(50e9),
+          NetCashProvidedByUsedInOperatingActivities: nextQ(100e9),
+          PaymentsToAcquirePropertyPlantAndEquipment: nextQ(5e9),
+        },
+      },
+    };
+    const forced = await updateSecFundamentals(db, {
+      ...SELLER_ONLY,
+      force: true,
+      fetcher: {
+        latestFiling: async () => filingOf('2026-05-20'),
+        companyFacts: async () => nextQuarter,
+        filingInstance: noInstance,
+      },
+    });
+    expect(forced.fetched).toEqual(['NVDA']);
+
+    let pulled = 0;
+    const after = await updateSecFundamentals(db, {
+      ...SELLER_ONLY,
+      fetcher: {
+        latestFiling: async () => filingOf('2026-05-20'),
+        companyFacts: async () => {
+          pulled += 1;
+          return nextQuarter;
+        },
+        filingInstance: noInstance,
+      },
+    });
+
+    expect(after.skipped).toEqual(['NVDA']);
+    expect(after.failed).toEqual([]);
+    expect(pulled).toBe(0);
+    db.close();
+  });
+});
+
+/**
+ * 回归:v5 迁移只加列不回填,旧库里 processed_filed 全是 NULL。若播种逻辑塞在 `if (!opts.force)` 里,
+ * 文档推荐的「--force 单跑那一家」就会把一份**已处理过的**申报判成 failed(还白走一遍实例兜底)。
+ */
+test('processed_filed 为 NULL 的旧库上 --force 重跑已处理的申报 → 不算失败', async () => {
+  const db = freshDb();
+  await updateSecFundamentals(db, { ...SELLER_ONLY, fetcher: stubFetcher('2026-02-25') });
+  db.run(`UPDATE sec_watermark SET processed_filed = NULL WHERE ticker = 'NVDA'`);
+
+  const r = await updateSecFundamentals(db, { ...SELLER_ONLY, force: true, fetcher: stubFetcher('2026-02-25') });
+
+  expect(r.failed).toEqual([]);
+  expect(r.fetched).toEqual(['NVDA']); // noInstance 会抛 —— 兜底根本不该被触发
+  db.close();
 });

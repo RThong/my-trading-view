@@ -29,6 +29,7 @@ import {
   SEC_BUYER_FCFQ_KEY,
   fundKey,
   kindsOf,
+  trimsGaps,
   type FundKind,
   type SecLag,
 } from '../../shared/aiChain';
@@ -49,7 +50,7 @@ const TTL_MS = 6 * 60 * 60 * 1000;
 let cache: { at: number; body: RegimeBody } | null = null;
 
 /**
- * AI 链基本面派生量(季频/月频,jobs/aiChainFundamentals 维护)。库里没有就归 unavailable,
+ * AI 链基本面派生量(季频/月频,由 jobs/aiChainFundamentals 每天跑着维护)。库里没有就归 unavailable,
  * 该 pane 留空 —— 这几条不像行情那样天天更新,job 没跑过是常态,不该整页失败。
  *
  * 序列按**启用名单 × 该家各个源的格子种类并集**派生(见 shared/aiChain 的 kindsOf),
@@ -58,7 +59,7 @@ let cache: { at: number; body: RegimeBody } | null = null;
 /** kind → 库里 series_id。查表而非分支:漏一档是编译错误(Record 要求键齐)。 */
 const SERIES_ID: Record<FundKind, (ticker: string) => string> = {
   // gm/capex/fcf/fcfq 无论来自 companyfacts 还是季报 6-K,原始行都落同一张表、派生同一套
-  // `SEC_*` 序列(见 jobs/tsmcReports),所以这里不必按源分层。
+  // `SEC_*` 序列(见 jobs/sec6kReports),所以这里不必按源分层。
   gm: (t) => secSeriesId(t, 'GM'),
   capex: (t) => secSeriesId(t, 'CAPEX'),
   fcf: (t) => secSeriesId(t, 'FCF'),
@@ -67,33 +68,19 @@ const SERIES_ID: Record<FundKind, (ticker: string) => string> = {
   revYoy: (t) => twseSeriesId(t, 'revYoy'),
 };
 
-/**
- * 要不要裁断档(trailingContiguous)。判据是**这条线用折线还是柱状画**,不是数据来自哪个源:
- * 折线会把断档两端连成一条斜率是编的直线;柱状不连,空档就是没有柱子。
- * (面板那侧的画法见 RENDER_BY_KIND —— 两处必须一致,不然要么白裁、要么留假斜率。)
- */
-const TRIM_GAPS: Record<FundKind, boolean> = {
-  gm: true,
-  capex: true,
-  fcf: true,
-  // fcfq 是柱状,但它等间隔季频、不缺季,裁不裁一样;保持一致写 true。
-  fcfq: true,
-  // 月营收那两条是柱状,而且快照攒的中间必然空 11 个月 → 不能裁(裁了三个点只剩两个)。
-  revM: false,
-  revYoy: false,
-};
-
 function readSecSeries(db: Database): { series: Record<string, Point[]>; unavailable: string[]; lag: SecLag[] } {
   const defs = [
     ...ACTIVE_TICKERS.flatMap((ticker) =>
       kindsOf(ticker).map((kind) => ({
         out: fundKey(ticker, kind),
         id: SERIES_ID[kind](ticker),
-        trim: TRIM_GAPS[kind],
+        // 裁不裁由「折线还是柱状」决定,和源无关(见 shared/aiChain 的 KIND_RENDER)。
+        trim: trimsGaps(kind),
       })),
     ),
-    { out: SEC_BUYER_FCF_KEY, id: BUYER_FCF_SERIES, trim: true },
-    { out: SEC_BUYER_FCFQ_KEY, id: BUYER_FCFQ_SERIES, trim: true },
+    { out: SEC_BUYER_FCF_KEY, id: BUYER_FCF_SERIES, trim: trimsGaps('fcf') },
+    // 单季合计是柱状 → 不裁。裁了会在真缺一季时把缺口之前的历史柱全砍掉。
+    { out: SEC_BUYER_FCFQ_KEY, id: BUYER_FCFQ_SERIES, trim: trimsGaps('fcfq') },
   ];
 
   const series: Record<string, Point[]> = {};
@@ -118,7 +105,7 @@ function readSecSeries(db: Database): { series: Record<string, Point[]>; unavail
  * 净流动性 / 回购利差为读时派生(前向填充对齐后线性组合)。
  */
 export const regimeRoute = new Hono().get('/', async (c) => {
-  // 缓存命中也重读 SEC 那几条:它们由独立的周 job 写库,进程内缓存看不到跨进程的写入,
+  // 缓存命中也重读 SEC 那几条:它们由独立的 job 天天写库,进程内缓存看不到跨进程的写入,
   // 否则刚跑完 job 最长还要等 6h 才在面板上出现。读库很便宜,不值得为它整体失效缓存。
   if (cache && Date.now() - cache.at < TTL_MS) {
     const db = openDb();
@@ -302,7 +289,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   }
 
   const body: RegimeBody = { series, unavailable, ohlc, secLag };
-  // 只缓存全成功(降级响应不缓存,下次重试)。例外:SEC 那几条是季频、靠单独的周 job 攒,
+  // 只缓存全成功(降级响应不缓存,下次重试)。例外:SEC 那几条是季频、靠单独的 job 逐季攒,
   // 从没跑过 job 的库里它们必然缺——不能让这个常态把整条路由的缓存永久关掉。
   if (unavailable.every((n) => n.startsWith(FUND_KEY_PREFIX))) cache = { at: Date.now(), body };
   return c.json(body);

@@ -4,6 +4,9 @@ import {
   insertMarketSeries,
   getSecFundamentals,
   getLatestSecFiled,
+  getLatestSecPeriodEnd,
+  getSecProcessedFiled,
+  putSecProcessedFiled,
   putSecWatermark,
   getMarketSeriesByPrefix,
   type MarketSeriesRow,
@@ -53,14 +56,22 @@ const SEC_SERIES_PREFIX_ESCAPED = 'SEC\\_'; // LIKE 的 `_` 是通配符,转义�
 const key = (r: MarketSeriesRow) => `${r.seriesId}@${r.obsDate}=${r.value}`;
 
 /**
+ * 体检结论带上是**哪一家**的。派生量是 sec ∪ sec6k 一起算的,但 job_run 是各源各记一条:
+ * 不带 ticker 的话,MSFT(companyfacts 源)缺科目会把 `sec6k_reports` 那盏灯也弄黄,
+ * 反之亦然 —— 而体检按设计每轮复发,于是一个未登记的结构性问题会让**两盏灯长期同时黄**。
+ * 调用方按自己那个源下的名单筛。
+ */
+export type DerivedProblem = { ticker: string; message: string };
+
+/**
  * 按**当前启用名单**整体重算派生量,和库里现有的 `SEC_*` 比对:一致就一行都不写。
  *
  * 为什么不是「只算本轮抓到的那几家」:合计线的口径随名单变化(多一家 = 每个点都变),而名单变更
- * 恰恰发生在「手动单跑核对 → 通过 → 加进 SEC_ACTIVE_TICKERS」之后的那一轮 —— 那一轮所有公司都会
+ * 恰恰发生在「手动单跑核对 → 通过 → 加进启用名单」之后的那一轮 —— 那一轮所有公司都会
  * 因为没有新申报而 skip。若重算挂在「有抓到东西」上,合计线会停在旧名单口径,最长等三个月才自愈。
  *
  * 为什么用「算完比对」而不是无条件重写:算是纯本地计算(微秒级),写才是副作用。比对相同就跳过,
- * 既保证名单变更能自愈,又让没有变化的那几周真的是 no-op。
+ * 既保证名单变更能自愈,又让没有变化的那几轮真的是 no-op。
  *
  * 删而不是只 upsert:名单缩小或历史点减少时,旧点会残留成一条口径不一的线,upsert 清不掉。
  */
@@ -68,7 +79,7 @@ export function writeDerivedSecSeries(
   db: Database,
   active: string[],
   examine: string[],
-): { written: number; problems: string[] } {
+): { written: number; problems: DerivedProblem[] } {
   // 体检范围 = 启用名单 ∪ 本轮抓过的(单跑核对某家时它还没进启用名单,但那正是最该体检的时刻)。
   const all = [...new Set([...active, ...examine])].map((t) => [t, getSecFundamentals(db, t)] as const);
 
@@ -109,12 +120,16 @@ export function writeDerivedSecSeries(
 
       return missing.length
         ? [
-            `${ticker}: 最新一期(${latest ?? '无数据'})缺**判据必需**科目 ${missing.join('/')} —— ` +
-              '三种病因,处置方向不同:① mapping_gap:tag 链没覆盖到这家 → 补 TAG_CHAINS;' +
-              '② disclosure_absent:源本季根本没有这条行 → 补不了,接受缺格(裁剪规则已保证图上不画假斜率);' +
-              '③ source_capability_gap:数在 SEC 原始 XBRL 里、但是公司自定义(extension)概念,' +
-              'companyfacts 不聚合 → 换源才能修,确认后登记进 KNOWN_GAPS。' +
-              '先去 sec_fundamentals 看 tag_used、再对着该期 filing 原文判是哪一种。',
+            {
+              ticker,
+              message:
+                `${ticker}: 最新一期(${latest ?? '无数据'})缺**判据必需**科目 ${missing.join('/')} —— ` +
+                '三种病因,处置方向不同:① mapping_gap:tag 链没覆盖到这家 → 补 TAG_CHAINS;' +
+                '② disclosure_absent:源本季根本没有这条行 → 补不了,接受缺格(裁剪规则已保证图上不画假斜率);' +
+                '③ source_capability_gap:数在 SEC 原始 XBRL 里、但是公司自定义(extension)概念,' +
+                'companyfacts 不聚合 → 换源才能修,确认后登记进 KNOWN_GAPS。' +
+                '先去 sec_fundamentals 看 tag_used、再对着该期 filing 原文判是哪一种。',
+            },
           ]
         : [];
     });
@@ -139,15 +154,32 @@ export function writeDerivedSecSeries(
         if (!scope || scope === want) return [];
 
         return [
-          `${t}: capex 口径从声明的 ${want} 变成 ${scope}(最新一期 tag=${latestCapex!.tagUsed})—— ` +
-            '合计线的零轴位置不再可比,核一下该家报表原文,再改 CAPEX_SCOPE_EXPECTED',
+          {
+            ticker: t,
+            message:
+              `${t}: capex 口径从声明的 ${want} 变成 ${scope}(最新一期 tag=${latestCapex!.tagUsed})—— ` +
+              '合计线的零轴位置不再可比,核一下该家报表原文,再改 CAPEX_SCOPE_EXPECTED',
+          },
         ];
       }),
   );
   problems.push(
     ...buyers
       .filter(([, d]) => d.fcfTtm.length === 0)
-      .map(([t]) => `${t}: 一个 TTM FCF 点都算不出,已排除出买方合计线(检查 ocf/capex 的 tag)`),
+      .map(([t]) => ({
+        ticker: t,
+        message: `${t}: 一个 TTM FCF 点都算不出,已排除出买方合计线(检查 ocf/capex 的 tag)`,
+      })),
+  );
+  // 上面那条只覆盖**库里有数据**的家。已启用却一行都没抓到的买方连 derived 都进不去,
+  // 于是被静默排除出合计 —— 线照画,成员却少一家,图上完全看不出来(而「离零轴多远」正取决于成员数)。
+  problems.push(
+    ...active
+      .filter((t) => isAggregateMember(t) && !derived.some(([d]) => d === t))
+      .map((t) => ({
+        ticker: t,
+        message: `${t}: 已启用的买方,但库里一行数据都没有 —— 买方合计线少了这一家,零轴距离不可读`,
+      })),
   );
 
   const aggregate = aggregateFcf(new Map(buyers.filter(([, d]) => d.fcfTtm.length > 0).map(([t, d]) => [t, d.fcfTtm])));
@@ -205,35 +237,60 @@ export async function updateSecFundamentals(
   // 单家失败只记 failed 继续跑下一家 —— 一家网络抖动不该让其余公司整轮不更新。
   for (const ticker of tickers) {
     try {
-      // --force 跳过整段 filed 比对(连 submissions 都不打):它就是「不管水位,重拉一遍」的逃生口。
-      let latest: LatestFiling | null = null;
-      if (!opts.force) {
-        latest = await sec.latestFiling(cikOf(ticker)!);
-        // 无条件记远端水位(不管后面拉不拉 companyfacts):面板要靠它区分「这家还没到财报期」
-        // 和「财报已交但 companyfacts 还没吃进」。放在 skip 判定之前,否则稳态下永远不更新。
-        if (latest) putSecWatermark(db, ticker, latest.filed);
+      // **submissions 无论如何都要打**(几百 KB)。`--force` 跳过的只是 skip 判定,不是这一步 ——
+      // 早先 force 连 submissions 都不打,于是 force 成功吃进新一季后 processed_filed 不前进,
+      // 此后每一轮:不 skip → 拉几 MB → 期末已不再前进 → 判 failed。**永久红灯 + 每轮重拉**,
+      // 要等下一份 10-Q(最长约三个月)。而文档里恰恰写着「想立刻验就 --force 单跑那一家」。
+      const latest: LatestFiling | null = await sec.latestFiling(cikOf(ticker)!);
+      // 无条件记远端水位(不管后面拉不拉 companyfacts):面板要靠它区分「这家还没到财报期」
+      // 和「财报已交但 companyfacts 还没吃进」。放在 skip 判定之前,否则稳态下永远不更新。
+      if (latest) putSecWatermark(db, ticker, latest.filed);
 
-        // 拿不到定期报告申报日 ≠ 正常跳过。大盘股必然有 10-Q/10-K,拿不到说明源出问题
-        // (SEC 改了 filings.recent 结构 / 字段更名 / 响应降级)。若归入 skipped,每家都 null 时
-        // 会变成「永远绿灯、永远零写入」的假绿。记 failed 但仍不拉几 MB。
-        if (!latest) {
-          failed.push(`${ticker}: submissions 里没有 10-Q/10-K 申报日(源结构可能变了),未拉 companyfacts`);
-          continue;
-        }
-
-        const localFiled = getLatestSecFiled(db, ticker);
-        if (localFiled && latest.filed <= localFiled) {
-          skipped.push(ticker);
-          continue;
-        }
+      // 拿不到定期报告申报日 ≠ 正常跳过。大盘股必然有 10-Q/10-K,拿不到说明源出问题
+      // (SEC 改了 filings.recent 结构 / 字段更名 / 响应降级)。若归入 skipped,每家都 null 时
+      // 会变成「永远绿灯、永远零写入」的假绿。记 failed 但仍不拉几 MB。
+      if (!latest) {
+        failed.push(`${ticker}: submissions 里没有 10-Q/10-K 申报日(源结构可能变了),未拉 companyfacts`);
+        continue;
       }
-      const remoteFiled = latest?.filed ?? null;
+
+      // 本地水位用「**已处理到哪一份**」而不是 sec_fundamentals 的 MAX(filed):
+      // 不带财务 XBRL 的修订件(只补 Part III / 重发附件的 10-K/A)一行都不落,
+      // 拿 MAX(filed) 比就永远追不上远端 → 天天重拉几 MB + 常驻黄灯,要等下一份 10-Q 才自愈。
+      //
+      // ⚠️ 是 **COALESCE 而不是取两者较大**:`MAX(filed)` 会被**比较期**追平 —— 一份 10-Q 在
+      // companyfacts 里同时贡献本季与去年同季,后者也带着新 filed 落库。于是新一季被期间长度/
+      // 差分规则挡住时,MAX(filed) 照样追平远端 → 下一轮直接 skip → 守卫**只复发一轮**、
+      // 第二轮起 job 转绿,正是它要防的假绿灯。processed_filed 只在 advanced() 为真时才写,
+      // 所以它在场时说了算;为 NULL(v5 之前的旧库 / 这家第一次见)则**就地播种**。
+      //
+      // ⚠️ 播种必须在拉 companyfacts **之前**:拉完之后 MAX(filed) 已被这份申报的比较期抬上去,
+      // 那时再播就是把假水位固化。而完全不播的话 COALESCE 会长期回落到 MAX(filed),
+      // 上面防的事等于没防(实测:守卫第一轮报、第二轮就 skip 转绿)。
+      //
+      // ⚠️ 播种**不受 force 管**,只有下面那个 skip 判定归 force 管:v5 迁移只加列不回填,
+      // 旧库里 processed_filed 全是 NULL,若播种也塞进 force 分支里,
+      // 「--force 单跑那一家」(文档推荐的核对方式)就会把一份已处理过的申报判成 failed。
+      let localFiled = getSecProcessedFiled(db, ticker);
+      if (localFiled === null) {
+        localFiled = getLatestSecFiled(db, ticker);
+        if (localFiled) putSecProcessedFiled(db, ticker, localFiled);
+      }
+
+      if (!opts.force && localFiled && latest.filed <= localFiled) {
+        skipped.push(ticker);
+        continue;
+      }
+      const remoteFiled = latest.filed;
 
       // 拿到的行一律落库(可审计)。科目完整性搬到 writeDerived 每轮从库里体检(那里才能复发),
       // 但**这一轮有没有拿到东西必须在这里判**:writeDerived 只看得见「库里最新一期」,
       // 而库里已有历史的那家若新申报一行都解析不出(四科目全换链外 tag / SEC 改了 facts 结构 /
       // 响应降级成空 JSON),最新一期仍是那条旧的、四科目齐全的期 → 体检一条不报 → 绿灯 +
       // 水位不前进 + 每周白拉几 MB。稳态下(库早就有数据)这是唯一会发生的形态。
+      // 落库**前**的最新期末:advanced() 靠「它有没有变大」判断这一轮是不是真吃进了新一季。
+      const periodEndBefore = getLatestSecPeriodEnd(db, ticker);
+
       const companyFacts = await sec.companyFacts(cikOf(ticker)!);
 
       // tag 冲突只能在这里查:库里只存了链序赢的那个值,输的那个没留下,事后查不出来。
@@ -264,16 +321,34 @@ export async function updateSecFundamentals(
       insertSecFundamentals(db, rows);
       rowsWritten += rows.length;
 
-      // 判据用「水位有没有推到远端 filed」而非 rows.length —— 后者盖不住「拉到了但新那一期没解析出来」。
-      // remoteFiled 只在非 force 路径有(force 连 submissions 都不打),故 force 时退回 rows.length。
-      const advanced = () => (remoteFiled ? (getLatestSecFiled(db, ticker) ?? '') >= remoteFiled : rows.length > 0);
+      // 判据是「**最新期末有没有往前走**」,不是 rows.length、也不是 MAX(filed) / accn:
+      //  · rows.length 盖不住「拉到了但新那一期没解析出来」(库里已有历史时它恒 > 0)。
+      //  · MAX(filed) 与 accn 都会被**比较期**带偏:一份 10-Q 在 companyfacts 里同时贡献本季
+      //    与去年同季,后者也带着新的 filed/accn 落库 → 新一季即使被期间长度或差分规则挡住,
+      //    这两个判据照样为真 → 兜底不跑、假绿灯、面板不标滞后。期末推进才是「新一期」本身。
+      //  · 例外是**修订件**(10-Q/A):它合法地只重述旧期、不带来新期末,期末判据对它不成立。
+      //    而且**修订件可能压根不带财务 XBRL**(只补 Part III / 重发附件),那种一行都不落也
+      //    完全正常 —— 所以修订件一律算已处理,只在贡献了行时才说得上「补到了什么」。
+      //    代价:一份真该带重述却没解析出来的 /A 会被放过。相比「常驻黄灯 + 天天重拉几 MB」
+      //    这个确定会发生的代价,换它划算;真重述会在下一份 10-Q 的比较期里再来一次。
+      //
+      // ponytail: 这是「本轮之前 → 之后」的**相对**比较,所以进程若在 insert 与
+      // putSecProcessedFiled 之间被杀(OOM / launchd 超时),下一轮会看到期末不再前进而永久判 failed。
+      // 根治要换成**绝对**判据(拿 submissions 的 reportDate 比库里最新期末),但那得先确认
+      // 各家 10-Q/10-K 的 reportDate 与 XBRL 期末逐份一致 —— 真实数据验过再改。
+      //  · 还有一个例外是 `--force` **重跑一份已经处理过的申报**:期末当然不会再前进,那不是失败。
+      //    普通路径到不了这里就已经 skip 了,所以这个分支只在 force 时成立,不削弱守卫。
+      const isAmendment = latest.form.endsWith('/A');
+      const alreadyProcessed = (getSecProcessedFiled(db, ticker) ?? '') >= latest.filed;
+      const advanced = () =>
+        isAmendment || alreadyProcessed || (getLatestSecPeriodEnd(db, ticker) ?? '') > (periodEndBefore ?? '');
 
       // companyfacts 落后于 submissions 时,直接读那份申报的 XBRL 实例补上(见 parseXbrlInstance)。
       // 只在这个分支打两个额外请求,稳态零开销。**必须与 companyfacts 合并再算**:
       // 现金流多数只报本年累计,单季靠差分 —— 减掉的上一季在 companyfacts 里。
       // 兜底自身的失败单独记:直接往外抛会让 catch 只报「没找到实例」,
       // 盖掉真正的主症状(companyfacts 落后),下面那条诊断必须还能发出来。
-      if (!advanced() && latest) {
+      if (!advanced()) {
         try {
           const patch = parseXbrlInstance(await sec.filingInstance(cikOf(ticker)!, latest.accn), latest);
           const patched = extractFundamentals(ticker, mergeFacts(companyFacts, patch));
@@ -284,6 +359,10 @@ export async function updateSecFundamentals(
           failed.push(`${ticker}: 申报实例兜底失败(${e instanceof Error ? e.message : String(e)})`);
         }
       }
+
+      // 这一份处理完了 —— 不管它有没有带来行。skip 判据读它,否则「合法地不带行」的修订件
+      // 会让水位永远追不上远端(见上面 isAmendment 那段与 schema.sql 的 processed_filed)。
+      if (advanced()) putSecProcessedFiled(db, ticker, latest.filed);
 
       if (!advanced()) {
         failed.push(
@@ -301,8 +380,13 @@ export async function updateSecFundamentals(
 
   // 无条件重算但只在结果有变化时才写(见 writeDerived):没变化的那几周仍是零写入。
   // 完整性问题每轮复发,并入 failed —— 有问题时 job 记 partial,状态灯不会绿。
-  const { written, problems } = writeDerivedSecSeries(db, activeInSecTable(), fetched);
-  failed.push(...problems);
+  // 派生范围是 sec ∪ sec6k(少了 sec6k 那家的线永远不出);activeTickers 那个测试口子要能穿透到这里,
+  // 否则用子集名单跑时会拿全名单去体检,报一堆「这家没数据」。
+  const { written, problems } = writeDerivedSecSeries(db, opts.activeTickers ?? activeInSecTable(), fetched);
+  // **只收自己源下那几家的体检结论**:TSM/ASML(sec6k)的问题不该把这盏灯弄黄,它们各有一条 job_run。
+  // 本轮抓过的也算自己的 —— 单跑核对一家还没进启用名单的公司时,那正是最该看见体检结论的时刻。
+  const mine = new Set([...active, ...fetched]);
+  failed.push(...problems.filter((p) => mine.has(p.ticker)).map((p) => p.message));
 
   return { fetched, skipped, failed, fallback, rowsWritten, seriesWritten: written };
 }

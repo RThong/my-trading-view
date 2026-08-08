@@ -1,5 +1,6 @@
 import { test, expect } from 'bun:test';
 import { buildRegimeSpecs, dimPanes, regimePercentiles, secLagNote, type RegimeData } from './regimeChart.hooks';
+import { ACTIVE_TICKERS, fundKey, kindsOf } from '../../../shared/aiChain';
 
 const data: RegimeData = {
   series: {
@@ -221,4 +222,18 @@ test('dimPanes:月营收两格画柱状不画折线(断档不得连成假斜率)
   expect(byKey['fund:TSM:revYoy']!.render).toEqual({ kind: 'signed' });
   // 毛利率是比率、等间隔季频,折线才对(它由路由端裁断档兜住)。
   expect(byKey['fund:TSM:gm']!.render).toBeUndefined();
+});
+
+// 面板造的格子必须与 shared/aiChain 声明的格子种类**逐个对上**。多造一格的后果是**哑空格**:
+// 路由按 kindsOf 决定发哪些序列、也按它决定哪些进 unavailable,名单外的 key 两边都不管
+// → 面板上一块既没数据也不提示的空白。(踩过:twseCompanyPanes 曾多造一格已退掉的 TWSE 季度毛利率,
+// 眼下被 sec6k 的同名格挡住才没露出来。)
+test('每家的 panes 与 kindsOf 一一对应,不多不少', () => {
+  for (const ticker of ACTIVE_TICKERS) {
+    const keys = dimPanes(`fundamentals:${ticker}`).map((p) => p.key);
+    const want = kindsOf(ticker).map((k) => fundKey(ticker, k));
+
+    expect(new Set(keys), `${ticker} 的格子`).toEqual(new Set(want));
+    expect(keys.length, `${ticker} 的格子有重复`).toBe(new Set(keys).size);
+  }
 });

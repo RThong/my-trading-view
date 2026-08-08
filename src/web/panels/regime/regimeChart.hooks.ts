@@ -6,6 +6,7 @@ import { percentile, percentileRank } from '../../../shared/stats';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../chart/paneChart.types';
 import {
+  KIND_RENDER,
   SEC_BUYER_FCF_KEY,
   SEC_BUYER_FCFQ_KEY,
   chainTickers,
@@ -751,8 +752,9 @@ const SEC_LEASE_CAVEAT =
   '  · 对照:NVDA 2020 也换过同一个 tag,但三个重叠期差额**全为 0** —— 换 tag 不等于换口径,得量。\n' +
   '\n' +
   '**读法:比趋势与相对变化,别拿绝对值去对新闻稿**;要看某一家的公司口径 FCF,去它的财报。';
-// 断档裁剪是后端统一做的(trailingContiguous),对**每条** sec 序列都生效(含毛利率)。
-// 各家/各科目的起点因此长短不一,必须在每一格都讲清楚,否则「怎么这条线只有几年」无处可查。
+// 断档裁剪是后端统一做的(trailingContiguous),但**只对折线那几格**生效(见 shared/aiChain 的
+// KIND_RENDER)—— 柱状不连、空档一眼可见,裁它只会白丢缺口之前的历史柱。
+// 折线各家/各科目的起点因此长短不一,必须在那几格讲清楚,否则「怎么这条线只有几年」无处可查。
 // 单季那格共用:为什么要它、以及它的陷阱。
 const SEC_QUARTERLY_READ = [
   '**为什么单独画单季**:判据是「跌破零轴」,而 TTM 要四个季度累积才跌破 —— 转折看晚最多一年。',
@@ -766,11 +768,18 @@ const SEC_QUARTERLY_READ = [
   '分工:TTM 看**水平**(还有多厚)与**斜率**(同比在改善还是恶化);这条看**转折时点**。',
 ].join('\n');
 
+/** **折线格专用**。柱状格别拼这条 —— 它们不裁,拼上就是一句和行为相反的口径说明。 */
 const SEC_TRIM_NOTE =
   '⚠️ 只画**最近一段连续序列**:XBRL 里某些季度的原始行根本不存在(常见于早年,如 NVDA FY2013–FY2021 ' +
   '没有年度 capex 行、Q4 无从还原;毛利率也会因某季缺 revenue/cogs 而断),单季序列就断成孤岛。' +
   '折线只连点,断档两端会被连成一条**斜率是编的**直线,而这组判据全在读斜率,' +
   '故早于断档的孤立段一律裁掉(库里原始行全保留,只在读时裁)。各家各格的起点长短不一就是这个原因。';
+
+/** **柱状格专用**:它们不裁断档,缺季就是少一根柱子。 */
+const SEC_BAR_GAP_NOTE =
+  '⚠️ 这一格画**柱状不画折线**,所以**不裁断档**:缺哪一季就是少一根柱子,一眼看得见。' +
+  '(折线那几格必须裁 —— 折线只连点,断档两端会被连成一条斜率是编的直线。)' +
+  '也因此,这条的起点可能比同 tab 的折线格更早。';
 
 const SELLER_GM =
   '判据:卖铲子一侧的**稀缺溢价读数**。见顶回落 = 供给追上需求、议价权开始让渡,' +
@@ -802,16 +811,17 @@ const PANE_CONCEPTS: Record<FundKind, string[]> = {
 };
 
 /**
- * kind → 画法。**离散的期间量一律画柱,不画折线** —— 折线只连点,断档两端会被连成一条
- * 斜率是编的直线(TWSE 月营收实测踩过:接入首日中间空 11 个月,折线画出一条不存在的匀速上升)。
- * 连续的滚动量(TTM)才用折线。省略即默认折线、无基线。
+ * kind → 画法。**柱 / 折线这件事只有一处真相**(shared/aiChain 的 KIND_RENDER),路由据它决定
+ * 裁不裁断档、这里据它决定画法 —— 两处分别写一张表就会 desync,要么白裁要么留一条假斜率。
+ * 这里只补 KIND_RENDER 表达不了的那点视觉细节:哪条折线要零基线。
  */
-const RENDER_BY_KIND: Partial<Record<FundKind, PaneSpec['render']>> = {
-  fcfq: { kind: 'signed' }, // 单季 FCF:正负是判据本身
-  fcf: { kind: 'line', baseline: 0 }, // TTM 滚动量,但零轴是判据 → 折线 + 零基线
-  revM: { kind: 'signed' }, // 月营收:恒正,柱色统一绿;要的是「柱子不连」
-  revYoy: { kind: 'signed' }, // 月营收同比:正绿负红就是方向
+const BASELINE_ZERO: Partial<Record<FundKind, PaneSpec['render']>> = {
+  fcf: { kind: 'line', baseline: 0 }, // TTM 滚动量 → 折线,但零轴是判据 → 加零基线
 };
+
+/** 柱 ⇒ 符号柱(正绿负红、零基线);折线 ⇒ 默认折线,除非上表指定了基线。 */
+const renderOf = (kind: FundKind): PaneSpec['render'] | undefined =>
+  BASELINE_ZERO[kind] ?? (KIND_RENDER[kind] === 'bar' ? { kind: 'signed' } : undefined);
 
 const paneOf = (
   ticker: string,
@@ -832,7 +842,7 @@ const paneOf = (
     label,
     title,
     color,
-    ...(RENDER_BY_KIND[kind] ? { render: RENDER_BY_KIND[kind] } : {}),
+    ...(renderOf(kind) ? { render: renderOf(kind) } : {}),
     // 不配 percentile:样本仅十余期,分位是噪声。
     // 只丢 undefined —— '' 是段落分隔符,InfoTip 用 whitespace-pre-wrap 渲染,filter(Boolean) 会把它一起吃掉。
     desc: [...(gaps.length ? [...gaps, ''] : []), ...lines].filter((l) => l !== undefined).join('\n'),
@@ -869,36 +879,17 @@ const TWSE_REV_READ = [
   '顺序看会把季节当趋势。也别拿单月绝对值当趋势 —— 一个月里的工作日天数、汇率都会晃。',
 ].join('\n');
 
-const TWSE_GM_READ = [
-  '判据:**代工侧的稀缺溢价读数**,和 NVDA/MU 那几格同一个读法(见「卖铲子」侧的说明):',
-  '见顶回落 = 供给追上需求、议价权开始让渡。代工是整条链的物理瓶颈,这一格的位置最靠上游。',
-  '',
-  '⚠️ 口径与 SEC 那几家**不同**,别直接比高低:',
-  '  · 这是**单季**毛利率(源给年初至今累计,由相邻两季相减还原),SEC 那侧画的是 **TTM**。',
-  '  · 币种是新台币,汇率会影响毛利率本身(TSMC 成本以台币计、收入大半以美元计)。',
-  '  · 走 IFRS 而非 US GAAP。',
-].join('\n');
-
-const TWSE_GM_LAG_NOTE =
-  '⚠️ **比月营收慢得多,而且可能空着**。季报截止日是季后约 45 天,同一季里各公司陆续申报 ——' +
-  '实测 2026-08-05 时 115Q2 那张表里只有 82 家,台积电还没交(它一般临近截止日才交)。' +
-  '所以这一格空着通常只是「本季还没申报」,不是坏了;要更快的读数看隔壁月营收(T+10)。\n' +
-  '另:首次接入若不是从 Q1 开始,第一个毛利率点要等下一季 —— 单季值要靠相邻两季的累计相减,' +
-  '而快照型源补不了上一季。**宁可空着也不拿累计值当单季用**:半年累计毛利率是 Q1 与 Q2 的平均,会把转折抹平。';
-
-/** 走 TWSE 源的公司(目前只有 TSM):毛利率(季)+ 月营收同比 + 月营收。**没有 FCF** —— 源不给现金流。 */
+/**
+ * 走 TWSE 源的公司(目前只有 TSM):**只有月营收那两格**。
+ *
+ * 这里的格子种类必须与 shared/aiChain 的 `SOURCE_KINDS.twse` 一一对上 —— 路由按 `kindsOf`
+ * 决定发哪些序列、也按它决定哪些进 `unavailable`。多造一格的后果是**哑空格**:
+ * 路由既不发数据、也不报「暂不可用」,面板上就是一块什么都不说的空白。
+ * (曾经这里还有一格 TWSE 季度毛利率,随「退掉 TWSE 季度综合损益表」一起去掉了 ——
+ *  那是 6-K 的子集、无现金流、历史只能靠攒;TSM 的毛利率现在走 sec6k。)
+ */
 function twseCompanyPanes(ticker: string): PaneSpec[] {
-  const note = COMPANY_NOTES[ticker];
-
   return [
-    paneOf(ticker, 'gm', '毛利率(季)', `${ticker} 单季毛利率(%)`, '#eab308', [
-      `定义:${ticker} 单季毛利率 =(营收 − 营业成本)/ 营收,来自台湾证交所季度综合损益表。` + TWSE_CAVEAT,
-      '',
-      TWSE_GM_READ,
-      '',
-      TWSE_GM_LAG_NOTE,
-      ...(note ? ['', note] : []),
-    ]),
     // 两格都用符号柱:离散期间量,柱子不连、空档一眼可见(见 TWSE_SNAPSHOT_NOTE)。
     // 同比那格正绿负红本身就是判据方向;月营收恒正,柱色统一绿。
     paneOf(ticker, 'revYoy', '月营收同比', `${ticker} 月营收同比(%)`, undefined, [
@@ -986,7 +977,7 @@ function companyPanes(ticker: string): PaneSpec[] {
       SEC_QUARTERLY_READ,
       '',
       ...(seller ? [] : [SEC_LEASE_CAVEAT, '']),
-      SEC_TRIM_NOTE,
+      SEC_BAR_GAP_NOTE, // 这格是柱状 → 不裁,别拼 SEC_TRIM_NOTE
     ]),
     paneOf(ticker, 'capex', 'capex', `${ticker} TTM 资本开支(${unit})`, '#60a5fa', [
       `定义:${ticker} TTM 资本开支(购置固定资产付现)。` + SEC_CAVEAT + srcNote,
@@ -1015,7 +1006,7 @@ const buyerQuarterlyPane: PaneSpec = {
     '',
     SEC_LEASE_CAVEAT,
     '',
-    SEC_TRIM_NOTE,
+    SEC_BAR_GAP_NOTE, // 这格是柱状 → 不裁,别拼 SEC_TRIM_NOTE
   ].join('\n'),
 };
 

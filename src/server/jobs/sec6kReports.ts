@@ -34,18 +34,39 @@ import { activeBySource, activeInSecTable, sec6kCikOf } from '../../shared/aiCha
 /**
  * 一家的 6-K 适配器。**只有这三件事因家而异**:哪些申报算季报、正文怎么取、怎么解析;
  * 期间口径与单位的差别收在 toFacts 里(见 sec6k 的 PeriodBasis)。
- * quickPatch 是可选的更快补充源 —— 目前只有 TSM 有(财报稿 T+16 对报表 T+45)。
+ *
+ * quickPatch 是可选的更快补充源(目前只有 TSM:财报稿 T+16 对报表 T+45)。拆成
+ * **listFilings + apply 两半**是因为水位判定要在 skip 之前、解析要在 skip 之后 ——
+ * 合成一个函数就得把清单拉两遍,而且循环里会写死某一家的 fetcher(抽象直接漏)。
  */
 type Sec6kAdapter = {
   listFilings: (cik: string) => Promise<FsFiling[]>;
   parseFiling: (cik: string, f: FsFiling) => Promise<Sec6kValues>;
   toFacts: (rows: Array<{ filing: FsFiling; values: Sec6kValues }>) => CompanyFacts;
-  quickPatch?: (
-    cik: string,
-    ticker: string,
-    statements: SecFundamentalRow[],
-    failed: string[],
-  ) => Promise<{ rows: SecFundamentalRow[]; latestFiled: string | null; checked: string | null }>;
+  quickPatch?: {
+    listFilings: (cik: string) => Promise<FsFiling[]>;
+    apply: (ctx: QuickPatchCtx) => Promise<{ rows: SecFundamentalRow[]; checked: string | null }>;
+  };
+};
+
+type QuickPatchCtx = {
+  cik: string;
+  ticker: string;
+  /** 本轮**解析成功**的报表行。只用来做值比对(有值才比得了)。 */
+  statements: SecFundamentalRow[];
+  /** 远端**存在报表**的期末全集。占位判据用它,不用 statements —— 见 releaseFallback 的说明。 */
+  statementPeriods: Set<string>;
+  /**
+   * 补充源的申报清单;**null = 这一轮压根没拉到**(与「拉到了但是空的」是两回事,
+   * 诊断方向完全不同:前者是网络/接口问题,后者才是封面命名可能变了)。
+   * 由水位那一步拉好后传进来 —— apply 内部**不再拉一遍**
+   * (也因此循环里不必写死某一家的 fetcher)。
+   * ponytail: 补充源与报表两条 listQuarterly6K 仍各拉一次同一份 submissions JSON
+   * (几百 KB、一天一次、只有 TSM 有补充源)。真要省就让 listQuarterly6K 一次吃多个 pattern;
+   * 别用模块级缓存 —— 那会在测试之间串味,也让注入的 doFetch 桩失效。
+   */
+  filings: FsFiling[] | null;
+  failed: string[];
 };
 
 export type Sec6kResult = {
@@ -71,23 +92,39 @@ const DIVERGENCE_TOLERANCE = 0.005; // 0.5%
  * 通过**的管理层数。而下游的「直接单季行优先于 YTD 差分」会让财报稿那条**永久压住**报表 ——
  * 那就是让未核阅的数盖住核阅后的,方向正好反了。所以取值上让报表独占,财报稿只在报表空白处补位。
  *
+ * ⚠️ 「哪些季度算报表已覆盖」必须按**远端存在哪些报表**判(statementPeriods),
+ * 不能按「本轮解析成功的行」判。单份报表解析失败是被容忍的(见主循环的 badly),
+ * 若拿本轮结果当判据,那一季就会重新落进 pending → 财报稿行按主键 upsert 回去
+ * → **未核阅的管理层数覆盖掉已核阅的报表值**,而且静默(failed 里只说「N 份没解析出来」)。
+ * 报表存在就归报表管;这一轮没解析出来就保持库里原样,不由财报稿顶上。
+ *
  * 拉不到不算失败:它是加速手段,少了只是慢回 T+45,不该让整轮变红。
  */
-async function releaseFallback(
-  cik: string,
-  ticker: string,
-  statements: SecFundamentalRow[],
-  failed: string[],
-): Promise<{ rows: SecFundamentalRow[]; latestFiled: string | null; checked: string | null }> {
-  const empty = { rows: [], latestFiled: null, checked: null };
+async function releaseFallback({
+  cik,
+  ticker,
+  statements,
+  statementPeriods,
+  filings: releases,
+  failed,
+}: QuickPatchCtx): Promise<{ rows: SecFundamentalRow[]; checked: string | null }> {
+  const empty = { rows: [], checked: null };
   try {
-    const releases = await tsmc.listEarningsReleases(cik);
-    if (releases.length === 0) return empty;
+    // null = 清单压根没拉到,上游已经记过 failed(网络/接口),别在这里再补一条把人引去查命名。
+    if (releases === null) return empty;
 
-    const covered = new Set(statements.map((r) => r.periodEnd));
-    const pending = releases.filter((f) => !covered.has(f.periodEnd));
-    // 校验样本:最近一个**报表也有**的季度。只多拉一份,换来每轮一次真实比对。
-    const verify = releases.filter((f) => covered.has(f.periodEnd)).at(-1);
+    // 拉到了却是空的 ≠ 正常。TSM 每季必发,而挑选判据(TSM_RELEASE_DOC)是**精确文件名**,
+    // 比主源那个前缀正则脆得多 —— 封面一改名就变成空列表,毛利率静默退回 T+45,
+    // 连 B4 那条「拿财报稿和已核阅季度比对」的守卫也一并停摆,而 job 全程绿灯。比照主源记 failed。
+    if (releases.length === 0) {
+      failed.push(`${ticker}: 一份财报稿 6-K 都没挑出来(封面命名可能变了)—— 毛利率退回报表时效,比对守卫停摆`);
+      return empty;
+    }
+
+    const pending = releases.filter((f) => !statementPeriods.has(f.periodEnd));
+    // 校验样本:最近一个**本轮真的解析出报表行**的季度 —— 没有值就无从比对。
+    const comparable = new Set(statements.map((r) => r.periodEnd));
+    const verify = releases.filter((f) => comparable.has(f.periodEnd)).at(-1);
 
     const parse = async (filing: FsFiling): Promise<{ filing: FsFiling; rel: TsmcRelease } | null> => {
       try {
@@ -104,18 +141,16 @@ async function releaseFallback(
       if (p) toWrite.push(p);
     }
 
-    // 比对那一份只用来核对,不落库。
-    if (verify) {
-      const v = await parse(verify);
-      if (v) failed.push(...divergences(statements, extractFundamentals(ticker, releaseToCompanyFacts([v])), ticker));
+    // 比对那一份只用来核对,不落库。解析失败上面已记 failed —— 此时 checked 必须留 null,
+    // 否则日志会拼出「已对 2026-06-30」,声称做过一次实际没做的比对。
+    const verified = verify ? await parse(verify) : null;
+    if (verified) {
+      failed.push(...divergences(statements, extractFundamentals(ticker, releaseToCompanyFacts([verified])), ticker));
     }
 
     return {
       rows: toWrite.length ? extractFundamentals(ticker, releaseToCompanyFacts(toWrite)) : [],
-      // 水位要算进财报稿:否则下一季的财报稿(比上一季报表新)会被 skip 判据挡住,
-      // 白等到那一季的报表出来 —— T+16 这条就等于没接。
-      latestFiled: releases.at(-1)!.filed,
-      checked: verify?.periodEnd ?? null,
+      checked: verified ? verify!.periodEnd : null,
     };
   } catch (e) {
     failed.push(`${ticker} 财报稿兜底整体失败(毛利率会退回 T+45): ${e instanceof Error ? e.message : String(e)}`);
@@ -151,7 +186,7 @@ const ADAPTERS: Record<string, Sec6kAdapter> = {
     parseFiling: async (cik, f) => parseTsmcReport(await tsmc.fetchReport(cik, f.accn)),
     // 累计口径:报表只给年初至今,单季由 toQuarters 相邻相减还原。单位千元新台币。
     toFacts: (rows) => toCompanyFacts(rows.map(({ filing, values }) => ({ filing, ytd: values }))),
-    quickPatch: releaseFallback,
+    quickPatch: { listFilings: (cik) => tsmc.listEarningsReleases(cik), apply: releaseFallback },
   },
   ASML: {
     listFilings: (cik) => asml.listFilings(cik),
@@ -197,13 +232,20 @@ export async function updateSec6kReports(
 
       // 水位要比**所有能带来新数据的申报**。TSM 还有财报稿那一路,只比报表的话,
       // 新一季的财报稿(07-16)比上一季报表(05-15)新却会被判成「没更新」,T+16 就等于没接。
-      const patchFiled = adapter.quickPatch
-        ? await tsmc
-            .listEarningsReleases(cik)
-            .then((r) => r.at(-1)?.filed)
-            .catch(() => undefined)
-        : undefined;
-      const remoteFiled = [filings.at(-1)!.filed, patchFiled].filter(Boolean).sort().at(-1)!;
+      // 清单拉不到必须记 failed:吞掉的话这一路会静默退回报表时效,而这一轮照样记 success。
+      // null = 没拉到(下面已记 failed);[] = 拉到了但一份都没挑出来 —— 两种诊断方向不同,
+      // 别合成一个值,否则网络抖动会被下游再报一条「封面命名可能变了」,把人引错方向。
+      let patchFilings: FsFiling[] | null = null;
+      if (adapter.quickPatch) {
+        try {
+          patchFilings = await adapter.quickPatch.listFilings(cik);
+        } catch (e) {
+          failed.push(
+            `${ticker}: 补充源申报清单拉不到(毛利率退回报表时效): ${e instanceof Error ? e.message : String(e)}`,
+          );
+        }
+      }
+      const remoteFiled = [filings.at(-1)!.filed, patchFilings?.at(-1)?.filed].filter(Boolean).sort().at(-1)!;
       const localFiled = getLatestSecFiled(db, ticker);
       if (!opts.force && localFiled && remoteFiled <= localFiled) {
         skipped.push(ticker);
@@ -231,8 +273,16 @@ export async function updateSec6kReports(
 
       // 可选的更快补充源(TSM 的财报稿:把毛利率从 T+45 提到 T+16)。
       const patch = adapter.quickPatch
-        ? await adapter.quickPatch(cik, ticker, rows, failed)
-        : { rows: [] as SecFundamentalRow[], latestFiled: null, checked: null };
+        ? await adapter.quickPatch.apply({
+            cik,
+            ticker,
+            statements: rows,
+            // 远端存在报表的期末全集 —— 含本轮解析失败的那几季,它们仍归报表管。
+            statementPeriods: new Set(filings.map((f) => f.periodEnd)),
+            filings: patchFilings,
+            failed,
+          })
+        : { rows: [] as SecFundamentalRow[], checked: null };
       const all = [...rows, ...patch.rows];
 
       insertSecFundamentals(db, all);
@@ -256,7 +306,10 @@ export async function updateSec6kReports(
   // 派生量与 companyfacts 那侧共用一套:范围是**落在 sec_fundamentals 表里的全部启用标的**,
   // 不只是本轮抓的那家 —— 否则单跑 TSM 时它的 TTM/毛利率线永远不出。
   const { written, problems } = writeDerivedSecSeries(db, activeInSecTable(), tickers);
-  failed.push(...problems);
+  // **只收 sec6k 这几家的体检结论**:companyfacts 那侧(MSFT/ORCL…)的问题各有自己那条 job_run,
+  // 混进来会让两盏灯长期同时黄 —— 而体检按设计每轮复发,黄起来就不会自己灭。
+  const mine = new Set(activeBySource('sec6k'));
+  failed.push(...problems.filter((p) => mine.has(p.ticker)).map((p) => p.message));
 
   return { fetched, skipped, failed, rowsWritten, seriesWritten: written };
 }

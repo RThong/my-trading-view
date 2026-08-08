@@ -21,7 +21,8 @@ function userAgent(): string {
 }
 
 const cikPath = (cik: string) => `CIK${cik.padStart(10, '0')}`;
-const PERIODIC_FORMS = new Set(['10-Q', '10-K']);
+// 含修订件(`10-Q/A` / `10-K/A`):它带来重述,水位必须跟着前进,否则重述后的值永远不进库。
+const isPeriodicForm = (form: string): boolean => /^10-[QK](\/A)?$/.test(form);
 
 // companyfacts 有几 MB,默认 15s 在慢网下会临界超时。
 const FACTS_TIMEOUT_MS = 60_000;
@@ -55,7 +56,7 @@ export function createSecFetcher(doFetch: FetchFn = fetchWithTimeout) {
       const { form = [], filingDate = [], accessionNumber = [] } = body.filings?.recent ?? {};
 
       const periodic = form.flatMap((f, i) =>
-        PERIODIC_FORMS.has(f) && filingDate[i] && accessionNumber[i]
+        isPeriodicForm(f) && filingDate[i] && accessionNumber[i]
           ? [{ filed: filingDate[i]!, form: f, accn: accessionNumber[i]! }]
           : [],
       );

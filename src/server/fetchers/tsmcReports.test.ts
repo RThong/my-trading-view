@@ -11,7 +11,7 @@ import { extractFundamentals } from '../analytics/secFundamentals';
 // 三种列结构各造一份最小片段。真实报表 4MB,这里只留决定解析对错的那几行。
 /** Q1 / 年报:利润表两列(本期 + 去年同期),每列「金额 + %」两格。 */
 const twoCol = (rev: number, cogs: number, ocf: number, capex: number) =>
-  `<p>CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME</p><table><tr><td>2026</td><td>2025</td></tr>` +
+  `<p>(Amounts in Thousands of New Taiwan Dollars)</p><p>CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME</p><table><tr><td>2026</td><td>2025</td></tr>` +
   `<tr><td>NET REVENUE (Notes 20)</td><td>$</td><td>${rev.toLocaleString('en-US')}</td><td>100</td>` +
   `<td>$</td><td>839,253,664</td><td>100</td></tr>` +
   `<tr><td>COST OF REVENUE (Notes 12)</td><td>${cogs.toLocaleString('en-US')}</td><td>34</td>` +
@@ -25,7 +25,7 @@ const twoCol = (rev: number, cogs: number, ocf: number, capex: number) =>
 
 /** Q2/Q3:利润表**四列**(三个月 ×2 + N 个月 ×2),YTD 是第 3 列。 */
 const fourCol = (q: number, ytd: number, cogsQ: number, cogsYtd: number) =>
-  `<p>CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME</p><table>` +
+  `<p>(Amounts in Thousands of New Taiwan Dollars)</p><p>CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME</p><table>` +
   `<tr><td>For the Three Months Ended June 30</td><td>For the Six Months Ended June 30</td></tr>` +
   `<tr><td>NET REVENUE (Notes 20)</td><td>$</td><td>${q.toLocaleString('en-US')}</td><td>100</td>` +
   `<td>$</td><td>673,510,177</td><td>100</td><td>$</td><td>${ytd.toLocaleString('en-US')}</td><td>100</td>` +
@@ -70,7 +70,13 @@ describe('parseTsmcReport', () => {
   });
 
   test('缺行就抛,不静默给 0(0 会被当成真实的「本季没花钱」)', () => {
-    expect(() => parseTsmcReport('<p>NET REVENUE</p>')).toThrow(/没解析出来/);
+    expect(() => parseTsmcReport('<p>In Thousands of New Taiwan Dollars</p><p>NET REVENUE</p>')).toThrow(/没解析出来/);
+  });
+
+  // 下游按「基础货币单位」算,乘错倍数是静默的 1000 倍错误(财报稿与 ASML 早有同款守卫)。
+  test('没确认到千元表头就拒绝解析,不按 1000 倍静默换算', () => {
+    const noHeader = twoCol(1, 1, 1, 1).replace('Amounts in Thousands of New Taiwan Dollars', 'Amounts in Millions');
+    expect(() => parseTsmcReport(noHeader)).toThrow(/拒绝按千元换算/);
   });
 });
 

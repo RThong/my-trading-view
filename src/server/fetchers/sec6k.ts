@@ -1,6 +1,3 @@
-import { fetchWithTimeout } from './http';
-
-export const defaultFetch = fetchWithTimeout;
 import type { CompanyFacts, FactRow } from '../analytics/secFundamentals';
 
 /**

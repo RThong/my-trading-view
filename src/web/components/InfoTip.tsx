@@ -26,7 +26,9 @@ export function InfoTip({ text }: { text: string }) {
       {/* 限高 + 自滚:这些文案是这条线的**口径文档**(逐期 tag 裁决、重叠期实测值、判据影响都写在里面),
           有的上千字。不限高就整页盖满并溢出视口,连图都看不见了。 */}
       {open && (
-        <span className="absolute left-0 top-5 z-30 block max-h-[70vh] w-96 overflow-y-auto whitespace-pre-wrap rounded border border-neutral-700 bg-neutral-900 p-3 text-[13px] font-normal not-italic leading-relaxed text-neutral-300 shadow-lg">
+        // top-4 而不是 top-5:包裹层高就是按钮那 16px(h-4),浮层落在 20px 处会留 4px 空档 ——
+        // 鼠标慢速下移穿过它就触发包裹层的 mouseleave,浮层在够到之前先关了。贴着放,没有缝。
+        <span className="absolute left-0 top-4 z-30 block max-h-[70vh] w-96 overflow-y-auto whitespace-pre-wrap rounded border border-neutral-700 bg-neutral-900 p-3 text-[13px] font-normal not-italic leading-relaxed text-neutral-300 shadow-lg">
           {text}
         </span>
       )}

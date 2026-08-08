@@ -11,6 +11,7 @@ import {
   activeInSecTable,
   cikOf,
   currencyOf,
+  financeLeaseCeiling,
   fundKey,
   hasSource,
   isAggregateMember,
@@ -145,5 +146,17 @@ describe('面板分组', () => {
 
   test('每组都有中文名(缺了 tab 条上会出现空标签)', () => {
     for (const g of GROUP_ORDER) expect(GROUP_LABELS[g]).toBeTruthy();
+  });
+});
+
+describe('融资租赁守卫的档位声明', () => {
+  /**
+   * 守卫的判据是 `ceiling !== undefined && share > ceiling` —— 漏写档位不是「按 0 报」,是**完全不查**。
+   * 而这张表的立论正是「MSFT 从 1~2% 跳到 21% 时没有任何人知道」:第六家买方进来时会原样重演。
+   * 隔壁 expectedCapexScope 有 `?? 'ppe'` 兜底,这里没有,只能靠不变式咬住。
+   */
+  test('每个买方合计成员都要有声明档位', () => {
+    const missing = ACTIVE_TICKERS.filter((t) => isAggregateMember(t) && financeLeaseCeiling(t) === undefined);
+    expect(missing, `这几家漏了 FINANCE_LEASE_SHARE_CEILING:${missing.join('/')}`).toEqual([]);
   });
 });

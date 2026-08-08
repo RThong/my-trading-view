@@ -126,7 +126,12 @@ export const capexScopeOf = (tagUsed: string): CapexScope | undefined => CAPEX_S
  *  从 TAG_CHAINS 的键派生而非手写:加第 5 个科目时漏改会变成「静默不抽取」,正是要防的那类错。 */
 export const CONCEPTS = Object.keys(TAG_CHAINS) as Concept[];
 
-const PERIODIC_FORMS = new Set(['10-Q', '10-K']);
+/**
+ * 定期报告,**含修订件**(`10-Q/A` / `10-K/A`)。修订件正是重述的载体 ——
+ * 丢掉它,「同 tag 内取 filed 最大 = 取重述后的值」那条规则就只覆盖了一半:
+ * 公司通过 10-Q/A 改数时,库里留下的仍是作废的原始值。
+ */
+const isPeriodicForm = (form: string): boolean => /^10-[QK](\/A)?$/.test(form);
 const DAY_MS = 86_400_000;
 
 const durationDays = (start: string, end: string): number => (Date.parse(end) - Date.parse(start)) / DAY_MS;
@@ -142,7 +147,7 @@ function periodsForTag(facts: CompanyFacts, tag: string): Map<string, Period> {
   const out = new Map<string, Period>();
 
   for (const r of rows) {
-    if (!r.start || !PERIODIC_FORMS.has(r.form)) continue;
+    if (!r.start || !isPeriodicForm(r.form)) continue;
 
     const key = `${r.start}~${r.end}`;
     const prior = out.get(key);
@@ -178,7 +183,8 @@ const CONFLICT_WINDOW_QUARTERS = 8;
 /**
  * 不报的 tag 对:**差额有确定含义、且链序已按含义裁决**,报出来只是噪声。
  * 这里只有一对:ocf 的「持续经营 vs 总额」——差额恒等于终止经营的经营现金流,不是「口径变了」。
- * 链序已刻意取持续经营那档以对齐 capex(见 TAG_CHAINS.ocf)。AMD 有终止经营,这一对会一直差,
+ * 链序刻意取的是**总额**那档(见 TAG_CHAINS.ocf:持续经营那个 tag「有终止经营才报」,报不全,
+ * 逐期 fallback 会在同一个差分组里换基础,更糟)。AMD 有终止经营,这一对会一直差,
  * 报了就是一盏两年不灭的黄灯(同 CAPEX_SCOPE_EXPECTED 的理由)。
  *
  * ⚠️ 只豁免这一对。其余任何两档不一致仍要报 —— 那些差额没有确定含义,必须有人去核报表原文。

@@ -9,6 +9,7 @@ import {
   putSecWatermark,
   getSecLag,
   insertSecFundamentals,
+  putSecProcessedFiled,
 } from './repository';
 
 function freshDb(): Database {
@@ -133,5 +134,56 @@ describe('getSecLag', () => {
     putSecWatermark(db, 'A', '2026-04-30');
     putSecWatermark(db, 'A', '2026-07-30');
     expect(getSecLag(db).map((l) => l.remoteFiled)).toEqual(['2026-07-30']);
+  });
+});
+
+describe('getSecLag:本地水位取 MAX(数据 filed, processed_filed)', () => {
+  const seed = (db: Database) => {
+    insertSecFundamentals(db, [
+      {
+        ticker: 'NVDA',
+        periodEnd: '2026-01-25',
+        concept: 'revenue',
+        value: 1,
+        tagUsed: 'Revenues',
+        form: '10-K',
+        accn: 'a',
+        filed: '2026-02-25',
+        fiscalQ: '2026Q1',
+      },
+    ]);
+  };
+
+  test('远端有更新申报而我们没有 → 报滞后', () => {
+    const db = freshDb();
+    seed(db);
+    putSecWatermark(db, 'NVDA', '2026-05-20');
+
+    expect(getSecLag(db).map((l) => l.ticker)).toEqual(['NVDA']);
+    db.close();
+  });
+
+  /**
+   * 回归:不带财务 XBRL 的修订件(只补 Part III 的 10-K/A)一行都不落,MAX(filed) 停在上一份 10-Q。
+   * 只看它的话,面板会常挂一条假的「已申报、SEC 未提供」直到下一份 10-Q(最长约三个月)。
+   */
+  test('修订件已处理但没落任何行 → 不报假滞后', () => {
+    const db = freshDb();
+    seed(db);
+    putSecWatermark(db, 'NVDA', '2026-03-10');
+    putSecProcessedFiled(db, 'NVDA', '2026-03-10');
+
+    expect(getSecLag(db)).toEqual([]);
+    db.close();
+  });
+
+  test('processed_filed 仍落后于远端 → 照常报滞后', () => {
+    const db = freshDb();
+    seed(db);
+    putSecProcessedFiled(db, 'NVDA', '2026-03-10');
+    putSecWatermark(db, 'NVDA', '2026-05-20');
+
+    expect(getSecLag(db).map((l) => l.ticker)).toEqual(['NVDA']);
+    db.close();
   });
 });

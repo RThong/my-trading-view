@@ -96,8 +96,15 @@ CREATE INDEX IF NOT EXISTS idx_sec_fundamentals_ticker ON sec_fundamentals(ticke
 -- 「财报已交但 companyfacts 还没吃进」—— 各家财年季末天然错开两三个月,日期差本身不构成
 -- 判据(实测 NVDA 的最新期落后 AMZN 整季是正常的:它下一季 8 月底才申报)。有了远端 filed,
 -- 与本地 MAX(filed) 一比就是确定结论,面板据此标注「这条线不是最新已报季度」。
+-- processed_filed 与 remote_filed 是**两件事**,不能合成一列:
+--   · remote_filed  = 远端最新申报日,每轮无条件记 → 面板的滞后徽标靠它。
+--   · processed_filed = 我们已经把那一份处理完了(不管它有没有带来行)→ skip 判据靠它。
+-- 分开是因为存在**不带财务 XBRL 的修订件**(只补 Part III 或重发附件的 10-K/A):它一行都不落,
+-- 若拿 sec_fundamentals 的 MAX(filed) 当 skip 判据,水位永远追不上远端 → 天天重拉几 MB
+-- companyfacts + 常驻黄灯 + 面板永久显示假滞后,要等下一份 10-Q(最长约三个月)才自愈。
 CREATE TABLE IF NOT EXISTS sec_watermark (
-    ticker        TEXT NOT NULL PRIMARY KEY,
-    remote_filed  TEXT NOT NULL,      -- submissions 里最新 10-Q/10-K 的申报日
-    checked_at    TEXT NOT NULL
+    ticker          TEXT NOT NULL PRIMARY KEY,
+    remote_filed    TEXT NOT NULL,    -- submissions 里最新 10-Q/10-K(含 /A)的申报日
+    processed_filed TEXT,             -- 已处理完的申报日;NULL = 还没处理过任何一份
+    checked_at      TEXT NOT NULL
 );

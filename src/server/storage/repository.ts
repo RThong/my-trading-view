@@ -348,6 +348,14 @@ export function getLatestSecFiled(db: Database, ticker: string): string | null {
   return row?.d ?? null;
 }
 
+/** 库里最新的期末。判「这一轮有没有吃进**新一期**」用它:新一季的期末必然严格大于原有的。 */
+export function getLatestSecPeriodEnd(db: Database, ticker: string): string | null {
+  const row = db.query(`SELECT MAX(period_end) AS d FROM sec_fundamentals WHERE ticker = $t`).get({ $t: ticker }) as {
+    d: string | null;
+  };
+  return row?.d ?? null;
+}
+
 export function putSecWatermark(db: Database, ticker: string, remoteFiled: string): void {
   db.run(
     `INSERT INTO sec_watermark (ticker, remote_filed, checked_at) VALUES (?, ?, ?)
@@ -357,17 +365,46 @@ export function putSecWatermark(db: Database, ticker: string, remoteFiled: strin
 }
 
 /**
+ * 「这一份申报我们已经处理完了」。**不等于「它带来了行」** —— 不带财务 XBRL 的修订件
+ * (只补 Part III 的 10-K/A)一行都不落,但它确实处理完了,不该让 job 天天重拉。
+ * skip 判据读它;`remote_filed` 仍无条件记,面板的滞后徽标不受影响(见 schema.sql)。
+ */
+export function putSecProcessedFiled(db: Database, ticker: string, filed: string): void {
+  db.run(
+    `UPDATE sec_watermark SET processed_filed = ? WHERE ticker = ? AND (processed_filed IS NULL OR ? > processed_filed)`,
+    [filed, ticker, filed],
+  );
+}
+
+export function getSecProcessedFiled(db: Database, ticker: string): string | null {
+  const row = db.query(`SELECT processed_filed AS d FROM sec_watermark WHERE ticker = $t`).get({ $t: ticker }) as {
+    d: string | null;
+  } | null;
+  return row?.d ?? null;
+}
+
+/**
  * 远端已有更新申报、但我们库里还没有那一期的公司。用 filed 比而非 period_end 比 ——
  * 各家财年季末天然错开,期末日期差不构成判据(见 schema.sql 的 sec_watermark 注释)。
  * 只返回落后的那几家:没落后的不需要在面板上说什么。
+ *
+ * ⚠️ 本地水位是 `COALESCE(processed_filed, MAX(f.filed))`,**两个方向都要防**:
+ *  · 只看 `MAX(f.filed)` → **不带财务 XBRL 的修订件**(只补 Part III 的 10-K/A)一行都不落,
+ *    MAX(filed) 停在上一份 10-Q → 面板常挂一条假的「已申报、SEC 未提供」,要等下一份 10-Q 才消。
+ *  · 取**两者较大** → `MAX(f.filed)` 会被**比较期**追平(一份 10-Q 同时贡献本季与去年同季,
+ *    后者也带新 filed 落库),于是新一季真被挡住时滞后徽标反而不出,读图的人把三个月前的点
+ *    当成最新读数 —— C6 要防的就是这个。
+ * processed_filed 只在 job 判定「这份申报处理完了」时才写,故它在场时说了算;
+ * 为 NULL(v5 之前的旧库)才回落到 MAX(filed)。**这里与 job 的 skip 判据必须同一套定义**。
  */
 export function getSecLag(db: Database): SecLag[] {
   const rows = db
     .query(`
-    SELECT w.ticker, w.remote_filed, MAX(f.filed) AS local_filed, MAX(f.period_end) AS latest_period_end
+    SELECT w.ticker, w.remote_filed, MAX(f.period_end) AS latest_period_end,
+           COALESCE(w.processed_filed, MAX(f.filed), '') AS local_filed
     FROM sec_watermark w LEFT JOIN sec_fundamentals f ON f.ticker = w.ticker
     GROUP BY w.ticker
-    HAVING local_filed IS NULL OR w.remote_filed > local_filed
+    HAVING w.remote_filed > local_filed
     ORDER BY w.ticker
   `)
     .all() as Array<{
@@ -380,7 +417,7 @@ export function getSecLag(db: Database): SecLag[] {
   return rows.map((r) => ({
     ticker: r.ticker,
     remoteFiled: r.remote_filed,
-    localFiled: r.local_filed,
+    localFiled: r.local_filed || null, // COALESCE 的 '' 还原成「一行都没有」
     latestPeriodEnd: r.latest_period_end,
   }));
 }

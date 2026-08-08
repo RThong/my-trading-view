@@ -142,9 +142,8 @@ export const activeBySource = (source: ChainSource): string[] => ACTIVE_TICKERS.
  * 原始行落在 `sec_fundamentals` 表里的那些源 —— 派生量(TTM / 毛利率 / FCF)对它们是同一套算法,
  * 所以 writeDerived 的范围是这个并集,不是单个源。少了 sec6k 那家的线永远不出。
  */
-export const SEC_TABLE_SOURCES: ChainSource[] = ['sec', 'sec6k'];
 export const activeInSecTable = (): string[] =>
-  ACTIVE_TICKERS.filter((t) => SEC_TABLE_SOURCES.some((s) => hasSource(t, s)));
+  ACTIVE_TICKERS.filter((t) => hasSource(t, 'sec') || hasSource(t, 'sec6k'));
 
 // ── 对外序列键(路由与面板必须用同一套,故在此定义一次)────────────────────────
 
@@ -167,7 +166,25 @@ export type SecKind = (typeof SOURCE_KINDS)['sec'][number];
 export type TwseKind = (typeof SOURCE_KINDS)['twse'][number];
 export type FundKind = SecKind | TwseKind;
 
-export const SEC_KINDS: readonly SecKind[] = SOURCE_KINDS.sec;
+/**
+ * 每种格子**画折线还是画柱**。放这里(而不是各自写一张)是因为路由和面板都要用它,
+ * 而两处一旦不一致,要么白裁、要么留一条假斜率:
+ *  · line — 连续的滚动量(TTM)。折线只连点,断档两端会被连成一条**斜率是编的**直线,
+ *           故折线序列必须裁断档(见 analytics 的 trailingContiguous)。
+ *  · bar  — 离散的期间量(单季 FCF、月营收)。柱子之间不连,空档就是没有柱子 →
+ *           **不裁**。裁了反而会把缺口之前的历史柱全砍掉,白丢数据。
+ */
+export const KIND_RENDER: Record<FundKind, 'line' | 'bar'> = {
+  gm: 'line',
+  capex: 'line',
+  fcf: 'line',
+  fcfq: 'bar',
+  revM: 'bar',
+  revYoy: 'bar',
+};
+
+/** 这条线要不要裁断档。判据只有一个:**它是不是折线**。 */
+export const trimsGaps = (kind: FundKind): boolean => KIND_RENDER[kind] === 'line';
 
 /**
  * 这家会有哪几个格子 = 它各个源的格子并集(去重,按 sources 顺序)。

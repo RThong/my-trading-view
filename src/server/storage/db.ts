@@ -3,7 +3,7 @@ import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DB_PATH } from '../config';
 
-const CURRENT_SCHEMA_VERSION = 4; // v4:新增 price_eod(标的 OHLC),market_series 收敛为只放波动率指数
+const CURRENT_SCHEMA_VERSION = 5; // v5:sec_watermark 加 processed_filed(与 remote_filed 分工见 schema.sql)
 
 export function openDb(path: string = DB_PATH): Database {
   mkdirSync(dirname(path), { recursive: true });
@@ -66,6 +66,17 @@ function migrateSpotToPriceEod(db: Database): void {
   db.run(`DELETE FROM market_series WHERE series_id IN (${drop})`);
 }
 
+// v5:sec_watermark 补 processed_filed。旧库那张表已经建过,CREATE IF NOT EXISTS 加不上列。
+// 这里只加列不回填:播种交给 job(见 secFundamentals 里那段) —— 它能在**拉 companyfacts 之前**
+// 播,拿到的是没被本次申报的比较期污染的 MAX(filed);而且那条路径同时覆盖「旧库」和
+// 「watermark 行本来就不存在」两种情形,一处解决。
+function migrateSecProcessedFiled(db: Database): void {
+  const cols = columns(db, 'sec_watermark');
+  if (cols.length && !cols.includes('processed_filed')) {
+    db.exec(`ALTER TABLE sec_watermark ADD COLUMN processed_filed TEXT`);
+  }
+}
+
 // 库当前 schema 版本;schema_version 表尚不存在(全新库)时按 0。
 function currentVersion(db: Database): number {
   const exists = db.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_version'").get();
@@ -82,12 +93,13 @@ export function migrate(db: Database): void {
   const sql = readFileSync(schemaPath, 'utf-8');
   db.exec(sql);
 
-  // 一次性历史迁移:只在从 v4 之前的旧库升级时跑一次。尤其 migrateSpotToPriceEod
+  // 一次性历史迁移:只在库版本落后时跑。尤其 migrateSpotToPriceEod
   // 里有全量 DELETE —— gate 住版本,别让它挂在每天的 daily job 上无条件重跑。
   // (须在 schema.sql 建出 price_eod 之后;两个迁移自身也都幂等,gate 只是省掉每日空转。)
   if (prior < CURRENT_SCHEMA_VERSION) {
     migrateOptionSource(db);
     migrateSpotToPriceEod(db);
+    migrateSecProcessedFiled(db);
     db.run('INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)', [
       CURRENT_SCHEMA_VERSION,
       new Date().toISOString(),

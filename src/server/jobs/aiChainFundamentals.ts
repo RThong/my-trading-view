@@ -42,7 +42,11 @@ type Runner = (db: ReturnType<typeof openDb>, tickers: string[] | undefined, for
 
 const RUNNERS: Record<ChainSource, Runner> = {
   async sec(db, tickers, force) {
-    const r = await updateSecFundamentals(db, { force, tickers });
+    // 必须按源过滤(同 sec6k / twse):混合名单单跑(如 `… NVDA TSM`)时,
+    // TSM 不走 sec → cikOf 返回 undefined → updateSecFundamentals 直接抛「unknown SEC ticker」,
+    // 整条 SEC job 记 failed,连同一轮里本该更新的 NVDA 一起赔进去。
+    const only = tickers?.filter((t) => hasSource(t, 'sec'));
+    const r = await updateSecFundamentals(db, { force, tickers: only });
     // records_written 记「实际写进库的总行数」= 原始单季行 + 派生序列点。
     // 状态:**「正确地跳过」算成功**——多数天本就该全 skip。
     // 「一个数都没拿到」才红:每家都抛(fetched/skipped 双空),或拉到了但全员解析出 0 行

@@ -5,7 +5,7 @@ import { activeBySource, twseCodeOf } from '../../shared/aiChain';
 
 /**
  * TWSE 月营收更新(目前只有 TSM)。**只管月营收那两格** —— TSM 的毛利率/FCF 走 sec6k 源
- * (它交给 EDGAR 的季度合并财报),见 jobs/tsmcReports。曾经也从 TWSE 的季度综合损益表
+ * (它交给 EDGAR 的季度合并财报),见 jobs/sec6kReports。曾经也从 TWSE 的季度综合损益表
  * 取过毛利率,后来退掉了:那是 6-K 的子集(无现金流)、历史还只能靠攒,留着就成了
  * 同一批数字的第二个真相源。
  *

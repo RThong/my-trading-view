@@ -1,5 +1,4 @@
 import {
-  defaultFetch,
   fetchReportDoc,
   flattenHtml,
   listQuarterly6K,
@@ -8,6 +7,7 @@ import {
   type FsFiling,
   type Sec6kValues,
 } from './sec6k';
+import { fetchWithTimeout } from './http';
 
 /**
  * ASML 交给 EDGAR 的**季度 6-K**(封面 `form6-kquarterlyfilings.htm`),里面
@@ -52,6 +52,8 @@ export function parseAsmlReport(html: string): Sec6kValues {
   const txt = flattenHtml(html);
 
   // 单位必须确认过才敢用:若哪天改成千欧元,静默换算就是 1000 倍错误。
+  // 只校验倍数、不校验币种:€ 常以 `&#8364;` 出现,而 flattenHtml 把数字实体一律换成空格,
+  // 按币种符号认会误伤。ASML 改用美元报的话由面板的 currencyOf 那条口径说明兜(不是这里的事)。
   if (!/in millions/i.test(txt)) throw new Error('ASML 报表:没确认到「in millions」表头,拒绝按百万换算');
 
   // ASML 的报表换过表格编码:2025Q1 及更早是单元格式,2025Q2 起数字与标签同处一个文本块
@@ -80,7 +82,7 @@ export function parseAsmlReport(html: string): Sec6kValues {
   return { revenue, cogs, ocf, capex };
 }
 
-export function createAsmlFetcher(doFetch: FetchFn = defaultFetch) {
+export function createAsmlFetcher(doFetch: FetchFn = fetchWithTimeout) {
   return {
     listFilings: (cik: string): Promise<FsFiling[]> => listQuarterly6K(cik, QUARTERLY_DOC, doFetch),
     fetchReport: async (cik: string, accn: string): Promise<string> =>

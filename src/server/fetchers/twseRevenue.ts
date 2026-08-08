@@ -83,6 +83,20 @@ const toMillion = (raw: string | undefined): number | null => {
   return raw && Number.isFinite(n) ? n / 1000 : null;
 };
 
+/**
+ * 同比(%)。**`Number('') === 0`,不是 NaN** —— 直接 Number 再 isFinite,源把这个字段留空时
+ * 会落一个「同比 0%」的假点,而 job 里那条「有营收却一个同比都没有」的守卫正好被这个 0 骗过,
+ * 于是字段改名/停发这件事永远没人知道。故先要求非空、再要求是数。
+ */
+const parseYoy = (raw: string | undefined): number | null => {
+  const t = String(raw ?? '')
+    .replace(/,/g, '')
+    .trim();
+  const n = Number(t);
+
+  return t !== '' && Number.isFinite(n) ? n : null;
+};
+
 type FetchFn = (url: string, init?: RequestInit, timeoutMs?: number) => Promise<Response>;
 
 /**
@@ -119,14 +133,17 @@ export async function fetchTwseMonthlyRevenue(
     )
     .sort((a, b) => a.monthEnd.localeCompare(b.monthEnd));
 
-  if (points.length === 0) throw new Error(`TWSE ${twseCode}: 当月营收拿不到值`);
-
-  const yoyRaw = Number(row['營業收入-去年同月增減(%)']);
+  // 判据必须是「**当月**这个点拿到了」,不是「三个点里有一个」:上月/去年当月只是顺带的历史,
+  // 缺了不影响本轮的意义,而当月缺了这一轮就白跑 —— 若只看 points.length,
+  // 会拿着两个陈旧的点记 success、水位照样前进,那个月从此永久缺(源不可回填)。
+  if (!points.some((p) => p.monthEnd === latestMonthEnd)) {
+    throw new Error(`TWSE ${twseCode}: 当月(${latestMonthEnd})营收拿不到值`);
+  }
 
   return {
     company: row['公司名稱'] ?? twseCode,
     points,
-    yoyPct: Number.isFinite(yoyRaw) ? yoyRaw : null,
+    yoyPct: parseYoy(row['營業收入-去年同月增減(%)']),
     latestMonthEnd,
     note: row['備註'] && row['備註'] !== '-' ? row['備註'] : null,
   };

@@ -1,6 +1,5 @@
 import {
   AS_TAG,
-  defaultFetch,
   fetchReportDoc,
   flattenHtml,
   get,
@@ -11,6 +10,7 @@ import {
   type FsFiling,
   type Sec6kValues,
 } from './sec6k';
+import { fetchWithTimeout } from './http';
 import type { CompanyFacts } from '../analytics/secFundamentals';
 
 /**
@@ -44,8 +44,22 @@ export type TsmcYtd = Sec6kValues;
  * ⚠️ 利润表每列占**两个单元格**(金额 + 占营收 %),所以第 c 列的金额在第 2c 个数字上。
  * 这一条踩过:按列号直接索引会取到「去年同季」那一列(实测 Q2 2025 取成 673.5B 而非 1773.0B)。
  */
+/**
+ * 合并报表的单位表头。**必须确认过才敢乘 1000** —— 下游按「基础货币单位」算,
+ * 报表哪天改成百万或元,静默换算就是 1000 倍错误(财报稿那条与 ASML 都有同款守卫,
+ * 唯独最主要的这条曾经没有)。
+ *
+ * ⚠️ 词间分隔要吃 `|`:flattenHtml 把**标签**换成 `|` 而不是空格,所以表头里夹一个 `<b>`、
+ * `<br>` 或跨单元格换行,`\s+` 就匹配不上 —— 那会让**每一份** TSM 报表都抛错、整条源硬失败。
+ */
+const REPORT_UNIT_RE = /Thousands[\s|]+of[\s|]+New[\s|]+Taiwan[\s|]+Dollars/i;
+
 export function parseTsmcReport(html: string): TsmcYtd {
   const txt = flattenHtml(html);
+
+  if (!REPORT_UNIT_RE.test(txt)) {
+    throw new Error('TSM 合并报表:没确认到「(In) Thousands of New Taiwan Dollars」表头,拒绝按千元换算');
+  }
 
   // 有「Six/Nine Months Ended」表头 = 期中报告(四列);否则 Q1 或年报(两列)。
   const interim = /For the (Six|Nine) Months Ended/i.test(txt);
@@ -163,7 +177,7 @@ const TSM_RELEASE_DOC = /^tsm-\d{8}x6k\.htm$/i;
 /** 报表目录里要排除的:6-K 封面与母公司单独报表(uncons/standalone,口径不同)。 */
 const NOT_THE_REPORT = /^tsm-fs|standalone|uncons/i;
 
-export function createTsmcFetcher(doFetch: FetchFn = defaultFetch) {
+export function createTsmcFetcher(doFetch: FetchFn = fetchWithTimeout) {
   return {
     listFsFilings: (cik: string): Promise<FsFiling[]> => listQuarterly6K(cik, TSM_FS_DOC, doFetch),
 
