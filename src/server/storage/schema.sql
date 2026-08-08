@@ -80,7 +80,11 @@ CREATE TABLE IF NOT EXISTS sec_fundamentals (
     ticker       TEXT NOT NULL,
     period_end   TEXT NOT NULL,      -- YYYY-MM-DD,财报期末
     concept      TEXT NOT NULL,      -- revenue | cogs | ocf | capex
-    value        REAL NOT NULL,      -- 单季值(已差分),USD
+    -- ⚠️ 单位是**基础货币单位**(元 / 新台币元 / 欧元),不是百万 —— 与派生出去的 market_series
+    -- 差 1e6(deriveSeries 除以 1e6 对齐其它序列)。这里存原值是为了能逐位对着报表原文核。
+    -- 币种由 shared/aiChain 的 currencyOf 决定,**这张表里不带币种列**:TSM 是新台币、
+    -- ASML 是欧元、其余美元,跨公司比绝对值一定要先看币种(买方合计有同币种不变式咬着)。
+    value        REAL NOT NULL,      -- 单季值(已差分),基础货币单位
     tag_used     TEXT NOT NULL,      -- 实际命中的 us-gaap tag
     form         TEXT NOT NULL,      -- 10-Q / 10-K
     accn         TEXT NOT NULL,      -- 申报号

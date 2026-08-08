@@ -8,6 +8,7 @@ import {
   derivePaneMeta,
   dimPanes,
   secLagNote,
+  secTrimNote,
   type RegimeDim,
 } from './regimeChart.hooks';
 import { PaneChartView } from '../chart/PaneChartView';
@@ -27,11 +28,14 @@ export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Inter
   const { order, collapsed, move, toggle, cells, hovering, tops, drawing, toggleDrawing, selection, deleteSelected } =
     usePaneChartStack(containerRef, paneDefs, paneCount, specs, { storageKey: `regime:${dim}` });
 
-  // 右上角提示:序列缺失 + SEC 滞后。两者可同时成立(某格空着、另一家又落后一季)。
+  // 右上角提示:序列缺失 + SEC 滞后 + 断档裁剪。三者可同时成立
+  // (某格空着、另一家落后一季、还有一格被裁短)。裁剪那条见 secTrimNote:
+  // 裁本身是对的,但不说的话「线怎么这么短」无处可查。
   const missing = panes.map((p) => p.key).filter((k) => data.unavailable.includes(k));
   const notes = [
     missing.length ? `暂不可用: ${missing.map((k) => seriesName[k]).join(', ')}` : undefined,
     secLagNote(data, dim),
+    secTrimNote(data, dim),
   ].filter((n) => n !== undefined);
   const note = notes.length ? notes.join(' · ') : undefined;
   const badges = regimePercentiles(data, dim); // 当前分位徽标(仅 percentile pane 非空)

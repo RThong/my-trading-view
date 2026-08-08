@@ -31,6 +31,7 @@ import {
   kindsOf,
   trimsGaps,
   type FundKind,
+  type FundTrim,
   type SecLag,
 } from '../../shared/aiChain';
 
@@ -41,6 +42,7 @@ type RegimeBody = {
   unavailable: string[];
   ohlc?: Record<string, OhlcBar[]>;
   secLag?: SecLag[];
+  secTrim?: FundTrim[];
 };
 
 // 内存 TTL 缓存:现拉全部外部源约 1.3s,重复打开走缓存瞬时返回。
@@ -68,7 +70,12 @@ const SERIES_ID: Record<FundKind, (ticker: string) => string> = {
   revYoy: (t) => twseSeriesId(t, 'revYoy'),
 };
 
-function readSecSeries(db: Database): { series: Record<string, Point[]>; unavailable: string[]; lag: SecLag[] } {
+function readSecSeries(db: Database): {
+  series: Record<string, Point[]>;
+  unavailable: string[];
+  lag: SecLag[];
+  trims: FundTrim[];
+} {
   const defs = [
     ...ACTIVE_TICKERS.flatMap((ticker) =>
       kindsOf(ticker).map((kind) => ({
@@ -85,10 +92,20 @@ function readSecSeries(db: Database): { series: Record<string, Point[]>; unavail
 
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
+  const trims: FundTrim[] = [];
 
   for (const { out, id, trim } of defs) {
     const raw = getMarketSeries(db, id);
     const rows = trim ? trailingContiguous(raw) : raw;
+
+    // 裁掉了多少必须回报:裁本身是对的,**静默才是问题** —— 用户只看到一条短线,
+    // 分不清是「这家上市晚」还是「中间缺了几季、TTM 整段作废」(见 FundTrim)。
+    // trailingContiguous 保留的是尾段,所以被裁掉的是前 dropped 个点。
+    const dropped = raw.length - rows.length;
+    if (dropped > 0) {
+      trims.push({ key: out, dropped, gapFrom: raw[dropped - 1]!.date, gapTo: rows[0]!.date });
+    }
+
     if (rows.length) series[out] = rows;
     else unavailable.push(out);
   }
@@ -96,7 +113,7 @@ function readSecSeries(db: Database): { series: Record<string, Point[]>; unavail
   // 只保留启用名单里的:名单外的公司(曾启用过、水位还留在库里)不该在面板上冒出来。
   const lag = getSecLag(db).filter((l) => ACTIVE_TICKERS.includes(l.ticker));
 
-  return { series, unavailable, lag };
+  return { series, unavailable, lag, trims };
 }
 
 /**
@@ -116,6 +133,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
         series: { ...cache.body.series, ...sec.series },
         unavailable: [...cache.body.unavailable.filter((n) => !n.startsWith(FUND_KEY_PREFIX)), ...sec.unavailable],
         secLag: sec.lag,
+        secTrim: sec.trims,
       });
     } finally {
       db.close();
@@ -199,6 +217,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
   let secLag: SecLag[] = [];
+  let secTrim: FundTrim[] = [];
 
   // 有值 → 落对外序列;否则记入 unavailable。收敛 5 处「存在性分支」,读时一目了然。
   // (传 undefined 表示该序列缺失/为空;直接源用存在性、派生/库源用长度决定是否传值。)
@@ -284,11 +303,12 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     for (const [out, rows] of Object.entries(sec.series)) put(out, rows);
     unavailable.push(...sec.unavailable);
     secLag = sec.lag;
+    secTrim = sec.trims;
   } finally {
     db.close();
   }
 
-  const body: RegimeBody = { series, unavailable, ohlc, secLag };
+  const body: RegimeBody = { series, unavailable, ohlc, secLag, secTrim };
   // 只缓存全成功(降级响应不缓存,下次重试)。例外:SEC 那几条是季频、靠单独的 job 逐季攒,
   // 从没跑过 job 的库里它们必然缺——不能让这个常态把整条路由的缓存永久关掉。
   if (unavailable.every((n) => n.startsWith(FUND_KEY_PREFIX))) cache = { at: Date.now(), body };

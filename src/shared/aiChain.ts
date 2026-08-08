@@ -232,7 +232,10 @@ export const KNOWN_GAPS: Record<string, string> = {
     'orcl:ServicesExpense 1.133B = 6.092B,对营收 17.190B → 毛利率约 64.6%)。' +
     'companyfacts 只聚合标准 taxonomy、不收 extension → 这条线要接原始 XBRL / DERA ZIP 才有,另立需求。' +
     '注:ORCL 把无形资产摊销单列在这三个直接成本之外,真接入时口径与其他公司不同。' +
-    '组件还改过名(2019 年是 orcl:CloudServicesAndLicenseSupportExpenses)。',
+    '组件还改过名(2019 年是 orcl:CloudServicesAndLicenseSupportExpenses)。' +
+    '另:库里还留着 2009-02~2011-05 共 8 行旧 cogs(那时 CostOfRevenue 还在报)。' +
+    '它们凑不出四季 TTM 窗口、又与今天差十几年,断档裁剪也会把它们挡在可见段外,故这格实际是空的 —— ' +
+    '留着是为可审计,不是遗漏。',
 };
 
 export const knownGap = (ticker: string, concept: string): string | undefined => KNOWN_GAPS[`${ticker}.${concept}`];
@@ -284,6 +287,24 @@ export const FINANCE_LEASE_SHARE_CEILING: Record<string, number> = {
 };
 
 export const financeLeaseCeiling = (ticker: string): number | undefined => FINANCE_LEASE_SHARE_CEILING[ticker];
+
+/**
+ * 「这一格的线被断档裁短了」。**必须让读图的人看见**:裁剪本身是对的(折线只连点,断档两端
+ * 会被连成一条斜率是编的直线),但**裁掉这件事一直是静默的** —— 用户只看到一条短一点的线,
+ * 分不清是「这家上市晚」还是「中间缺了三个季度、TTM 整段作废」。
+ *
+ * 实测的量级足以误导:AMZN capex 66 点裁到 33(断在 2017 年那次换 tag,源少一个 H1 检查点)、
+ * NVDA 16 裁到 11(FY2023 Q1/Q2 的 capex 在 companyfacts 里压根没有)、买方合计 40 裁到 33。
+ *
+ * ⚠️ 只在面板上说,**不在 job 里报警**:这些缺口是源侧的(补 tag 链没用,得换源),
+ * 报出来就是一盏永远修不掉的常驻黄灯 —— 同 KNOWN_GAPS 与 CAPEX_SCOPE_EXPECTED 的理由。
+ */
+export type FundTrim = {
+  key: string; // fundKey(...)
+  dropped: number; // 被裁掉的点数
+  gapFrom: string; // 断档前的最后一点(被裁掉的那侧)
+  gapTo: string; // 断档后的第一点(可见段起点)
+};
 
 /**
  * 「远端已交更新的 10-Q/10-K,但我们库里还没有那一期」。后端由 sec_watermark 与

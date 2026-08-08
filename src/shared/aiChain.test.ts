@@ -15,6 +15,7 @@ import {
   fundKey,
   hasSource,
   isAggregateMember,
+  knownGap,
   kindsOf,
   sec6kCikOf,
   sourcesOf,
@@ -158,5 +159,27 @@ describe('融资租赁守卫的档位声明', () => {
   test('每个买方合计成员都要有声明档位', () => {
     const missing = ACTIVE_TICKERS.filter((t) => isAggregateMember(t) && financeLeaseCeiling(t) === undefined);
     expect(missing, `这几家漏了 FINANCE_LEASE_SHARE_CEILING:${missing.join('/')}`).toEqual([]);
+  });
+});
+
+describe('币种与结构性缺口的不变式', () => {
+  /**
+   * market_series 里三种币种同表同字段(ASML 百万欧元 / TSM 百万新台币 / 其余百万美元),
+   * 靠 currencyOf 只在**文案**上区分。买方合计是唯一做跨公司加总的地方 —— 只要成员里混进
+   * 一个非美元的,那条线就是把汇率当增长在加,而且不会报错。
+   * 现在恰好全是美国公司,所以这条只能靠不变式咬住。
+   */
+  test('买方合计成员必须同币种(否则是在加汇率)', () => {
+    const bad = ACTIVE_TICKERS.filter((t) => isAggregateMember(t) && currencyOf(t) !== 'USD');
+    expect(bad, `非美元的买方合计成员:${bad.join('/')}`).toEqual([]);
+  });
+
+  /**
+   * KNOWN_GAPS 声明「这格永远是空的」。ORCL 的 cogs 在 2018 年前其实有过行(2009-02~2011-05),
+   * 派生层因为凑不满四季 TTM 窗口而不出点 —— 但这是**算出来的巧合**,不是被谁挡住的。
+   * 锁住它:哪天派生逻辑放宽,一段 2009–2011 的孤立毛利率会突然冒出来,而 desc 还写着「这格是空的」。
+   */
+  test('登记了 KNOWN_GAPS 的格子,desc 必须解释库里可能有旧行', () => {
+    expect(knownGap('ORCL', 'cogs')).toMatch(/2009-02.*2011-05/);
   });
 });

@@ -1,5 +1,12 @@
 import { test, expect } from 'bun:test';
-import { buildRegimeSpecs, dimPanes, regimePercentiles, secLagNote, type RegimeData } from './regimeChart.hooks';
+import {
+  buildRegimeSpecs,
+  dimPanes,
+  regimePercentiles,
+  secLagNote,
+  secTrimNote,
+  type RegimeData,
+} from './regimeChart.hooks';
 import { ACTIVE_TICKERS, fundKey, kindsOf } from '../../../shared/aiChain';
 
 const data: RegimeData = {
@@ -236,4 +243,27 @@ test('每家的 panes 与 kindsOf 一一对应,不多不少', () => {
     expect(new Set(keys), `${ticker} 的格子`).toEqual(new Set(want));
     expect(keys.length, `${ticker} 的格子有重复`).toBe(new Set(keys).size);
   }
+});
+
+// 裁剪必须**可见**。裁本身是对的(折线只连点,断档两端会连出一条斜率是编的直线),
+// 但静默裁掉后用户只看到一条短线,分不清是「这家上市晚」还是「中间缺季、TTM 整段作废」。
+test('secTrimNote:只报本 tab 的格子,并说清断在哪', () => {
+  const data: RegimeData = {
+    series: {},
+    unavailable: [],
+    secTrim: [
+      { key: fundKey('NVDA', 'capex'), dropped: 5, gapFrom: '2021-01-31', gapTo: '2023-10-29' },
+      { key: fundKey('AMZN', 'capex'), dropped: 33, gapFrom: '2017-03-31', gapTo: '2018-06-30' },
+    ],
+  };
+
+  const note = secTrimNote(data, 'fundamentals:NVDA');
+  expect(note).toContain('少 5 点');
+  expect(note).toContain('2021-01-31 → 2023-10-29');
+  expect(note).not.toContain('33'); // 别家的不混进来
+});
+
+test('secTrimNote:没裁过就不出提示', () => {
+  expect(secTrimNote({ series: {}, unavailable: [] }, 'fundamentals:NVDA')).toBeUndefined();
+  expect(secTrimNote({ series: {}, unavailable: [], secTrim: [] }, 'fundamentals:NVDA')).toBeUndefined();
 });

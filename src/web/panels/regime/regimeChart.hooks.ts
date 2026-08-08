@@ -19,6 +19,7 @@ import {
   hasSource,
   type ChainSource,
   type FundKind,
+  type FundTrim,
   type SecLag,
 } from '../../../shared/aiChain';
 
@@ -65,6 +66,7 @@ export type RegimeData = {
   unavailable: string[];
   ohlc?: Record<string, Bar[]>;
   secLag?: SecLag[];
+  secTrim?: FundTrim[];
 };
 
 const NO_DATA: RegimeData = { series: {}, unavailable: [] }; // 稳定空引用,避免 render 抖动
@@ -857,7 +859,9 @@ const TWSE_CAVEAT =
 /** 月营收那两格额外的时效说明(季度那格不适用:它慢得多)。 */
 const TWSE_MONTHLY_SPEED =
   '端点是「营业收入汇总表」,每月 10 日左右出上月数(**T+10**)—— 这是整条 AI 链里最快的读数,' +
-  '比任何季报早一个月以上,而且是已发生的出货量、不是指引。';
+  '比任何季报早一个月以上,而且是已发生的出货量、不是指引。\n' +
+  '⚠️ **但要攒够点才读得了**:快照源不可回填(见下),接入首日只有三个点、同比只有一个。' +
+  '在攒满之前这一格是「有数但读不出趋势」,别拿单点当信号。';
 
 const TWSE_SNAPSHOT_NOTE =
   '⚠️ **只能往前攒,补不了历史**。端点只返回最新一个月;台交所的历史月报页有反爬' +
@@ -1167,6 +1171,30 @@ export function secLagNote(data: RegimeData, dim: RegimeDim): string | undefined
 
   const one = (l: SecLag) => `${l.ticker} 截至 ${l.latestPeriodEnd ?? '无数据'}(${l.remoteFiled} 已申报,SEC 未提供)`;
   return `⚠️ 数据滞后:${mine.map(one).join(';')}`;
+}
+
+/**
+ * 「这一格被断档裁短了」的提示。**裁剪本身是对的,静默才是问题**。
+ *
+ * 折线只连点,断档两端会被连成一条斜率是编的直线,而这组判据全在读斜率 —— 所以必须裁。
+ * 但裁完不说,用户看到的只是一条短线,分不清是「这家上市晚」还是「中间缺了几个季度、
+ * TTM 因为凑不满四季而整段作废」。实测量级足以误导:AMZN capex 66 点裁到 33、
+ * NVDA 16 裁到 11、买方合计 40 裁到 33。
+ *
+ * 缺口的成因在源侧(companyfacts 那几期压根没有 capex 行,补 tag 链没用),所以
+ * **只在这里说,不在 job 里报警** —— 那会是一盏永远修不掉的常驻黄灯。
+ */
+export function secTrimNote(data: RegimeData, dim: RegimeDim): string | undefined {
+  if (!data.secTrim?.length) return undefined;
+
+  const keys = new Set(dimPanes(dim).map((p) => p.key));
+  const mine = data.secTrim.filter((t) => keys.has(t.key));
+  if (!mine.length) return undefined;
+
+  const label = (key: string) => dimPanes(dim).find((p) => p.key === key)?.label ?? key;
+  const one = (t: FundTrim) => `${label(t.key)} 少 ${t.dropped} 点(断在 ${t.gapFrom} → ${t.gapTo})`;
+
+  return `⚠️ 已裁断档:${mine.map(one).join(';')}`;
 }
 
 /** 各序列最新值在自身历史里的百分位(徽标用,如 { cor1m: 'P3' })。仅 percentile 的 pane 产出。 */
