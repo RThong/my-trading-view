@@ -34,27 +34,46 @@ export const SOURCE_NEEDS: Record<ChainSource, 'cik' | 'twseCode' | 'dartCorpCod
 };
 
 // inChain=false:已启用、有 tab 可看,但**不作判据成员**——面板的名单文案不把它列进去,
-// 买方合计线也不收它(见 isAggregateMember)。给 INTC 用:它的毛利率是**供给侧读数**,
-// 与 NVDA/MU 的「稀缺溢价」符号相反(INTC 毛利率修复 = 新产能进场 = 溢价见顶的旁证),
-// 混在同一句「见顶回落 = 供给追上需求」里会读反。理由写在 COMPANY_NOTES.INTC。
+// 买方合计线也不收它(见 isAggregateMember)。目前只有 INTC:它和 TSM 同在代工层,
+// 但处在衰退期,毛利率是**供给侧读数**、符号与稀缺溢价相反(INTC 毛利率修复 = 新产能进场),
+// 所以它在组里是**对照样本**而不是判据成员。理由写在 COMPANY_NOTES.INTC。
 /**
  * 面板上的分组。**按「这一格该怎么读」分,不是按行业分** —— 同组的 tab 可以互相比,
- * 跨组的不能(口径与符号都不同)。顺序即资金流向:云厂商花钱 → 算力芯片收钱 → 上游产能。
- *  · cloud       买铲子。判据是 FCF 会不会转负(§6.14),它们的毛利率是配角。
- *  · accelerator 直接卖加速器。毛利率 = 定价权,组内可横向比(NVDA vs AMD)。
- *  · upstream    代工与存储。物理瓶颈那一层;各自读法不同(TSM 看产能、MU 看价格周期),
- *                但都属于「供给能不能跟上」这一问,故同组。
- *  · watch       备查,**不作判据成员**。两种不同的「读不得」:INTC 的毛利率符号与稀缺溢价相反
- *                (修复 = 新产能进场);AVGO 的毛利率被 VMware 收购摊销扰动、capex 因 fabless 无信息量。
+ * 跨组的不能。顺序即**资金流向**,也就是 §6.16 产业链投资法的正向拆解链:
+ * FCF 增厚 → 扩 capex → 买设备。
+ *
+ *  · payer       capex 买单方(§6.14 的主角组)。判据是 FCF 会不会转负,毛利率是配角。
+ *                组内两个异质点值得单独看:META **不卖云**(纯自用买家,没有云收入对冲),
+ *                ORCL 是**举债最凶**的样本(§6.21 绑定链条的中间环节)—— 它和 MSFT 并排
+ *                看 capex/FCF 劈叉最有信息量。
+ *  · accelerator 算力芯片。**组内分两半读**:NVDA/AMD 是通用 GPU(CUDA 生态 = 结构性护城河),
+ *                AVGO/ARM 是定制 ASIC + IP(**CSP 绕开 NVDA 的替代路径,不是补充**)。
+ *                两半劈叉 = 大厂议价权变化的直接读数。
+ *  · foundry     代工。TSM 是**结构性高毛利**样本(先进制程 + 设计生态);INTC 同层但在衰退期,
+ *                是对照(它的毛利率修复 = 新产能进场,符号与稀缺溢价相反)。
+ *  · memory      存储。MU/SKHY 是**周期性高毛利**(供需缺口的产物,临界点低、重构快猛)。
+ *  · equipment   设备。ASML 单列 —— 它不是「上游产能」,它是**产能的供给方**,差一层
+ *                (EUV 近乎垄断无替代)。也是「FCF 增厚 → 扩 capex → 落到设备」这条传导的终点验证。
+ *
+ * ⚠️ **代工与存储必须分列,这是 §6.16 判据的前置条件**:结构性高毛利见顶后能维持许久,
+ * 周期性高毛利见顶即退坡。两组毛利率分开才比得出来 —— 混在一组等于放弃这条判别力。
+ *
+ * 后续扩位时组结构不用改,直接挂进去(尚未接入,记在这里免得重新设计):
+ *   payer      +AAPL(§6.21 的反差样本:同组内它的 capex 不该跟着爆)
+ *   算力承包   +CRWV(neocloud 单列一层,ORCL 若要移出 payer 也归这里)
+ *   equipment  +AMAT / LRCX / Advantest
+ *   电力配套   +VRT / GEV(新层)
+ *   中游软件   +IGV / CRM / VEEV(新层,§6.13 时间轴指向 2026)
  */
-export type ChainGroup = 'cloud' | 'accelerator' | 'upstream' | 'watch';
+export type ChainGroup = 'payer' | 'accelerator' | 'foundry' | 'memory' | 'equipment';
 
-export const GROUP_ORDER: ChainGroup[] = ['cloud', 'accelerator', 'upstream', 'watch'];
+export const GROUP_ORDER: ChainGroup[] = ['payer', 'accelerator', 'foundry', 'memory', 'equipment'];
 export const GROUP_LABELS: Record<ChainGroup, string> = {
-  cloud: '云厂商',
+  payer: 'capex 买单',
   accelerator: '算力芯片',
-  upstream: '上游产能',
-  watch: '备查',
+  foundry: '代工',
+  memory: '存储',
+  equipment: '设备',
 };
 
 type Company = {
@@ -75,7 +94,7 @@ type Company = {
 export const SEC_COMPANIES: Company[] = [
   // 卖铲子:看毛利率
   { ticker: 'NVDA', cik: '1045810', side: 'seller', inChain: true, group: 'accelerator' },
-  { ticker: 'MU', cik: '723125', side: 'seller', inChain: true, group: 'upstream' }, // 美光:毛利率 = DRAM/NAND 价格周期的免费代理
+  { ticker: 'MU', cik: '723125', side: 'seller', inChain: true, group: 'memory' }, // 美光:毛利率 = DRAM/NAND 价格周期的免费代理
   { ticker: 'AMD', cik: '2488', side: 'seller', inChain: true, group: 'accelerator' }, // 加速器侧的第二家,与 NVDA 对读(见 COMPANY_NOTES)
   // 代工:**两个源各管一半**。companyfacts 那条不行(ifrs-full 下四科目都在,但期间只有
   // 半年/全年、且最新一期停在 2024-12-31),所以季度四科目走它交给 EDGAR 的季度合并财报 6-K,
@@ -87,7 +106,7 @@ export const SEC_COMPANIES: Company[] = [
     sources: ['sec6k', 'twse'],
     side: 'seller',
     inChain: true,
-    group: 'upstream',
+    group: 'foundry',
     currency: 'TWD',
   },
   // 设备:同样是 FPI(荷兰),同样只能走季报 6-K。但比 TSM 好办 —— 它用 **US GAAP** 报、
@@ -100,15 +119,15 @@ export const SEC_COMPANIES: Company[] = [
     sources: ['sec6k'],
     side: 'seller',
     inChain: true,
-    group: 'upstream',
+    group: 'equipment',
     currency: 'EUR',
   },
   // 买铲子:进合计 FCF
-  { ticker: 'MSFT', cik: '789019', side: 'buyer', inChain: true, group: 'cloud' },
-  { ticker: 'GOOGL', cik: '1652044', side: 'buyer', inChain: true, group: 'cloud' },
-  { ticker: 'AMZN', cik: '1018724', side: 'buyer', inChain: true, group: 'cloud' },
-  { ticker: 'META', cik: '1326801', side: 'buyer', inChain: true, group: 'cloud' },
-  { ticker: 'ORCL', cik: '1341439', side: 'buyer', inChain: true, group: 'cloud' },
+  { ticker: 'MSFT', cik: '789019', side: 'buyer', inChain: true, group: 'payer' },
+  { ticker: 'GOOGL', cik: '1652044', side: 'buyer', inChain: true, group: 'payer' },
+  { ticker: 'AMZN', cik: '1018724', side: 'buyer', inChain: true, group: 'payer' },
+  { ticker: 'META', cik: '1326801', side: 'buyer', inChain: true, group: 'payer' },
+  { ticker: 'ORCL', cik: '1341439', side: 'buyer', inChain: true, group: 'payer' },
   // 备查但**不建议开**(inChain 省略 = false),开了只会给对应那条线加噪声。
   // 已移除:AAPL(不在 AI 链上,FCF 由 iPhone 主导)、DELL(整机厂,毛利率不反映芯片稀缺溢价)。
   //
@@ -130,12 +149,16 @@ export const SEC_COMPANIES: Company[] = [
     sources: ['dart'],
     side: 'seller',
     inChain: true,
-    group: 'upstream',
+    group: 'memory',
     currency: 'KRW',
   },
-  { ticker: 'INTC', cik: '50863', side: 'seller', group: 'watch' },
-  // 博通。**AI 链上分量很重**(定制加速器 XPU:Google TPU / Meta MTIA;AI 网络 Tomahawk/Jericho),
-  // 但**通过这条管线只能看毛利率,而且要会读** —— 所以 inChain=false,归备查。
+  // 代工层的**对照样本**(inChain 省略 = false,不作判据成员):和 TSM 同层但在衰退期,
+  // 它的毛利率修复 = 新产能进场,符号与「稀缺溢价见顶回落」相反 —— 同组是为了**对照着读**,
+  // 不是为了横向比高低。见 COMPANY_NOTES.INTC。
+  { ticker: 'INTC', cik: '50863', side: 'seller', group: 'foundry' },
+  // 博通。算力芯片组的**定制 ASIC 那一半** —— 它给 CSP 做定制加速器 XPU(Google TPU / Meta MTIA)
+  // 与 AI 网络(Tomahawk / Jericho),是**大厂绕开 NVDA 的替代路径,不是补充**。
+  // 它与 NVDA/AMD 那一半的劈叉 = 大厂议价权变化的直接读数,所以必须同组才比得出来。
   //
   // 实测(2018 起 33 个 TTM 点、零断档):毛利率 2023-10 的 68.9% → 2024-11 的 63.0% → 2026-05 回到 68.3%。
   // 那 6 个百分点的坑是 **VMware 收购的无形资产摊销走 COGS**(GAAP 购置价格分摊),
@@ -145,10 +168,11 @@ export const SEC_COMPANIES: Company[] = [
   //  · capex TTM 仅约 8.6 亿美元(对 328 亿 FCF)—— 它是 **fabless**,这一格读不出任何供给侧信息,
   //    别和 TSM / MU / SKHY 的扩产并排看。
   //  · FCF 巨大且不进买方合计(seller),只反映它自身现金生成。
+  // 读它的毛利率时要知道 2024 那个坑的成因(见上),别当成定价权变化。
   //
   // ⚠️ 它真正值钱的数是**每季单独披露的「AI 收入」** —— 那在财报新闻稿(8-K)里,
   // **不在 XBRL**,companyfacts 拿不到。要它得另接一条解析路径,另立需求。
-  { ticker: 'AVGO', cik: '1730168', side: 'seller', group: 'watch' },
+  { ticker: 'AVGO', cik: '1730168', side: 'seller', inChain: true, group: 'accelerator' },
   // ARM(UK,FPI —— 20-F 年报 + **带完整 inline XBRL 的 6-K 季报**,所以 companyfacts 里
   // 90/91 天的单季跨度都在;TSM/ASML 的 6-K 是 0 份带标记,完全不同,见 isPeriodicForm)。
   //
@@ -157,26 +181,29 @@ export const SEC_COMPANIES: Company[] = [
   // (26.6 亿 → 51.6 亿美元)。这也正是给 sec 源加 rev / revGrowth 的直接动因。
   // capex 从 0.86 亿涨到 5.88 亿(自研 CSS/chiplet),但绝对值太小,不作供给侧读数。
   //
-  // inChain=false:它是全行业的 IP 底座,不专属 AI 链,毛利率又答不了稀缺溢价那一问。
-  { ticker: 'ARM', cik: '1973239', side: 'seller', group: 'watch' },
+  // 与 AVGO 同属**定制 ASIC + IP 那一半**:CSP 自研芯片基本都从它的指令集与 CSS 起步,
+  // 所以它是那条替代路径的底座。读它只看营收两格 —— 毛利率是常数,答不了稀缺溢价那一问。
+  { ticker: 'ARM', cik: '1973239', side: 'seller', inChain: true, group: 'accelerator' },
 ];
 
 /** 已逐家核对过、可入库的标的。核对一家开一家 —— 未核对的进来会污染派生线。 */
 export const ACTIVE_TICKERS = [
-  'NVDA',
-  'MU',
-  'AMD',
-  'INTC',
-  'TSM',
-  'ASML',
-  'SKHY',
-  'AVGO',
-  'ARM',
+  // 顺序即 tab 顺序(GROUP_ORDER × 组内保持这里的先后)。按资金流向排:
+  // capex 买单 → 算力芯片 → 代工 → 存储 → 设备。
   'MSFT',
-  'ORCL',
   'GOOGL',
   'AMZN',
   'META',
+  'ORCL',
+  'NVDA',
+  'AMD',
+  'AVGO',
+  'ARM',
+  'TSM',
+  'INTC',
+  'MU',
+  'SKHY',
+  'ASML',
 ];
 
 const find = (ticker: string) => SEC_COMPANIES.find((c) => c.ticker === ticker);

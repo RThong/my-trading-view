@@ -39,7 +39,7 @@ describe('AI 链名单', () => {
     const tickers = SEC_COMPANIES.map((c) => c.ticker);
     // AAPL:不在 AI 链上(FCF 由 iPhone 主导)。DELL:整机厂,毛利率不反映芯片稀缺溢价。
     // (AVGO 曾以「VMware 混合读数」为由剔除,后实测那 6pp 是收购摊销走 COGS、不是定价权 ——
-    //  已放回,但归 watch、不作判据成员,见名单里的注释。)
+    //  已放回,现归算力芯片组的「定制 ASIC」那一半,见名单里的注释。)
     for (const t of ['AAPL', 'DELL']) expect(tickers).not.toContain(t);
   });
 
@@ -131,11 +131,10 @@ describe('面板分组', () => {
   test('每家都归了组,且组与 side/inChain 不矛盾', () => {
     for (const c of SEC_COMPANIES) {
       expect(c.group, `${c.ticker} 没归组`).toBeTruthy();
-      // 买方必在云厂商组:它们的判据是 FCF,和卖方那几组读法完全不同。
-      if (c.side === 'buyer') expect(c.group, `${c.ticker} 是买方却不在 cloud`).toBe('cloud');
-      // 非链内的只能进备查 —— 否则它会混在判据组里被当成成员读。
-      if (!c.inChain) expect(c.group, `${c.ticker} 非链内却不在 watch`).toBe('watch');
-      if (c.group === 'cloud') expect(c.side).toBe('buyer');
+      // 买方必在 capex 买单组:它们的判据是 FCF,和卖方那几组读法完全不同。
+      if (c.side === 'buyer') expect(c.group, `${c.ticker} 是买方却不在 payer`).toBe('payer');
+      // 反过来也要成立:payer 组里混进卖方,就会有人拿它的 FCF 去对零轴读。
+      if (c.group === 'payer') expect(c.side, `${c.ticker} 在 payer 组却不是买方`).toBe('buyer');
     }
   });
 
@@ -146,15 +145,17 @@ describe('面板分组', () => {
   });
 
   test('组内成员符合各自的读法', () => {
-    // 直接卖加速器的两家,毛利率可横向比。
-    expect(activeByGroup('accelerator')).toEqual(['NVDA', 'AMD']);
-    // 代工 + 存储:都是「供给跟不跟得上」那一层。
-    // 存储两家(MU / SKHY)+ 代工 + 设备。MU 与 SKHY 是 DRAM/NAND 周期的两个独立读数。
-    expect(activeByGroup('upstream')).toEqual(['MU', 'TSM', 'ASML', 'SKHY']);
-    // 备查两家、两种不同的「读不得」:INTC 毛利率符号与稀缺溢价相反;AVGO 的毛利率被收购摊销
-    // 扰动、capex 因 fabless 无信息量,真正值钱的「AI 收入」又不在 XBRL 里。
-    expect(activeByGroup('watch')).toEqual(['INTC', 'AVGO', 'ARM']);
-    expect(activeByGroup('cloud')).toEqual(['MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META']);
+    // 顺序即资金流向:capex 买单 → 算力芯片 → 代工 → 存储 → 设备。
+    expect(activeByGroup('payer')).toEqual(['MSFT', 'GOOGL', 'AMZN', 'META', 'ORCL']);
+    // 组内分两半:NVDA/AMD 通用 GPU(CUDA 生态),AVGO/ARM 定制 ASIC + IP
+    // (**CSP 绕开 NVDA 的替代路径,不是补充**)。两半劈叉 = 大厂议价权变化的直接读数,故必须同组。
+    expect(activeByGroup('accelerator')).toEqual(['NVDA', 'AMD', 'AVGO', 'ARM']);
+    // 代工与存储**必须分列**:TSM 是结构性高毛利(先进制程 + 设计生态),MU/SKHY 是周期性高毛利
+    // (供需缺口的产物)。结构性见顶后能维持许久、周期性见顶即退坡 —— 混一组这条判别力就没了。
+    expect(activeByGroup('foundry')).toEqual(['TSM', 'INTC']);
+    expect(activeByGroup('memory')).toEqual(['MU', 'SKHY']);
+    // 设备单列:ASML 不是「上游产能」,是产能的**供给方**,差一层(EUV 近乎垄断无替代)。
+    expect(activeByGroup('equipment')).toEqual(['ASML']);
   });
 
   test('每组都有中文名(缺了 tab 条上会出现空标签)', () => {
