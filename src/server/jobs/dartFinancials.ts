@@ -77,7 +77,7 @@ export async function updateDartFinancials(
       : [want.year];
 
     const reports: DartReport[] = [];
-    const notYet: string[] = [];
+    let notYet = 0; // 「那期还没交」的份数,只用来在报错时说清是不是全都还没到
     try {
       for (const year of years) {
         for (const report of REPORTS) {
@@ -85,14 +85,18 @@ export async function updateDartFinancials(
             reports.push(await fetchDartReport(corpCode, year, report, apiKey));
           } catch (e) {
             // 「那期还没交」是正常状态(013),与真失败分开记 —— 否则每季度到下一份出来之前都是红灯。
-            if (e instanceof DartNoData) notYet.push(`${year}/${report.code}`);
+            if (e instanceof DartNoData) notYet += 1;
             else failed.push(`${ticker} ${year}/${report.code}: ${e instanceof Error ? e.message : String(e)}`);
           }
         }
       }
 
       if (reports.length === 0) {
-        failed.push(`${ticker}: 一份报告都没拉到(尚无数据 ${notYet.length} 份)`);
+        // **全是 013 不算失败**:那只是「法定日到了但公司还没交」,是正常状态,过几天自己就有了。
+        // 报 failed 会在每个季度的申报窗口里点一段红灯,正是要防的那类常驻告警。
+        // 真失败(网络 / 状态码异常)已经在上面逐份记进 failed 了。
+        if (notYet > 0) skipped.push(`${ticker}:${notYet} 份尚无数据`);
+        else failed.push(`${ticker}: 一份报告都没拉到`);
         continue;
       }
 

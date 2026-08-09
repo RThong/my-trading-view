@@ -25,7 +25,7 @@ describe('sec fetcher', () => {
     await expect(createSecFetcher(fakeFetch).companyFacts('1045810')).rejects.toThrow(/SEC_USER_AGENT/);
   });
 
-  test('latestFiling 取 10-Q/10-K 里最大的申报日 + 对应 accn,忽略 8-K', async () => {
+  test('latestFiling 取定期报告里最大的申报日 + 对应 accn,忽略 8-K', async () => {
     const fakeFetch = async (url: string, init?: RequestInit) => {
       expect(url).toBe('https://data.sec.gov/submissions/CIK0001045810.json'); // CIK 补零到 10 位
       // 缺 User-Agent 会被 SEC 403,这条约束靠测试锁住。
@@ -36,6 +36,7 @@ describe('sec fetcher', () => {
           recent: {
             form: ['8-K', '10-Q', '10-K', '8-K'],
             filingDate: ['2026-06-30', '2026-05-20', '2026-02-25', '2026-07-01'],
+            reportDate: ['2026-06-30', '2026-04-26', '2026-01-25', '2026-07-01'],
             accessionNumber: ['a-8k', 'a-10q', 'a-10k', 'b-8k'],
           },
         },
@@ -47,6 +48,33 @@ describe('sec fetcher', () => {
       filed: '2026-05-20',
       form: '10-Q',
       accn: 'a-10q',
+    });
+  });
+
+  /**
+   * 回归:`6-K` 既是 FPI 的季报、也是它的**事件公告**。公告那种 reportDate 就等于 filingDate、
+   * 只带封面页、零个 us-gaap 事实(实测 ARM 2026-04-21 那份实例 1333 字节)。
+   * 拿它定水位 → 远端推高但 processed_filed 永不前进 → **每年两三个月的常驻黄灯**
+   * + 每轮白拉几 MB + 面板假滞后。所以还要求「这份申报真的覆盖一个期间」。
+   */
+  test('公告型 6-K(reportDate == filingDate)不推水位,季报 6-K 照收', async () => {
+    const fakeFetch = async () =>
+      json({
+        filings: {
+          recent: {
+            form: ['6-K', '6-K', '20-F'],
+            filingDate: ['2026-07-29', '2026-04-21', '2026-05-26'],
+            // 第二份是纯公告:rd 撞上 filed,不是一个期末。
+            reportDate: ['2026-06-30', '2026-04-21', '2026-03-31'],
+            accessionNumber: ['q1-6k', 'notice-6k', 'annual-20f'],
+          },
+        },
+      });
+
+    expect(await createSecFetcher(fakeFetch).latestFiling('1973239')).toEqual({
+      filed: '2026-07-29',
+      form: '6-K',
+      accn: 'q1-6k',
     });
   });
 

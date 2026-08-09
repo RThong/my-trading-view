@@ -45,7 +45,6 @@ export const REPORTS = [
 ] as const;
 
 type Row = {
-  sj_div?: string;
   account_id?: string;
   thstrm_amount?: string;
   thstrm_add_amount?: string;
@@ -117,7 +116,11 @@ export async function fetchDartReport(
       const v = hit ? cumulative(hit) : null;
       if (v === null) throw new Error(`DART ${year}/${report.code}: ${concept} 没取到(account_id 可能换了)`);
 
-      return [concept, Math.abs(v)]; // capex 报表里是流出(负),库里统一存正值
+      // **只有 capex 取绝对值**:它在现金流量表里是流出(负数),库里统一存正值。
+      // ⚠️ 其余三个科目**必须保留符号** —— 亏损年的累计 OCF 是负的(实测海力士 2023:
+      // Q1 累计 −2.01조、H1 −0.69조)。一律 abs 会把它翻成正,再经 YTD 差分,
+      // 单季 OCF 的符号与大小全错(2023Q2 会算成 −1.31 而真值是 +1.32),而且不报错。
+      return [concept, concept === 'capex' ? Math.abs(v) : v];
     }),
   ) as Sec6kValues;
 
@@ -131,20 +134,21 @@ export async function fetchDartReport(
 }
 
 /**
- * 某个日期时,**法定上应该已经交出来的**最新期末。DART 是 T+45(分기/반기 45 天、사업보고서 90 天),
- * 这里一律按 50 / 95 天留出余量 —— 判早了会每天白拉一轮拿 013。
- * 只用来决定「要不要拉」,不参与取值。
+ * 某个日期时,**法定上应该已经交出来的**最新期末。DART 是 T+45(分기/반기)/ T+90(사업보고서)。
+ * 按法定期限判、不留余量:公司提前交了就该当天拿到。代价是从法定日到它真的出现之间,
+ * 每轮多打 4 次 013 —— 对 20,000/日 的限额可以忽略。只用来决定「要不要拉」,不参与取值。
  */
 export function latestExpectedPeriod(now: Date): { year: number; report: (typeof REPORTS)[number] } {
   const candidates = [-1, 0].flatMap((offset) =>
     REPORTS.map((report) => {
       const year = now.getUTCFullYear() + offset;
       const end = Date.parse(`${year}-${report.monthDay}T00:00:00Z`);
-      const graceDays = report.code === '11011' ? 95 : 50; // 사업보고서 90 天,其余 45 天
+      const graceDays = report.code === '11011' ? 90 : 45; // 사업보고서 90 天,分기/반기 45 天
       return { year, report, due: end + graceDays * 86_400_000 };
     }),
   );
 
+  // candidates 跨去年+今年共 8 档,去年 Q1 的到期日必然已过 → 一定非空。
   const due = candidates.filter((c) => c.due <= now.getTime()).sort((a, b) => a.due - b.due);
-  return due.at(-1) ?? { year: now.getUTCFullYear() - 1, report: REPORTS[3] };
+  return due.at(-1)!;
 }

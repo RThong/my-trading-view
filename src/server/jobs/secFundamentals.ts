@@ -25,6 +25,7 @@ import {
   BUYER_FCF_SERIES,
   BUYER_FCFQ_SERIES,
   CONCEPTS,
+  type DerivedSeries,
   type QuarterPoint,
   type SeriesKind,
 } from '../analytics/secFundamentals';
@@ -38,6 +39,7 @@ import {
   isAggregateMember,
   knownGap,
   sideOf,
+  type SecKind,
 } from '../../shared/aiChain';
 
 /**
@@ -78,6 +80,22 @@ export type DerivedProblem = { ticker: string; message: string };
  *
  * 删而不是只 upsert:名单缩小或历史点减少时,旧点会残留成一条口径不一的线,upsert 清不掉。
  */
+/**
+ * 面板的每一种格子 → (库里的序列后缀, 从 DerivedSeries 里取哪一条)。
+ *
+ * 写成 `Record<SecKind, …>` 而不是手列数组:以后往 `SOURCE_KINDS` 加一种格子却忘了在这写派生,
+ * **直接编译报错**。手列的话编译过得去,只会在面板上画一条永远「暂不可用」的线 ——
+ * 那不是静默(路由会把它归 unavailable),但要等有人打开那个 tab 才发现。
+ */
+const DERIVED_BY_KIND: Record<SecKind, { id: SeriesKind; pick: (d: DerivedSeries) => QuarterPoint[] }> = {
+  gm: { id: 'GM', pick: (d) => d.gmTtm },
+  capex: { id: 'CAPEX', pick: (d) => d.capexTtm },
+  fcf: { id: 'FCF', pick: (d) => d.fcfTtm },
+  fcfq: { id: 'FCFQ', pick: (d) => d.fcfQ },
+  rev: { id: 'REV', pick: (d) => d.revTtm },
+  revGrowth: { id: 'REVG', pick: (d) => d.revGrowth },
+};
+
 export function writeDerivedSecSeries(
   db: Database,
   active: string[],
@@ -90,19 +108,11 @@ export function writeDerivedSecSeries(
   const loaded = all.filter(([t, rows]) => active.includes(t) && rows.length > 0);
   const derived = loaded.map(([ticker, rows]) => [ticker, deriveSeries(rows)] as const);
 
-  const perTicker: MarketSeriesRow[] = derived.flatMap(([ticker, d]) => {
-    const asRows = (kind: SeriesKind, points: QuarterPoint[]) =>
-      points.map((p) => ({ seriesId: seriesId(ticker, kind), obsDate: p.date, value: p.value }));
-
-    return [
-      ...asRows('GM', d.gmTtm),
-      ...asRows('CAPEX', d.capexTtm),
-      ...asRows('FCF', d.fcfTtm),
-      ...asRows('FCFQ', d.fcfQ),
-      ...asRows('REV', d.revTtm),
-      ...asRows('REVG', d.revGrowth),
-    ];
-  });
+  const perTicker: MarketSeriesRow[] = derived.flatMap(([ticker, d]) =>
+    Object.values(DERIVED_BY_KIND).flatMap(({ id, pick }) =>
+      pick(d).map((p) => ({ seriesId: seriesId(ticker, id), obsDate: p.date, value: p.value })),
+    ),
+  );
 
   // ① 完整性体检:**每轮从库里查**,不挂在「这一轮有没有抓到东西」上。
   // 挂在抓取那一轮只会报一次 —— 行落库后水位前进,下周直接 skip,缺 revenue/cogs 的家从此

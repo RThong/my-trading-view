@@ -500,7 +500,7 @@ function combine(a: QuarterPoint[], b: QuarterPoint[], f: (x: number, y: number)
   });
 }
 
-type DerivedSeries = {
+export type DerivedSeries = {
   gmTtm: QuarterPoint[];
   capexTtm: QuarterPoint[];
   fcfTtm: QuarterPoint[];

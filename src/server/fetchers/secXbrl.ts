@@ -57,13 +57,26 @@ type FilingIndex = { directory?: { item?: Array<{ name?: string }> } };
 
 export function createSecFetcher(doFetch: FetchFn = fetchWithTimeout) {
   return {
-    /** 最新一次 10-Q/10-K(按申报日最大);无定期报告返回 null。 */
+    /**
+     * 最新一次定期报告(按申报日最大);没有则 null。
+     *
+     * ⚠️ **光看 form 名不够,还要求它真的覆盖一个期间**(`reportDate` 存在且 ≠ `filingDate`)。
+     * `6-K` 既是 FPI 的季报、也是它的**事件公告**,后者只带封面页 inline XBRL、零个 us-gaap 事实
+     * (实测 ARM 2026-04-21 那份实例只有 1333 字节)。若拿它定水位,会得到一盏**每年两三个月的
+     * 常驻黄灯**:远端水位被推高 → 不 skip → 每轮白拉几 MB companyfacts → 期末没前进 →
+     * `advanced()` 恒 false → processed_filed 永不前进 → job 记 partial,面板还挂着假滞后标注。
+     * 实测 ARM 的公告 6-K 密集出现,`2025-08-11 → 2025-11-05` 之间就有 86 天。
+     *
+     * 同一条判据 `periodicFilings` 与 sec6k 的 `listQuarterly6K` 早就在用了,这里当初漏了。
+     * (它与 C 节「抽数与定水位的 form 判据必须一致」不冲突:一致的是**认哪些 form**,
+     *  「这份申报覆不覆盖一个期间」是正交的另一条。)
+     */
     async latestFiling(cik: string): Promise<LatestFiling | null> {
       const body = await getJson<Submissions>(`https://data.sec.gov/submissions/${cikPath(cik)}.json`, doFetch);
-      const { form = [], filingDate = [], accessionNumber = [] } = body.filings?.recent ?? {};
+      const { form = [], filingDate = [], reportDate = [], accessionNumber = [] } = body.filings?.recent ?? {};
 
       const periodic = form.flatMap((f, i) =>
-        isPeriodicForm(f) && filingDate[i] && accessionNumber[i]
+        isPeriodicForm(f) && filingDate[i] && accessionNumber[i] && reportDate[i] && reportDate[i] !== filingDate[i]
           ? [{ filed: filingDate[i]!, form: f, accn: accessionNumber[i]! }]
           : [],
       );

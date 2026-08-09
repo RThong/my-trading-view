@@ -221,17 +221,20 @@ export const activeInSecTable = (): string[] =>
  * 实测 Alphabet 2026Q2 单季 −5.9B(IPO 以来首次为负)时 TTM 还有 +53.3B,按当时的烧钱速度
  * 推算 TTM 要到 2026Q4 才跌破零轴,**晚半年**。所以两个口径都得画。
  */
+/** 落在 `sec_fundamentals` 表里的那几个源,格子种类完全一致(见 SOURCE_KINDS)。 */
+const SEC_TABLE_KINDS = ['gm', 'capex', 'fcf', 'fcfq', 'rev', 'revGrowth'] as const;
+
 export const SOURCE_KINDS = {
   // rev / revGrowth:**营收那两格**。加它们是因为四科目对某些公司答不了问题 ——
   // ARM 是 IP 授权模式,毛利率结构性恒在 97% 上下(四年只动 1.7 个百分点),那一格是常数不是读数;
   // 而它的 TTM 营收三年翻倍,权利金收入 ≈ 用它 IP 的芯片出货量,才是真信号。
   // 对 NVDA/MU/AVGO 这些也有用:营收同比比毛利率更早反映需求变化。
-  sec: ['gm', 'capex', 'fcf', 'fcfq', 'rev', 'revGrowth'],
-  // sec6k 产出的原始行落进同一张 sec_fundamentals 表,派生量走同一套算法 → 格子种类相同。
-  sec6k: ['gm', 'capex', 'fcf', 'fcfq', 'rev', 'revGrowth'],
+  // sec / sec6k / dart 的原始行都落进同一张 sec_fundamentals、派生同一套 SEC_* 序列,
+  // 所以格子种类必然相同 —— 引用同一个常量而不是抄三份,免得改一处漏两处。
+  sec: SEC_TABLE_KINDS,
+  sec6k: SEC_TABLE_KINDS,
+  dart: SEC_TABLE_KINDS,
   twse: ['revM', 'revYoy'],
-  // dart 的原始行同样落进 sec_fundamentals、派生同一套 SEC_* 序列 → 格子种类与 sec 相同。
-  dart: ['gm', 'capex', 'fcf', 'fcfq', 'rev', 'revGrowth'],
 } as const satisfies Record<ChainSource, readonly string[]>;
 
 export type SecKind = (typeof SOURCE_KINDS)['sec'][number];

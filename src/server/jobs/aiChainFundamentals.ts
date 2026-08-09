@@ -17,8 +17,9 @@ import { ACTIVE_TICKERS, hasSource, type ChainSource } from '../../shared/aiChai
  * TWSE 挂了不该把 SEC 那条的状态灯也弄黄,反之亦然;而且两者的健康含义不同
  * (SEC 稳态是「全 skip 算成功」,TWSE 稳态是「一个月才动一次」)。
  *
- * 直接运行:bun run src/server/jobs/aiChainFundamentals.ts [--force] [TICKER...]
+ * 直接运行:bun run src/server/jobs/aiChainFundamentals.ts [--force] [--full] [TICKER...]
  *   不带 TICKER = 跑启用名单全体;带了就只跑那几家(单跑核对新公司时用)。
+ *   --force 无视水位重拉一轮;--full 整段重拉历史(只有 dart 用得上)。
  */
 
 /** job_run 里各源记的名字。分开记:TWSE 挂了不该把 SEC 那条状态灯也弄黄。 */
@@ -40,10 +41,12 @@ type Outcome = {
   nothingWorked: boolean;
 };
 
-type Runner = (db: ReturnType<typeof openDb>, tickers: string[] | undefined, force: boolean) => Promise<Outcome>;
+/** full = 从各源的历史下限整段重拉(只有 dart 支持;别的源本来就每轮拉全量或不可回填)。 */
+type RunOpts = { tickers: string[] | undefined; force: boolean; full: boolean };
+type Runner = (db: ReturnType<typeof openDb>, opts: RunOpts) => Promise<Outcome>;
 
 const RUNNERS: Record<ChainSource, Runner> = {
-  async sec(db, tickers, force) {
+  async sec(db, { tickers, force }) {
     // 必须按源过滤(同 sec6k / twse):混合名单单跑(如 `… NVDA TSM`)时,
     // TSM 不走 sec → cikOf 返回 undefined → updateSecFundamentals 直接抛「unknown SEC ticker」,
     // 整条 SEC job 记 failed,连同一轮里本该更新的 NVDA 一起赔进去。
@@ -66,7 +69,7 @@ const RUNNERS: Record<ChainSource, Runner> = {
     };
   },
 
-  async sec6k(db, tickers, force) {
+  async sec6k(db, { tickers, force }) {
     const only = tickers?.filter((t) => hasSource(t, 'sec6k'));
     const r = await updateSec6kReports(db, { force, tickers: only });
     return {
@@ -79,9 +82,9 @@ const RUNNERS: Record<ChainSource, Runner> = {
     };
   },
 
-  async dart(db, tickers, force) {
+  async dart(db, { tickers, force, full }) {
     const only = tickers?.filter((t) => hasSource(t, 'dart'));
-    const r = await updateDartFinancials(db, { force, tickers: only });
+    const r = await updateDartFinancials(db, { force, full, tickers: only });
     return {
       fetched: r.fetched,
       skipped: r.skipped,
@@ -93,7 +96,7 @@ const RUNNERS: Record<ChainSource, Runner> = {
     };
   },
 
-  async twse(db, tickers, force) {
+  async twse(db, { tickers, force }) {
     const only = tickers?.filter((t) => hasSource(t, 'twse'));
     // 指定了 TICKER 但没有一个走 TWSE → 本源无事可做,不该记一条空 run。
     const r = await updateTwseRevenue(db, { force, tickers: only });
@@ -111,6 +114,9 @@ const RUNNERS: Record<ChainSource, Runner> = {
 if (import.meta.main) {
   const args = process.argv.slice(2);
   const force = args.includes('--force');
+  // --full:整段重拉历史(目前只有 dart 用得上 —— 它的单季靠同年累计差分,首次接入或改了
+  // account_id 链时必须从头算)。别的源要么每轮就是全量、要么不可回填,传了也是 no-op。
+  const full = args.includes('--full');
   const picked = args.filter((a) => !a.startsWith('--'));
   const tickers = picked.length ? picked : undefined;
 
@@ -131,7 +137,7 @@ if (import.meta.main) {
     for (const source of sources) {
       const runId = startJobRun(db, JOB_NAMES[source]);
       try {
-        const r = await RUNNERS[source](db, tickers, force);
+        const r = await RUNNERS[source](db, { tickers, force, full });
         const error = r.failed.join('; ');
         finishJobRun(
           db,
