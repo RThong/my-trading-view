@@ -13,23 +13,76 @@
 
 ## 名单与源(`src/shared/aiChain.ts`)
 
-| ticker | side | group | 币种 | sources | 格子 |
-|---|---|---|---|---|---|
-| NVDA / AMD | seller | accelerator | USD | sec | gm capex fcf fcfq |
-| MU | seller | upstream | USD | sec | 同上 |
-| TSM | seller | upstream | **TWD** | **sec6k + twse** | 同上 + revM revYoy |
-| ASML | seller | upstream | **EUR** | **sec6k** | 同上 |
-| INTC | seller | **watch** | USD | sec | 同上 |
-| MSFT ORCL GOOGL AMZN META | buyer | cloud | USD | sec | 同上 |
+14 家,五组。**组的顺序即资金流向**(§6.16 正向拆解链:FCF 增厚 → 扩 capex → 买设备),
+**同组能横向比、跨组不能**。
+
+| group | 成员 | side | 这一组读什么 |
+|---|---|---|---|
+| `payer` capex 买单 | MSFT GOOGL AMZN META ORCL | buyer | §6.14 主角:FCF **会不会转负** |
+| `accelerator` 算力芯片 | NVDA AMD ｜ AVGO ARM | seller | **分两半读**,劈叉 = 大厂议价权变化 |
+| `foundry` 代工 | TSM INTC\* | seller | TSM = **结构性**高毛利 |
+| `memory` 存储 | MU SKHY | seller | **周期性**高毛利 |
+| `equipment` 设备 | ASML | seller | 产能的**供给方**,传导链终点 |
+
+\* INTC `inChain=false` —— 同层但在衰退期,毛利率修复 = 新产能进场,符号与稀缺溢价相反,
+是**对照样本**不是判据成员。
+
+⚠️ **代工与存储必须分列**,这是 §6.16 判据的前置条件:结构性高毛利见顶后能维持许久、
+周期性见顶即退坡。混一组就没法比。
+
+⚠️ **算力芯片组内两半**:NVDA/AMD 通用 GPU(CUDA 生态 = 结构性护城河),AVGO/ARM
+定制 ASIC + IP(**CSP 绕开 NVDA 的替代路径,不是补充**)。必须同组才比得出劈叉。
+
+币种四种:USD / **TWD**(TSM)/ **EUR**(ASML)/ **KRW**(SKHY)。跨公司比绝对值前先看币种;
+买方合计有「成员必须同币种」的不变式咬着。
+
+| 源 | 谁走 | 是什么 | 时效 |
+|---|---|---|---|
+| `sec` | 多数美国公司 + ARM | data.sec.gov **companyfacts**(XBRL) | 随申报 |
+| `sec6k` | TSM / ASML | FPI 的**季报 6-K**,解析 HTML | T+16~45 |
+| `twse` | TSM | 台湾证交所 OpenAPI **月营收** | T+10 |
+| `dart` | SKHY | 韩国金融监督院**季度全表**,要免费 key | T+45 |
 
 **一家可以走多个源** —— 各测度的最佳来源本来就不同。四处按源查表分派,漏一处是编译错误:
 `SOURCE_KINDS` / `SOURCE_NEEDS` / job 的 `RUNNERS`+`ADAPTERS` / 面板的 `SOURCE_PANES`。
 
-三个源:
+### 格子(`SOURCE_KINDS`)
 
-- `sec` — data.sec.gov **companyfacts**(XBRL)。多数美国公司。
-- `sec6k` — FPI 交给 EDGAR 的**季报 6-K**,解析 HTML。TSM / ASML。
-- `twse` — 台湾证交所 OpenAPI **月营收**。只有 TSM。
+落 `sec_fundamentals` 的三个源(sec / sec6k / dart)共用同一套六格:
+`gm` `capex` `fcf` `fcfq` `rev` `revGrowth`。twse 另有 `revM` `revYoy`(月营收/月同比,
+**与 rev/revGrowth 是不同的 kind**,口径与频率都不同)。
+
+`rev`(TTM 营收,折线)/ `revGrowth`(**单季**同比 %,柱)是后加的 ——
+四科目对某些公司答不了问题:ARM 是 IP 授权,毛利率四年只动 1.7 个百分点(常数不是读数),
+而营收三年翻倍。同比按**单季**算不按 TTM:同比本身已去季节,单季比 TTM **早半年**反映拐点。
+按 `fiscalQ` 对齐找去年同季,**不能按日期减 365 天**(13 周周历会漂)。
+
+### SKHY(dart 源)—— 三个会静默出错的坑
+
+海力士 SEC 侧**零财务 XBRL**(companyfacts 只有 `ffd` 命名空间 5 个 tag),6-K 与英文财报稿
+都只给营收/营业利润/净利,**没有营业成本、没有现金流**。四科目只能走 DART(可回填到 2016)。
+
+1. **一个源里两种期间口径**。CIS(损益表)季报 `thstrm_amount` 是**单季**、`thstrm_add_amount`
+   是累计;CIS 年报 `thstrm_amount` 是**全年**、累计列空;CF(现金流量表)所有报告
+   `thstrm_amount` **本身就是累计**、累计列空。统一成「累计列优先、空则退回本期列」后走 ytd 差分。
+   把年报当单季处理 → 跨度 364 天被长度判据丢掉 → **Q4 静默消失**。
+2. **只有 capex 能取绝对值**。其余三科目必须保留符号 —— 亏损年的累计 OCF 是负的
+   (2023 Q1 累计 −2.01조),一律 abs 会让差分出的单季 OCF 符号与大小全错**且不报错**。
+   这个 bug 真的发生过并污染了库,靠独立评审才抓到。
+3. **绝不能按科目中文名匹配**,两个陷阱都**排在正确那行前面**:`기타영업외수익` 含「수익」→
+   按名取营收会拿到营业外收益;`유형자산의 처분`(处分)排在 `취득`(购置)前 → capex 会拿到
+   处置回款且符号相反。按 IFRS `account_id` 取,链有两代前缀(2019Q3 为界 `ifrs_*` → `ifrs-full_*`)。
+
+### ARM —— 有的 FPI 是做了 XBRL 的
+
+TSM/ASML 的 6-K 是 0 份带标记,**ARM 完全不同**:它的 6-K 是完整 inline XBRL,SEC 也聚合进了
+companyfacts,90/91 天的单季跨度都在。所以 `isPeriodicForm` 放开了 `6-K` / `20-F`
+(20-F 是为了 Q4 靠「全年 − 9M」还原)。**判据在 analytics(抽数)与 fetchers/secXbrl(定水位)
+两处必须一致**,只改一处会变成「水位永远追不上」或「拉了却抽不出行」。
+
+⚠️ 但定水位那侧**还要求「这份申报真的覆盖一个期间」**(`reportDate` 存在且 ≠ `filingDate`)——
+`6-K` 既是季报也是**事件公告**,后者只带封面页、零个 us-gaap 事实。拿它定水位会造出
+**每年两三个月的常驻黄灯**(实测 ARM 2025-08-11 → 11-05 就有 86 天)。
 
 ### 为什么 TSM / ASML 非走 6-K 不可
 
@@ -71,7 +124,7 @@ ASML 四科目全部       **T+16~17**              ← 四个一起到,无错�
   有信息量的是营收(出货)与 capex(它自己扩产)。**2026 起停发净订单**(最后一次 2025Q4),
   领先指标没了。单季 FCF 摆动极大(2026Q1 −2,588 → Q2 +1,404 百万欧元)是**营运资本节奏**,
   不是 capex 吃现金流 —— 形状像,成因完全不同。
-- **INTC** ⚠️ **不是判据成员**(`inChain=false`,在 watch 组)。它的毛利率是**供给侧读数**,
+- **INTC** ⚠️ **不是判据成员**(`inChain=false`,在**代工组当对照样本**)。它的毛利率是**供给侧读数**,
   符号与稀缺溢价**相反**(修复 = 新产能进场)。它的 capex 是自建晶圆厂,绝不进买方合计。
 
 ---
@@ -182,13 +235,24 @@ com.mtv.sec   天天 13:00 / 19:00   → src/server/jobs/aiChainFundamentals.ts
 
 ## 待办
 
-- **未推送 24 个 commit**(从没 push 过,你没要求过)
 - **2026-08-14 前后**:TSM 的 Q2 合并报表会自动进来,补上它的 FCF/capex,
   并触发「财报稿 vs 报表」的比对守卫(差超 0.5% 报警)
-- **SK 海力士**:2026-07 才在美上市。它的 6-K 只有营收与营业利润、**没有营业成本**,
-  算不出毛利率。等它交第一份季度合并财报 6-K 后可照 ASML 那条路再试;否则要韩国 DART 的免费 key
-- **设备层还缺 AMAT / LRCX / KLAC**(都是 10-Q 报送方,能走 sec 源)。但它们毛利率长期稳定,
-  信息量在**营收同比** —— 要给 `SOURCE_KINDS.sec` 加一档 kind,不是加新源
+- **设备层还缺 AMAT / LRCX / Advantest**(都能走 sec 源,名单加一行即可,零新代码)。
+  它们毛利率长期稳定,信息量在**营收同比** —— `rev` / `revGrowth` 两格现在已经有了
+- **后续扩位的层级表**记在 `ChainGroup` 的注释里(AAPL 进 payer 当反差样本、CRWV 单列
+  「算力承包」、VRT/GEV「电力配套」、IGV/CRM/VEEV「中游软件」)。**组结构不用改,直接挂进去**
+- **AVGO 的 AI 收入**:量过了,**别做**。它在 8-K 新闻稿的 CEO 引语里、不在 XBRL,
+  12 个季度只有 3 个能拿到季度金额,措辞每季都变,还有**年度值混在同一句式里**
+  (2024-12 那句 `$12.2B` 是 FY 不是季度)、同段还混着下季指引。覆盖率 25% 且无自校验,
+  写出来的守卫会比解析器还长且守不住。等博通把它放进 10-Q 分部披露再说
+- **海力士 6-K 的 T+25 营收**没接(比 DART 快 20 天,但只有营收/营业利润)。
+  形状同 TSM 财报稿,`quickPatch` 骨架现成
+- **AMZN 2017-06-30 的 capex 缺口**够不到:`submissions.filings.recent` 只装约 1000 条,
+  AMZN 申报频繁到不了 2017。买方合计线因此从 2018-06-30 起(33 点)。
+  要推到 2015 得再读 `filings.files[]` 分页
+- **`advanced()` 是相对判据**(本轮之前 → 之后),进程在 insert 与 `putSecProcessedFiled`
+  之间被杀会落进失败态。根治要换成绝对判据(拿 submissions 的 reportDate 比库里最新期末),
+  但得先确认各家 10-Q/10-K 的 reportDate 与 XBRL 期末逐份一致。代码里留了 `ponytail:` 注记
 - **ORCL 毛利率**永久空着(`KNOWN_GAPS`)—— **查过了,结论是别做**,理由记在这里免得再起念头:
   - 技术上**能做且不用新源**:`parseXbrlInstance` + `filingInstance` 已经能读原始实例(DERA ZIP 那条路可以废掉),
     只差三处 —— 命名空间硬编码成 `us-gaap:`、`TAG_CHAINS` 是「取第一个有值的」而这里要**求和**、
@@ -204,7 +268,9 @@ com.mtv.sec   天天 13:00 / 19:00   → src/server/jobs/aiChainFundamentals.ts
     毛利率是配角格;而且 `CloudAndSoftwareExpenses` 把**云与许可支持混在一条**,那条线会随业务结构变化而动,
     **答不了「OCI 的折旧有没有吃掉云毛利」这个真问题**。成本:+60 请求/季、新增求和语义与命名空间机制。
     换来一个既非判据、又答不了问的格子 → 不做。真要 ORCL 的读数,看它已有的 capex/FCF(TTM FCF 已 −23.7B)。
-- 曾提过没做:DB 备份(13.4MB 不可再生的快照数据)、TSM 月营收历史回填(MOPS 反爬)
+- **TSM 月营收目前不可读**:快照源不可回填,只攒到月营收 3 点、同比 1 点。
+  doc 里把它宣传成「全链最快 T+10」要打折 —— 要它成立,先得解决 MOPS 反爬回填
+- 曾提过没做:DB 备份(不可再生的快照数据:MOVE / ICE CDS / 期权链 / TWSE 月营收)
 
 ---
 
