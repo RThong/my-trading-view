@@ -100,8 +100,10 @@ describe('源映射(表驱动)', () => {
   });
 
   test('格子种类 = 各源格子的并集,同名只留一份', () => {
-    // TSM = sec6k 四格 + twse 两格,gm 不重复。
-    expect(kindsOf('TSM')).toEqual(['gm', 'capex', 'fcf', 'fcfq', 'revM', 'revYoy']);
+    // TSM = sec6k 六格 + twse 两格,gm 不重复。
+    // 注意 sec 侧的 rev/revGrowth(TTM 营收 / 单季同比)与 twse 的 revM/revYoy(月营收 / 月同比)
+    // **是四个不同的 kind**:口径与频率都不同,故不能同名 —— 路由的 SERIES_ID 按 kind 平铺查表。
+    expect(kindsOf('TSM')).toEqual(['gm', 'capex', 'fcf', 'fcfq', 'rev', 'revGrowth', 'revM', 'revYoy']);
     expect(kindsOf('NVDA')).toEqual(SOURCE_KINDS.sec);
     // TWSE 那条不再出毛利率(曾从季度综合损益表取过,已退掉 —— 它是 6-K 的子集且无现金流)。
     expect(SOURCE_KINDS.twse).toEqual(['revM', 'revYoy']);
@@ -151,7 +153,7 @@ describe('面板分组', () => {
     expect(activeByGroup('upstream')).toEqual(['MU', 'TSM', 'ASML', 'SKHY']);
     // 备查两家、两种不同的「读不得」:INTC 毛利率符号与稀缺溢价相反;AVGO 的毛利率被收购摊销
     // 扰动、capex 因 fabless 无信息量,真正值钱的「AI 收入」又不在 XBRL 里。
-    expect(activeByGroup('watch')).toEqual(['INTC', 'AVGO']);
+    expect(activeByGroup('watch')).toEqual(['INTC', 'AVGO', 'ARM']);
     expect(activeByGroup('cloud')).toEqual(['MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META']);
   });
 

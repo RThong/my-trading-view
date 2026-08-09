@@ -21,8 +21,12 @@ function userAgent(): string {
 }
 
 const cikPath = (cik: string) => `CIK${cik.padStart(10, '0')}`;
-// 含修订件(`10-Q/A` / `10-K/A`):它带来重述,水位必须跟着前进,否则重述后的值永远不进库。
-const isPeriodicForm = (form: string): boolean => /^10-[QK](\/A)?$/.test(form);
+// 与 analytics/secFundamentals 的同名判据**必须一致** —— 这边定水位、那边抽数据,
+// 一边认一边不认就会变成「水位永远追不上」或「拉了却抽不出行」。
+//  · 含修订件(`/A`):它带来重述,水位必须跟着前进,否则重述后的值永远不进库。
+//  · 含 `6-K` / `20-F`:外国私人发行人(FPI)不交 10-Q/10-K。有的 FPI 把 6-K 做了完整
+//    inline XBRL(实测 ARM),不认这两档它就是「submissions 里没有定期报告」→ 直接 failed。
+const isPeriodicForm = (form: string): boolean => /^(10-[QK](\/A)?|20-F(\/A)?|6-K)$/.test(form);
 
 // companyfacts 有几 MB,默认 15s 在慢网下会临界超时。
 const FACTS_TIMEOUT_MS = 60_000;

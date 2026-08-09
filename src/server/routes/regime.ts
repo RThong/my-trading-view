@@ -66,6 +66,8 @@ const SERIES_ID: Record<FundKind, (ticker: string) => string> = {
   capex: (t) => secSeriesId(t, 'CAPEX'),
   fcf: (t) => secSeriesId(t, 'FCF'),
   fcfq: (t) => secSeriesId(t, 'FCFQ'),
+  rev: (t) => secSeriesId(t, 'REV'),
+  revGrowth: (t) => secSeriesId(t, 'REVG'),
   revM: (t) => twseSeriesId(t, 'revM'),
   revYoy: (t) => twseSeriesId(t, 'revYoy'),
 };

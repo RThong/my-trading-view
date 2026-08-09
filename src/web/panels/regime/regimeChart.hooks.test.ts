@@ -178,19 +178,30 @@ test('secLagNote:买方合计格受任一买方滞后影响;卖方滞后不影�
 
 // 面板的格子按 source 分派(见 SOURCE_PANES)。这条锁住「加了非 SEC 源的公司,
 // 不会被套上 SEC 那四格」—— 套错了会画出四条永远空的线,而空线不报错。
-test('dimPanes:TSM 六格 = sec6k 四格 + twse 两格,gm 不重复', () => {
+test('dimPanes:TSM 八格 = sec6k 六格 + twse 两格,gm 不重复', () => {
   const twse = dimPanes('fundamentals:TSM');
   expect(twse.map((p) => p.key)).toEqual([
     'fund:TSM:gm',
     'fund:TSM:fcf',
     'fund:TSM:fcfq',
+    'fund:TSM:rev',
+    'fund:TSM:revGrowth',
     'fund:TSM:capex',
     'fund:TSM:revYoy',
     'fund:TSM:revM',
   ]);
 
+  // sec 侧的 rev(TTM 营收)/ revGrowth(单季同比)与 twse 的 revM / revYoy(月营收 / 月同比)
+  // 是四个不同的 kind —— 口径与频率都不同,TSM 两边都有,不去重。
   const sec = dimPanes('fundamentals:NVDA');
-  expect(sec.map((p) => p.key)).toEqual(['fund:NVDA:gm', 'fund:NVDA:fcf', 'fund:NVDA:fcfq', 'fund:NVDA:capex']);
+  expect(sec.map((p) => p.key)).toEqual([
+    'fund:NVDA:gm',
+    'fund:NVDA:fcf',
+    'fund:NVDA:fcfq',
+    'fund:NVDA:rev',
+    'fund:NVDA:revGrowth',
+    'fund:NVDA:capex',
+  ]);
 });
 
 test('dimPanes:TSM 的金额格用新台币,别家用美元', () => {

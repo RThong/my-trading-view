@@ -149,6 +149,16 @@ export const SEC_COMPANIES: Company[] = [
   // ⚠️ 它真正值钱的数是**每季单独披露的「AI 收入」** —— 那在财报新闻稿(8-K)里,
   // **不在 XBRL**,companyfacts 拿不到。要它得另接一条解析路径,另立需求。
   { ticker: 'AVGO', cik: '1730168', side: 'seller', group: 'watch' },
+  // ARM(UK,FPI —— 20-F 年报 + **带完整 inline XBRL 的 6-K 季报**,所以 companyfacts 里
+  // 90/91 天的单季跨度都在;TSM/ASML 的 6-K 是 0 份带标记,完全不同,见 isPeriodicForm)。
+  //
+  // **毛利率那一格是常数,别读**:IP 授权模式,四年只在 95.8~97.5% 之间动了 1.7 个百分点。
+  // 有信息量的是**营收那两格** —— 权利金收入 ≈ 用它 IP 的芯片出货量,TTM 三年翻倍
+  // (26.6 亿 → 51.6 亿美元)。这也正是给 sec 源加 rev / revGrowth 的直接动因。
+  // capex 从 0.86 亿涨到 5.88 亿(自研 CSS/chiplet),但绝对值太小,不作供给侧读数。
+  //
+  // inChain=false:它是全行业的 IP 底座,不专属 AI 链,毛利率又答不了稀缺溢价那一问。
+  { ticker: 'ARM', cik: '1973239', side: 'seller', group: 'watch' },
 ];
 
 /** 已逐家核对过、可入库的标的。核对一家开一家 —— 未核对的进来会污染派生线。 */
@@ -161,6 +171,7 @@ export const ACTIVE_TICKERS = [
   'ASML',
   'SKHY',
   'AVGO',
+  'ARM',
   'MSFT',
   'ORCL',
   'GOOGL',
@@ -211,12 +222,16 @@ export const activeInSecTable = (): string[] =>
  * 推算 TTM 要到 2026Q4 才跌破零轴,**晚半年**。所以两个口径都得画。
  */
 export const SOURCE_KINDS = {
-  sec: ['gm', 'capex', 'fcf', 'fcfq'],
+  // rev / revGrowth:**营收那两格**。加它们是因为四科目对某些公司答不了问题 ——
+  // ARM 是 IP 授权模式,毛利率结构性恒在 97% 上下(四年只动 1.7 个百分点),那一格是常数不是读数;
+  // 而它的 TTM 营收三年翻倍,权利金收入 ≈ 用它 IP 的芯片出货量,才是真信号。
+  // 对 NVDA/MU/AVGO 这些也有用:营收同比比毛利率更早反映需求变化。
+  sec: ['gm', 'capex', 'fcf', 'fcfq', 'rev', 'revGrowth'],
   // sec6k 产出的原始行落进同一张 sec_fundamentals 表,派生量走同一套算法 → 格子种类相同。
-  sec6k: ['gm', 'capex', 'fcf', 'fcfq'],
+  sec6k: ['gm', 'capex', 'fcf', 'fcfq', 'rev', 'revGrowth'],
   twse: ['revM', 'revYoy'],
   // dart 的原始行同样落进 sec_fundamentals、派生同一套 SEC_* 序列 → 格子种类与 sec 相同。
-  dart: ['gm', 'capex', 'fcf', 'fcfq'],
+  dart: ['gm', 'capex', 'fcf', 'fcfq', 'rev', 'revGrowth'],
 } as const satisfies Record<ChainSource, readonly string[]>;
 
 export type SecKind = (typeof SOURCE_KINDS)['sec'][number];
@@ -235,6 +250,9 @@ export const KIND_RENDER: Record<FundKind, 'line' | 'bar'> = {
   gm: 'line',
   capex: 'line',
   fcf: 'line',
+  // TTM 营收是连续滚动量 → 折线;同比是逐季的离散比率、正负是重点 → 柱(同 revYoy)。
+  rev: 'line',
+  revGrowth: 'bar',
   fcfq: 'bar',
   revM: 'bar',
   revYoy: 'bar',

@@ -26,6 +26,7 @@ import {
   BUYER_FCFQ_SERIES,
   CONCEPTS,
   type QuarterPoint,
+  type SeriesKind,
 } from '../analytics/secFundamentals';
 import {
   REQUIRED_CONCEPTS_BY_SIDE,
@@ -89,11 +90,18 @@ export function writeDerivedSecSeries(
   const loaded = all.filter(([t, rows]) => active.includes(t) && rows.length > 0);
   const derived = loaded.map(([ticker, rows]) => [ticker, deriveSeries(rows)] as const);
 
-  const perTicker: MarketSeriesRow[] = derived.flatMap(([ticker, { gmTtm, capexTtm, fcfTtm, fcfQ }]) => {
-    const asRows = (kind: 'GM' | 'CAPEX' | 'FCF' | 'FCFQ', points: QuarterPoint[]) =>
+  const perTicker: MarketSeriesRow[] = derived.flatMap(([ticker, d]) => {
+    const asRows = (kind: SeriesKind, points: QuarterPoint[]) =>
       points.map((p) => ({ seriesId: seriesId(ticker, kind), obsDate: p.date, value: p.value }));
 
-    return [...asRows('GM', gmTtm), ...asRows('CAPEX', capexTtm), ...asRows('FCF', fcfTtm), ...asRows('FCFQ', fcfQ)];
+    return [
+      ...asRows('GM', d.gmTtm),
+      ...asRows('CAPEX', d.capexTtm),
+      ...asRows('FCF', d.fcfTtm),
+      ...asRows('FCFQ', d.fcfQ),
+      ...asRows('REV', d.revTtm),
+      ...asRows('REVG', d.revGrowth),
+    ];
   });
 
   // ① 完整性体检:**每轮从库里查**,不挂在「这一轮有没有抓到东西」上。

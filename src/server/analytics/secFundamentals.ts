@@ -127,11 +127,20 @@ export const capexScopeOf = (tagUsed: string): CapexScope | undefined => CAPEX_S
 export const CONCEPTS = Object.keys(TAG_CHAINS) as Concept[];
 
 /**
- * 定期报告,**含修订件**(`10-Q/A` / `10-K/A`)。修订件正是重述的载体 ——
- * 丢掉它,「同 tag 内取 filed 最大 = 取重述后的值」那条规则就只覆盖了一半:
- * 公司通过 10-Q/A 改数时,库里留下的仍是作废的原始值。
+ * 定期报告。三类:
+ *  · `10-Q` / `10-K` —— 美国本土申报人的季/年报。
+ *  · **修订件 `/A`** —— 重述的载体。丢掉它,「同 tag 内取 filed 最大 = 取重述后的值」
+ *    那条规则就只覆盖了一半:公司通过 10-Q/A 改数时,库里留下的仍是作废的原始值。
+ *  · **`6-K` / `20-F`** —— 外国私人发行人(FPI)的季报与年报。多数 FPI **不给 6-K 做 XBRL 标记**
+ *    (实测 TSM 13 份、ASML 46 份里都是 0,所以那两家只能解析 HTML),但**有的做**:
+ *    ARM 的 6-K 是完整 inline XBRL,SEC 也聚合进了 companyfacts,90/91 天的单季跨度都在。
+ *    不放开这一档,那种公司抽出来是 0 行 —— 而且是**静默的** 0。
+ *    20-F 一并放开:FPI 的 Q4 要靠「全年 − 9M」差分还原,少了它每年缺一个季度。
+ *
+ * 放开 6-K 对本土申报人零影响:它们不交 6-K。8-K 仍然挡着(那是事件报告,
+ * 里面的数常是未经核阅的初步值)。
  */
-const isPeriodicForm = (form: string): boolean => /^10-[QK](\/A)?$/.test(form);
+const isPeriodicForm = (form: string): boolean => /^(10-[QK](\/A)?|20-F(\/A)?|6-K)$/.test(form);
 const DAY_MS = 86_400_000;
 
 const durationDays = (start: string, end: string): number => (Date.parse(end) - Date.parse(start)) / DAY_MS;
@@ -141,7 +150,7 @@ const isQuarterLength = (d: number): boolean => d >= 80 && d <= 100;
 
 type Period = { start: string; end: string; val: number; tag: string; form: string; accn: string; filed: string };
 
-/** 单个 tag 的期间表:只留 10-Q/10-K + USD + 有 start(时点值无 start,如资产负债表科目),同期间取 filed 最大。 */
+/** 单个 tag 的期间表:只留定期报告(见 isPeriodicForm)+ USD + 有 start(时点值无 start,如资产负债表科目),同期间取 filed 最大。 */
 function periodsForTag(facts: CompanyFacts, tag: string): Map<string, Period> {
   const rows = facts.facts?.['us-gaap']?.[tag]?.units?.USD ?? [];
   const out = new Map<string, Period>();
@@ -491,7 +500,35 @@ function combine(a: QuarterPoint[], b: QuarterPoint[], f: (x: number, y: number)
   });
 }
 
-type DerivedSeries = { gmTtm: QuarterPoint[]; capexTtm: QuarterPoint[]; fcfTtm: QuarterPoint[]; fcfQ: QuarterPoint[] };
+type DerivedSeries = {
+  gmTtm: QuarterPoint[];
+  capexTtm: QuarterPoint[];
+  fcfTtm: QuarterPoint[];
+  fcfQ: QuarterPoint[];
+  revTtm: QuarterPoint[];
+  revGrowth: QuarterPoint[];
+};
+
+/**
+ * **单季**营收同比 = Q(t) / Q(t−4) − 1。
+ *
+ * 为什么按**单季同比**而不是 TTM 同比:同比本身就把季节性去掉了(比的是同一个财季),
+ * 而单季比 TTM 早半年反映拐点 —— TTM 同比里当季只占四分之一权重,拐点会被前三季稀释。
+ * 这也和公司自己在财报里 headline 的口径一致(「营收同比 +22%」讲的都是单季)。
+ *
+ * 按 **fiscalQ 对齐**去找去年同季,不按日期减 365 天:各家财季末天然漂移几天
+ * (13 周周历),按日期找会错过或配错。前四季不出点(没有可比基期)。
+ */
+function yoyByQuarter(quarters: QuarterPoint[]): QuarterPoint[] {
+  const prior = new Map(quarters.map((p) => [p.fiscalQ, p.value]));
+
+  return quarters.flatMap((p) => {
+    const [y, q] = p.fiscalQ.split('Q');
+    const base = prior.get(`${Number(y) - 1}Q${q}`);
+    // 基期为 0 或负(亏损年的成本类科目)时同比没有意义,不出点。
+    return base !== undefined && base > 0 ? [{ ...p, value: (p.value / base - 1) * 100 }] : [];
+  });
+}
 
 /**
  * 恰好为 0 的单季值一律当缺数据丢掉。**不是「这季真的是 0」,是 tag 的假身份**,两种来源:
@@ -520,6 +557,11 @@ export function deriveSeries(rows: SecFundamentalRow[]): DerivedSeries {
   const [revenue, cogs, ocf, capex] = [of('revenue'), of('cogs'), of('ocf'), of('capex')];
 
   return {
+    // TTM 营收:**需求强度的直接读数**,而且是唯一对「毛利率结构性不动」的公司(如 ARM 这种
+    // IP 授权模式,毛利率恒在 97% 上下)仍然有信息量的那一格。
+    revTtm: revenue.map((p) => ({ ...p, value: p.value / MILLION })),
+    // 同比用**单季**算(见 yoyByQuarter):拐点比 TTM 早半年,且与公司 headline 口径一致。
+    revGrowth: yoyByQuarter(quarterly('revenue')),
     gmTtm: combine(revenue, cogs, (rev, cost) => ((rev - cost) / rev) * 100),
     capexTtm: capex.map((p) => ({ ...p, value: p.value / MILLION })),
     fcfTtm: combine(ocf, capex, (o, c) => (o - c) / MILLION),
@@ -530,8 +572,19 @@ export function deriveSeries(rows: SecFundamentalRow[]): DerivedSeries {
 }
 
 /** TTM 三条用 `_TTM` 后缀;单季那条是 `_FCF_Q`(不是 TTM,别混)。 */
-export const seriesId = (ticker: string, kind: 'GM' | 'CAPEX' | 'FCF' | 'FCFQ'): string =>
-  kind === 'FCFQ' ? `SEC_${ticker}_FCF_Q` : `SEC_${ticker}_${kind}_TTM`;
+export type SeriesKind = 'GM' | 'CAPEX' | 'FCF' | 'FCFQ' | 'REV' | 'REVG';
+
+/** TTM 那几条用 `_TTM` 后缀;单季 FCF 是 `_FCF_Q`、单季营收同比是 `_REV_YOY`(都不是 TTM,别混)。 */
+const SERIES_SUFFIX: Record<SeriesKind, string> = {
+  GM: 'GM_TTM',
+  CAPEX: 'CAPEX_TTM',
+  FCF: 'FCF_TTM',
+  FCFQ: 'FCF_Q',
+  REV: 'REV_TTM',
+  REVG: 'REV_YOY',
+};
+
+export const seriesId = (ticker: string, kind: SeriesKind): string => `SEC_${ticker}_${SERIES_SUFFIX[kind]}`;
 /** §6.14 判据线:**只汇总买方**(见 shared/aiChain 的 side)。卖方混进来会让「跌破零轴」永远不成立。 */
 export const BUYER_FCF_SERIES = 'SEC_BUYER_FCF_TTM';
 /** 买方**单季** FCF 合计:判据「跌破零轴」的早期读数(TTM 晚半年)。 */

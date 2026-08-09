@@ -801,6 +801,26 @@ const BUYER_GM = '定位:配角。买方的毛利率由本业(云 / 广告 / 软
 const SELLER_FCF =
   '定位:**卖方的 FCF 不进买方合计线**(见「买方合计」tab)。卖方在涨价周期里正 FCF 极大,' +
   '混进合计会把零轴永远垫在下方,§6.14 的「跌破零轴」就永远不成立。这条只看这家自身的现金生成。';
+const REV_READ = [
+  '判据:**需求强度的直接读数**,不经过任何口径转换 —— 它就是已经收到的钱。',
+  '  · 卖方(算力芯片 / 上游产能):营收 = 已发生的出货量 × 价格,比毛利率早一步反映需求变化。',
+  '  · 买方:营收是本业规模,不是 AI 信号 —— 那一侧看 FCF,这一格只作分母参照。',
+  '',
+  '⚠️ **对毛利率结构性不动的公司,这是唯一有信息量的那一格**:ARM 是 IP 授权模式,',
+  '毛利率四年只在 95.8~97.5% 之间动了 1.7 个百分点(是个常数不是读数),而 TTM 营收三年翻倍。',
+].join('\n');
+
+const REV_GROWTH_READ = [
+  '定义:**单季**营收同比 = 本季 / 去年同季 − 1,按财季对齐(不按日期减 365 天 —— 13 周周历会漂)。',
+  '',
+  '为什么用单季而不是 TTM 同比:同比本身已经去掉季节性(比的是同一个财季),而单季比 TTM',
+  '**早半年**反映拐点 —— TTM 同比里当季只占四分之一权重,拐点会被前三季稀释。',
+  '这也是公司自己 headline 的口径(「营收同比 +22%」讲的都是单季)。',
+  '',
+  '  · 增速见顶回落 = 需求侧最早的转弱信号,先于毛利率、更先于买方 FCF 转负。',
+  '  · 前四个季度不出点(没有可比基期);基期为 0 或负也不出点。',
+].join('\n');
+
 const BUYER_FCF_READ = [
   '判据(微观 §6.14):看的不是水平,是**会不会转负** —— 跌破零轴 = capex 吞掉了现金生成能力,',
   '扩张只能靠举债续,资本结构从自我造血转向外部融资。',
@@ -817,6 +837,8 @@ const PANE_CONCEPTS: Record<FundKind, string[]> = {
   capex: ['capex'],
   fcf: ['ocf', 'capex'],
   fcfq: ['ocf', 'capex'],
+  rev: ['revenue'],
+  revGrowth: ['revenue'],
   revM: [],
   revYoy: [],
 };
@@ -1012,6 +1034,18 @@ function companyPanes(ticker: string): PaneSpec[] {
       '',
       ...(seller ? [] : [SEC_LEASE_CAVEAT, '']),
       SEC_BAR_GAP_NOTE, // 这格是柱状 → 不裁,别拼 SEC_TRIM_NOTE
+    ]),
+    paneOf(ticker, 'rev', '营收', `${ticker} TTM 营收(${unit})`, '#a78bfa', [
+      `定义:${ticker} TTM 营收(最近四个季度之和)。` + SEC_CAVEAT + srcNote,
+      '',
+      REV_READ,
+      '',
+      SEC_TRIM_NOTE,
+    ]),
+    paneOf(ticker, 'revGrowth', '营收同比', `${ticker} 单季营收同比(%)`, undefined, [
+      `定义:${ticker} ` + REV_GROWTH_READ + SEC_CAVEAT + srcNote,
+      '',
+      SEC_BAR_GAP_NOTE, // 柱状 → 不裁
     ]),
     paneOf(ticker, 'capex', 'capex', `${ticker} TTM 资本开支(${unit})`, '#60a5fa', [
       `定义:${ticker} TTM 资本开支(购置固定资产付现)。` + SEC_CAVEAT + srcNote,
