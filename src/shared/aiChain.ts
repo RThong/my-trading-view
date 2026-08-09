@@ -44,7 +44,8 @@ export const SOURCE_NEEDS: Record<ChainSource, 'cik' | 'twseCode' | 'dartCorpCod
  *  · accelerator 直接卖加速器。毛利率 = 定价权,组内可横向比(NVDA vs AMD)。
  *  · upstream    代工与存储。物理瓶颈那一层;各自读法不同(TSM 看产能、MU 看价格周期),
  *                但都属于「供给能不能跟上」这一问,故同组。
- *  · watch       备查,**不作判据成员**。目前只有 INTC:它的毛利率符号与稀缺溢价相反。
+ *  · watch       备查,**不作判据成员**。两种不同的「读不得」:INTC 的毛利率符号与稀缺溢价相反
+ *                (修复 = 新产能进场);AVGO 的毛利率被 VMware 收购摊销扰动、capex 因 fabless 无信息量。
  */
 export type ChainGroup = 'cloud' | 'accelerator' | 'upstream' | 'watch';
 
@@ -109,8 +110,7 @@ export const SEC_COMPANIES: Company[] = [
   { ticker: 'META', cik: '1326801', side: 'buyer', inChain: true, group: 'cloud' },
   { ticker: 'ORCL', cik: '1341439', side: 'buyer', inChain: true, group: 'cloud' },
   // 备查但**不建议开**(inChain 省略 = false),开了只会给对应那条线加噪声。
-  // 已移除:AAPL(不在 AI 链上,FCF 由 iPhone 主导)、DELL(整机厂,毛利率不反映芯片稀缺溢价)、
-  // AVGO(合并了 VMware,毛利率是「AI 硅片定价权 + 软件占比」的混合读数,当稀缺溢价用不干净)。
+  // 已移除:AAPL(不在 AI 链上,FCF 由 iPhone 主导)、DELL(整机厂,毛利率不反映芯片稀缺溢价)。
   //
   // ⚠️ **买方这一侧到此封口**,上面五家已覆盖绝大部分 AI capex。剩下的候选要么私有
   // (xAI / OpenAI / Anthropic)、要么在另一套数据源体系里(阿里/腾讯/字节)、要么已排除(AAPL)。
@@ -134,6 +134,21 @@ export const SEC_COMPANIES: Company[] = [
     currency: 'KRW',
   },
   { ticker: 'INTC', cik: '50863', side: 'seller', group: 'watch' },
+  // 博通。**AI 链上分量很重**(定制加速器 XPU:Google TPU / Meta MTIA;AI 网络 Tomahawk/Jericho),
+  // 但**通过这条管线只能看毛利率,而且要会读** —— 所以 inChain=false,归备查。
+  //
+  // 实测(2018 起 33 个 TTM 点、零断档):毛利率 2023-10 的 68.9% → 2024-11 的 63.0% → 2026-05 回到 68.3%。
+  // 那 6 个百分点的坑是 **VMware 收购的无形资产摊销走 COGS**(GAAP 购置价格分摊),
+  // **不是定价权变化**,而且方向和「软件占比高 → 毛利率高」的直觉相反。摊销现已基本走完。
+  //
+  // 另外两格没有信息量:
+  //  · capex TTM 仅约 8.6 亿美元(对 328 亿 FCF)—— 它是 **fabless**,这一格读不出任何供给侧信息,
+  //    别和 TSM / MU / SKHY 的扩产并排看。
+  //  · FCF 巨大且不进买方合计(seller),只反映它自身现金生成。
+  //
+  // ⚠️ 它真正值钱的数是**每季单独披露的「AI 收入」** —— 那在财报新闻稿(8-K)里,
+  // **不在 XBRL**,companyfacts 拿不到。要它得另接一条解析路径,另立需求。
+  { ticker: 'AVGO', cik: '1730168', side: 'seller', group: 'watch' },
 ];
 
 /** 已逐家核对过、可入库的标的。核对一家开一家 —— 未核对的进来会污染派生线。 */
@@ -145,6 +160,7 @@ export const ACTIVE_TICKERS = [
   'TSM',
   'ASML',
   'SKHY',
+  'AVGO',
   'MSFT',
   'ORCL',
   'GOOGL',

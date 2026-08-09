@@ -38,8 +38,9 @@ describe('AI 链名单', () => {
   test('已剔除的标的不得回到目录里', () => {
     const tickers = SEC_COMPANIES.map((c) => c.ticker);
     // AAPL:不在 AI 链上(FCF 由 iPhone 主导)。DELL:整机厂,毛利率不反映芯片稀缺溢价。
-    // AVGO:合并 VMware 后毛利率是「硅片定价权 + 软件占比」的混合,当稀缺溢价用不干净。
-    for (const t of ['AAPL', 'DELL', 'AVGO']) expect(tickers).not.toContain(t);
+    // (AVGO 曾以「VMware 混合读数」为由剔除,后实测那 6pp 是收购摊销走 COGS、不是定价权 ——
+    //  已放回,但归 watch、不作判据成员,见名单里的注释。)
+    for (const t of ['AAPL', 'DELL']) expect(tickers).not.toContain(t);
   });
 
   test('启用名单里的每一家都在目录里', () => {
@@ -148,7 +149,9 @@ describe('面板分组', () => {
     // 代工 + 存储:都是「供给跟不跟得上」那一层。
     // 存储两家(MU / SKHY)+ 代工 + 设备。MU 与 SKHY 是 DRAM/NAND 周期的两个独立读数。
     expect(activeByGroup('upstream')).toEqual(['MU', 'TSM', 'ASML', 'SKHY']);
-    expect(activeByGroup('watch')).toEqual(['INTC']);
+    // 备查两家、两种不同的「读不得」:INTC 毛利率符号与稀缺溢价相反;AVGO 的毛利率被收购摊销
+    // 扰动、capex 因 fabless 无信息量,真正值钱的「AI 收入」又不在 XBRL 里。
+    expect(activeByGroup('watch')).toEqual(['INTC', 'AVGO']);
     expect(activeByGroup('cloud')).toEqual(['MSFT', 'ORCL', 'GOOGL', 'AMZN', 'META']);
   });
 
