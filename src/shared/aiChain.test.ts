@@ -150,10 +150,11 @@ describe('面板分组', () => {
     // 组内分两半:NVDA/AMD 通用 GPU(CUDA 生态),AVGO/ARM 定制 ASIC + IP
     // (**CSP 绕开 NVDA 的替代路径,不是补充**)。两半劈叉 = 大厂议价权变化的直接读数,故必须同组。
     expect(activeByGroup('accelerator')).toEqual(['NVDA', 'AMD', 'AVGO', 'ARM']);
-    // 代工与存储**必须分列**:TSM 是结构性高毛利(先进制程 + 设计生态),MU/SKHY 是周期性高毛利
+    // 代工与存储**必须分列**:TSM 是结构性高毛利(先进制程 + 设计生态),存储三家是周期性高毛利
     // (供需缺口的产物)。结构性见顶后能维持许久、周期性见顶即退坡 —— 混一组这条判别力就没了。
     expect(activeByGroup('foundry')).toEqual(['TSM', 'INTC']);
-    expect(activeByGroup('memory')).toEqual(['MU', 'SKHY']);
+    // 存储内部按产品谱系排:MU 全谱 → SKHY 重 DRAM/HBM → SNDK 纯 NAND。
+    expect(activeByGroup('memory')).toEqual(['MU', 'SKHY', 'SNDK']);
     // 设备单列:ASML 不是「上游产能」,是产能的**供给方**,差一层(EUV 近乎垄断无替代)。
     expect(activeByGroup('equipment')).toEqual(['ASML']);
   });
