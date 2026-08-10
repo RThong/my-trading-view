@@ -13,7 +13,7 @@ import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
 import { subtractAligned, divideAligned, yoyPct, scale, type Point } from '../analytics/regime';
 import { computeSpread } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
-import { getMarketSeries, getSecLag } from '../storage/repository';
+import { getMarketSeries, getPriceBars, getSecLag } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
 import {
   BUYER_FCF_SERIES,
@@ -293,6 +293,20 @@ export const regimeRoute = new Hono().get('/', async (c) => {
       const rows = getMarketSeries(db, sym);
       put(out, rows.length ? rows : undefined);
     }
+    // QQQ 现货:波动率与情绪两个视角的价格参照 —— 那些指标只有对着价格才读得出「背离还是同步」。
+    // 已在 price_eod 里(daily job 维护),同 DXY 的处理:close 进 series 管存在性,OHLC 进 ohlc 画蜡烛。
+    const qqqBars = getPriceBars(db, 'QQQ');
+    put('qqq', qqqBars.length ? qqqBars.map((b) => ({ date: b.date, value: b.close })) : undefined);
+    if (qqqBars.length) {
+      ohlc.qqq = qqqBars.map((b) => ({
+        time: b.date,
+        open: b.open ?? b.close,
+        high: b.high ?? b.close,
+        low: b.low ?? b.close,
+        close: b.close,
+      }));
+    }
+
     // VX1−V3 期限结构价差(读 VX1/VX3 现算),给情绪视角画符号柱状图。
     const spread = computeSpread(getMarketSeries(db, 'VX1'), getMarketSeries(db, 'VX3'));
     put('vxTermSpread', spread.length ? spread.map((r) => ({ date: r.date, value: r.spread })) : undefined);

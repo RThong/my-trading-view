@@ -278,3 +278,17 @@ test('secTrimNote:没裁过就不出提示', () => {
   expect(secTrimNote({ series: {}, unavailable: [] }, 'fundamentals:NVDA')).toBeUndefined();
   expect(secTrimNote({ series: {}, unavailable: [], secTrim: [] }, 'fundamentals:NVDA')).toBeUndefined();
 });
+
+test('QQQ 现货是两个 tab 共用的同一份定义', () => {
+  const [volQqq] = dimPanes('vol').filter((p) => p.key === 'qqq');
+  const [sentQqq] = dimPanes('sentiment').filter((p) => p.key === 'qqq');
+
+  // 断言「同一个对象引用」而不是「深相等」:这一格的存在意义就是不被抄成两份 ——
+  // 深相等会放过「复制粘贴且内容恰好一样」,而那正是本仓库反复踩的「改一处漏一处」。
+  expect(volQqq).toBeDefined();
+  expect(sentQqq).toBe(volQqq);
+
+  // 它是价格参照物不是判据:蜡烛 + 不套分位(套了会出徽标和红绿背景带,读成风险信号)。
+  expect(volQqq?.render).toEqual({ kind: 'candle' });
+  expect(volQqq?.percentile).toBeUndefined();
+});

@@ -121,6 +121,37 @@ type PaneSpec = {
 
 type DimConfig = { panes: PaneSpec[] };
 
+/**
+ * QQQ 现货,**波动率与情绪两个视角共用同一份**(不抄两遍 —— 抄了就会改一处漏一处)。
+ * 放在两个视角的第一格,补的是各格自身读法之外的**第三层信息:背离**。
+ * 各格原有的读法照旧(见各自 desc),这一格不取代它们 ——
+ * 它只回答「同一时点价格在干什么」,那是单看任何一条恐慌线都答不了的。
+ * ⚠️ 蜡烛格不套分位/背景带(见 PaneSpec.render):它是参照物,不是判据。
+ */
+const QQQ_SPOT_PANE: PaneSpec = {
+  key: 'qqq',
+  label: 'QQQ',
+  title: 'QQQ (纳指 100 现货)',
+  color: '#38bdf8',
+  render: { kind: 'candle' }, // 用 data.ohlc.qqq
+  desc: [
+    '定义:QQQ(纳指 100 ETF)日线蜡烛,源:price_eod(2018-01-02 起)。**它不是判据,是参照物**。',
+    '',
+    '为什么这两个视角要放它:各格自身的读法照旧(见各自说明),这一格补的是**背离**那一层 ——',
+    '单看一条恐慌线,分不清「市场真出事了」还是「只是保险变贵了」。要对着价格才看得出来:',
+    '  · 价格新高,而波动率不再往下压 → 涨势在花钱买保护,是涨得心虚的样子。',
+    '  · 恐慌指标冲高,而价格没破位 → 保险被抢但现货没认,常是过度反应。',
+    '  · 价格跌 + 恐慌涨,**两者互相印证** → 才是去杠杆真的在发生(单看任一边都可能是假动作)。',
+    '',
+    '⚠️ **它和这两个视角的多数指标不是同一口径**:VIX / VIXEQ / VX1−V3 / COR1M / RXM/SPX 都以',
+    '**标普**为基,只有 VXN 是纳指。所以它是「大盘科技权重的价格参照」,不是配对指数 ——',
+    '要和 VIX 那几格严格配对,该看的是 SPY。放 QQQ 是因为这轮行情的方向由科技权重主导。',
+    '',
+    '覆盖:2018-01-02(2018 年首个交易日)起,与 VIX / VXN / VIXEQ / COR1M / RXM/SPX 同起点,',
+    '比 Fear&Greed(2021-01-04 起)还长 —— 这两个视角里没有哪一格因为它而缺参照。',
+  ].join('\n'),
+};
+
 export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
   credit: {
     panes: [
@@ -218,6 +249,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
   },
   vol: {
     panes: [
+      QQQ_SPOT_PANE,
       {
         key: 'vix',
         label: 'VIX',
@@ -298,6 +330,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
   },
   sentiment: {
     panes: [
+      QQQ_SPOT_PANE,
       {
         key: 'fng',
         label: 'Fear&Greed',
