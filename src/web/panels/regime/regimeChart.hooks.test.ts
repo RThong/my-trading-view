@@ -292,3 +292,27 @@ test('QQQ 现货是两个 tab 共用的同一份定义', () => {
   expect(volQqq?.render).toEqual({ kind: 'candle' });
   expect(volQqq?.percentile).toBeUndefined();
 });
+
+test('VIX6M:低位染红(riskTail low),缺数据则整格不出', () => {
+  // 单调升序 → 首点在 P5 以下、末点在 P95 以上。riskTail 决定哪一端染红:
+  // low 表示「低 = 压扁 = 自满 = 风险」,所以**低端红、高端绿**;写成 high 就正好反过来。
+  // 只断言 refLines 有两条是不够的 —— 那对 low/high 都成立,改反了测试照绿。
+  const vix6m = Array.from({ length: 30 }, (_, i) => ({
+    date: `2021-01-${String(i + 1).padStart(2, '0')}`,
+    value: 15 + i,
+  }));
+  const data = { series: { vix6m }, unavailable: [] };
+  const specs = buildRegimeSpecs(data, 'vol', '1D');
+  const bg = specs.find((s) => s.key === 'vix6m-bg') as { data: Array<{ color: string }> };
+  const line = specs.find((s) => s.key === 'vix6m') as { refLines?: unknown[] };
+
+  expect(line.refLines).toHaveLength(2); // P5/P95 —— 「这一段在自身历史什么位置」全靠它
+  expect(bg.data[0].color).toBe('rgba(239,68,68,0.45)'); // 最低那天 < P5 → 风险端 = 红
+  expect(bg.data.at(-1)?.color).toBe('rgba(34,197,94,0.45)'); // 最高那天 > P95 → 另一端 = 绿
+  expect(regimePercentiles(data, 'vol').vix6m).toBeDefined();
+
+  // 源缺失(CBOE 404 / 空 CSV)→ 那一格不出,不画空线
+  expect(buildRegimeSpecs({ series: {}, unavailable: ['vix6m'] }, 'vol', '1D').some((s) => s.key === 'vix6m')).toBe(
+    false,
+  );
+});

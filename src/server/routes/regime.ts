@@ -11,7 +11,7 @@ import { fetchMoveSeries, mergeMove } from '../fetchers/moveIndex';
 import { fetchShillerCape } from '../fetchers/capeShiller';
 import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
 import { subtractAligned, divideAligned, yoyPct, scale, type Point } from '../analytics/regime';
-import { computeSpread } from '../analytics/termStructure';
+import { nearMinusFar } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
 import { getMarketSeries, getPriceBars, getSecLag } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
@@ -164,6 +164,16 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     stickyCpi: fredSeries('CORESTICKM159SFRBATL'), // Sticky Price CPI(服务黏性,YoY%,月频)
     cor1m: cboeSeries('COR1M'),
     vixeq: cboeSeries('VIXEQ'),
+    // 恒定期限的即期隐含波动率指数。**和已有的 VX1/VX3 期货不是一回事**:VX3 是"三个月后那个
+    // 30 天波动率"的**远期**,VIX3M 是"现在三个月"的**即期**。实测(2018-01-02~2026-08-07,
+    // 2161 日)两者相关 0.876、**9.5% 的交易日符号相反**,互相替代会读反。
+    vix3m: cboeSeries('VIX3M'),
+    vix6m: cboeSeries('VIX6M'),
+    // 即期期限结构价差的近端腿。**刻意不复用库里那条 VIX**:库里的由 daily job 维护
+    // (vrpInputs 拓的,同样是 CBOE 收盘价 —— 数值完全相同),但 job 没跑那天它会停在昨天,
+    // 而远端腿是实时的 → 内连接会把当天那根整根丢掉,恰好是最该看的一根。
+    // 两腿同源同频才永远齐;代价只是多一次 HTTP。
+    vixSpot: cboeSeries('VIX'),
     rxm: cboeSeries('RXM'),
     spx: cboeSeries('SPX'),
     fng: fetchFearGreed(),
@@ -234,12 +244,16 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     cor1m: 'cor1m',
     vixeq: 'vixeq',
     fng: 'fng',
+    vix6m: 'vix6m',
     reverseRepo: 'rrp',
     repoUsage: 'rpo',
     wages: 'wages',
     stickyCpi: 'stickyCpi',
   };
-  for (const [out, s] of Object.entries(direct)) put(out, raw[s]);
+  // ⚠️ 空数组要当缺失传:`put` 判的是真值,而 `[]` 在 JS 里是真的 —— 直接 `put(out, raw[s])`
+  // 会让"源返回 200 但内容为空"(CBOE 只回表头 / 数据行全解析失败)落成 `series.x = []`,
+  // 既不进 unavailable、面板那格还要拿空序列去算分位。降级语义要求它归 unavailable。
+  for (const [out, s] of Object.entries(direct)) put(out, raw[s]?.length ? raw[s] : undefined);
 
   // DXY:close 进 series(unavailable/存在性),OHLC 进 ohlc(蜡烛)。缺 → 归 unavailable。
   put('usd', usdBars?.length ? usdBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
@@ -307,9 +321,17 @@ export const regimeRoute = new Hono().get('/', async (c) => {
       }));
     }
 
-    // VX1−V3 期限结构价差(读 VX1/VX3 现算),给情绪视角画符号柱状图。
-    const spread = computeSpread(getMarketSeries(db, 'VX1'), getMarketSeries(db, 'VX3'));
-    put('vxTermSpread', spread.length ? spread.map((r) => ({ date: r.date, value: r.spread })) : undefined);
+    // 两条期限结构价差,都走 nearMinusFar(近端 − 远端,正 = backwardation)。
+    // 具名 near/far 是刻意的:方向写反不会报错、只会让人读反图,而位置参数的调换单测抓不住
+    // (见 analytics/termStructure 的注释)。两格同走一个入口,方向因此不可能不一致。
+    //
+    // 它是**内连接**:两腿更新不同步时宁可少一根,也不拿旧的一腿配新的另一腿还标成新日期
+    // (subtractAligned 那种前向填充就会)。
+    const vxTerm = nearMinusFar({ near: getMarketSeries(db, 'VX1'), far: getMarketSeries(db, 'VX3') });
+    put('vxTermSpread', vxTerm.length ? vxTerm : undefined);
+
+    const spotTerm = nearMinusFar({ near: raw.vixSpot ?? [], far: raw.vix3m ?? [] });
+    put('vixSpotTerm', spotTerm.length ? spotTerm : undefined);
 
     // MOVE:实时拉的优先,库里的补丁只填 Yahoo 断供的那些天。
     const move = mergeMove(raw.move ?? [], getMarketSeries(db, 'MOVE'));
