@@ -141,5 +141,12 @@ echo "跑 daily job…"
 bun run job:daily
 
 # 跑完导出最近一月的期权/现货 CSV 到 reports/(固定文件名,供外部分析读同一路径)。
+# ⚠ 兜住失败:本脚本 set -e,而 CSV 导出只是派生产物 —— 它挂掉不该让整轮显示为失败,
+# 更不该挡住后面的备份(数据已落库,备份才是那一步里唯一不可补的)。同本文件其余各处的理由。
 echo "导出 CSV 报表…"
-scripts/export-csv.sh
+scripts/export-csv.sh || echo "警告:CSV 导出失败(不影响已落库的数据),见上。" >&2
+
+# 备份放在最后:要备的正是这一轮刚写进去的数据。
+# 同样只告警不 exit —— 备份挂了不该让这一轮抓取显示为失败。iCloud 没登录 / 磁盘满属于这一类。
+echo "备份数据库到 iCloud…"
+scripts/backup-db.sh || echo "警告:数据库备份失败(数据已落库,只是这一份没备成),见上。" >&2
