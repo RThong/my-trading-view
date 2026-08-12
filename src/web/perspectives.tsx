@@ -40,11 +40,20 @@ const historyTab = (
   long: string,
   short: string,
   spreadLabel: string,
+  /** 现货参照标的。只给真的相关的那个 tab 配 —— 不是每格都该挂一条风险资产。 */
+  spot?: string,
 ): TabDef => ({
   id,
   label,
   render: (interval) => (
-    <TenorHistoryPanel source={source} interval={interval} long={long} short={short} spreadLabel={spreadLabel} />
+    <TenorHistoryPanel
+      source={source}
+      interval={interval}
+      long={long}
+      short={short}
+      spreadLabel={spreadLabel}
+      spot={spot}
+    />
   ),
 });
 
@@ -74,7 +83,8 @@ export const PERSPECTIVES: Perspective[] = [
     label: '利率',
     tabs: [
       curveTab('treasury', '收益曲线', 'treasury'),
-      historyTab('tenor_history', '期限走势', 'treasury', '10Y', '3M', '10Y − 3M'),
+      // 挂 BTC 现货当对照:它是流动性链条最末端、beta 最高的那个,曲线松紧的传导在它身上最先见效。
+      historyTab('tenor_history', '期限走势', 'treasury', '10Y', '1Y', '10Y − 1Y', 'BTC'),
       curveTab('sofr_ois', 'SOFR OIS', 'sofr_ois'),
       historyTab('ois_history', 'OIS 走势', 'sofr_ois', '12M', '3M', '1Y − 3M'),
       regimeTab('rates_vol', '利率波动率', 'ratesVol'),
@@ -86,7 +96,9 @@ export const PERSPECTIVES: Perspective[] = [
     tabs: [
       regimeTab('jpy', '日元', 'jpy'),
       curveTab('jgb_curve', '收益曲线', 'jgb'),
-      historyTab('jgb_history', '期限走势', 'jgb', '10Y', '2Y', '10Y − 2Y'),
+      // 短腿与美债那格统一成 1Y —— 两个 tab 并排读时口径必须一样,否则没人会注意到定义不同。
+      // (JGB 本来也没有更短的:MOF 曲线最短就是 1Y。)
+      historyTab('jgb_history', '期限走势', 'jgb', '10Y', '1Y', '10Y − 1Y'),
       regimeTab('jgb_vol', '日债波动率', 'jgbVol'),
     ],
   },

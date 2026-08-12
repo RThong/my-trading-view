@@ -1,14 +1,18 @@
 // src/web/panels/TenorHistoryPanel.tsx
 import { useRef, useState } from 'react';
+import useSWR from 'swr';
 import { useYieldCurve } from './yieldCurve.hooks';
 import { SERIES_COLORS } from '../../lib/palette';
 import {
   tenorSeriesData,
   pickDefaultTenors,
+  spotBars,
   useTenorChart,
   type TenorSpec,
   type SpreadSpec,
+  type SpotSpec,
 } from './tenorHistory.hooks';
+import type { PriceBar } from '../asset/assetChart.hooks';
 import { spreadSeries } from './rateSpread.hooks';
 import { aggregate } from '../../lib/chart';
 import { InfoTip } from '../../components/InfoTip';
@@ -57,7 +61,15 @@ const VIEW_DESC: Record<string, { title: string; desc: string }> = {
 // 差值 pane(pane 1)自己的说明:利差的读法与阈值都归这里,别塞进上方视图说明。
 const SPREAD_DESC: Record<string, string> = {
   treasury: [
-    '定义:10Y − 3M(虚线 = 0)。负 = 倒挂。',
+    '定义:10Y − 1Y(虚线 = 0)。负 = 倒挂。',
+    '',
+    '⚠️ **为什么短腿用 1Y,不用更常见的 3M 或 2Y** —— 三者实测过(2018-01-02~2026-08-10,2151 日):',
+    '  · **3M ≈ 当前政策利率本身**,几乎不含市场对路径的定价。后果是出场信号赖着不走:',
+    '    10Y−3M 拖到 2025-10-16 才解除倒挂,比 10Y−1Y 晚十个月 —— 那是「联储还没降」,不是「曲线还紧」。',
+    '  · **2Y 装了整整两年的政策路径**,进场太钝:它 2019-08-27 才倒挂,比 10Y−3M 晚了五个月。',
+    '  · **1Y 两头都占**:进场与 10Y−3M **同一天**(2019-03-22),出场跟着市场重新陡峭而非跟着联储降息。',
+    '⚠️ 代价说清楚:**NY Fed 那套衰退概率模型用的是 10Y−3M**。要拿这格去对外部发布的衰退概率,口径不同。',
+    '  想看政策利率本身,上方把 3M 勾上即可(默认只开 1Y / 10Y 这两条差值的腿)。',
     '',
     '⭐ 首要用途 = 读松紧,而且刻意不看绝对利率水平。',
     '  加息 / 降息是单一点,松 / 紧是整条曲线;衡量金融资产(尤其估值)要用曲线、不用单点。',
@@ -67,7 +79,7 @@ const SPREAD_DESC: Record<string, string> = {
     '⭐ 同一条差值也是生产力 / 生产关系的浓缩温度计:',
     '  · 长端(10Y)= 生产力——已投下去的上游 AI 基建、相关电力与通胀。',
     '    生产力未被证明 / 证伪前长端不下来,故长端低位横住、走收敛三角。',
-    '  · 短端(3M)= 生产关系——还没被生产力改变的资源分配 / 分工 / 就业 / 消费。',
+    '  · 短端(1Y)= 生产关系——还没被生产力改变的资源分配 / 分工 / 就业 / 消费。',
     '  · 由此「冰火两重天」:上面投资热,下面消费冷。债商股汇的问题都压在这条曲线的证明 / 证伪上。',
     '  陡峭化只有两种收尾:生产力被证伪(基建全是债务)→ 崩;或生产关系被证明、短端 / 下游被带上去。',
     '',
@@ -99,27 +111,47 @@ const SPREAD_DESC: Record<string, string> = {
     '⚠️ 转负常是联储「只动短端」的预防式兜底在被定价(压波动率、换时间),非衰退已确认;',
     '   反向约束是通胀黏性:薪资 / Sticky CPI 不落,降息定价会被迫回吐。',
   ].join('\n'),
-  jgb: '定义:10Y − 2Y(虚线 = 0)。看 BOJ 政策与 YCC 松绑向长端的传导:走阔 = 长端先松绑。',
+  jgb: [
+    '定义:10Y − 1Y(虚线 = 0)。看 BOJ 政策与 YCC 松绑向长端的传导:走阔 = 长端先松绑。',
+    '',
+    '⚠️ 短腿与美债那格**刻意统一成 1Y**,为的是两边能并排读同一个东西 —— 口径不同而不自知是最容易读错的。',
+    '  换掉原来的 2Y 对形状几乎没影响:实测(2018-01-04~2026-08-07,2098 日)两者相关 **0.9967**、',
+    '  **只有 8 天符号不同**。所以这次换的是可比性,不是信息量。',
+    '  (JGB 也没有更短的:MOF 曲线最短就是 1Y,不存在 3M 那档。)',
+  ].join('\n'),
   bei: '定义:10Y − 5Y BEI(虚线 = 0)。远端通胀补偿相对近端的差:正 = 市场把通胀风险定价在更远端。',
   ai_cds:
     '定义:Oracle − Apple 的 5Y CDS 特质溢价(bp,虚线 = 0)。剥掉宏观信用共同因子,只留甲骨文因 AI 举债被额外索取的那部分。',
 };
 
-// 时间横轴 × 每条线一个期限(pane 0)+ 利差(pane 1),共享时间轴。数据/存储不改,复用收益率曲线序列。
+const getJson = (url: string) =>
+  fetch(url).then((r) => {
+    if (!r.ok) throw new Error(String(r.status));
+    return r.json();
+  });
+const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
+
+// 时间横轴 × 每条线一个期限 + 利差(+ 可选的现货蜡烛),共享时间轴。
+// 数据/存储不改,复用收益率曲线序列;现货走已有的 /api/price/:underlying。
 export function TenorHistoryPanel({
   source,
   interval,
   long,
   short,
   spreadLabel,
+  spot,
 }: {
   source: string;
   interval: Interval;
   long: string;
   short: string;
   spreadLabel: string;
+  /** 现货参照标的(如 'BTC')。省略 = 不画这一格 —— 只有真的相关的那个 tab 才配。 */
+  spot?: string;
 }) {
   const { data, isLoading, error, maxDate } = useYieldCurve(source);
+  // 只有配了 spot 的 tab 才发这个请求(SWR 的 key 传 null = 不请求)。
+  const spotRes = useSWR<PriceBar[]>(spot ? `/api/price/${spot}` : null, getJson, SWR_OPTS);
   const containerRef = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showSpread, setShowSpread] = useState(true);
@@ -138,7 +170,7 @@ export function TenorHistoryPanel({
     .filter((t) => selected.has(t))
     .map((t) => ({ tenor: t, color: colorOf(t), data: tenorSeriesData(data.series[t], interval) }));
 
-  // 收起时传 null:hook 会摘掉 pane 1,期限线独占全高。
+  // 收起时传 null:hook 会摘掉那个 pane,期限线独占全高。
   const spread: SpreadSpec | null = showSpread
     ? {
         label: spreadLabel,
@@ -150,7 +182,11 @@ export function TenorHistoryPanel({
       }
     : null;
 
-  useTenorChart(containerRef, specs, spread);
+  // 没配 spot、或数据还没到 → null,不建那个 pane(而不是建一个空 pane 占着高度)。
+  const spotBarsData = spotBars(spotRes.data, interval);
+  const spotSpec: SpotSpec | null = spot && spotBarsData.length ? { label: spot, data: spotBarsData } : null;
+
+  useTenorChart(containerRef, specs, spread, spotSpec);
 
   const toggle = (t: string) =>
     setSelected((prev) => {
