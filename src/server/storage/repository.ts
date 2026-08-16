@@ -259,7 +259,7 @@ export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[]): v
 export type SecFundamentalRow = {
   ticker: string;
   periodEnd: string;
-  concept: string; // 'revenue' | 'cogs' | 'ocf' | 'capex'
+  concept: string; // analytics/secFundamentals 的 Concept:四个合并科目 + 分部科目(cloudRev)
   value: number; // 单季值(已差分),USD
   tagUsed: string;
   form: string;

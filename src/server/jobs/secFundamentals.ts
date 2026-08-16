@@ -17,9 +17,11 @@ import {
   financeLeaseShare,
   parseXbrlInstance,
   mergeFacts,
+  segmentCumulativeFill,
   deriveSeries,
   aggregateFcf,
   seriesId,
+  trailingContiguous,
   capexScopeOf,
   tagConflicts,
   BUYER_FCF_SERIES,
@@ -38,6 +40,8 @@ import {
   financeLeaseCeiling,
   isAggregateMember,
   knownGap,
+  segmentFactsOf,
+  segmentKindsOf,
   sideOf,
   type SecKind,
 } from '../../shared/aiChain';
@@ -94,6 +98,8 @@ const DERIVED_BY_KIND: Record<SecKind, { id: SeriesKind; pick: (d: DerivedSeries
   fcfq: { id: 'FCFQ', pick: (d) => d.fcfQ },
   rev: { id: 'REV', pick: (d) => d.revTtm },
   revGrowth: { id: 'REVG', pick: (d) => d.revGrowth },
+  // 只有报了分部收入的那家算得出来;其余公司这一条恒为空数组,写不出行(见 deriveSeries)。
+  capexCloud: { id: 'CAPEXCLOUD', pick: (d) => d.capexCloud },
 };
 
 export function writeDerivedSecSeries(
@@ -131,8 +137,13 @@ export function writeDerivedSecSeries(
     .flatMap(([ticker, rows]) => {
       const latest = rows.at(-1)?.periodEnd;
       const present = new Set(rows.filter((r) => r.periodEnd === latest).map((r) => r.concept));
-      const required = REQUIRED_CONCEPTS_BY_SIDE[sideOf(ticker) ?? 'buyer'];
-      const missing = CONCEPTS.filter((c) => required.includes(c) && !present.has(c) && !knownGap(ticker, c));
+      // 分部科目**一律算必需**:声明了 SEGMENT_FACTS 就意味着「这家该有这条线」。
+      // 它是整条链上最容易静默断掉的一档 —— 成员改名 / 命名空间前缀变体 / 实例结构变了,
+      // 任何一种都只让正则失配、抽出 0 行,而合并科目照常推进水位 → job 绿灯、面板少一格。
+      const segments = segmentFactsOf(ticker).map((s) => s.concept);
+      const required = [...REQUIRED_CONCEPTS_BY_SIDE[sideOf(ticker) ?? 'buyer'], ...segments];
+      const concepts: string[] = [...CONCEPTS, ...segments];
+      const missing = concepts.filter((c) => required.includes(c) && !present.has(c) && !knownGap(ticker, c));
 
       // 非必需科目缺失只记日志,不进 problems(不把 job 变黄)。已知缺口连日志都不记。
       const soft = CONCEPTS.filter((c) => !required.includes(c) && !present.has(c) && !knownGap(ticker, c));
@@ -144,10 +155,12 @@ export function writeDerivedSecSeries(
               ticker,
               message:
                 `${ticker}: 最新一期(${latest ?? '无数据'})缺**判据必需**科目 ${missing.join('/')} —— ` +
-                '三种病因,处置方向不同:① mapping_gap:tag 链没覆盖到这家 → 补 TAG_CHAINS;' +
+                '四种病因,处置方向不同:① mapping_gap:tag 链没覆盖到这家 → 补 TAG_CHAINS;' +
                 '② disclosure_absent:源本季根本没有这条行 → 补不了,接受缺格(裁剪规则已保证图上不画假斜率);' +
                 '③ source_capability_gap:数在 SEC 原始 XBRL 里、但是公司自定义(extension)概念,' +
                 'companyfacts 不聚合 → 换源才能修,确认后登记进 KNOWN_GAPS。' +
+                '④ 分部科目(cloudRev 这类)另有第四种:成员名 / 维度轴 / 命名空间前缀变了 → ' +
+                '解析正则失配、抽出 0 行,去那一期实例里 grep 成员名,再改 SEGMENT_FACTS。' +
                 '先去 sec_fundamentals 看 tag_used、再对着该期 filing 原文判是哪一种。',
             },
           ]
@@ -200,6 +213,45 @@ export function writeDerivedSecSeries(
         ticker: t,
         message: `${t}: 已启用的买方,但库里一行数据都没有 —— 买方合计线少了这一家,零轴距离不可读`,
       })),
+  );
+
+  // ④ 分部序列**出现断档就报**,而且每轮复发。
+  //
+  // 为什么这一条不能省:完整性体检(①)只看「最新一期」——10-K 那轮 Q4 没合成出来会变黄,
+  // 可下一份 10-Q 一到,最新一期变成 Q1、科目齐全,**告警自动消失**,而 Q4 那个洞是永久的:
+  // 日常 job 只读当期申报的实例,补那一季要的 9M 在别的申报里,只能人工跑 secBackfillInstances。
+  // 洞留着的后果不是「少一个点」——这一格是折线,路由会用 trailingContiguous 把洞之前的历史
+  // 全砍掉,面板上只剩一两个点。绿灯 + 一条短线,正是本仓库最不能接受的形态。
+  //
+  // 只对分部序列做:别的线有**修不掉的**历史断档(NVDA FY2013–FY2021 的 capex 在 XBRL 里就不存在),
+  // 对它们报就是一盏永久黄灯,会把真信号淹掉(同 CAPEX_SCOPE_EXPECTED 的理由)。
+  problems.push(
+    ...derived.flatMap(([ticker, d]) =>
+      segmentKindsOf(ticker).flatMap((kind) => {
+        const points = DERIVED_BY_KIND[kind].pick(d);
+        const visible = trailingContiguous(points);
+        if (visible.length === points.length) return [];
+
+        // 比值是两条腿的交集,**断档可能来自任一条** —— 不点明是哪条,看的人会照着去跑分部回填,
+        // 而缺的若是 capex 那边,跑多少次都补不上。
+        const gapAt = visible[0]!.date; // 有断档 ⇒ visible 非空
+        const rows = loaded.find(([t]) => t === ticker)?.[1] ?? [];
+        const legs = ['capex', ...segmentFactsOf(ticker).map((s) => s.concept)];
+        const thin = legs.filter((c) => !rows.some((r) => r.concept === c && r.periodEnd < gapAt));
+
+        return [
+          {
+            ticker,
+            message:
+              `${ticker}: 分部序列 ${seriesId(ticker, DERIVED_BY_KIND[kind].id)} 中间有断档 —— ` +
+              `共 ${points.length} 点,断档后只剩尾部 ${visible.length} 点会上图(缺口止于 ${gapAt})。` +
+              `缺的是这几条腿之一:${legs.join(' / ')}${thin.length ? `(库里缺口前完全没有 ${thin.join('/')})` : ''}。` +
+              '若缺的是分部那条:日常 job 补不回历史,跑 ' +
+              '`bun run src/server/jobs/secBackfillInstances.ts <TICKER> --limit=N` 再重算派生。',
+          },
+        ];
+      }),
+    ),
   );
 
   const aggregate = aggregateFcf(new Map(buyers.filter(([, d]) => d.fcfTtm.length > 0).map(([t, d]) => [t, d.fcfTtm])));
@@ -311,6 +363,12 @@ export async function updateSecFundamentals(
       // 落库**前**的最新期末:advanced() 靠「它有没有变大」判断这一轮是不是真吃进了新一季。
       const periodEndBefore = getLatestSecPeriodEnd(db, ticker);
 
+      // **在拉 companyfacts 之前**抓一次:库里是不是已经吃进过这一份申报的行。
+      // 只给分部公司的「实例重试轮」当指纹用 —— 上一轮 companyfacts 已经落了行、期末已经前进,
+      // 所以重试那一轮 advanced() 必然为 false,没有这个指纹就永远判不出「其实已经处理完了」。
+      // 必须在 insert 之前抓,之后抓恒为真。
+      const seenThisFiling = (getLatestSecFiled(db, ticker) ?? '') >= latest.filed;
+
       const companyFacts = await sec.companyFacts(cikOf(ticker)!);
 
       // tag 冲突只能在这里查:库里只存了链序赢的那个值,输的那个没留下,事后查不出来。
@@ -363,32 +421,68 @@ export async function updateSecFundamentals(
       const advanced = () =>
         isAmendment || alreadyProcessed || (getLatestSecPeriodEnd(db, ticker) ?? '') > (periodEndBefore ?? '');
 
-      // companyfacts 落后于 submissions 时,直接读那份申报的 XBRL 实例补上(见 parseXbrlInstance)。
-      // 只在这个分支打两个额外请求,稳态零开销。**必须与 companyfacts 合并再算**:
-      // 现金流多数只报本年累计,单季靠差分 —— 减掉的上一季在 companyfacts 里。
-      // 兜底自身的失败单独记:直接往外抛会让 catch 只报「没找到实例」,
+      // 读申报实例的两个理由,**性质完全不同**:
+      //  ① companyfacts 落后于 submissions —— 临时的,稳态下这个分支零开销。
+      //  ② 这家有**分部科目**(如 Google Cloud 收入)—— 那一档带 XBRL 维度,companyfacts
+      //     按设计永远不聚合,所以**每份新申报都得读一次**(GOOGL 实测 2.9MB × 一年 4 次)。
+      //     不是「落后」,补不到 companyfacts 里,别指望它下周自愈。
+      // **必须与 companyfacts 合并再算**:现金流多数只报本年累计,单季靠差分 —— 减掉的上一季在
+      // companyfacts 里。兜底自身的失败单独记:直接往外抛会让 catch 只报「没找到实例」,
       // 盖掉真正的主症状(companyfacts 落后),下面那条诊断必须还能发出来。
-      if (!advanced()) {
+      const segments = segmentFactsOf(ticker);
+      const wasBehind = !advanced();
+      let segmentReadFailed = false;
+      if (segments.length || wasBehind) {
         try {
-          const patch = parseXbrlInstance(await sec.filingInstance(cikOf(ticker)!, latest.accn), latest);
-          const patched = extractFundamentals(ticker, mergeFacts(companyFacts, patch));
+          const stored = getSecFundamentals(db, ticker);
+          const xml = await sec.filingInstance(cikOf(ticker)!, latest.accn);
+          const patch = parseXbrlInstance(xml, latest, {}, segments);
+          // 10-K 的分部数只有全年,减掉的 9M 在上一份 10-Q 的实例里(companyfacts 永远没有)——
+          // 用库里已有的单季行把它加回来,否则每年 Q4 静默缺一格。见 segmentCumulativeFill。
+          const base = mergeFacts(companyFacts, patch);
+          const patched = extractFundamentals(ticker, mergeFacts(base, segmentCumulativeFill(base, stored)));
           insertSecFundamentals(db, patched);
           rowsWritten += patched.length;
-          if (advanced()) fallback.push(`${ticker}(${latest.form} ${latest.filed})`);
+          // 只有**真的是来兜底**的那次才记进 fallback:②的读取是常态,记了会让日志天天有一行
+          // 「走了兜底」,而那个词在这里的意思是「companyfacts 落后了」,看的人会去查一个不存在的病。
+          if (wasBehind && advanced()) fallback.push(`${ticker}(${latest.form} ${latest.filed})`);
         } catch (e) {
-          failed.push(`${ticker}: 申报实例兜底失败(${e instanceof Error ? e.message : String(e)})`);
+          segmentReadFailed = segments.length > 0;
+          failed.push(`${ticker}: 申报实例读取失败(${e instanceof Error ? e.message : String(e)})`);
         }
       }
 
       // 这一份处理完了 —— 不管它有没有带来行。skip 判据读它,否则「合法地不带行」的修订件
       // 会让水位永远追不上远端(见上面 isAmendment 那段与 schema.sql 的 processed_filed)。
-      if (advanced()) putSecProcessedFiled(db, ticker, latest.filed);
+      //
+      // **例外:分部公司的实例没读成**。旧代码里实例只在 `wasBehind` 时读,读失败 ⇒ advanced()
+      // 必为 false ⇒ 水位不动 ⇒ 下一轮自动重试 —— 「catch 住继续走」是靠这个前提才安全的。
+      // 分部这条路把前提打破了:companyfacts 已跟上时 advanced() 早就为真,一次 SEC 429 / 超时
+      // 就会把水位推过去,那一季的分部数**日常 job 再也不读第二次**,只能人工跑回填。
+      // 一次网络抖动换一个要人工介入的永久洞,不划算 —— 不推进,下一轮重来。
+      //
+      // ⚠️ **重试轮不能再用 advanced() 判「处理完了」**:它是「本轮之前 → 之后期末有没有变大」的
+      // 相对比较,而上一轮 companyfacts 已经把新一期落库了,重试轮期末不会再动 → advanced() 恒 false
+      // → 水位永远推不动 → 每轮重拉几 MB + 常驻红灯,要等下一份财报(最长三个月)才自愈。
+      // 这正是当初引入 processed_filed 要消灭的形态(见 schema.sql),不能自己再造一个。
+      // 故重试轮改用 `seenThisFiling` 这个指纹:库里已经有这一份 filed 的行 = companyfacts 那半边
+      // 上一轮就做完了,这一轮只欠实例;实例读到了,这一份就算处理完。
+      // **只对分部公司放开**:普通公司若也认这个指纹,「拉到了却一行没落」的守卫会被比较期带偏
+      // (一份 10-Q 同时贡献去年同季,MAX(filed) 照样被抬高)—— 那是它当初刻意不用 MAX(filed) 的理由。
+      const retriedInstance = segments.length > 0 && seenThisFiling;
+      const done = () => (advanced() || retriedInstance) && !segmentReadFailed;
 
-      if (!advanced()) {
-        failed.push(
-          `${ticker}: companyfacts 与申报实例都没贡献新一期的行(远端 filed=${remoteFiled ?? '未查'});` +
-            'tag 链或 SEC 响应结构可能变了,水位不会前进 → 下次仍会重拉',
-        );
+      if (done()) putSecProcessedFiled(db, ticker, latest.filed);
+
+      if (!done()) {
+        // 实例读挂那种已经在上面记过真症状了,别再叠一条指向「tag 链变了」的错诊断 ——
+        // 这一轮的行可能落得好好的,只是分部那半边没读到。
+        if (!segmentReadFailed) {
+          failed.push(
+            `${ticker}: companyfacts 与申报实例都没贡献新一期的行(远端 filed=${remoteFiled ?? '未查'});` +
+              'tag 链或 SEC 响应结构可能变了,水位不会前进 → 下次仍会重拉',
+          );
+        }
         continue;
       }
 

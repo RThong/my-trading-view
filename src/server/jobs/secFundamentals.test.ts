@@ -91,6 +91,18 @@ const NVDA_CIK = '1045810';
 /** 合法但一条 fact 都没有的实例:兜底跑完仍拿不到新一期,该报红。 */
 const EMPTY_INSTANCE = '<?xml version="1.0"?><xbrl xmlns="http://www.xbrl.org/2003/instance"></xbrl>';
 
+/** 带一条 Google Cloud 分部收入的最小实例(真实形态:单维度、分部轴、单季 context)。 */
+const cloudInstance = (
+  start: string,
+  end: string,
+) => `<?xml version="1.0"?><xbrl xmlns="http://www.xbrl.org/2003/instance">
+<unit id="usd"><measure>iso4217:USD</measure></unit>
+<context id="c-cloud"><entity><identifier scheme="s">0001652044</identifier><segment>
+  <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">goog:GoogleCloudMember</xbrldi:explicitMember>
+</segment></entity><period><startDate>${start}</startDate><endDate>${end}</endDate></period></context>
+<us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax contextRef="c-cloud" unitRef="usd">17664000000</us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax>
+</xbrl>`;
+
 /** 无实例可读:兜底分支若被触发就抛,让「本该不走兜底」的测试失败而不是静默通过。 */
 const noInstance = async (): Promise<string> => {
   throw new Error('本轮不该读申报实例');
@@ -408,7 +420,7 @@ describe('sec fundamentals job', () => {
       },
     });
 
-    expect(r.failed.some((f) => /申报实例兜底失败/.test(f))).toBe(true);
+    expect(r.failed.some((f) => /申报实例读取失败/.test(f))).toBe(true);
     expect(r.failed.some((f) => /companyfacts 与申报实例都没贡献新一期的行/.test(f))).toBe(true);
     expect(r.fetched).toEqual([]);
   });
@@ -695,4 +707,116 @@ test('processed_filed 为 NULL 的旧库上 --force 重跑已处理的申报 →
   expect(r.failed).toEqual([]);
   expect(r.fetched).toEqual(['NVDA']); // noInstance 会抛 —— 兜底根本不该被触发
   db.close();
+});
+
+// 分部科目(GOOGL 的 Cloud 收入)只能从申报实例抽,而实例解析是**整条链上最容易静默断掉**的一环:
+// 成员改名 / 维度轴变了 / 命名空间前缀变体,任何一种都只让正则失配、抽出 0 行。此时合并科目照常
+// 推进水位,job 会绿灯收工、面板悄悄少一格。这条锁住「必须变黄」。
+describe('分部科目缺失必须报警(不能靠合并科目把水位推过去)', () => {
+  const GOOGL_CIK = '1652044';
+  const GOOGL = { tickers: ['GOOGL'], activeTickers: ['GOOGL'] };
+
+  // 计数写在**外面**:断言写进 mock 里的话,mock 压根没被调用时它一行都不跑,
+  // 而外层「failed 里有 cloudRev」在「根本没读实例」的情况下照样成立(告警来自完整性守卫)。
+  const googlFetcher = (instance: string, seen: string[]) => ({
+    latestFiling: async () => filingOf('2026-02-25'),
+    companyFacts: async () => facts(50e9, 20e9),
+    filingInstance: async (cik: string) => {
+      seen.push(cik);
+      return instance;
+    },
+  });
+
+  test('每份新申报都真去读实例 —— companyfacts 没落后也要读(分部数它永远没有)', async () => {
+    const db = freshDb();
+    const seen: string[] = [];
+    await updateSecFundamentals(db, { ...GOOGL, fetcher: googlFetcher(EMPTY_INSTANCE, seen) });
+
+    expect(seen).toEqual([GOOGL_CIK]);
+    db.close();
+  });
+
+  test('实例里抽不出 cloudRev → failed 里点名,不是绿灯', async () => {
+    const db = freshDb();
+    const r = await updateSecFundamentals(db, { ...GOOGL, fetcher: googlFetcher(EMPTY_INSTANCE, []) });
+
+    expect(r.failed.some((f) => /cloudRev/.test(f))).toBe(true);
+    // 四个合并科目照常落库 —— 报警针对的是缺的那一档,不是整轮作废。
+    expect(getSecFundamentals(db, 'GOOGL').some((x) => x.concept === 'capex')).toBe(true);
+    db.close();
+  });
+
+  // 没有分部配置的公司行为必须不变:只在 companyfacts 落后时才读实例。
+  test('没有分部配置的公司照旧零实例请求', async () => {
+    const db = freshDb();
+    const seen: string[] = [];
+    await updateSecFundamentals(db, {
+      ...SELLER_ONLY,
+      fetcher: { ...googlFetcher(EMPTY_INSTANCE, seen), companyFacts: async () => NVDA_FACTS },
+    });
+
+    expect(seen).toEqual([]);
+    db.close();
+  });
+});
+
+// 旧代码里实例只在「companyfacts 落后」时读,读失败 ⇒ advanced() 必为 false ⇒ 水位不动 ⇒
+// 下一轮自动重试。分部这条路每份新申报都读,companyfacts 没落后时 advanced() 早就为真 ——
+// 一次 SEC 429 就会把水位推过去,那一季的分部数日常 job 再也不读第二次。
+describe('分部公司:实例读取失败不推进水位(下一轮要能自愈)', () => {
+  const GOOGL = { tickers: ['GOOGL'], activeTickers: ['GOOGL'] };
+
+  // 实例里那条分部单季必须落在**该轮最新一期**上,否则守卫 ① 会如实报「最新一期缺 cloudRev」——
+  // 那是它该做的事,但会盖掉这条测试真正要验的水位行为。
+  const flaky = (filed: string, body: CompanyFacts, cloudEnd: [string, string], fail: boolean) => ({
+    latestFiling: async () => filingOf(filed),
+    companyFacts: async () => body,
+    filingInstance: async () => {
+      if (fail) throw new Error('SEC 429');
+      return cloudInstance(...cloudEnd);
+    },
+  });
+
+  const Q4: [string, string] = ['2025-10-27', '2026-01-25'];
+  const Q1: [string, string] = ['2026-01-26', '2026-04-26'];
+
+  // 新一季**真的吃进来了**(合并科目推进了期末)时,advanced() 为真 —— 这正是旧代码
+  // 「读失败必然不推进水位」那个前提失效的场景,也是本条守卫唯一起作用的地方。
+  const NEXT_Q: CompanyFacts = {
+    facts: {
+      'us-gaap': {
+        Revenues: nextQ(100e9),
+        CostOfRevenue: nextQ(40e9),
+        NetCashProvidedByUsedInOperatingActivities: nextQ(50e9),
+        PaymentsToAcquirePropertyPlantAndEquipment: nextQ(20e9),
+      },
+    },
+  };
+
+  test('新一季吃进来了但实例读挂 → 不推进水位,下一轮重来并补上 cloudRev', async () => {
+    const db = freshDb();
+
+    // 先跑通一轮,把 processed_filed 种上(稳态形态;空库首轮的上限见 job 里的 ponytail 注释)。
+    await updateSecFundamentals(db, { ...GOOGL, fetcher: flaky('2026-02-25', facts(50e9, 20e9), Q4, false) });
+    db.run(`DELETE FROM sec_fundamentals WHERE ticker='GOOGL' AND concept='cloudRev'`);
+
+    const broke = await updateSecFundamentals(db, { ...GOOGL, fetcher: flaky('2026-05-20', NEXT_Q, Q1, true) });
+    expect(broke.failed.some((f) => /申报实例读取失败/.test(f))).toBe(true);
+    expect(getSecFundamentals(db, 'GOOGL').some((r) => r.concept === 'cloudRev')).toBe(false);
+
+    // 关键:水位没被推过去 → 这一轮**不是 skip**,分部数补上了。
+    const retry = await updateSecFundamentals(db, { ...GOOGL, fetcher: flaky('2026-05-20', NEXT_Q, Q1, false) });
+    expect(retry.skipped).toEqual([]);
+    expect(getSecFundamentals(db, 'GOOGL').some((r) => r.concept === 'cloudRev')).toBe(true);
+
+    // ⚠️ 重试轮**必须真的把水位推过去**,否则就从「一个洞」换成了「永久红灯 + 每轮重拉几 MB」。
+    // 这里最容易错:重试轮 advanced() 恒为 false(上一轮 companyfacts 已经把新一期落库了),
+    // 拿它当通过条件的话,水位永远停在上一份,而且还会报一条指向「tag 链变了」的错诊断。
+    expect(retry.failed).toEqual([]);
+    expect(retry.fetched).toEqual(['GOOGL']);
+
+    const settled = await updateSecFundamentals(db, { ...GOOGL, fetcher: flaky('2026-05-20', NEXT_Q, Q1, false) });
+    expect(settled.skipped).toEqual(['GOOGL']); // 处理完了 → 回到稳态零请求
+    db.close();
+  });
 });

@@ -40,8 +40,12 @@ async function getJson<T>(url: string, doFetch: FetchFn, timeoutMs?: number): Pr
   return (await res.json()) as T;
 }
 
+type FilingList = { form?: string[]; filingDate?: string[]; reportDate?: string[]; accessionNumber?: string[] };
+
 type Submissions = {
-  filings?: { recent?: { form?: string[]; filingDate?: string[]; reportDate?: string[]; accessionNumber?: string[] } };
+  // files[] 是**分页**:recent 只装最近约 1000 条,申报频繁的公司(GOOGL 的 recent 只到
+  // 2023-06)更早的全在这几个分页 JSON 里。日常 job 用不着它,回填要。
+  filings?: { recent?: FilingList; files?: Array<{ name?: string }> };
 };
 
 /** submissions 里最新的那份定期报告。accn 用于 companyfacts 落后时直接去读申报实例。 */
@@ -88,16 +92,28 @@ export function createSecFetcher(doFetch: FetchFn = fetchWithTimeout) {
      * 全部 10-Q/10-K(含修订件),按期末升序。**只给一次性回填用**(jobs/secBackfillInstances):
      * 日常 job 只需要最新那一份,不必把整张清单摊开。
      * 丢掉 reportDate 撞上 filingDate 的 —— 老申报里 SEC 有时把申报日填进 reportDate,那不是期末。
+     *
+     * **把分页也读掉**:`filings.recent` 只装最近约 1000 条,而申报频繁的公司在那一千条里
+     * 塞满了 8-K/Form 4(实测 GOOGL 的 recent 最早只到 2023-06,回填因此只够到 2023Q2)。
+     * 更早的定期报告全在 `filings.files[]` 指的那几个分页 JSON 里(GOOGL 只有一个,覆盖 2015-10 起)。
+     * 分页每家 0~2 个、每个几百 KB,而这个方法**只有一次性回填调**,不进日常路径。
      */
     async periodicFilings(cik: string): Promise<PeriodicFiling[]> {
       const body = await getJson<Submissions>(`https://data.sec.gov/submissions/${cikPath(cik)}.json`, doFetch);
-      const { form = [], filingDate = [], reportDate = [], accessionNumber = [] } = body.filings?.recent ?? {};
 
-      return form
-        .flatMap((f, i) =>
-          isPeriodicForm(f) && filingDate[i] && accessionNumber[i] && reportDate[i] && reportDate[i] !== filingDate[i]
-            ? [{ filed: filingDate[i]!, form: f, accn: accessionNumber[i]!, periodEnd: reportDate[i]! }]
-            : [],
+      const pages = await Promise.all(
+        (body.filings?.files ?? []).flatMap((f) =>
+          f.name ? [getJson<FilingList>(`https://data.sec.gov/submissions/${f.name}`, doFetch)] : [],
+        ),
+      );
+
+      return [body.filings?.recent ?? {}, ...pages]
+        .flatMap(({ form = [], filingDate = [], reportDate = [], accessionNumber = [] }) =>
+          form.flatMap((f, i) =>
+            isPeriodicForm(f) && filingDate[i] && accessionNumber[i] && reportDate[i] && reportDate[i] !== filingDate[i]
+              ? [{ filed: filingDate[i]!, form: f, accn: accessionNumber[i]!, periodEnd: reportDate[i]! }]
+              : [],
+          ),
         )
         .sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
     },

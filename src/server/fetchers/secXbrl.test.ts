@@ -123,3 +123,62 @@ describe('sec fetcher', () => {
     await expect(createSecFetcher(fakeFetch).companyFacts('1045810')).rejects.toThrow(/SEC request failed: 403/);
   });
 });
+
+// `filings.recent` 只装最近约 1000 条,申报频繁的公司在那一千条里塞满了 8-K/Form 4 ——
+// 实测 GOOGL 的 recent 最早只到 2023-06,更早的定期报告全在 `filings.files[]` 指的分页 JSON 里。
+// 不读分页的话回填**够不到早年**,而且现象与「SEC 没有更早的数据」一模一样。
+describe('periodicFilings 读分页', () => {
+  const page = (name: string) => `https://data.sec.gov/submissions/${name}`;
+
+  const fakeFetch = async (url: string) => {
+    if (url.endsWith('/CIK0001652044.json')) {
+      return json({
+        filings: {
+          recent: {
+            form: ['10-Q', '8-K'],
+            filingDate: ['2026-07-23', '2026-07-01'],
+            reportDate: ['2026-06-30', '2026-07-01'],
+            accessionNumber: ['new-10q', 'x-8k'],
+          },
+          files: [{ name: 'CIK0001652044-submissions-001.json' }],
+        },
+      });
+    }
+    if (url === page('CIK0001652044-submissions-001.json')) {
+      return json({
+        form: ['10-K', '10-Q'],
+        filingDate: ['2021-02-02', '2020-04-28'],
+        reportDate: ['2020-12-31', '2020-03-31'],
+        accessionNumber: ['old-10k', 'old-10q'],
+      });
+    }
+    throw new Error(`unexpected url ${url}`);
+  };
+
+  test('recent + 分页一起进来,按期末升序,8-K 仍被挡掉', async () => {
+    const filings = await createSecFetcher(fakeFetch).periodicFilings('1652044');
+
+    expect(filings.map((f) => f.periodEnd)).toEqual(['2020-03-31', '2020-12-31', '2026-06-30']);
+    expect(filings.map((f) => f.accn)).toEqual(['old-10q', 'old-10k', 'new-10q']);
+  });
+
+  test('没有 files[] 的公司照旧只读 recent,不多打请求', async () => {
+    const urls: string[] = [];
+    const noPages = async (url: string) => {
+      urls.push(url);
+      return json({
+        filings: {
+          recent: {
+            form: ['10-Q'],
+            filingDate: ['2026-05-20'],
+            reportDate: ['2026-04-26'],
+            accessionNumber: ['a-10q'],
+          },
+        },
+      });
+    };
+
+    expect(await createSecFetcher(noPages).periodicFilings('1045810')).toHaveLength(1);
+    expect(urls).toHaveLength(1);
+  });
+});

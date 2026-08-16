@@ -138,3 +138,70 @@ describe('backfillFromInstances', () => {
     db.close();
   });
 });
+
+// 分部科目在 companyfacts 里**每一期都没有**,所以「缺口 = 任一 concept 缺」这条规则一旦
+// 不带下界,公司开始披露该分部**之前**的每一期都会永远算成缺口:每轮都去拉那几十份实例
+// (1~3MB 一份)、对这一档一行贡献都没有、下一轮原样再拉一遍,而「仍缺 N 处」恒不为零。
+// 下界由 SEGMENT_FACTS.from 表达(GOOGL = 2020-03-31)。
+describe('分部科目的缺口下界(回填必须收敛)', () => {
+  const period = (periodEnd: string, concept: string) => ({
+    ticker: 'GOOGL',
+    periodEnd,
+    concept,
+    value: 1,
+    tagUsed: 't',
+    form: '10-Q',
+    accn: 'cf',
+    filed: '2021-01-01',
+    fiscalQ: '',
+  });
+
+  /** 2019 与 2020 各一期,四个合并科目齐全;cloudRev 只有 2020 那期有(真实形态)。 */
+  function seedGoogl(db: Database) {
+    insertSecFundamentals(db, [
+      ...['revenue', 'cogs', 'ocf', 'capex'].flatMap((c) => [period('2019-12-31', c), period('2020-03-31', c)]),
+      period('2020-03-31', 'cloudRev'),
+    ]);
+  }
+
+  const googlStub = (onPull: () => void) => ({
+    latestFiling: async () => null,
+    periodicFilings: async () => [
+      { accn: 'a19', form: '10-K', filed: '2020-02-03', periodEnd: '2019-12-31' },
+      { accn: 'a20', form: '10-Q', filed: '2020-04-28', periodEnd: '2020-03-31' },
+    ],
+    companyFacts: async () => ({}),
+    filingInstance: async () => {
+      onPull();
+      return '<?xml version="1.0"?><xbrl xmlns="http://www.xbrl.org/2003/instance"></xbrl>';
+    },
+  });
+
+  test('披露开始之前的期不算缺口 → 零下载、仍缺为空', async () => {
+    const db = freshDb();
+    seedGoogl(db);
+
+    let pulls = 0;
+    const r = await backfillFromInstances(db, 'GOOGL', { fetcher: googlStub(() => (pulls += 1)) as never });
+
+    expect(pulls).toBe(0);
+    expect(r.pulled).toEqual([]);
+    // 2019-12-31 少 cloudRev 是**正常**的(那时 Cloud 还没单列),不该报进「仍缺」。
+    expect(r.stillMissing).toEqual([]);
+    db.close();
+  });
+
+  test('下界之后真缺就照样补 —— 别把守卫做成一律不报', async () => {
+    const db = freshDb();
+    seedGoogl(db);
+    db.run(`DELETE FROM sec_fundamentals WHERE ticker='GOOGL' AND concept='cloudRev'`);
+
+    let pulls = 0;
+    const r = await backfillFromInstances(db, 'GOOGL', { fetcher: googlStub(() => (pulls += 1)) as never });
+
+    expect(pulls).toBe(1); // 只拉 2020-03-31 那一份,2019 那份仍不拉
+    expect(r.pulled).toEqual(['2020-03-31']);
+    expect(r.stillMissing).toEqual(['2020-03-31.cloudRev']); // 空实例补不上 → 如实报
+    db.close();
+  });
+});

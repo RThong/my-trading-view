@@ -8,6 +8,7 @@ import {
   extractFundamentals,
   parseXbrlInstance,
   mergeFacts,
+  segmentCumulativeFill,
   TAG_CHAINS,
   capexScopeOf,
   tagConflicts,
@@ -549,6 +550,209 @@ describe('parseXbrlInstance / mergeFacts(申报实例兜底)', () => {
     // 合并顺序不该影响结果 —— 裁决靠 filed,不靠谁先进数组。
     expect(collectPeriods(mergeFacts(older, newer), ['Revenues'])[0]!.val).toBe(111);
     expect(collectPeriods(mergeFacts(newer, older), ['Revenues'])[0]!.val).toBe(111);
+  });
+});
+
+describe('分部科目(segment)—— GOOGL 2026Q2 实测形态', () => {
+  // 真实片段:GOOGL 2026Q2 10-Q(accession 0001652044-26-000071)里**期末 = 2026-06-30** 的
+  // 全部收入事实与它们的 context。逐位数过:
+  //  · `RevenueFromContractWithCustomerExcludingAssessedTax` 30 条,**一条无维度的都没有** ——
+  //    Alphabet 的合并收入不用这个元素,它全部用来标分部 / 产品线 / 地区拆分。
+  //  · `Revenues` 12 条,其中 10 条无维度(值只有本季 119.796B 与本年累计 229.692B 两种)。
+  // 也就是说合并口径与分部口径**分别落在两个元素上**,但分部那个元素同时被两种口径用
+  // (2026Q2 那 30 条里既有 Cloud 也有 Services × 产品线),所以只有 context 分得开。
+  const xml = readFileSync(new URL('./__fixtures__/googl-20260630-excerpt.xml', import.meta.url), 'utf8');
+  const FILING = { accn: '0001652044-26-000071', form: '10-Q', filed: '2026-07-23' };
+  const CLOUD = [
+    {
+      concept: 'cloudRev' as const,
+      element: 'us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax',
+      axis: 'us-gaap:StatementBusinessSegmentsAxis',
+      members: ['goog:GoogleCloudMember'],
+      from: '2020-03-31',
+      label: 'Google Cloud',
+    },
+  ];
+
+  test('云收入进 cloudRev,合并口径的收入不受影响(黄金值:24.768B / 119.796B)', () => {
+    const rows = extractFundamentals('GOOGL', parseXbrlInstance(xml, FILING, {}, CLOUD));
+    const q2 = (c: string) => rows.find((r) => r.periodEnd === '2026-06-30' && r.concept === c)?.value;
+
+    expect(q2('cloudRev')).toBe(24_768_000_000);
+    expect(q2('revenue')).toBe(119_796_000_000);
+  });
+
+  test('members 列多个成员名 = 公司改过名也接得上(实测 2022Q1 及更早叫 …SegmentMember)', () => {
+    const bothNames = [{ ...CLOUD[0]!, members: ['goog:GoogleCloudMember', 'goog:GoogleCloudSegmentMember'] }];
+    const renamed = xml.replaceAll('goog:GoogleCloudMember', 'goog:GoogleCloudSegmentMember');
+    const cloudOf = (x: string, segs: typeof CLOUD) =>
+      extractFundamentals('GOOGL', parseXbrlInstance(x, FILING, {}, segs)).find((r) => r.concept === 'cloudRev')?.value;
+
+    expect(cloudOf(xml, bothNames)).toBe(24_768_000_000);
+    expect(cloudOf(renamed, bothNames)).toBe(24_768_000_000);
+    // 只列新名字 → 旧名字那批静默消失。这正是「members 是数组」要防的那件事。
+    expect(cloudOf(renamed, CLOUD)).toBeUndefined();
+  });
+
+  test('不传 segments 就一行分部数据都不收 —— 别家的解析行为一个字节都没变', () => {
+    const rows = extractFundamentals('GOOGL', parseXbrlInstance(xml, FILING));
+    expect(rows.some((r) => r.concept === 'cloudRev')).toBe(false);
+    expect(rows.find((r) => r.periodEnd === '2026-06-30' && r.concept === 'revenue')?.value).toBe(119_796_000_000);
+  });
+
+  test('只放行点名的那个成员:别的分部 / 地区 / 产品线不许混进来', () => {
+    const facts = parseXbrlInstance(xml, FILING, {}, CLOUD);
+    const vals = new Set(facts.facts!['us-gaap']!.SegmentCloudRevenue!.units!.USD!.map((r) => r.val));
+
+    // 本季 24.768B + 本年累计 44.796B,就这两条(同一个 context 在实例里被两处引用,值相同)。
+    expect([...vals].sort((a, b) => a - b)).toEqual([24_768_000_000, 44_796_000_000]);
+    // 反例都在同一份实例里:Google Services 分部本季 94.540B、美国地区本季 60.846B ——
+    // 混进来不会报错,只会让「云收入」悄悄变成别的东西。
+    expect(vals.has(94_540_000_000)).toBe(false);
+    expect(vals.has(60_846_000_000)).toBe(false);
+  });
+
+  test('维度轴也要对上:同名成员挂在别的轴上不算数', () => {
+    // 实例里 srt:ProductOrServiceAxis 装的是产品线拆分(搜索/YouTube/订阅…)。只比成员名的话,
+    // 公司哪天在那根轴上也放一个同名成员,就会静默取到另一个数。
+    const wrongAxis = xml.replaceAll(
+      'dimension="us-gaap:StatementBusinessSegmentsAxis">goog:GoogleCloudMember',
+      'dimension="srt:ProductOrServiceAxis">goog:GoogleCloudMember',
+    );
+    const facts = parseXbrlInstance(wrongAxis, FILING, {}, CLOUD);
+
+    expect(facts.facts!['us-gaap']!.SegmentCloudRevenue).toBeUndefined();
+  });
+
+  test('二级拆分(Cloud × 地区)一律不收 —— 它与总数同 tag 混进去,差分出来是错的', () => {
+    const twoAxes = xml.replace(
+      '<xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">goog:GoogleCloudMember</xbrldi:explicitMember>',
+      '<xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">goog:GoogleCloudMember</xbrldi:explicitMember>' +
+        '<xbrldi:explicitMember dimension="srt:StatementGeographicalAxis">country:US</xbrldi:explicitMember>',
+    );
+    const facts = parseXbrlInstance(twoAxes, FILING, {}, CLOUD);
+    const vals = facts.facts!['us-gaap']!.SegmentCloudRevenue!.units!.USD!.map((r) => r.val);
+
+    expect(vals).not.toContain(24_768_000_000); // 被改造的那条是本季 —— 多一个维度就不该收
+  });
+
+  // 「认不出来的维度」绝不能等同于「没有维度」。改动前是「带 <segment> 一律不收」,不存在这个面;
+  // 放行分部之后,任何没被 explicitMember 正则捕到的维度声明都会让 context 看起来是纯 Cloud。
+  test.each([
+    [
+      'typedMember(typed 维度,正则完全不认)',
+      '<xbrldi:typedMember dimension="goog:SomeAxis"><x>1</x></xbrldi:typedMember>',
+    ],
+    [
+      'dimension 等号旁带空格(合法 XML)',
+      '<xbrldi:explicitMember dimension = "goog:SomeAxis">goog:SomeMember</xbrldi:explicitMember>',
+    ],
+    // 单引号这一支要的是「两条正则的引号规则一致」:一条认一条不认,失败关闭的闸门会反过来
+    // 把带维度的 context 当成合并口径,污染的是四个核心科目那一侧,面更大。
+    [
+      '单引号属性(合法 XML)',
+      "<xbrldi:explicitMember dimension='goog:SomeAxis'>goog:SomeMember</xbrldi:explicitMember>",
+    ],
+  ])('未知维度声明 → 整条拒收,不是当成没有维度(%s)', (_name, extra) => {
+    const sneaky = xml.replaceAll(
+      '<xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">goog:GoogleCloudMember</xbrldi:explicitMember>',
+      `<xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">goog:GoogleCloudMember</xbrldi:explicitMember>${extra}`,
+    );
+
+    expect(parseXbrlInstance(sneaky, FILING, {}, CLOUD).facts!['us-gaap']!.SegmentCloudRevenue).toBeUndefined();
+  });
+
+  // 实测 GOOGL 2025 10-K(accession 0001652044-26-000018):Cloud 只有 2023/2024/2025 三条**全年**,
+  // 没有 9M、也没有单季 Q4。减掉的那条 9M 只存在于 Q3 那份 10-Q 的实例里,而 companyfacts
+  // 永远没有分部数据、库里存的又是已差分的单季行 —— 不补这一步,每年 Q4 都算不出来。
+  describe('segmentCumulativeFill:10-K 只给全年时,用库里的单季行还原 9M', () => {
+    const stored = (periodEnd: string, value: number, filed: string) => ({
+      ticker: 'GOOGL',
+      concept: 'cloudRev',
+      periodEnd,
+      value,
+      tagUsed: 'SegmentCloudRevenue',
+      form: '10-Q',
+      accn: `a-${filed}`,
+      filed,
+      fiscalQ: '',
+    });
+    const Q1_Q3 = [
+      stored('2025-03-31', 12_260_000_000, '2025-04-25'),
+      stored('2025-06-30', 13_624_000_000, '2025-07-24'),
+      stored('2025-09-30', 15_157_000_000, '2025-10-30'),
+    ];
+    // 真实 10-K 实例摘录(accession 0001652044-26-000018),期末 2025-12-31 的全部收入事实。
+    // 用它而不是手搓 facts:这条路径一年只走一次,而它的**前提**(10-K 里 Cloud 只有全年)
+    // 恰恰得由真实实例来证 —— 手搓输入等于把前提写进测试,上游 durationContexts 抽不出来也照样绿。
+    const K10_XML = readFileSync(new URL('./__fixtures__/googl-20251231-10k-excerpt.xml', import.meta.url), 'utf8');
+    const K10_FILING = { accn: '0001652044-26-000018', form: '10-K', filed: '2026-02-05' };
+    const fy = (val: number) =>
+      facts({
+        SegmentCloudRevenue: [
+          { start: '2025-01-01', end: '2025-12-31', val, accn: 'k-1', form: '10-K', filed: '2026-02-05' },
+        ],
+      });
+
+    test('前提成立:10-K 实例里 Cloud 只有全年三条,既没有 9M 也没有单季 Q4', () => {
+      const parsed = parseXbrlInstance(K10_XML, K10_FILING, {}, CLOUD);
+      const rows = parsed.facts!['us-gaap']!.SegmentCloudRevenue!.units!.USD!;
+      const spans = [...new Set(rows.map((r) => `${r.start}~${r.end}`))].sort();
+
+      expect(spans).toEqual(['2023-01-01~2023-12-31', '2024-01-01~2024-12-31', '2025-01-01~2025-12-31']);
+      // 全年 58.705B 抽对了;而单独解析这份 10-K **一个 Q4 都出不来**(没有 9M 可减)——
+      // 这就是 segmentCumulativeFill 存在的全部理由。
+      expect(rows.find((r) => r.end === '2025-12-31')?.val).toBe(58_705_000_000);
+      expect(extractFundamentals('GOOGL', parsed).some((r) => r.concept === 'cloudRev')).toBe(false);
+    });
+
+    test('真实 10-K + 库里的 Q1~Q3 → Q4 17.664B(黄金值)', () => {
+      const k10 = parseXbrlInstance(K10_XML, K10_FILING, {}, CLOUD);
+      const rows = extractFundamentals('GOOGL', mergeFacts(k10, segmentCumulativeFill(k10, Q1_Q3)));
+
+      expect(rows.find((r) => r.periodEnd === '2025-12-31')?.value).toBe(17_664_000_000);
+    });
+
+    test('全年 58.705B − 还原出的 9M 41.041B = Q4 17.664B(黄金值)', () => {
+      const k10 = fy(58_705_000_000);
+      const rows = extractFundamentals('GOOGL', mergeFacts(k10, segmentCumulativeFill(k10, Q1_Q3)));
+
+      expect(rows.find((r) => r.periodEnd === '2025-12-31')?.value).toBe(17_664_000_000);
+    });
+
+    test('缺任一季就不合成 —— 宁可缺一格,不可拿两季当三季', () => {
+      const k10 = fy(58_705_000_000);
+      const holed = [Q1_Q3[0]!, Q1_Q3[2]!]; // 缺 Q2
+
+      expect(segmentCumulativeFill(k10, holed).facts!['us-gaap']!.SegmentCloudRevenue).toBeUndefined();
+      // 最后一季也缺 → 到年末差两个季度,同样不合成
+      expect(segmentCumulativeFill(k10, Q1_Q3.slice(0, 2)).facts!['us-gaap']!.SegmentCloudRevenue).toBeUndefined();
+    });
+
+    test('库里没有分部行(其余 11 家的常态)→ 什么都不合成', () => {
+      expect(segmentCumulativeFill(fy(58_705_000_000), []).facts!['us-gaap']).toEqual({});
+    });
+  });
+
+  test('capex/云收入是单季比单季;没有云收入的公司这条恒为空(不画假线)', () => {
+    const q = (concept: string, periodEnd: string, value: number) => ({
+      ticker: 'GOOGL',
+      concept,
+      periodEnd,
+      value,
+      tagUsed: 't',
+      form: '10-Q',
+      accn: 'a',
+      filed: '2026-07-23',
+      fiscalQ: '2026Q2',
+    });
+    const googl = [q('capex', '2026-06-30', 44_920_000_000), q('cloudRev', '2026-06-30', 24_768_000_000)];
+
+    expect(deriveSeries(googl).capexCloud).toEqual([
+      { date: '2026-06-30', value: 44_920_000_000 / 24_768_000_000, fiscalQ: '2026Q2' }, // ≈1.81
+    ]);
+    // 只有 capex 没有云收入(其余四家买方就是这个形态)→ combine 对不齐 → 空数组
+    expect(deriveSeries([googl[0]!]).capexCloud).toEqual([]);
   });
 });
 

@@ -289,7 +289,22 @@ export const SOURCE_KINDS = {
   twse: ['revM', 'revYoy'],
 } as const satisfies Record<ChainSource, readonly string[]>;
 
-export type SecKind = (typeof SOURCE_KINDS)['sec'][number];
+/** 分部科目(带 XBRL 维度、companyfacts 拿不到的那些)。见 SEGMENT_FACTS。 */
+export type SegmentConcept = 'cloudRev';
+
+/**
+ * 分部科目 → 它撑起哪一格。**只有报了该分部的公司才有这一格**,不能塞进 SEC_TABLE_KINDS ——
+ * 那会给其余每一家买方都挂上一格永远「暂不可用」的线。
+ *
+ * capexCloud = 单季 capex / 单季云收入。买方判据问的是「这一轮建的算力多久能变现」,
+ * FCF 只答了「烧了多少」;分母换成**唯一能直接卖算力的那块收入**才答得了另一半。
+ *
+ * 写成 `Record<SegmentConcept, …>` 而不是手列一个 kind 数组:加第二个分部科目时漏加格子
+ * **直接编译报错**。手列的话数据会正常落库、面板上却什么都不出现 —— 静默,正是要防的那类。
+ */
+const SEGMENT_KIND = { cloudRev: 'capexCloud' } as const satisfies Record<SegmentConcept, string>;
+
+export type SecKind = (typeof SOURCE_KINDS)['sec'][number] | (typeof SEGMENT_KIND)[SegmentConcept];
 export type TwseKind = (typeof SOURCE_KINDS)['twse'][number];
 export type FundKind = SecKind | TwseKind;
 
@@ -309,6 +324,9 @@ export const KIND_RENDER: Record<FundKind, 'line' | 'bar'> = {
   rev: 'line',
   revGrowth: 'bar',
   fcfq: 'bar',
+  // capex/云收入是**连续的比率**、读的就是斜率(图上那条从 1.0 抬到 1.8 的线)→ 折线,
+  // 因而必须裁断档(缺一季会把两端连成一条编出来的斜率,而斜率正是这一格的全部信息)。
+  capexCloud: 'line',
   revM: 'bar',
   revYoy: 'bar',
 };
@@ -320,8 +338,20 @@ export const trimsGaps = (kind: FundKind): boolean => KIND_RENDER[kind] === 'lin
  * 这家会有哪几个格子 = 它各个源的格子并集(去重,按 sources 顺序)。
  * 面板与路由都从这里派生,加源/加公司都不用改它们。
  */
+/** 分部科目 → 它那一格。面板/守卫都从这里取,**别在别处写死 kind 名** —— 写死的地方
+ *  加第二个分部科目时不会编译报错,只会生成两个同 key 的格子,新那格永不出现。 */
+export const segmentKindOf = (concept: SegmentConcept): SecKind => SEGMENT_KIND[concept];
+
+/** 这家的**分部格**(可能为空)。守卫要单独对待它们:见 jobs/secFundamentals 的断档告警。 */
+export const segmentKindsOf = (ticker: string): SecKind[] =>
+  segmentFactsOf(ticker).map((s) => segmentKindOf(s.concept));
+
 export const kindsOf = (ticker: string): readonly FundKind[] => [
-  ...new Set(sourcesOf(ticker).flatMap((s) => SOURCE_KINDS[s] as readonly FundKind[])),
+  ...new Set([
+    ...sourcesOf(ticker).flatMap((s) => SOURCE_KINDS[s] as readonly FundKind[]),
+    // 分部格不挂在源上而挂在**这家披露了哪几个分部科目**上:同一个源(sec)下只有 GOOGL 报云收入。
+    ...segmentFactsOf(ticker).map((s) => SEGMENT_KIND[s.concept] as FundKind),
+  ]),
 ];
 
 /** 因果链内的标的(面板文案列出这些,不列备查的那几家)。 */
@@ -389,6 +419,77 @@ export const EXTENSION_TAGS: Record<string, string[]> = {
 
 export const extensionTags = (ticker: string, concept: string): string[] =>
   EXTENSION_TAGS[`${ticker}.${concept}`] ?? [];
+
+/**
+ * **分部(segment)科目**:哪家报了分部收入,以及它在申报实例里的元素与维度成员。
+ *
+ * ⚠️ 这一档与 EXTENSION_TAGS 是**两种不同的病**,别混:
+ *  · extension 是「公司自定义概念,companyfacts 不聚合」→ 历史事实,补一次就好。
+ *  · segment 是「事实带 XBRL 维度,companyfacts **按设计**一律不收」→ 每一期都拿不到,
+ *    包括还没发生的那些。实测 GOOGL 的 companyfacts 里 us-gaap 只有合并口径的收入,
+ *    `goog` 这个 extension 命名空间整个不存在。
+ *
+ * 后果:有这张表的公司,日常 job **每份新申报都要多读一次实例**(GOOGL 实测 2.9MB,
+ * 一年 4 次),不是只在 companyfacts 落后时才读。历史要靠 jobs/secBackfillInstances 补。
+ *
+ * 成员名各家自取(Alphabet 是 `goog:GoogleCloudMember`),加一家之前必须先对着实例确认 ——
+ * 猜不中不会报错,只会静默少一条线。`members` 是数组正因为**公司会改成员名**:
+ * 同一个分部的历任名字全列上,少列一个就是静默丢掉那一段历史。
+ */
+type SegmentFactDef = {
+  element: string;
+  /** 维度轴。**必须一起比**:只比成员名的话,同一个成员挂在别的轴上(如按产品线拆的
+   *  `srt:ProductOrServiceAxis`)也会被当成分部总数收进来,值不对却不报错。 */
+  axis: string;
+  /** 该分部的历任维度成员名 —— **公司会改名**,少列一个就是静默丢掉那一段历史。 */
+  members: string[];
+  /**
+   * 这个分部**最早哪一期才有季度数**(期末,含)。缺口判定的下界 —— 没有它,回填工具永不收敛:
+   * 公司开始单列这个分部之前的每一期都会被算成缺口,于是每轮都去拉那几十份实例、对这一档
+   * 一行贡献都没有、下一轮原样再拉一遍,`stillMissing` 也永远不为零(永久黄灯淹真信号)。
+   * 值要**实测**:拉一份那个年份的实例 grep 成员名,别按公司什么时候「开始做云」推。
+   */
+  from: string;
+  label: string;
+};
+
+export type SegmentFact = SegmentFactDef & { concept: SegmentConcept };
+
+/**
+ * 按 concept 索引(而不是数组)—— **一个分部科目恰好一条配置**,由类型保证。
+ * 数组形状允许同 concept 挂多条,而下游是「一个 concept = 一格面板 = 一条序列」:
+ * 真挂两条就会生成两个同 key 的 pane、`stillMissing` 重复列同一项,而这些都不报错。
+ */
+export const SEGMENT_FACTS: Record<string, Partial<Record<SegmentConcept, SegmentFactDef>>> = {
+  GOOGL: {
+    cloudRev: {
+      element: 'us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax',
+      axis: 'us-gaap:StatementBusinessSegmentsAxis',
+      // 2022 年改过名:2022Q1 及更早是 `…SegmentMember`,之后是 `…Member`。元素与值的口径没变
+      // (2022Q1 两边都是 5.821B),只认新名字会丢掉 2022Q2 之前的全部历史 ——
+      // 而那正是这条线最有信息量的一段(比值还在 1.0 附近)。
+      members: ['goog:GoogleCloudMember', 'goog:GoogleCloudSegmentMember'],
+      // **分部轴上最早的季度就是 2020Q1**,这是量出来的,不是按「什么时候开始做云」推的:
+      //  · 2019 年那几份申报的实例里 Cloud 一条都没有 —— Alphabet 是 FY2020 10-K(2021-02 申报)
+      //    才把 Cloud 列成独立报告分部的。
+      //  · 那份 10-K 确实把 2018/2019 **追溯重列**到了分部轴上,但**只有全年**
+      //    (FY2018 5.838B / FY2019 8.918B),没有季度,也没有 9M —— 还原不出 2019 的四个季度。
+      //  · 2019 的季度只存在于 2020 年那几份 10-Q 的比较期,而那时 Cloud 挂的是
+      //    `srt:ProductOrServiceAxis`(产品线)+ `StatementBusinessSegmentsAxis=goog:GoogleInc.Member`
+      //    —— 两个维度、轴也不对(实测 2020Q1 那份:2019Q1 = 1.825B)。取它等于在序列头部混进
+      //    另一套分部口径,而且 2019Q4 得拿「分部轴的全年 − 产品线轴的 9M」相减,两条腿不同基础。
+      //    已评估并放弃(2026-08),要 4 个点不值这个口径代价。
+      from: '2020-03-31',
+      label: 'Google Cloud',
+    },
+  },
+};
+
+export const segmentFactsOf = (ticker: string): readonly SegmentFact[] =>
+  Object.entries(SEGMENT_FACTS[ticker] ?? {}).map(([concept, def]) => ({
+    ...(def as SegmentFactDef),
+    concept: concept as SegmentConcept,
+  }));
 
 /**
  * 各家 capex 的**已知口径**(analytics 的 CapexScope 值)。未列出的按 `ppe`。

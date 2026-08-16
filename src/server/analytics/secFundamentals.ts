@@ -17,11 +17,21 @@
  */
 
 import type { SecFundamentalRow } from '../storage/repository';
+import type { SegmentFact } from '../../shared/aiChain';
 import type { Point } from './regime';
 
 export type { Point };
 
-export type Concept = 'revenue' | 'cogs' | 'ocf' | 'capex';
+/** 合并口径的科目 —— companyfacts 里拿得到的那些(无 XBRL 维度)。 */
+export type CoreConcept = 'revenue' | 'cogs' | 'ocf' | 'capex';
+/**
+ * **分部科目**:事实带 XBRL 维度(如 `StatementBusinessSegmentsAxis=goog:GoogleCloudMember`)。
+ * companyfacts 按设计只聚合无维度的事实,所以这一档**只能逐份读申报实例**(见 shared/aiChain
+ * 的 SEGMENT_FACTS)。它不进 REQUIRED_CONCEPTS_BY_SIDE / CONCEPTS,缺了不报警 ——
+ * 只有报了分部的那家才有,对其余公司「没有」是正常状态而不是缺口。
+ */
+export type SegmentConcept = SegmentFact['concept'];
+export type Concept = CoreConcept | SegmentConcept;
 export type FactRow = {
   start?: string;
   end: string;
@@ -73,7 +83,7 @@ export type CompanyFacts = {
  * 顺带证伪一个担心:`…ContinuingOperations` 那档(MU/MSFT/ORCL 都命中过)会不会漏掉终止经营?
  * 三家共 34 个重叠期,**差额全为 0** —— 这几家在这些期间没有终止经营,两个 tag 是同一个数。
  */
-export const TAG_CHAINS: Record<Concept, string[]> = {
+export const TAG_CHAINS: Record<CoreConcept, string[]> = {
   revenue: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet'],
   cogs: ['CostOfRevenue', 'CostOfGoodsAndServicesSold'],
   // ocf 取**总额优先**。这一条试过反过来排,更糟,记下来免得再试一遍:
@@ -124,7 +134,16 @@ export const capexScopeOf = (tagUsed: string): CapexScope | undefined => CAPEX_S
 
 /** 四个科目缺一个就算不出 FCF(ocf−capex)或毛利率((revenue−cogs)/revenue)。job 的完整性守卫用。
  *  从 TAG_CHAINS 的键派生而非手写:加第 5 个科目时漏改会变成「静默不抽取」,正是要防的那类错。 */
-export const CONCEPTS = Object.keys(TAG_CHAINS) as Concept[];
+export const CONCEPTS = Object.keys(TAG_CHAINS) as CoreConcept[];
+
+/**
+ * 分部科目 → **合成 tag 名**。为什么不直接用 us-gaap 元素名:同一个元素
+ * (`RevenueFromContractWithCustomerExcludingAssessedTax`)既报合并收入也报分部收入,
+ * 共用一个 tag 名会把两个口径混进同一张期间表 —— 差分出来的「单季」就是两个基础相减。
+ * 前缀 `Segment` 保证撞不上任何真实 us-gaap tag。
+ */
+export const SEGMENT_TAG: Record<SegmentConcept, string> = { cloudRev: 'SegmentCloudRevenue' };
+export const SEGMENT_CONCEPTS = Object.keys(SEGMENT_TAG) as SegmentConcept[];
 
 /**
  * 定期报告。三类:
@@ -344,10 +363,14 @@ export function toQuarters(periods: Period[]): QuarterFact[] {
  * collectPeriods → toQuarters 流水线,同期去重仍按 filed 最大 —— companyfacts 后来补上时
  * 自然覆盖。它不是第二个真相源,是**同一个源的更早入口**。
  *
+ * **另一个入口是分部科目**(segments 参数):那一档 companyfacts 按设计永远没有,不是「落后」——
+ * 有 SEGMENT_FACTS 的公司每份新申报都走这里,见 jobs/secFundamentals。
+ *
  * 筛选规则(为什么够):
- *  · **只要无维度的 context**。实例里同一个 tag 会重复几十次(META 的收入 56 条),多数是分部/
+ *  · **默认只要无维度的 context**。实例里同一个 tag 会重复几十次(META 的收入 56 条),多数是分部/
  *    地区/股份类别拆分,全部带 `<segment>`。滤掉后剩的就是合并口径那几条(实测 META 的收入
  *    只剩本季 / 去年同季 / 本年累计 / 去年累计 4 条,与 companyfacts 给的一致)。
+ *    **例外**只有 segments 里点名的那几个维度成员,它们进各自的合成 tag,不与合并口径混。
  *  · **只要 duration context**(有 startDate/endDate)。资产负债表那些时点值是 instant,本来就不要。
  *  · 只要链里那几个 tag、单位 USD。
  *
@@ -362,17 +385,67 @@ const CONTEXT_RE = /<(?:[\w.-]+:)?context\s+id="([^"]+)"([\s\S]*?)<\/(?:[\w.-]+:
 const START_RE = /<(?:[\w.-]+:)?startDate>\s*([\d-]+)\s*</;
 const END_RE = /<(?:[\w.-]+:)?endDate>\s*([\d-]+)\s*</;
 
-/** context id → 期间。带 segment(分部/地区/股份类别)的与 instant 的一律不收。 */
-function durationContexts(xml: string): Map<string, { start: string; end: string }> {
-  const out = new Map<string, { start: string; end: string }>();
+// 维度声明连**轴**一起取:`dimension="…Axis"` + 元素内容 `…Member`。只取成员名不够 ——
+// 见 SegmentFact.axis(同一个成员挂在别的轴上是另一个数,收进来不报错)。
+// 属性值单双引号都合法(EDGAR 生成器用双引号,但别赌它)。两条正则的引号规则必须一致 ——
+// 一条认单引号另一条不认,失败关闭那道闸门就会把「没认出来」当成「没有维度」。
+const EXPLICIT_MEMBER_RE = /<(?:[\w.-]+:)?explicitMember[^>]*\sdimension=["']([^"']+)["'][^>]*>\s*([^<\s]+)\s*</g;
+
+// 「这个 context 一共声明了几个维度」的独立计数。**不能靠上面那条正则数** ——
+// 它只认 explicitMember,而 XBRL 还有 `typedMember`(typed 维度),属性也允许 `dimension = "x"`
+// 这种等号旁带空格的合法写法。数不出来的维度若被当成「没有维度」,「Cloud + 未知第二维」就会
+// 被当成纯 Cloud 收进来,正是验收要防的那件事,而且不报错。故两个数对不上就整条拒收(失败关闭)。
+const ANY_DIMENSION_RE = /\sdimension\s*=\s*["']/g;
+
+/** 维度标识 = `轴|成员`。两者必须成对比,别拆开。 */
+const dimKey = (axis: string, member: string) => `${axis}|${member}`;
+
+type Ctx = { start: string; end: string; member?: string };
+
+/**
+ * context id → 期间(+命中的分部成员)。instant 一律不收;带维度的默认不收,
+ * 只放行**维度恰好就是一个目标(轴, 成员)**的 —— 多一个维度就拒收(「Cloud × 美国」这种
+ * 二级拆分与「Cloud」同 tag 混进去,差分出来就是错的,而且不会报错)。
+ * 「数不出来的维度」也拒收,不当成「没有维度」(见 ANY_DIMENSION_RE)。
+ *
+ * **没有「中性维度」白名单**:实测三份实例(2026Q2 / 2025 10-K / 2022Q1),
+ * `srt:ConsolidationItemsAxis=us-gaap:OperatingSegmentsMember` 那批 context 只挂
+ * `OperatingIncomeLoss`(分部利润),**一条收入事实都没有** —— 放行它纯属白开一个没人走的口子。
+ * 哪天真要抽分部利润再按需放开,别提前留。
+ *
+ * `targets` 的键是 `轴|成员`,值是成员名(回传给调用方做事实分流)。
+ */
+function durationContexts(xml: string, targets: Map<string, string>): Map<string, Ctx> {
+  const out = new Map<string, Ctx>();
 
   for (const m of xml.matchAll(CONTEXT_RE)) {
     const [, id = '', body = ''] = m;
-    if (/<(?:[\w.-]+:)?segment[\s>]/.test(body)) continue;
 
     const start = START_RE.exec(body)?.[1];
     const end = END_RE.exec(body)?.[1];
-    if (start && end) out.set(id, { start, end });
+    if (!start || !end) continue;
+
+    // 维度计数放在 `<segment>` 判断**之前**:维度也可以声明在 `<scenario>` 里(XBRL 2.1 两处都合法)。
+    // 只在 segment 分支里数的话,scenario 维度的 context 会从上面「无维度」那条路进来、
+    // 被当成合并口径喂给四个核心科目 —— 恰恰是这道闸门要防的那件事。
+    const dims = [...body.matchAll(EXPLICIT_MEMBER_RE)].map(([, axis = '', member = '']) => dimKey(axis, member));
+    // 有维度没被上面那条正则认出来 → 这个 context 到底挂了什么不清楚,一律不收(见 ANY_DIMENSION_RE)。
+    if (dims.length !== [...body.matchAll(ANY_DIMENSION_RE)].length) continue;
+
+    if (dims.length === 0) {
+      // 一个 `dimension=` 都没数到 ≠ 没有分部限定:XBRL 2.1 的**非维度 segment**
+      // (`<segment><foo:Region>US</foo:Region></segment>`)整块不含 `dimension=`。
+      // 放它进来就是把某个地区/份额的数当成合并口径喂给四个核心科目 —— 改动前那条
+      // 「带 <segment> 一律 continue」正是挡住它的,别在放开分部时把它一起放开。
+      // (EDGAR Filer Manual 禁止非维度 segment,所以现存 12 家走不到这里;失败关闭不花钱。)
+      if (/<(?:[\w.-]+:)?(?:segment|scenario)[\s>]/.test(body)) continue;
+
+      out.set(id, { start, end });
+      continue;
+    }
+
+    const hit = dims.length === 1 ? targets.get(dims[0]!) : undefined;
+    if (hit) out.set(id, { start, end, member: hit });
   }
 
   return out;
@@ -400,17 +473,35 @@ function usdUnits(xml: string): Set<string> {
  */
 export type ExtensionMap = Record<string, string>;
 
-export function parseXbrlInstance(xml: string, meta: FilingMeta, extensions: ExtensionMap = {}): CompanyFacts {
-  const contexts = durationContexts(xml);
+export function parseXbrlInstance(
+  xml: string,
+  meta: FilingMeta,
+  extensions: ExtensionMap = {},
+  segments: readonly SegmentFact[] = [],
+): CompanyFacts {
+  const contexts = durationContexts(
+    xml,
+    new Map(segments.flatMap((s) => s.members.map((m) => [dimKey(s.axis, m), m] as const))),
+  );
   const usd = usdUnits(xml);
 
-  // [元素全名, 落到哪个 tag]。标准科目前缀恒为 us-gaap:,extension 的前缀各家自取。
-  const targets: Array<[string, string]> = [
-    ...CONCEPTS.flatMap((c) => TAG_CHAINS[c].map((t) => [`us-gaap:${t}`, t] as [string, string])),
-    ...Object.entries(extensions),
+  // [元素全名, 落到哪个 tag, 要求的维度成员]。标准科目前缀恒为 us-gaap:,extension 的前缀各家自取。
+  // member 参与匹配是关键:分部与合并口径**共用同一个 us-gaap 元素**,只有 context 分得开。
+  //
+  // ponytail: 元素名与维度成员都按**字面前缀**匹配,不解析 xmlns 映射 —— XML 里前缀只是 URI 的别名,
+  // 同一个 URI 换个合法前缀(`ugaap:` / `g:`)全部会失配。EDGAR 生成的 inline XBRL 十年没换过这几个
+  // 前缀,而真换了也不是静默的:合并科目会整批消失 → 水位守卫报「没贡献新一期的行」,分部科目
+  // 会被完整性守卫按 ④ 报出来(见 jobs/secFundamentals)。要根治得先建 前缀→URI 映射再按 URI 比,
+  // 那是把这个正则解析器换成真 XML 解析器的活;哪天真出现前缀漂移再做。
+  const targets: Array<{ element: string; tag: string; member?: string }> = [
+    ...CONCEPTS.flatMap((c) => TAG_CHAINS[c].map((t) => ({ element: `us-gaap:${t}`, tag: t }))),
+    ...Object.entries(extensions).map(([element, tag]) => ({ element, tag })),
+    ...segments.flatMap((s) =>
+      s.members.map((member) => ({ element: s.element, tag: SEGMENT_TAG[s.concept], member })),
+    ),
   ];
 
-  const entries = targets.flatMap(([element, tag]) => {
+  const entries = targets.flatMap(({ element, tag, member }) => {
     // 自闭合(nil)的事实不匹配 —— 正是要跳过的。
     const re = new RegExp(`<${element}\\s([^>]*)>\\s*(-?[\\d.]+)\\s*</${element}\\s*>`, 'g');
 
@@ -418,10 +509,10 @@ export function parseXbrlInstance(xml: string, meta: FilingMeta, extensions: Ext
       const ctx = /contextRef="([^"]+)"/.exec(attrs)?.[1];
       const unit = /unitRef="([^"]+)"/.exec(attrs)?.[1] ?? '';
       const period = ctx ? contexts.get(ctx) : undefined;
-      if (!period || !usd.has(unit)) return [];
+      if (!period || !usd.has(unit) || period.member !== member) return [];
 
       const val = Number(raw);
-      return Number.isFinite(val) ? [{ ...period, val, ...meta }] : [];
+      return Number.isFinite(val) ? [{ start: period.start, end: period.end, val, ...meta }] : [];
     });
 
     return rows.length ? [[tag, rows] as const] : [];
@@ -455,10 +546,68 @@ export function mergeFacts(...parts: CompanyFacts[]): CompanyFacts {
   return { facts: { 'us-gaap': merged } };
 }
 
-/** companyfacts → 四个科目的单季行(可直接落 sec_fundamentals)。 */
+/**
+ * 分部科目的**跨申报差分补丁** —— 没有它,每年 Q4 都算不出来。
+ *
+ * 病因(实测 GOOGL 2025 10-K,accession `0001652044-26-000018`):10-K 的实例里 Cloud 收入
+ * **只有 2023/2024/2025 三条全年**,既没有 9M 也没有单季 Q4。要还原 Q4 得拿全年减 9M,
+ * 而那条 9M 只存在于**上一份 10-Q 的实例**里 —— companyfacts 永远没有分部数据(它按设计
+ * 不聚合带维度的事实),库里存的又是**已差分的单季行**,两边都对不上这个累计期。
+ * 结果:日常 job 每年 Q4 静默缺一格,下一年 Q1 到了以后断档裁剪把之前的历史全砍掉。
+ *
+ * 修法是**把那条累计从库里的单季行加回来**(Q1+Q2+Q3),而不是再拉一份 3MB 实例:
+ *  · 日常 job 不用为一年一次的 10-K 多打两个请求;
+ *  · 回填不受批次边界影响 —— 靠实例互减的话,`--limit` 把 Q3 与 10-K 切在两批就永远补不出 Q4
+ *    (Q3 补上后它就不在缺口里了,下一轮不会再拉它)。
+ *
+ * **只在覆盖严丝合缝时才合成**:这些单季必须从该累计期的起点开始、逐季相接、且最后一季的期末
+ * 到累计期末恰好还差一个季度。少一季就不出这个点 —— 宁可缺格,不可拿三季当四季。
+ *
+ * 合成行的溯源信息取**最后那个单季**的(它才是这笔数真正的来路)。同期若另有真实累计行,
+ * 谁赢由 periodsForTag 按 filed 裁 —— 而**合成行的 filed 可能更大**:库里单季行的 filed 会被
+ * 后来财报的比较期抬高(实测 2025-06-30 的 cloudRev 带着 2026-07-23 的 filed,而同期真实 H1
+ * 累计行来自 2025-07-24 的 10-Q)。这不构成问题:两者都由同一批单季加出来,值必然一致,
+ * 而 filed 更大那条反映的是重述后的口径。别照着「真实的一定赢」去推理。
+ */
+export function segmentCumulativeFill(facts: CompanyFacts, stored: SecFundamentalRow[]): CompanyFacts {
+  const entries = SEGMENT_CONCEPTS.flatMap((concept) => {
+    const quarters = new Map(stored.filter((r) => r.concept === concept).map((r) => [r.periodEnd, r]));
+
+    const rows = collectPeriods(facts, [SEGMENT_TAG[concept]]).flatMap((p) => {
+      // 只补差分不出来的那种:累计期(全年 / 9M),单季行本来就直接可用。
+      if (isQuarterLength(durationDays(p.start, p.end))) return [];
+
+      const inside = [...quarters.keys()].filter((e) => e > p.start && e < p.end).sort();
+      const last = inside.at(-1);
+      if (!last || !isQuarterLength(durationDays(last, p.end))) return [];
+
+      const contiguous = inside.every((e, i) => isQuarterLength(durationDays(i ? inside[i - 1]! : p.start, e)));
+      if (!contiguous) return [];
+
+      const src = quarters.get(last)!;
+      const val = inside.reduce((s, e) => s + quarters.get(e)!.value, 0);
+
+      return [{ start: p.start, end: last, val, accn: src.accn, form: src.form, filed: src.filed }];
+    });
+
+    return rows.length ? [[SEGMENT_TAG[concept], { units: { USD: rows } }] as const] : [];
+  });
+
+  return { facts: { 'us-gaap': Object.fromEntries(entries) } };
+}
+
+/**
+ * facts → 单季行(可直接落 sec_fundamentals)。
+ * 分部科目一并抽:它的合成 tag 只有实例解析会产出,companyfacts 里恒为空 → 对其余公司是 no-op。
+ */
 export function extractFundamentals(ticker: string, facts: CompanyFacts): SecFundamentalRow[] {
-  return CONCEPTS.flatMap((concept) =>
-    toQuarters(collectPeriods(facts, TAG_CHAINS[concept])).map((q) => ({ ticker, concept, ...q })),
+  const chains: Array<[Concept, string[]]> = [
+    ...CONCEPTS.map((c) => [c, TAG_CHAINS[c]] as [Concept, string[]]),
+    ...SEGMENT_CONCEPTS.map((c) => [c, [SEGMENT_TAG[c]]] as [Concept, string[]]),
+  ];
+
+  return chains.flatMap(([concept, tags]) =>
+    toQuarters(collectPeriods(facts, tags)).map((q) => ({ ticker, concept, ...q })),
   );
 }
 
@@ -507,6 +656,7 @@ export type DerivedSeries = {
   fcfQ: QuarterPoint[];
   revTtm: QuarterPoint[];
   revGrowth: QuarterPoint[];
+  capexCloud: QuarterPoint[];
 };
 
 /**
@@ -568,11 +718,16 @@ export function deriveSeries(rows: SecFundamentalRow[]): DerivedSeries {
     // 单季 FCF:转折**当季**就能看见。TTM 看不出来 —— 相邻 TTM 相减是「同比同季变化」
     // (中间三项抵消,剩 Q(t)−Q(t−4)),不是当季值。
     fcfQ: combine(quarterly('ocf'), quarterly('capex'), (o, c) => (o - c) / MILLION),
+    // capex / 云收入,**单季比单季**(两条腿都不年化、不滚动)。无量纲,别除 MILLION。
+    // 只有报了分部收入的那家算得出(见 shared/aiChain 的 SEGMENT_FACTS),其余公司 cloudRev 为空
+    // → combine 直接返回空数组,不会写出一条假线。
+    // 分母为 0 不用防:dropSuspectZero 已经把恰好为 0 的单季行当缺数据丢了。
+    capexCloud: combine(quarterly('capex'), quarterly('cloudRev'), (c, r) => c / r),
   };
 }
 
 /** TTM 三条用 `_TTM` 后缀;单季那条是 `_FCF_Q`(不是 TTM,别混)。 */
-export type SeriesKind = 'GM' | 'CAPEX' | 'FCF' | 'FCFQ' | 'REV' | 'REVG';
+export type SeriesKind = 'GM' | 'CAPEX' | 'FCF' | 'FCFQ' | 'REV' | 'REVG' | 'CAPEXCLOUD';
 
 /** TTM 那几条用 `_TTM` 后缀;单季 FCF 是 `_FCF_Q`、单季营收同比是 `_REV_YOY`(都不是 TTM,别混)。 */
 const SERIES_SUFFIX: Record<SeriesKind, string> = {
@@ -582,6 +737,8 @@ const SERIES_SUFFIX: Record<SeriesKind, string> = {
   FCFQ: 'FCF_Q',
   REV: 'REV_TTM',
   REVG: 'REV_YOY',
+  // `_Q` 后缀是「单季」的既定记号(同 FCF_Q):这一格分子分母都是单季,不是 TTM。
+  CAPEXCLOUD: 'CAPEX_CLOUD_Q',
 };
 
 export const seriesId = (ticker: string, kind: SeriesKind): string => `SEC_${ticker}_${SERIES_SUFFIX[kind]}`;

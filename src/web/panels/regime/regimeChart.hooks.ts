@@ -12,6 +12,8 @@ import {
   chainTickers,
   isAggregateMember,
   knownGap,
+  segmentFactsOf,
+  segmentKindOf,
   fundKey,
   sideOf,
   sourcesOf,
@@ -850,6 +852,7 @@ const PANE_CONCEPTS: Record<FundKind, string[]> = {
   fcfq: ['ocf', 'capex'],
   rev: ['revenue'],
   revGrowth: ['revenue'],
+  capexCloud: ['capex', 'cloudRev'],
   revM: [],
   revYoy: [],
 };
@@ -859,13 +862,15 @@ const PANE_CONCEPTS: Record<FundKind, string[]> = {
  * 裁不裁断档、这里据它决定画法 —— 两处分别写一张表就会 desync,要么白裁要么留一条假斜率。
  * 这里只补 KIND_RENDER 表达不了的那点视觉细节:哪条折线要零基线。
  */
-const BASELINE_ZERO: Partial<Record<FundKind, PaneSpec['render']>> = {
+const BASELINE: Partial<Record<FundKind, PaneSpec['render']>> = {
   fcf: { kind: 'line', baseline: 0 }, // TTM 滚动量 → 折线,但零轴是判据 → 加零基线
+  // 比率的判据线是 1.0(当季 capex 恰好等于当季云收入),不是 0 —— 零轴对它没有含义。
+  capexCloud: { kind: 'line', baseline: 1 },
 };
 
 /** 柱 ⇒ 符号柱(正绿负红、零基线);折线 ⇒ 默认折线,除非上表指定了基线。 */
 const renderOf = (kind: FundKind): PaneSpec['render'] | undefined =>
-  BASELINE_ZERO[kind] ?? (KIND_RENDER[kind] === 'bar' ? { kind: 'signed' } : undefined);
+  BASELINE[kind] ?? (KIND_RENDER[kind] === 'bar' ? { kind: 'signed' } : undefined);
 
 const paneOf = (
   ticker: string,
@@ -1068,6 +1073,33 @@ function companyPanes(ticker: string): PaneSpec[] {
       ...(seller ? [] : [SEC_LEASE_CAVEAT, '']),
       SEC_TRIM_NOTE,
     ]),
+    // 分部格只给真披露了分部收入的那家(见 shared/aiChain 的 SEGMENT_FACTS)。
+    // 不用 sideOf/hasSource 判:披露不披露是**这一家的事**,与它属于哪一侧、走哪个源无关。
+    ...segmentFactsOf(ticker).map((seg) =>
+      paneOf(
+        ticker,
+        segmentKindOf(seg.concept),
+        `capex/${seg.label}`,
+        `${ticker} 单季 capex / ${seg.label} 收入(倍)`,
+        '#2dd4bf',
+        [
+          `定义:该季资本开支 ÷ 该季 ${seg.label} 分部收入。两条腿**都是单季**,不是 TTM;无量纲。` + SEC_CAVEAT + srcNote,
+          '',
+          '读法:1.0 是参考线(当季 capex 恰好等于当季云收入)。这一格问的不是「赚不赚钱」,' +
+            '而是**建设强度相对唯一能直接卖算力的那块收入有多大**。看斜率不看单点:' +
+            '一路抬升 = capex 的增速持续跑赢云收入的增速,即产能在赌未来的需求而不是在跟当期的需求。',
+          '',
+          `⚠️ 分子分母**不同口径,不是一门生意的投入产出比**:分子是${ticker} 全公司 capex(还建了搜索/` +
+            'YouTube/自研模型训练的算力),分母只有云这一个分部。所以它天然偏高,绝对值不能与别家的' +
+            '「capex/云收入」横比,只能自己和自己比时间序列。',
+          '',
+          '⚠️ 分部口径由公司自己划,重划过就不可比(Alphabet 历史上调整过分部构成)。' +
+            '线上出现无法用业务解释的台阶时,先去核那一期的分部附注,别当成信号读。',
+          '',
+          SEC_TRIM_NOTE,
+        ],
+      ),
+    ),
   ];
 }
 

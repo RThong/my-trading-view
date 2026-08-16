@@ -204,6 +204,22 @@ test('dimPanes:TSM 八格 = sec6k 六格 + twse 两格,gm 不重复', () => {
   ]);
 });
 
+// 分部格挂在「这家披露不披露」上,不挂在源上(同一个 sec 源下只有 GOOGL 报云收入)。
+// 挂错会给其余四家买方各加一条永远空的线,而空线不报错。
+test('dimPanes:capex/云收入只出现在 GOOGL,同源的 MSFT 没有', () => {
+  const googl = dimPanes('fundamentals:GOOGL');
+  const cloud = googl.filter((p) => p.key === 'fund:GOOGL:capexCloud');
+
+  expect(cloud).toHaveLength(1); // 成员名改过 → SEGMENT_FACTS 里两条,面板上仍只有一格
+  expect(cloud[0]!.label).toBe('capex/Google Cloud');
+  // 比率的判据线是 1.0(当季 capex 恰好等于当季云收入),不是 0。
+  expect(cloud[0]!.render).toEqual({ kind: 'line', baseline: 1 });
+  // 分子分母口径不同 —— 这条警告不在,读的人会当成「云业务的投入产出比」。
+  expect(cloud[0]!.desc).toContain('不是一门生意的投入产出比');
+
+  expect(dimPanes('fundamentals:MSFT').some((p) => /capexCloud/.test(p.key))).toBe(false);
+});
+
 test('dimPanes:TSM 的金额格用新台币,别家用美元', () => {
   const money = (dim: string, key: string) => dimPanes(dim as never).find((p) => p.key === key)!;
 

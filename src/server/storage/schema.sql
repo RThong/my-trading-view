@@ -79,7 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_opt_chain_date ON option_chain_raw(snapshot_date)
 CREATE TABLE IF NOT EXISTS sec_fundamentals (
     ticker       TEXT NOT NULL,
     period_end   TEXT NOT NULL,      -- YYYY-MM-DD,财报期末
-    concept      TEXT NOT NULL,      -- revenue | cogs | ocf | capex
+    concept      TEXT NOT NULL,      -- revenue | cogs | ocf | capex | cloudRev(分部,只有申报实例里有)
     -- ⚠️ 单位是**基础货币单位**(元 / 新台币元 / 欧元),不是百万 —— 与派生出去的 market_series
     -- 差 1e6(deriveSeries 除以 1e6 对齐其它序列)。这里存原值是为了能逐位对着报表原文核。
     -- 币种由 shared/aiChain 的 currencyOf 决定,**这张表里不带币种列**:TSM 是新台币、
