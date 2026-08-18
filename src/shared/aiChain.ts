@@ -460,6 +460,13 @@ type SegmentFactDef = {
   label: string;
 };
 
+/**
+ * ASC 606 之后的收入元素。三家分部收入都用它 —— 提成常量而不是各抄一遍,是因为**抄错不报错**:
+ * 元素名错一个字符,那家就抽 0 行、面板空一格,和「这家还没开始披露」长得一模一样。
+ * 哪天有公司用别的元素,直接在那条配置里写字面量,不必迁就这个常量。
+ */
+const REV_606 = 'us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax';
+
 export type SegmentFact = SegmentFactDef & { concept: SegmentConcept };
 
 /**
@@ -470,7 +477,7 @@ export type SegmentFact = SegmentFactDef & { concept: SegmentConcept };
 export const SEGMENT_FACTS: Record<string, Partial<Record<SegmentConcept, SegmentFactDef>>> = {
   GOOGL: {
     cloudRev: {
-      element: 'us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax',
+      element: REV_606,
       axis: 'us-gaap:StatementBusinessSegmentsAxis',
       // 2022 年改过名:2022Q1 及更早是 `…SegmentMember`,之后是 `…Member`。元素与值的口径没变
       // (2022Q1 两边都是 5.821B),只认新名字会丢掉 2022Q2 之前的全部历史 ——
@@ -492,7 +499,7 @@ export const SEGMENT_FACTS: Record<string, Partial<Record<SegmentConcept, Segmen
   },
   AMZN: {
     cloudRev: {
-      element: 'us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax',
+      element: REV_606,
       axis: 'us-gaap:StatementBusinessSegmentsAxis',
       // 实例里**同时**有 `amzn:AmazonWebServicesMember`,但它挂在 `srt:ProductOrServiceAxis`
       // 上(按产品线拆的那套)。只比成员名会把两套口径混进来 —— 这就是 axis 必须一起比的原因。
@@ -507,7 +514,7 @@ export const SEGMENT_FACTS: Record<string, Partial<Record<SegmentConcept, Segmen
   },
   ORCL: {
     cloudRev: {
-      element: 'us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax',
+      element: REV_606,
       // ⚠️ 和另外两家**不是一个粒度**:GOOGL/AMZN 取的是报告分部(分部轴),Oracle 这条是
       // 报告分部**内部的一条产品线**(产品线轴),不含 SaaS 与 license support。
       // 因而 capexCloud 这一格的分母口径比另外两家窄得多(分子仍是全公司 capex)——
