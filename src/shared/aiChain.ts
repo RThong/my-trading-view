@@ -448,6 +448,13 @@ type SegmentFactDef = {
    * 公司开始单列这个分部之前的每一期都会被算成缺口,于是每轮都去拉那几十份实例、对这一档
    * 一行贡献都没有、下一轮原样再拉一遍,`stillMissing` 也永远不为零(永久黄灯淹真信号)。
    * 值要**实测**:拉一份那个年份的实例 grep 成员名,别按公司什么时候「开始做云」推。
+   *
+   * ⚠️ 判据是「**这一期自己那份申报**能不能读出这个成员」,不是「这一期的数字能不能拿到」。
+   * 两者不等价:比较期让更早的期末也能落库(AMZN 2019Q2 那份带出 2018Q2),但 secBackfillInstances
+   * 的缺口→申报映射是**按期末找同期末那份**(见该文件 `wanted`)。把 `from` 设到只有比较期
+   * 够得着的那一期,就会去拉它自己那份 —— 而那份要么没有 inline 实例(2019-06-15 之前)、
+   * 要么还没开始披露这个成员 → 每轮 `failed` 一条 + `stillMissing` 恒不为零,永不收敛。
+   * 比较期带出来的更早的行照样写库、面板照样能用,只是**不进缺口判定**,这正是想要的。
    */
   from: string;
   label: string;
@@ -481,6 +488,40 @@ export const SEGMENT_FACTS: Record<string, Partial<Record<SegmentConcept, Segmen
       //    已评估并放弃(2026-08),要 4 个点不值这个口径代价。
       from: '2020-03-31',
       label: 'Google Cloud',
+    },
+  },
+  AMZN: {
+    cloudRev: {
+      element: 'us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax',
+      axis: 'us-gaap:StatementBusinessSegmentsAxis',
+      // 实例里**同时**有 `amzn:AmazonWebServicesMember`,但它挂在 `srt:ProductOrServiceAxis`
+      // 上(按产品线拆的那套)。只比成员名会把两套口径混进来 —— 这就是 axis 必须一起比的原因。
+      // 分部轴上的成员名 2019Q2~2026Q2 实测没改过,故只有一个名字。
+      members: ['amzn:AmazonWebServicesSegmentMember'],
+      // **2019Q2 是最早那份自己带 inline 实例的申报**(inline XBRL 对大型加速申报人是
+      // 2019-06-15 及之后的财季才强制;实测 2019Q1 那份目录里没有 `_htm.xml`,filingInstance 会抛)。
+      // 2018Q2(6.105B)从 2019Q2 的比较期照样落库能用,只是不进缺口判定 —— 见上面 `from` 的告警。
+      from: '2019-06-30',
+      label: 'AWS',
+    },
+  },
+  ORCL: {
+    cloudRev: {
+      element: 'us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax',
+      // ⚠️ 和另外两家**不是一个粒度**:GOOGL/AMZN 取的是报告分部(分部轴),Oracle 这条是
+      // 报告分部**内部的一条产品线**(产品线轴),不含 SaaS 与 license support。
+      // 因而 capexCloud 这一格的分母口径比另外两家窄得多(分子仍是全公司 capex)——
+      // 单看这家的斜率有意义,**跨公司比这个比值没有意义**,跨公司只比同比。
+      axis: 'srt:ProductOrServiceAxis',
+      members: ['orcl:CloudInfrastructureMember'],
+      // FY26Q1(2025-08-31)那份才开始把 OCI 放上产品线轴 —— 实测 FY25Q1 的 10-Q 与 FY25 的
+      // 10-K 里这个成员一行都没有。FY25 各季从 FY26 各季的比较期落库,不进缺口判定。
+      // 所以这条线**只有四个季度的受管历史**(FY26 四季),会随时间长出来。
+      //
+      // FY26 的 10-K 只给全年(18.101B,364 天),Q4 靠「全年 − FY26Q3 的 9M 累计 12.314B」
+      // 差出来 —— 走的是 segmentCumulativeFill 那条路,与 GOOGL 同。
+      from: '2025-08-31',
+      label: 'OCI IaaS',
     },
   },
 };

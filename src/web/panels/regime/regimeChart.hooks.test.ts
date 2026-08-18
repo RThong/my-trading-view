@@ -204,20 +204,30 @@ test('dimPanes:TSM 八格 = sec6k 六格 + twse 两格,gm 不重复', () => {
   ]);
 });
 
-// 分部格挂在「这家披露不披露」上,不挂在源上(同一个 sec 源下只有 GOOGL 报云收入)。
-// 挂错会给其余四家买方各加一条永远空的线,而空线不报错。
-test('dimPanes:capex/云收入只出现在 GOOGL,同源的 MSFT 没有', () => {
-  const googl = dimPanes('fundamentals:GOOGL');
-  const cloud = googl.filter((p) => p.key === 'fund:GOOGL:capexCloud');
+// 分部格挂在「这家披露不披露」上,不挂在源上 —— 同一个 sec 源下,五家买方里只有三家报得出
+// 云收入(MSFT 只报 Intelligent Cloud 合并口径、META 根本不对外卖云)。挂错会给另外两家
+// 各加一条永远空的线,而空线不报错。
+test('dimPanes:capex/云收入只出现在报了分部的三家,同源的 MSFT/META 没有', () => {
+  // 标签取自各自 SEGMENT_FACTS 的 label —— 写死成「Google Cloud」的话,新加的两家会
+  // 顶着别家的分部名出图,而图上看不出错。
+  const cloudPane = (ticker: string) => {
+    const panes = dimPanes(`fundamentals:${ticker}`).filter((p) => p.key === `fund:${ticker}:capexCloud`);
+    expect(panes).toHaveLength(1); // GOOGL 成员名改过 → SEGMENT_FACTS 里两个 member,面板上仍只有一格
+    return panes[0]!;
+  };
 
-  expect(cloud).toHaveLength(1); // 成员名改过 → SEGMENT_FACTS 里两条,面板上仍只有一格
-  expect(cloud[0]!.label).toBe('capex/Google Cloud');
+  expect(cloudPane('GOOGL').label).toBe('capex/Google Cloud');
+  expect(cloudPane('AMZN').label).toBe('capex/AWS');
+  expect(cloudPane('ORCL').label).toBe('capex/OCI IaaS');
+
   // 比率的判据线是 1.0(当季 capex 恰好等于当季云收入),不是 0。
-  expect(cloud[0]!.render).toEqual({ kind: 'line', baseline: 1 });
+  expect(cloudPane('AMZN').render).toEqual({ kind: 'line', baseline: 1 });
   // 分子分母口径不同 —— 这条警告不在,读的人会当成「云业务的投入产出比」。
-  expect(cloud[0]!.desc).toContain('不是一门生意的投入产出比');
+  expect(cloudPane('AMZN').desc).toContain('不是一门生意的投入产出比');
 
-  expect(dimPanes('fundamentals:MSFT').some((p) => /capexCloud/.test(p.key))).toBe(false);
+  for (const t of ['MSFT', 'META']) {
+    expect(dimPanes(`fundamentals:${t}`).some((p) => /capexCloud/.test(p.key))).toBe(false);
+  }
 });
 
 test('dimPanes:TSM 的金额格用新台币,别家用美元', () => {
