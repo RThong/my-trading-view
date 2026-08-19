@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import {
   createChart,
   CandlestickSeries,
+  HistogramSeries,
   LineSeries,
   PriceScaleMode,
   type IChartApi,
@@ -11,7 +12,7 @@ import {
   type ISeriesApi,
   type Time,
 } from 'lightweight-charts';
-import { aggregate, aggregateBars, CHART_OPTIONS, type Bar, type LinePoint } from '../../lib/chart';
+import { aggregate, aggregateBars, periodKey, CHART_OPTIONS, type Bar, type LinePoint } from '../../lib/chart';
 import type { YPoint } from './yieldCurve.hooks';
 import type { Interval } from '../../hooks/interval';
 import { useStable } from '../../hooks/useStable';
@@ -48,17 +49,29 @@ export function tenorSeriesData(rows: YPoint[] | undefined, interval: Interval):
  * 缩到 2020 年中,等于为两根周末柱子丢掉两年半的曲线历史(1W 及以上无此问题,聚合后根数够少)。
  * 代价:周末行情不单独成柱。这一格是**参照物**(利率在动时风险资产在哪),不是拿来交易 BTC 的。
  */
+/** 只留周一~周五。**spotBars 与 spotVolume 必须共用这一个** —— 抄两份的话,
+ *  哪天只改了一边,1W 及以上的量会把周末行加进周一桶而蜡烛不含它:总量静默对不上,不报错。 */
+const weekdayOnly = <T extends { date: string }>(rows: T[]): T[] =>
+  rows.filter((b) => {
+    const dow = new Date(`${b.date}T00:00:00Z`).getUTCDay();
+    return dow !== 0 && dow !== 6;
+  });
+
 export function spotBars(
   rows:
-    | Array<{ date: string; open: number | null; high: number | null; low: number | null; close: number }>
+    | Array<{
+        date: string;
+        open: number | null;
+        high: number | null;
+        low: number | null;
+        close: number;
+        volume?: number | null;
+      }>
     | undefined,
   interval: Interval,
 ): Bar[] {
   if (!rows?.length) return [];
-  const weekday = rows.filter((b) => {
-    const dow = new Date(`${b.date}T00:00:00Z`).getUTCDay();
-    return dow !== 0 && dow !== 6;
-  });
+  const weekday = weekdayOnly(rows);
   return aggregateBars(
     weekday.map((b) => ({
       time: b.date,
@@ -71,6 +84,39 @@ export function spotBars(
   );
 }
 
+/**
+ * 现货成交量,**按与蜡烛完全相同的周期键聚合并逐根对齐**。
+ *
+ * 必须和 spotBars 走同一套周期键:周/月视图下一根蜡烛要配那一整周/整月的**合计量**,
+ * 配成最后一天的量,同一根 K 线上量和价就在讲两件事。
+ * 做法是复用 aggregateBars 用的那个 `periodKey`(周期内所有日期 → 同一个规范日期),
+ * 分组累加后按蜡烛逐根取。**不要**自己按「最后一根的日期」推边界 —— 那不是它的语义。
+ *
+ * 源没给量(走 price_eod 的标的整个不带这个字段)→ 返回空数组,调用方据此不建这条线。
+ */
+export function spotVolume(
+  rows: Array<{ date: string; close: number; volume?: number | null }> | undefined,
+  candles: Bar[],
+  interval: Interval,
+): Array<{ time: string; value: number }> {
+  if (!rows?.length || !candles.length) return [];
+  if (!rows.some((r) => r.volume != null)) return [];
+
+  const weekday = weekdayOnly(rows);
+
+  // 用**和 aggregateBars 同一个 periodKey** 分组 —— 它把周期内所有日期映射到同一个规范日期
+  // (周一 / 月初),聚合后蜡烛的 time 就是这个键。自己按"最后一根的日期"推边界会错位:
+  // 那不是 aggregateBars 的语义(实测第一周只归到 1 根)。
+  const sums = new Map<string, number>();
+  for (const r of weekday) {
+    const key = periodKey(r.date, interval);
+    sums.set(key, (sums.get(key) ?? 0) + (r.volume ?? 0));
+  }
+
+  // 按蜡烛逐根取,缺的补 0 —— 长度与顺序必须与蜡烛完全一致,否则量价错位。
+  return candles.map((c) => ({ time: c.time, value: sums.get(c.time) ?? 0 }));
+}
+
 /** 默认勾选:取表内该 source 的期限并过滤到真实可用;无表则回退前 4 个可用期限。 */
 export function pickDefaultTenors(source: string, available: string[]): string[] {
   const table = DEFAULT_TENORS[source];
@@ -78,13 +124,22 @@ export function pickDefaultTenors(source: string, available: string[]): string[]
   return table.filter((t) => available.includes(t));
 }
 
+/** 成交量柱色:涨绿跌红,与蜡烛同色系但压低透明度 —— 它是背景信息,不该抢价格的视觉权重。 */
+const VOL_UP = 'rgba(34,197,94,0.5)';
+const VOL_DOWN = 'rgba(239,68,68,0.5)';
+
 // ── 图表实例:单图,每个选中期限一条线 ────────────────────────────
 export type TenorSpec = { tenor: string; color: string; data: LinePoint[] };
 
 export type SpreadSpec = { label: string; color: string; data: LinePoint[] };
 
-/** 现货参照 pane(蜡烛)。给利率那几格当"曲线在动的时候,风险资产在干什么"的对照物。 */
-export type SpotSpec = { label: string; data: Bar[] };
+/** 现货参照 pane(蜡烛 + 可选成交量)。给利率那几格当"曲线在动的时候,风险资产在干什么"的对照物。 */
+export type SpotSpec = {
+  label: string;
+  data: Bar[];
+  /** 与 data 逐根对齐的成交量;空数组 = 该源没有量(走 price_eod 的标的都没有),不画这条线。 */
+  volume?: Array<{ time: string; value: number }>;
+};
 
 /** 建图挂 containerRef;期限线 → pane 0;spread 非 null → 一个 pane 画利差线 + 0 基线;
  *  spot 非 null → 再一个 pane 画现货蜡烛(共享时间轴、联动)。
@@ -107,6 +162,7 @@ export function useTenorChart(
   const spreadRef = useRef<ISeriesApi<'Line'> | null>(null);
   const spreadPaneRef = useRef<IPaneApi<Time> | null>(null);
   const spotRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const spotVolRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const spotPaneRef = useRef<IPaneApi<Time> | null>(null);
   const showSpread = spread !== null;
   const showSpot = spot !== null;
@@ -164,6 +220,8 @@ export function useTenorChart(
 
     return () => {
       const alive = chartRef.current;
+      if (alive && spotVolRef.current) alive.removeSeries(spotVolRef.current);
+      spotVolRef.current = null;
       if (alive && spotRef.current) alive.removeSeries(spotRef.current);
       spotRef.current = null;
       if (alive && spotPaneRef.current) alive.removePane(spotPaneRef.current.paneIndex());
@@ -239,6 +297,36 @@ export function useTenorChart(
       pane.priceScale('right').applyOptions({ mode: PriceScaleMode.Logarithmic });
     }
     spotRef.current?.setData(spot.data);
+
+    // 成交量:**同 pane 的独立 overlay 轴**,压在底部四分之一,不另开 pane。
+    // 不共用右轴:量的量级(千万股)比价格(千日元)大好几个数量级,共轴会把蜡烛压成一条线;
+    // 而那条右轴还是对数的,量一进去更没法看。overlay 轴自己缩放,互不干扰。
+    // 不另开 pane 是因为量和价必须并排读 —— 隔一个 pane 就得来回扫视。
+    const vol = spot.volume ?? [];
+    if (vol.length && !spotVolRef.current) {
+      spotVolRef.current = chart.addSeries(
+        HistogramSeries,
+        // priceLineVisible / lastValueVisible 必须关:overlay 直方图开着会在现货 pane 底部
+        // 拉一条横贯全宽的价格线、右侧再挂一个末值标签(库里默认 true)。
+        // 同 paneChart.hooks 里 histogram 分支的既有约定。
+        {
+          priceScaleId: 'spot-vol',
+          priceFormat: { type: 'volume' },
+          title: '',
+          priceLineVisible: false,
+          lastValueVisible: false,
+        },
+        pane.paneIndex(),
+      );
+      pane.priceScale('spot-vol').applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+    }
+    // 柱色跟随该周期涨跌,与蜡烛同口径(收 ≥ 开为绿)。逐根对齐由 spotVolume 保证。
+    spotVolRef.current?.setData(
+      vol.map((v, i) => {
+        const c = spot.data[i];
+        return { time: v.time as Time, value: v.value, color: !c || c.close >= c.open ? VOL_UP : VOL_DOWN };
+      }),
+    );
 
     // ⚠️ **只在建线那一次** fitContent:现货是异步到的,它一来就多一个 pane、主图变矮,
     // 而 bar spacing 不变 → 可见区间被压掉一大截(实测默认视窗从 2018 起缩到 2021 起)。

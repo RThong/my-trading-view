@@ -33,7 +33,9 @@ export const CHART_OPTIONS = {
   autoSize: true,
 };
 
-function periodKey(dateStr: string, interval: Interval): string {
+/** 周期键:同一周期内所有日期映射到同一个规范日期(周一 / 月初 / 季初 / 年初)。
+ *  **导出是刻意的**:成交量必须和 OHLC 用同一个键分组,各写一份必然漂。 */
+export function periodKey(dateStr: string, interval: Interval): string {
   if (interval === '1D') return dateStr;
 
   const d = new Date(dateStr + 'T00:00:00Z');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { tenorSeriesData, pickDefaultTenors, DEFAULT_TENORS } from './tenorHistory.hooks';
+import { tenorSeriesData, pickDefaultTenors, DEFAULT_TENORS, spotBars, spotVolume } from './tenorHistory.hooks';
 
 const rows = [
   { date: '2026-06-01', value: 4.0 },
@@ -41,4 +41,32 @@ describe('pickDefaultTenors', () => {
   });
   it('bei 默认勾选 5Y/10Y/30Y 锚点', () =>
     expect(pickDefaultTenors('bei', ['5Y', '7Y', '10Y', '20Y', '30Y'])).toEqual(['5Y', '10Y', '30Y']));
+});
+
+// 成交量必须和蜡烛**逐根对齐且总量守恒** —— 错位或漏加不会报错,只会让某根 K 线的量价讲两件事。
+it('spotVolume:按蜡烛周期聚合,逐根对齐且总量守恒', () => {
+  const rows = [
+    { date: '2026-08-03', open: 10, high: 10, low: 10, close: 10, volume: 1 }, // 周一
+    { date: '2026-08-04', open: 11, high: 11, low: 11, close: 11, volume: 2 },
+    { date: '2026-08-07', open: 12, high: 12, low: 12, close: 12, volume: 4 }, // 周五
+    { date: '2026-08-10', open: 13, high: 13, low: 13, close: 13, volume: 8 }, // 次周一
+  ];
+  const candles = spotBars(rows, '1W');
+  const vol = spotVolume(rows, candles, '1W');
+
+  expect(vol).toHaveLength(candles.length); // 逐根对齐
+  expect(vol.map((v) => v.time)).toEqual(candles.map((c) => c.time)); // 时间键一致
+  expect(vol.reduce((s, v) => s + v.value, 0)).toBe(15); // 1+2+4+8,守恒
+  expect(vol[0]!.value).toBe(7); // 第一周 1+2+4
+});
+
+it('spotVolume:源没有量 → 空数组(调用方据此不建这条线)', () => {
+  const rows = [
+    { date: '2026-08-03', open: 10, high: 10, low: 10, close: 10 },
+    { date: '2026-08-04', open: 11, high: 11, low: 11, close: 11 },
+  ];
+  expect(spotVolume(rows, spotBars(rows, '1D'), '1D')).toEqual([]);
+  // 只有 null 也算没有 —— 加 volume 列之前的历史行就是这个形态。
+  const nulls = [{ date: '2026-08-03', open: 10, high: 10, low: 10, close: 10, volume: null }];
+  expect(spotVolume(nulls, spotBars(nulls, '1D'), '1D')).toEqual([]);
 });

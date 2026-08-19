@@ -7,6 +7,7 @@ import {
   tenorSeriesData,
   pickDefaultTenors,
   spotBars,
+  spotVolume,
   useTenorChart,
   type TenorSpec,
   type SpreadSpec,
@@ -89,6 +90,20 @@ const getJson = (url: string) =>
   });
 const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
 
+/**
+ * 现货腿专用:**空结果当失败抛**,不让它进 SWR 缓存。
+ *
+ * ⚠️ 服务端那侧「空结果不进 TTL 缓存」单独是**不够的**:SWR 会把空数组当成正常 data 缓存下来,
+ * 而这个面板关掉了 stale / focus / reconnect 三种重验证,再叠上 App 的 keep-alive
+ * (非活跃 tab 只是 `hidden`,实例不卸载)—— 空结果会一直粘到**整页刷新**,不是粘一个 TTL。
+ * 抛错则 SWR 不写 data、按自身退避重试,面板那格保持不画(它只看 data,不读 error)。
+ */
+const getSpotJson = async (url: string) => {
+  const rows = await getJson(url);
+  if (!Array.isArray(rows) || !rows.length) throw new Error(`empty: ${url}`);
+  return rows;
+};
+
 // 时间横轴 × 每条线一个期限 + 利差(+ 可选的现货蜡烛),共享时间轴。
 // 数据/存储不改,复用收益率曲线序列;现货走已有的 /api/price/:underlying。
 export function TenorHistoryPanel({
@@ -109,7 +124,7 @@ export function TenorHistoryPanel({
 }) {
   const { data, isLoading, error, maxDate } = useYieldCurve(source);
   // 只有配了 spot 的 tab 才发这个请求(SWR 的 key 传 null = 不请求)。
-  const spotRes = useSWR<PriceBar[]>(spot ? `/api/price/${spot}` : null, getJson, SWR_OPTS);
+  const spotRes = useSWR<PriceBar[]>(spot ? `/api/price/${spot}` : null, getSpotJson, SWR_OPTS);
   const containerRef = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showSpread, setShowSpread] = useState(true);
@@ -142,7 +157,10 @@ export function TenorHistoryPanel({
 
   // 没配 spot、或数据还没到 → null,不建那个 pane(而不是建一个空 pane 占着高度)。
   const spotBarsData = spotBars(spotRes.data, interval);
-  const spotSpec: SpotSpec | null = spot && spotBarsData.length ? { label: spot, data: spotBarsData } : null;
+  const spotSpec: SpotSpec | null =
+    spot && spotBarsData.length
+      ? { label: spot, data: spotBarsData, volume: spotVolume(spotRes.data, spotBarsData, interval) }
+      : null;
 
   useTenorChart(containerRef, specs, spread, spotSpec);
 

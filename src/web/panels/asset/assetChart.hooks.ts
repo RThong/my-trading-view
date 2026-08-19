@@ -9,7 +9,16 @@ import type { PaneDef, Spec, LineSpec } from '../chart/paneChart.types';
 
 export type OptRow = { date: string; callIv: number; putIv: number; skew: number };
 export type VrpRow = { date: string; iv: number; rv: number; vrp: number };
-export type PriceBar = { date: string; open: number | null; high: number | null; low: number | null; close: number };
+export type PriceBar = {
+  date: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number;
+  /** 成交量。**只有读时现拉的标的才有**(见 marketCatalog 的 `price: 'live'`);
+   *  走 price_eod 的那些整个不带这个字段 —— 那张表没有 volume 列。 */
+  volume?: number | null;
+};
 
 export const COLORS = {
   price: '#d4d4d8', // 现货图例文字(蜡烛本身用涨绿跌红)

@@ -97,7 +97,10 @@ export const PERSPECTIVES: Perspective[] = [
       curveTab('jgb_curve', '收益曲线', 'jgb'),
       // 短腿与美债那格统一成 1Y —— 两个 tab 并排读时口径必须一样,否则没人会注意到定义不同。
       // (JGB 本来也没有更短的:MOF 曲线最短就是 1Y。)
-      historyTab('jgb_history', '期限走势', 'jgb', '10Y', '1Y', '10Y − 1Y'),
+      // 挂 8306(三菱UFJ)当现货参照腿:银行拿短端存款、放长端贷款,10Y−1Y 走阔直接扩净息差 ——
+      // 它是这条曲线**最直接的受益标的**,和利差同图才读得出「市场认不认这条传导」。
+      // (美债那格挂 BTC 是另一个道理:那是流动性链条最末端的 beta。)
+      historyTab('jgb_history', '期限走势', 'jgb', '10Y', '1Y', '10Y − 1Y', '8306.T'),
       regimeTab('jgb_vol', '日债波动率', 'jgbVol'),
     ],
   },
