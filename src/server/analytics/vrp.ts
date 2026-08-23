@@ -12,17 +12,22 @@ import { mean } from 'remeda';
 
 export type Point = { date: string; value: number };
 
-/** 滚动已实现波动率(年化、百分点)。 */
-export function realizedVol(prices: Point[], window: number, periodsPerYear: number): Point[] {
+/** 对数收益序列。跳过非正价格:log(cur/prev) 会出 NaN/Infinity,污染整段。真实收盘价恒正。 */
+export function logReturns(prices: Point[]): Point[] {
   const rets: Point[] = [];
   for (let i = 1; i < prices.length; i++) {
     const prev = prices[i - 1].value;
     const cur = prices[i].value;
-    // 跳过非正价格:log(cur/prev) 会出 NaN/Infinity,污染整段 RV。真实收盘价恒正。
     if (prev > 0 && cur > 0) {
       rets.push({ date: prices[i].date, value: Math.log(cur / prev) });
     }
   }
+  return rets;
+}
+
+/** 滚动已实现波动率(年化、百分点)。 */
+export function realizedVol(prices: Point[], window: number, periodsPerYear: number): Point[] {
+  const rets = logReturns(prices);
   const out: Point[] = [];
   const ann = Math.sqrt(periodsPerYear) * 100;
   for (let i = window - 1; i < rets.length; i++) {

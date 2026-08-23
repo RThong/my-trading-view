@@ -78,6 +78,13 @@ export const PERSPECTIVES: Perspective[] = [
   regimePersp('macro', '宏观'),
   regimePersp('oil', '能源'), // Brent−WTI + 柴油裂解:油市结构 / 物理紧张
   {
+    id: 'btc',
+    label: 'BTC',
+    // BTC 的全部格子收在这一个视角里(现货/夏普 + 期权),不在「期权」视角另开一个 BTC 横 tab ——
+    // 见 marketCatalog 里 BTC 条目为何不配 tab。
+    tabs: [regimeTab('btc', '现货/夏普', 'btc'), assetTab('btc_options', '期权', 'BTC', 'BTC')],
+  },
+  {
     id: 'rates',
     label: '利率',
     tabs: [

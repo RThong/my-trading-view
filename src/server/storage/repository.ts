@@ -135,6 +135,14 @@ export function getLatestPriceDate(db: Database, underlying: string): string | n
   return row?.d ?? null;
 }
 
+/** 历史回填用:已存最早的一天(判断「前面还缺不缺」)。 */
+export function getEarliestPriceDate(db: Database, underlying: string): string | null {
+  const row = db.query(`SELECT MIN(obs_date) AS d FROM price_eod WHERE underlying = $u`).get({ $u: underlying }) as {
+    d: string | null;
+  };
+  return row?.d ?? null;
+}
+
 // ── job_run ───────────────────────────────────────────────────────────────────
 
 export function startJobRun(db: Database, jobName: string): number {

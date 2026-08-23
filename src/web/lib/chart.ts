@@ -33,6 +33,16 @@ export const CHART_OPTIONS = {
   autoSize: true,
 };
 
+/**
+ * 蜡烛价格轴是否该取对数。**按数据判,不给调用方开配置** —— 判据是客观的:
+ * 跨两个数量级以上,线性轴会把低位那半段压成一条贴底的平线(BTC:2012 的 $4 到今天的 $12 万,
+ * 29500 倍)。实测本站其余标的最宽的也只有 9 倍(USO / VIX),离阈值差三个数量级,不会误判。
+ */
+export const needsLogScale = (bars: Bar[]): boolean => {
+  const lows = bars.map((b) => b.low).filter((v) => v > 0);
+  return lows.length > 0 && Math.max(...bars.map((b) => b.high)) / Math.min(...lows) > 100;
+};
+
 /** 周期键:同一周期内所有日期映射到同一个规范日期(周一 / 月初 / 季初 / 年初)。
  *  **导出是刻意的**:成交量必须和 OHLC 用同一个键分组,各写一份必然漂。 */
 export function periodKey(dateStr: string, interval: Interval): string {

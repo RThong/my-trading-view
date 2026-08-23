@@ -3,14 +3,27 @@
 import { useEffect, useRef, useState } from 'react';
 import { createChart, LineSeries, CandlestickSeries, HistogramSeries, type IChartApi } from 'lightweight-charts';
 import { useStable } from '../../hooks/useStable';
-import { CHART_OPTIONS, changeStats } from '../../lib/chart';
+import { CHART_OPTIONS, changeStats, needsLogScale } from '../../lib/chart';
 import type { PaneDef, Spec, LegendCell, AnySeries } from './paneChart.types';
 import { useTrendlines } from './trendlines.hooks';
+
+/**
+ * 蜡烛价格轴切对数(PriceScaleMode.Logarithmic = 1,不引枚举:这层已经在用字面量配色/配轴了)。
+ * 顺手收紧 scaleMargins:默认 0.2 的留白是在**对数空间**里取的,跨 4.5 个数量级时
+ * = 上边界超出实际最高价近一个数量级(轴顶会标到 $2,000,000),刻度也因此只剩一条。
+ *
+ * **只单向切、且每次同步都判**:数据是异步到的,series 建的那一刻可能还空着
+ * (AssetChart 的现货 spec 就是先发出、后到数),只在建线时判会让那格永久停在线性轴。
+ * 单向 = 不用在这里硬编码 lightweight-charts 的线性默认 margins —— 同一格的标的不会变,
+ * 数据只会从空变全,不存在要切回去的情形。
+ */
+const applyLogScale = (s: AnySeries) =>
+  s.priceScale().applyOptions({ mode: 1, scaleMargins: { top: 0.05, bottom: 0.05 } });
 
 // 按 kind 建对应 series,并挂上各自的参考线/背景带。
 function addSeries(chart: IChartApi, spec: Spec): AnySeries {
   if (spec.kind === 'candle') {
-    return chart.addSeries(
+    const candles = chart.addSeries(
       CandlestickSeries,
       {
         title: spec.title,
@@ -23,6 +36,7 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
       },
       spec.pane,
     );
+    return candles;
   }
 
   if (spec.kind === 'histogram') {
@@ -128,6 +142,7 @@ export function usePaneChart(
         seriesRef.current.set(spec.key, s);
       }
       s.setData(spec.data as Parameters<AnySeries['setData']>[0]);
+      if (spec.kind === 'candle' && needsLogScale(spec.data)) applyLogScale(s);
     }
 
     chart.timeScale().fitContent();

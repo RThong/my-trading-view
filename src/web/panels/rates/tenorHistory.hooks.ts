@@ -292,9 +292,14 @@ export function useTenorChart(
     const first = !spotRef.current;
     if (first) {
       spotRef.current = chart.addSeries(CandlestickSeries, { title: spot.label }, pane.paneIndex());
-      // ⚠️ 对数刻度是必须的不是好看:BTC 这条从 3,199 走到 124,786(**39 倍**),
+      // ⚠️ 对数刻度是必须的不是好看:BTC 这条从 $4.23 走到 $124,786(**29500 倍**,现货已回填到 2012),
       // 线性刻度下 2021 年之前会被压成一条贴底的平线,等于白画。
-      pane.priceScale('right').applyOptions({ mode: PriceScaleMode.Logarithmic });
+      //
+      // scaleMargins 必须跟着收紧:默认 0.2 的留白是在**对数空间**里取的,跨 4.5 个数量级时
+      // 上边界会超出实际最高价近一个数量级(轴顶标到 $2,000,000 这种没意义的数),刻度也只剩一条。
+      pane
+        .priceScale('right')
+        .applyOptions({ mode: PriceScaleMode.Logarithmic, scaleMargins: { top: 0.05, bottom: 0.05 } });
     }
     spotRef.current?.setData(spot.data);
 

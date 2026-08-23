@@ -12,6 +12,7 @@ import { fetchShillerCape } from '../fetchers/capeShiller';
 import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
 import { subtractAligned, divideAligned, yoyPct, scale, type Point } from '../analytics/regime';
 import { nearMinusFar } from '../analytics/termStructure';
+import { rollingSharpe } from '../analytics/sharpe';
 import { openDb } from '../storage/db';
 import { getMarketSeries, getPriceBars, getSecLag } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
@@ -37,6 +38,18 @@ import {
 
 // 后端不 import web 的 Bar(跨边界);内联 OHLC 形状,JSON 与前端 chart 的 Bar 一致。
 type OhlcBar = { time: string; open: number; high: number; low: number; close: number };
+
+/** 库里的日 bar → 蜡烛点。OHLC 三项可空(部分源只给收盘),缺则退化成十字线(open=high=low=close)。 */
+const toOhlc = (
+  bars: Array<{ date: string; open: number | null; high: number | null; low: number | null; close: number }>,
+): OhlcBar[] =>
+  bars.map((b) => ({
+    time: b.date,
+    open: b.open ?? b.close,
+    high: b.high ?? b.close,
+    low: b.low ?? b.close,
+    close: b.close,
+  }));
 type RegimeBody = {
   series: Record<string, Point[]>;
   unavailable: string[];
@@ -269,15 +282,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const cape1990 = cape?.filter((p) => p.date >= '1990-01-01');
   put('cape', cape1990?.length ? cape1990 : undefined);
   const ohlc: Record<string, OhlcBar[]> = {};
-  if (usdBars?.length) {
-    ohlc.usd = usdBars.map((b) => ({
-      time: b.tradeDate,
-      open: b.open ?? b.close,
-      high: b.high ?? b.close,
-      low: b.low ?? b.close,
-      close: b.close,
-    }));
-  }
+  if (usdBars?.length) ohlc.usd = toOhlc(usdBars.map((b) => ({ ...b, date: b.tradeDate })));
 
   // 派生:分量齐才算,缺则整条进 unavailable。
   // RRPONTSYD 源为「十亿美元」,而 WALCL/WTREGEN 为「百万美元」——RRP 腿必须 ×1000 对齐,
@@ -312,15 +317,19 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     // 已在 price_eod 里(daily job 维护),同 DXY 的处理:close 进 series 管存在性,OHLC 进 ohlc 画蜡烛。
     const qqqBars = getPriceBars(db, 'QQQ');
     put('qqq', qqqBars.length ? qqqBars.map((b) => ({ date: b.date, value: b.close })) : undefined);
-    if (qqqBars.length) {
-      ohlc.qqq = qqqBars.map((b) => ({
-        time: b.date,
-        open: b.open ?? b.close,
-        high: b.high ?? b.close,
-        low: b.low ?? b.close,
-        close: b.close,
-      }));
-    }
+    if (qqqBars.length) ohlc.qqq = toOhlc(qqqBars);
+
+    // BTC:现货蜡烛 + 1Y 滚动夏普。窗口 365 而非 252 —— crypto 每天都有数据点,
+    // 「一年」就是 365 个点;年化同走 √365(与 VRP 的 BTC 腿同口径,见 analytics/vrp)。
+    const btcBars = getPriceBars(db, 'BTC');
+    const btcClose = btcBars.map((b) => ({ date: b.date, value: b.close }));
+    // 这里**不走 put**(与 usd/qqq 的写法刻意不同):BTC 点数是它们的两倍多,
+    // 把 close 再塞一份进 series 是 ~196KB 的纯冗余 —— 蜡烛只读 ohlc,那份 series 唯一作用是判存在性。
+    // 存在性直接由 ohlc 判,语义不变、payload 省掉。
+    if (btcBars.length) ohlc.btc = toOhlc(btcBars);
+    else unavailable.push('btc');
+    const btcSharpe = rollingSharpe(btcClose, 365, 365);
+    put('btcSharpe1y', btcSharpe.length ? btcSharpe : undefined);
 
     // 两条期限结构价差,都走 nearMinusFar(近端 − 远端,正 = backwardation)。
     // 具名 near/far 是刻意的:方向写反不会报错、只会让人读反图,而位置参数的调换单测抓不住

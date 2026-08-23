@@ -50,9 +50,10 @@ export const MARKET_CATALOG: MarketAsset[] = [
     vrp: { ivIndex: 'OVX', window: 21, periodsPerYear: 252 },
   },
   {
+    // 刻意**不配 tab**:BTC 的格子全在「BTC」竖视角里(现货/夏普 + 期权),不进「期权」视角的横 tab 条。
+    // 分散在两处的代价是实际踩过的 —— 同一个标的两个入口,现货那格的口径/轴各改一处就漂。
     underlying: 'BTC',
     optionSource: 'deribit',
-    tab: { id: 'btc', label: 'BTC' },
     vrp: { ivIndex: 'DVOL', window: 30, periodsPerYear: 365 },
   },
   { underlying: 'NOBL', optionSource: 'none' }, // 只做价格:攻防指标的防御腿
