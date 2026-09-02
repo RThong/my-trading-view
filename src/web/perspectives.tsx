@@ -132,6 +132,13 @@ export const PERSPECTIVES: Perspective[] = [
   },
   regimePersp('valuation', '估值'),
   {
+    id: 'ai',
+    label: 'AI',
+    // AI 相关指标的聚合视角,不与「基本面」(公司财务)重复。第一个横 tab:GPU 算力租赁价
+    // (Computable GPU Index)。后续 AI 相关指标(如 creditCurve 里的 AI CDS)视需要再挪进来。
+    tabs: [regimeTab('gpu_compute', '算力价格', 'compute')],
+  },
+  {
     id: 'fundamentals',
     label: '基本面',
     // AI 链财务。一家一个横 tab,**格子由那家的 source 决定**(见 aiChain 的 SOURCE_KINDS):

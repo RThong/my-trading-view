@@ -309,6 +309,11 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     for (const [out, sym] of [
       ['vix', 'VIX'],
       ['vxn', 'VXN'],
+      // Computable GPU Index(算力租赁价,cryptoDaily 的 computable_gpu 分组维护)。B300 provider 最薄,允许缺。
+      ['gpuH100', 'CGI_H100'],
+      ['gpuH200', 'CGI_H200'],
+      ['gpuB200', 'CGI_B200'],
+      ['gpuB300', 'CGI_B300'],
     ] as const) {
       const rows = getMarketSeries(db, sym);
       put(out, rows.length ? rows : undefined);
@@ -357,8 +362,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   }
 
   const body: RegimeBody = { series, unavailable, ohlc, secLag, secTrim };
-  // 只缓存全成功(降级响应不缓存,下次重试)。例外:SEC 那几条是季频、靠单独的 job 逐季攒,
-  // 从没跑过 job 的库里它们必然缺——不能让这个常态把整条路由的缓存永久关掉。
-  if (unavailable.every((n) => n.startsWith(FUND_KEY_PREFIX))) cache = { at: Date.now(), body };
+  // 只缓存全成功(降级响应不缓存,下次重试)。例外:SEC 那几条是季频、GPU 那几条(gpu 前缀)
+  // 是新接的 experimental 源(B300 允许缺、库还没跑过 job 时四条都缺)—— 两者都靠独立 job 逐日/逐季攒,
+  // 从没跑过 job 的库里必然缺——不能让这类常态把整条路由的缓存永久关掉。
+  if (unavailable.every((n) => n.startsWith(FUND_KEY_PREFIX) || n.startsWith('gpu'))) cache = { at: Date.now(), body };
   return c.json(body);
 });

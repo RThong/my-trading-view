@@ -34,6 +34,8 @@ type RunDailyJobOpts = {
   iceCdsUpdater?: (db: Database) => Promise<{ total: number; missing: string[] }>;
   /** MOVE 债市波动率更新器(注入式;CLI 传 updateMoveIndex,测试省略以免联网)。 */
   moveUpdater?: (db: Database) => Promise<MoveUpdateResult>;
+  /** Computable GPU Index(H100/H200/B200/B300 算力租赁价)更新器(注入式;cryptoDaily 传 updateComputableGpu,测试省略以免联网)。 */
+  computableGpuUpdater?: (db: Database) => Promise<{ total: number; missing: string[] }>;
 };
 
 /** 包一次 job_run:开跑 → 按 fn 结果落终态;fn 抛异常记 failed。所有分组共用,免去 4 处重复 try/catch。 */
@@ -139,6 +141,17 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
         recordsWritten: total,
         error: stalled ? `告警:meta 日期久未前进(仍是 ${metaDate}),疑似 Yahoo 源冻结` : undefined,
       };
+    });
+  }
+
+  // computable_gpu 分组:CGI 算力租赁价(H100/H200/B200/B300)。B300 provider 最薄、允许缺(experimental),
+  // H100/H200/B200 缺任一才算 failed —— 与 ice_cds 同款「核心标的缺失」判定,让后续触发重试。
+  if (opts.computableGpuUpdater) {
+    await withJobRun(opts.db, 'computable_gpu', async () => {
+      const { total, missing } = await opts.computableGpuUpdater!(opts.db);
+      return missing.length
+        ? { status: 'failed', error: `核心 SKU 缺失(数据源可能变动):${missing.join(', ')}`, recordsWritten: total }
+        : { status: 'success', recordsWritten: total };
     });
   }
 
