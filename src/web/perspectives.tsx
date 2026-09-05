@@ -7,10 +7,10 @@ import { RegimeChart } from './panels/regime/RegimeChart';
 import { YieldCurvePanel } from './panels/rates/YieldCurvePanel';
 import { TenorHistoryPanel } from './panels/rates/TenorHistoryPanel';
 import { AttackDefensePanel } from './panels/attackDefense/AttackDefensePanel';
+import { IndustryChainPanel } from './panels/regime/IndustryChainPanel';
 import type { RegimeDim } from './panels/regime/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
 import { MARKET_CATALOG } from '../shared/marketCatalog';
-import { GROUP_LABELS, GROUP_ORDER, activeByGroup } from '../shared/aiChain';
 
 export type TabDef = { id: string; label: string; group?: string; render: (interval: Interval) => ReactNode };
 export type Perspective = { id: string; label: string; tabs: TabDef[] };
@@ -114,12 +114,8 @@ export const PERSPECTIVES: Perspective[] = [
   {
     id: 'creditCurve',
     label: '信用曲线',
-    tabs: [
-      curveTab('credit_rating', '评级利差', 'credit_rating'),
-      curveTab('credit_term', '期限结构', 'credit_term'),
-      // AI 巨头 + 甲骨文单名 CDS 时间走势;spread pane = Oracle − Apple(甲骨文特质溢价)。
-      historyTab('ai_cds', 'AI CDS', 'ai_cds', 'Oracle', 'Apple', 'Oracle − Apple'),
-    ],
+    // AI CDS 挪去了「AI」视角(聚合 AI 相关指标,不留在这里跟评级利差/期限结构混放)。
+    tabs: [curveTab('credit_rating', '评级利差', 'credit_rating'), curveTab('credit_term', '期限结构', 'credit_term')],
   },
   {
     id: 'inflation',
@@ -134,28 +130,17 @@ export const PERSPECTIVES: Perspective[] = [
   {
     id: 'ai',
     label: 'AI',
-    // AI 相关指标的聚合视角,不与「基本面」(公司财务)重复。第一个横 tab:GPU 算力租赁价
-    // (Computable GPU Index)。后续 AI 相关指标(如 creditCurve 里的 AI CDS)视需要再挪进来。
-    tabs: [regimeTab('gpu_compute', '算力价格', 'compute')],
-  },
-  {
-    id: 'fundamentals',
-    label: '基本面',
-    // AI 链财务。一家一个横 tab,**格子由那家的 source 决定**(见 aiChain 的 SOURCE_KINDS):
-    // 走 SEC 的四格(毛利率/FCF/单季 FCF/capex),走 TWSE 的两格(月营收同比/月营收)。
-    //
-    // 横 tab **按 GROUP_ORDER 分组并重排**,顺序即资金流向(云厂商花钱 → 算力芯片 → 上游产能),
-    // 与名单里的存储顺序无关。分组的意义是「同组能横向比、跨组不能」——
-    // 分组本身在 aiChain 的 ChainGroup 上,加公司只改那里,这里不用动。
-    // 「买方合计」不属于任何一家,单独成组排在最前 —— 它才是 §6.14 的判据线。
+    // AI 相关指标全收在这一个竖 tab 里(不再单独开「基本面」)。前三个横 tab 是跨公司的汇总/宏观信号
+    // (算力价格、买方合计判据线、AI CDS);「产业链」单独一个横 tab,里面是各家公司的财务明细
+    // (一家一格,格子由那家的 source 决定,见 aiChain 的 SOURCE_KINDS)—— 14 家挤进主 tab 条太乱,
+    // 收进 IndustryChainPanel 自己的内部公司选择器(见该文件,按 GROUP_ORDER 分组)。
     tabs: [
-      regimeTab('buyer', '买方合计', 'fundamentals:buyer', '判据'),
-      ...GROUP_ORDER.flatMap((g) =>
-        activeByGroup(g).map((t) => regimeTab(t.toLowerCase(), t, `fundamentals:${t}`, GROUP_LABELS[g])),
-      ),
+      regimeTab('gpu_compute', '算力价格', 'compute'),
+      regimeTab('buyer', '买方合计', 'fundamentals:buyer'),
+      historyTab('ai_cds', 'AI CDS', 'ai_cds', 'Oracle', 'Apple', 'Oracle − Apple'),
+      { id: 'industry_chain', label: '产业链', render: (interval) => <IndustryChainPanel interval={interval} /> },
     ],
   },
-
   {
     id: 'featured',
     label: '特色指标',
