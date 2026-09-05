@@ -61,8 +61,8 @@ export const MARKET_CATALOG: MarketAsset[] = [
   // 上行最直接的受益标的:银行拿短端存款、放长端贷款,10Y−1Y 走阔直接扩净息差。
   //
   // `price: 'live'` —— 股票日线随时能整段重取,存进 price_eod 只是白占一份会腐坏的副本。
-  // ⚠️ 顺带:这个 moomoo 账号**没有东京行情权限**(RequestHistoryKL 回 retType=-1
-  // 「No permission to get quotes for JP.8306」),所以只能走 Yahoo;underlying 直接用
+  // ⚠️ moomoo 的日本行情权限要单独开通,未开通时 RequestHistoryKL 回 retType=-1
+  // 「No permission to get quotes for JP.8306」,所以走 Yahoo;underlying 直接用
   // Yahoo 符号 `8306.T`,省掉一张「内部键 → 源符号」的映射表。
   { underlying: '8306.T', optionSource: 'none', price: 'live' },
 ];
