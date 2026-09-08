@@ -8,7 +8,7 @@ A personal, local-only markets dashboard, organized as **vertical perspectives**
   volatility index (SPY/QQQ/GLD/USO/BTC) also get implied-vs-realized + VRP panes.
 - **Regime perspectives** — macro/market *regime* indicators pulled on demand from
   FRED / CBOE / CNN / Yahoo / Eris / MOF+JPX / CFTC / Shiller / ICE: **信用 · 流动性 · 情绪 ·
-  宏观 · 能源 · 利率 · 日本 · 信用曲线 · 通胀 · 估值**, plus a **特色指标 → 攻防** tab
+  宏观 · 能源 · 利率 · 日本 · 信用曲线 · AI · 通胀 · 估值**, plus a **特色指标 → 攻防** tab
   (NOBL/QQQ offense-defense regime via ZigZag). Series with a trailing distribution add
   P5/P95 bands, a current-percentile badge, and red/green shading of extreme periods.
 
@@ -153,7 +153,8 @@ several horizontal tabs:
 | 能源 Energy | Brent−WTI spread · diesel crack (油市结构 / 物理紧张) | Yahoo |
 | 利率 Rates | 收益曲线 · 期限走势 · SOFR OIS · OIS 走势 · 利率波动率 (MOVE) | FRED / Eris / Yahoo |
 | 日本 Japan | 日元 (USD-JPY + CFTC 持仓) · JGB 收益曲线 · 期限走势 · 日债波动率 (JGB VIX) | Yahoo / CFTC / MOF / JPX |
-| 信用曲线 Credit curve | 评级利差 · 期限结构 · AI CDS (AI 巨头 + Oracle 单名 CDS，价近似 spread bp) | FRED / ICE |
+| 信用曲线 Credit curve | 评级利差 · 期限结构 | FRED |
+| AI | 算力价格 (H100/H200/B200/B300 GPU 租赁价指数) · 买方合计 (AI 链 capex/FCF 判据线) · AI CDS (AI 巨头 + Oracle 单名 CDS，价近似 spread bp) · 产业链 (15 家公司财务明细) | Computable / ICE / SEC / TWSE |
 | 通胀 Inflation | 通胀预期 (BEI) · 通胀走势 · 通胀来源 (RBOB YoY 等) | FRED / Yahoo |
 | 估值 Valuation | Shiller CAPE regime | Shiller |
 | 特色指标 Featured | 攻防 — NOBL/QQQ offense-defense via ZigZag | Yahoo |
