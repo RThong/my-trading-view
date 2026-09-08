@@ -35,7 +35,7 @@ type RunDailyJobOpts = {
   /** MOVE 债市波动率更新器(注入式;CLI 传 updateMoveIndex,测试省略以免联网)。 */
   moveUpdater?: (db: Database) => Promise<MoveUpdateResult>;
   /** Computable GPU Index(H100/H200/B200/B300 算力租赁价)更新器(注入式;cryptoDaily 传 updateComputableGpu,测试省略以免联网)。 */
-  computableGpuUpdater?: (db: Database) => Promise<{ total: number; missing: string[] }>;
+  computableGpuUpdater?: (db: Database) => Promise<{ total: number; missing: string[]; errors: string[] }>;
 };
 
 /** 包一次 job_run:开跑 → 按 fn 结果落终态;fn 抛异常记 failed。所有分组共用,免去 4 处重复 try/catch。 */
@@ -145,12 +145,21 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   }
 
   // computable_gpu 分组:CGI 算力租赁价(H100/H200/B200/B300)。B300 provider 最薄、允许缺(experimental),
-  // H100/H200/B200 缺任一才算 failed —— 与 ice_cds 同款「核心标的缺失」判定,让后续触发重试。
+  // H100/H200/B200 缺任一才算 failed。
+  //
+  // ⚠️ 这个 failed **只作可见性标记,当天不会被重试** —— 别照 ice_cds 的直觉理解。
+  // ice_cds 在 daily 的 REQUIRED 里,所以当天后续触发点会因为它没绿而重跑整组;
+  // computable_gpu 故意**不进** cryptoDaily 的 REQUIRED(见那个文件的注释),于是只要
+  // options_crypto + btc_price 已绿,后续触发就整体跳过,它当天不会再跑。
+  // 这样取舍是因为 CGI **可回填**(服务端保留十几天历史、抓取是幂等覆盖),靠次日跑补就够,
+  // 不值得为一个 experimental 源让整组 crypto job 每个触发点都重跑一遍。
   if (opts.computableGpuUpdater) {
     await withJobRun(opts.db, 'computable_gpu', async () => {
-      const { total, missing } = await opts.computableGpuUpdater!(opts.db);
+      const { total, missing, errors } = await opts.computableGpuUpdater!(opts.db);
+      // 有抓取报错就把原文带上 —— 断网和「源真的当天没发点」在这条消息里必须分得开。
+      const why = errors.length ? errors.join('; ') : '数据源可能变动(抓取没报错但今天没有新点)';
       return missing.length
-        ? { status: 'failed', error: `核心 SKU 缺失(数据源可能变动):${missing.join(', ')}`, recordsWritten: total }
+        ? { status: 'failed', error: `核心 SKU 缺失:${missing.join(', ')} —— ${why}`, recordsWritten: total }
         : { status: 'success', recordsWritten: total };
     });
   }
