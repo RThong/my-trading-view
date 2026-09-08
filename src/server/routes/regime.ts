@@ -62,7 +62,12 @@ type RegimeBody = {
 // 只缓存全成功的响应(降级响应不缓存,下次刷新重试),避免瞬时反爬失败被粘住。
 // EOD 日频数据盘中不变,TTL 取 6h 安全。进程级单例,dev/prod 长驻进程共享。
 const TTL_MS = 6 * 60 * 60 * 1000;
-let cache: { at: number; body: RegimeBody } | null = null;
+/**
+ * `moveLive` 单独存:MOVE 是「现拉的 Yahoo 腿 + 库里的补丁」合并出来的,
+ * 而库那半边由 daily job(别的进程)写 —— 只缓存合并结果的话,job 补上的那天最长要等满 TTL 才出现。
+ * 存住 live 腿,缓存命中时就能拿它重新和库里的 merge 一次,和 readDbBacked 的动机同一个。
+ */
+let cache: { at: number; body: RegimeBody; moveLive: Point[] } | null = null;
 
 /**
  * AI 链基本面派生量(季频/月频,由 jobs/aiChainFundamentals 每天跑着维护)。库里没有就归 unavailable,
@@ -85,6 +90,93 @@ const SERIES_ID: Record<FundKind, (ticker: string) => string> = {
   revM: (t) => twseSeriesId(t, 'revM'),
   revYoy: (t) => twseSeriesId(t, 'revYoy'),
 };
+
+/**
+ * 由**独立 job**写库、因此缓存命中时必须重读的序列(out 键 → market_series 的 symbol)。
+ * 这些不像 FRED/CBOE 那样是请求时现拉的:进程内缓存看不到 cryptoDaily 等别的进程刚写进去的行,
+ * 不重读的话,job 刚跑完最长还要等 TTL(6h)才在面板上出现。读库很便宜,不值得为它整体失效缓存。
+ * GPU 这几条尤其要重读 —— 缓存条件专门放宽了「gpu 前缀缺失也缓存」(库没跑过 job 时四条必然缺、
+ * B300 长期允许缺),两个改动合起来会把「GPU 不可用」这个状态缓存住并卡满 6h。
+ */
+export const JOB_WRITTEN_SERIES = [
+  // VIX/VXN 同样是 daily job 写库、同样该重读 —— 它们历史非空,所以症状比 GPU 轻
+  // (不是"整格不可用",只是最新一点最长滞后 6h),但性质一模一样,别再漏第二次。
+  ['vix', 'VIX'],
+  ['vxn', 'VXN'],
+  ['gpuH100', 'CGI_H100'],
+  ['gpuH200', 'CGI_H200'],
+  ['gpuB200', 'CGI_B200'],
+  ['gpuB300', 'CGI_B300'],
+] as const;
+
+/** 只有 gpu 这几条允许"缺着也缓存"(库没跑过 job 时必然缺、B300 长期允许缺)。 */
+export const GPU_KEY_PREFIX = 'gpu';
+
+/**
+ * 读**全部来自本地库**的东西:market_series 的直读几条、price_eod 的蜡烛、以及由它们派生的量。
+ * 主路径与缓存命中路径共用这一个函数 —— 上一版只覆盖了 market_series 的成对映射,
+ * 结果 qqq / ohlc.btc / btcSharpe1y / vxTermSpread 四组照旧不重读,注释却写着"凡是 job 写的都重读"。
+ * 抽成一处就不会再出现"框架比实现宽"这种事:加一条只改这里,两条路径同时生效。
+ */
+export function readDbBacked(
+  db: Database,
+  /** MOVE 现拉的那条腿。它不来自库,但 MOVE 的最终值是「它 + 库里补丁」合并出来的,所以合并动作得放在这。 */
+  moveLive: Point[],
+): {
+  series: Record<string, Point[]>;
+  unavailable: string[];
+  ohlc: Record<string, OhlcBar[]>;
+} {
+  const series: Record<string, Point[]> = {};
+  const unavailable: string[] = [];
+  const ohlc: Record<string, OhlcBar[]> = {};
+  const put = (name: string, value: Point[] | undefined) => {
+    if (value?.length) series[name] = value;
+    else unavailable.push(name);
+  };
+
+  for (const [out, sym] of JOB_WRITTEN_SERIES) put(out, getMarketSeries(db, sym));
+
+  // QQQ 现货:波动率与情绪两个视角的价格参照 —— 那些指标只有对着价格才读得出「背离还是同步」。
+  // 同 DXY 的处理:close 进 series 管存在性,OHLC 进 ohlc 画蜡烛。
+  const qqqBars = getPriceBars(db, 'QQQ');
+  put(
+    'qqq',
+    qqqBars.map((b) => ({ date: b.date, value: b.close })),
+  );
+  if (qqqBars.length) ohlc.qqq = toOhlc(qqqBars);
+
+  // BTC:现货蜡烛 + 1Y 滚动夏普。窗口 365 而非 252 —— crypto 每天都有数据点,
+  // 「一年」就是 365 个点;年化同走 √365(与 VRP 的 BTC 腿同口径,见 analytics/vrp)。
+  const btcBars = getPriceBars(db, 'BTC');
+  const btcClose = btcBars.map((b) => ({ date: b.date, value: b.close }));
+  // 这里**不走 put**(与 qqq 的写法刻意不同):BTC 点数是它们的两倍多,
+  // 把 close 再塞一份进 series 是 ~196KB 的纯冗余 —— 蜡烛只读 ohlc,那份 series 唯一作用是判存在性。
+  // 存在性直接由 ohlc 判,语义不变、payload 省掉。
+  if (btcBars.length) ohlc.btc = toOhlc(btcBars);
+  else unavailable.push('btc');
+  put('btcSharpe1y', rollingSharpe(btcClose, 365, 365));
+
+  // 期限结构价差走 nearMinusFar(近端 − 远端,正 = backwardation)。具名 near/far 是刻意的:
+  // 方向写反不会报错、只会让人读反图,而位置参数的调换单测抓不住(见 analytics/termStructure)。
+  // 它是**内连接**:两腿更新不同步时宁可少一根,也不拿旧的一腿配新的另一腿还标成新日期。
+  put('vxTermSpread', nearMinusFar({ near: getMarketSeries(db, 'VX1'), far: getMarketSeries(db, 'VX3') }));
+
+  // MOVE:实时拉的优先,库里的补丁只填 Yahoo 断供的那些天。
+  put('move', mergeMove(moveLive, getMarketSeries(db, 'MOVE')));
+
+  return { series, unavailable, ohlc };
+}
+
+/** 这一批的 key 全集:缓存命中时要先把旧条目按 key 剔掉,再塞新读到的。 */
+export const DB_BACKED_KEYS: ReadonlySet<string> = new Set<string>([
+  ...JOB_WRITTEN_SERIES.map(([out]) => out),
+  'qqq',
+  'btc',
+  'btcSharpe1y',
+  'vxTermSpread',
+  'move',
+]);
 
 function readSecSeries(db: Database): {
   series: Record<string, Point[]>;
@@ -144,10 +236,18 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     const db = openDb();
     try {
       const sec = readSecSeries(db);
+      const job = readDbBacked(db, cache.moveLive);
       return c.json({
         ...cache.body,
-        series: { ...cache.body.series, ...sec.series },
-        unavailable: [...cache.body.unavailable.filter((n) => !n.startsWith(FUND_KEY_PREFIX)), ...sec.unavailable],
+        series: { ...cache.body.series, ...sec.series, ...job.series },
+        ohlc: { ...cache.body.ohlc, ...job.ohlc },
+        // 按 key 集合剔除而不是按前缀:前缀耦合的话,以后往 JOB_WRITTEN_SERIES 里加一条
+        // 不叫 gpu* 的(如 vix)就会漏剔,unavailable 里出现重复项。
+        unavailable: [
+          ...cache.body.unavailable.filter((n) => !n.startsWith(FUND_KEY_PREFIX) && !DB_BACKED_KEYS.has(n)),
+          ...sec.unavailable,
+          ...job.unavailable,
+        ],
         secLag: sec.lag,
         secTrim: sec.trims,
       });
@@ -306,51 +406,13 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // VIX / VXN 已在库里(market_series,daily job 维护)→ 直接读,不外拉。
   const db = openDb();
   try {
-    for (const [out, sym] of [
-      ['vix', 'VIX'],
-      ['vxn', 'VXN'],
-      // Computable GPU Index(算力租赁价,cryptoDaily 的 computable_gpu 分组维护)。B300 provider 最薄,允许缺。
-      ['gpuH100', 'CGI_H100'],
-      ['gpuH200', 'CGI_H200'],
-      ['gpuB200', 'CGI_B200'],
-      ['gpuB300', 'CGI_B300'],
-    ] as const) {
-      const rows = getMarketSeries(db, sym);
-      put(out, rows.length ? rows : undefined);
-    }
-    // QQQ 现货:波动率与情绪两个视角的价格参照 —— 那些指标只有对着价格才读得出「背离还是同步」。
-    // 已在 price_eod 里(daily job 维护),同 DXY 的处理:close 进 series 管存在性,OHLC 进 ohlc 画蜡烛。
-    const qqqBars = getPriceBars(db, 'QQQ');
-    put('qqq', qqqBars.length ? qqqBars.map((b) => ({ date: b.date, value: b.close })) : undefined);
-    if (qqqBars.length) ohlc.qqq = toOhlc(qqqBars);
-
-    // BTC:现货蜡烛 + 1Y 滚动夏普。窗口 365 而非 252 —— crypto 每天都有数据点,
-    // 「一年」就是 365 个点;年化同走 √365(与 VRP 的 BTC 腿同口径,见 analytics/vrp)。
-    const btcBars = getPriceBars(db, 'BTC');
-    const btcClose = btcBars.map((b) => ({ date: b.date, value: b.close }));
-    // 这里**不走 put**(与 usd/qqq 的写法刻意不同):BTC 点数是它们的两倍多,
-    // 把 close 再塞一份进 series 是 ~196KB 的纯冗余 —— 蜡烛只读 ohlc,那份 series 唯一作用是判存在性。
-    // 存在性直接由 ohlc 判,语义不变、payload 省掉。
-    if (btcBars.length) ohlc.btc = toOhlc(btcBars);
-    else unavailable.push('btc');
-    const btcSharpe = rollingSharpe(btcClose, 365, 365);
-    put('btcSharpe1y', btcSharpe.length ? btcSharpe : undefined);
-
-    // 两条期限结构价差,都走 nearMinusFar(近端 − 远端,正 = backwardation)。
-    // 具名 near/far 是刻意的:方向写反不会报错、只会让人读反图,而位置参数的调换单测抓不住
-    // (见 analytics/termStructure 的注释)。两格同走一个入口,方向因此不可能不一致。
-    //
-    // 它是**内连接**:两腿更新不同步时宁可少一根,也不拿旧的一腿配新的另一腿还标成新日期
-    // (subtractAligned 那种前向填充就会)。
-    const vxTerm = nearMinusFar({ near: getMarketSeries(db, 'VX1'), far: getMarketSeries(db, 'VX3') });
-    put('vxTermSpread', vxTerm.length ? vxTerm : undefined);
+    const dbBacked = readDbBacked(db, raw.move ?? []);
+    Object.assign(series, dbBacked.series);
+    Object.assign(ohlc, dbBacked.ohlc);
+    unavailable.push(...dbBacked.unavailable);
 
     const spotTerm = nearMinusFar({ near: raw.vixSpot ?? [], far: raw.vix3m ?? [] });
     put('vixSpotTerm', spotTerm.length ? spotTerm : undefined);
-
-    // MOVE:实时拉的优先,库里的补丁只填 Yahoo 断供的那些天。
-    const move = mergeMove(raw.move ?? [], getMarketSeries(db, 'MOVE'));
-    put('move', move.length ? move : undefined);
 
     const sec = readSecSeries(db);
     for (const [out, rows] of Object.entries(sec.series)) put(out, rows);
@@ -365,6 +427,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 只缓存全成功(降级响应不缓存,下次重试)。例外:SEC 那几条是季频、GPU 那几条(gpu 前缀)
   // 是新接的 experimental 源(B300 允许缺、库还没跑过 job 时四条都缺)—— 两者都靠独立 job 逐日/逐季攒,
   // 从没跑过 job 的库里必然缺——不能让这类常态把整条路由的缓存永久关掉。
-  if (unavailable.every((n) => n.startsWith(FUND_KEY_PREFIX) || n.startsWith('gpu'))) cache = { at: Date.now(), body };
+  if (unavailable.every((n) => n.startsWith(FUND_KEY_PREFIX) || n.startsWith(GPU_KEY_PREFIX)))
+    cache = { at: Date.now(), body, moveLive: raw.move ?? [] };
   return c.json(body);
 });

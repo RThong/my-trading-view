@@ -36,3 +36,52 @@ test('nearMinusFar:任一腿为空 → 空结果', () => {
   expect(nearMinusFar({ near: [], far: d })).toEqual([]);
   expect(nearMinusFar({ near: d, far: [] })).toEqual([]);
 });
+
+// ── 缓存命中路径必须重读「独立 job 写库」的序列 ─────────────────────────────
+//
+// 这条是实际踩过的:GPU 四条由 cryptoDaily 的 computable_gpu 分组写库,而缓存条件又专门放宽了
+// 「gpu 前缀缺失也缓存」(库没跑过 job 时必然缺、B300 长期允许缺)。两个改动各自合理,合起来
+// 把「GPU 不可用」这个状态缓存住并卡满 TTL(6h)—— job 跑完了面板还说不可用。
+//
+// 结构上的修法是让主路径与缓存命中路径共用同一份 JOB_WRITTEN_SERIES。下面锁的是**剩下那个
+// 会静默出错的点**:缓存命中时要把旧的 unavailable 条目剔掉再塞新的,剔除若按 'gpu' 前缀做,
+// 往名单里加一条不叫 gpu* 的(vix 就是)就会漏剔、unavailable 里出现重复。所以按 key 集合剔。
+import { Database } from 'bun:sqlite';
+import { migrate } from '../storage/db';
+import { JOB_WRITTEN_SERIES, GPU_KEY_PREFIX, DB_BACKED_KEYS, readDbBacked } from './regime';
+
+test('JOB_WRITTEN_SERIES:out 键唯一、symbol 唯一', () => {
+  const outs = JOB_WRITTEN_SERIES.map(([out]) => out);
+  const syms = JOB_WRITTEN_SERIES.map(([, sym]) => sym);
+
+  expect(new Set(outs).size).toBe(outs.length);
+  expect(new Set(syms).size).toBe(syms.length);
+});
+
+test('允许「缺着也缓存」的只有 gpu 那几条,别把别的也放宽', () => {
+  const lenient = JOB_WRITTEN_SERIES.map(([out]) => out).filter((out) => out.startsWith(GPU_KEY_PREFIX));
+
+  // vix/vxn 不在其中:它们缺失说明库是空的或 daily job 从没成功过,那种状态不该被缓存住。
+  expect(lenient).toEqual(['gpuH100', 'gpuH200', 'gpuB200', 'gpuB300']);
+});
+
+// 缓存命中时要按 key 剔掉旧的 unavailable 条目、再塞新读到的。DB_BACKED_KEYS 漏一个,
+// 那一格的旧条目就剔不掉 —— 结果是 unavailable 里出现重复项、甚至"既说不可用又给了数据"。
+//
+// ⚠️ 这条**必须真的调用 readDbBacked**。上一版是拿 DB_BACKED_KEYS 去比它自己的构造成分
+// (JOB_WRITTEN_SERIES + 硬编码那四个),由构造保证恒真 —— 而它声称要挡的场景恰恰是
+// "往 readDbBacked 里加了第五个 ad-hoc key 却忘了同步 DB_BACKED_KEYS",那种改动照旧全绿。
+// 空库跑一次,unavailable 就是它能产出的 key 全集,拿这个比才挡得住。
+test('DB_BACKED_KEYS 等于 readDbBacked 实际产出的 key 全集', () => {
+  const db = new Database(':memory:');
+  migrate(db);
+  try {
+    // 空库 → 每一格都进 unavailable,于是 unavailable 就是全集。
+    const { unavailable, series } = readDbBacked(db, []);
+
+    expect(series).toEqual({});
+    expect(new Set(unavailable)).toEqual(new Set(DB_BACKED_KEYS));
+  } finally {
+    db.close();
+  }
+});
