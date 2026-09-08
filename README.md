@@ -7,7 +7,7 @@ A personal, local-only markets dashboard, organized as **vertical perspectives**
   (via moomoo OpenD) and BTC (via Deribit), stored in SQLite. Underlyings with a free
   volatility index (SPY/QQQ/GLD/USO/BTC) also get implied-vs-realized + VRP panes.
 - **Regime perspectives** — macro/market *regime* indicators pulled on demand from
-  FRED / CBOE / CNN / Yahoo / Eris / MOF+JPX / CFTC / Shiller / ICE: **信用 · 流动性 · 情绪 ·
+  FRED / CBOE / CNN / Yahoo / Eris / MOF+JPX / CFTC / Shiller / ICE / Computable: **信用 · 流动性 · 情绪 ·
   宏观 · 能源 · 利率 · 日本 · 信用曲线 · AI · 通胀 · 估值**, plus a **特色指标 → 攻防** tab
   (NOBL/QQQ offense-defense regime via ZigZag). Series with a trailing distribution add
   P5/P95 bands, a current-percentile badge, and red/green shading of extreme periods.
@@ -31,7 +31,13 @@ well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local pag
   - Eris — SOFR OIS par curve · MOF + JPX — JGB yields / JGB VIX · CFTC — JPY net positioning · Shiller — CAPE · CNN — Fear & Greed
   - [ICE](https://www.ice.com/cds-settlement-prices/icc/single-name-instruments) — free public single-name CDS EOD settlement prices (AI 巨头 + Oracle)
   - [SEC XBRL](https://data.sec.gov) — quarterly company fundamentals (TTM gross margin / capex / FCF for the AI chain); needs `SEC_USER_AGENT`
-- **Scheduling:** macOS `launchd` (daily job, options + VRP + VX + Eris + ICE CDS; separate weekly job for SEC fundamentals)
+  - SEC 6-K public exhibits — quarterly figures for foreign private issuers (TSMC / ASML) that don't file XBRL
+  - [TWSE OpenAPI](https://openapi.twse.com.tw) — TSMC monthly revenue, official & key-free, out ~T+10; **the fastest read in the whole AI chain**, a month+ ahead of any quarterly filing (amounts in TWD thousands, dates in ROC calendar)
+  - [DART](https://opendart.fss.or.kr) (Korea FSS) — the *only* source for SK Hynix's four line items: its SEC side has no financial XBRL, and its 6-K only carries revenue / operating profit, so gross margin and FCF can't be derived from either; needs `DART_API_KEY`
+  - [Computable GPU Index](https://api.getcomputable.com) — H100/H200/B200/B300 cloud rental price indices, key-free public REST. **List-price aggregate, not transaction prices**; rolling window of only a few weeks, and CoreWeave sits in three of the panels (so not independent of CRWV). CC BY-NC 4.0
+  - [Bitstamp](https://www.bitstamp.net/api) public REST — BTC daily OHLC before 2018-08, the only free source reaching back to 2011 (Deribit's perp starts 2018-08, Yahoo's BTC-USD only 2014-09)
+  - [US Treasury](https://home.treasury.gov/interest-rates-data-csv-archive) daily par yield CSV — the par curve FRED doesn't publish as one series
+- **Scheduling:** macOS `launchd`, three agents — **daily** (options · VRP inputs · VX term structure · Eris OIS · ICE CDS · MOVE), **crypto** (Deribit options · BTC spot · Computable GPU Index), and **SEC** (quarterly fundamentals). Each group records into `job_run`; a run whose required groups are already green for the day is skipped, so a single failing optional source can't make every trigger point re-run the whole job.
 
 The end-to-end type safety from server routes to React components flows through
 Hono's `hc<AppType>` typed client — there's no hand-written API client.
