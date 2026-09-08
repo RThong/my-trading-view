@@ -1,7 +1,7 @@
 /**
  * moomoo 历史日线收盘(Qot_RequestHistoryKL)。用作 VRP 的 RV 腿主源,
  * 比 Yahoo 准(交易所级、正确处理公司行动)。前复权(rehab=1)保证拆股后序列连续。
- * 仅 ETF/个股可取——美股指数(.SPX/.NDX)这账号无历史权限,故 RV 腿统一用 ETF。
+ * 仅 ETF/个股可取——moomoo 的美股指数历史权限要单独开通,未开通时 .SPX/.NDX 取不到,故 RV 腿统一用 ETF。
  * ⚠️ 历史 K 线有配额(Qot_RequestHistoryKLQuota);首次多标的全量回填会占额度。
  */
 import { QOT_MARKET_US } from './moomooClient';
