@@ -11,7 +11,15 @@ import { fetchMoveSeries, mergeMove } from '../fetchers/moveIndex';
 import { fetchShillerCape } from '../fetchers/capeShiller';
 import { fetchHlwRstar } from '../fetchers/nyfedRstar';
 import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
-import { subtractAligned, divideAligned, yoyPct, scale, sumAtAnchorDates, type Point } from '../analytics/regime';
+import {
+  subtractAligned,
+  subtractAt,
+  divideAligned,
+  yoyPct,
+  scale,
+  sumAtAnchorDates,
+  type Point,
+} from '../analytics/regime';
 import { nearMinusFar } from '../analytics/termStructure';
 import { rollingSharpe } from '../analytics/sharpe';
 import { openDb } from '../storage/db';
@@ -363,9 +371,11 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   let secTrim: FundTrim[] = [];
 
   // 有值 → 落对外序列;否则记入 unavailable。收敛 5 处「存在性分支」,读时一目了然。
-  // (传 undefined 表示该序列缺失/为空;直接源用存在性、派生/库源用长度决定是否传值。)
+  // ⚠️ 判的是 **length 不是真值**:`[]` 在 JS 里是真的,而「源返回 200 但内容为空」
+  // (CBOE 只回表头 / 解析全失败 / inner join 零重叠)必须归 unavailable —— 否则那格既不进
+  // 缺失提示,面板还要拿空序列去算分位。放在这里判,调用方就不必人人记得自己 guard 一遍。
   const put = (name: string, value: Point[] | undefined) => {
-    if (value) series[name] = value;
+    if (value?.length) series[name] = value;
     else unavailable.push(name);
   };
 
@@ -383,10 +393,8 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     t5yifr: 't5yifr',
     tp10Kw: 'tp10Kw',
   };
-  // ⚠️ 空数组要当缺失传:`put` 判的是真值,而 `[]` 在 JS 里是真的 —— 直接 `put(out, raw[s])`
-  // 会让"源返回 200 但内容为空"(CBOE 只回表头 / 数据行全解析失败)落成 `series.x = []`,
-  // 既不进 unavailable、面板那格还要拿空序列去算分位。降级语义要求它归 unavailable。
-  for (const [out, s] of Object.entries(direct)) put(out, raw[s]?.length ? raw[s] : undefined);
+  // 空数组归 unavailable 由 put 统一兜(见其注释),这里直接传。
+  for (const [out, s] of Object.entries(direct)) put(out, raw[s]);
 
   // DXY:close 进 series(unavailable/存在性),OHLC 进 ohlc(蜡烛)。缺 → 归 unavailable。
   put('usd', usdBars?.length ? usdBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
@@ -395,19 +403,20 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('cftcJpy', cftcJpy?.length ? cftcJpy : undefined);
   put('dgs10', dgs10?.length ? dgs10 : undefined); // 10Y 国债(财政部直发,利率波动率 pane)
   put('usjp2y', dgs2?.length && jgb2y?.length ? subtractAligned([dgs2, jgb2y]) : undefined); // 美日 2Y 利差 = UST2Y − JGB2Y
-  // KW 预期腿 = 拟合 10Y − 期限溢价 = 未来 10 年预期短端利率的平均。两腿同源同模型同频,
-  // subtractAligned 的前向填充在这里几乎不做事(缺日也一起缺),不像跨源相减那样有对齐风险。
-  put(
-    'expShort10Kw',
-    raw.kwFitted10?.length && raw.tp10Kw?.length ? subtractAligned([raw.kwFitted10, raw.tp10Kw]) : undefined,
-  );
+  // KW 预期腿 = 拟合 10Y − 期限溢价 = 未来 10 年预期短端利率的平均。
+  // 用 subtractAt(inner join)而非 subtractAligned:这是同期恒等式,不是水位组合 —— 缺日就该跳过,
+  // 不该配出「昨天的拟合收益率 − 今天的溢价」。两腿当前日历一致(见 subtractAt 的注释),
+  // 两种写法此刻输出相同;写成 inner join 是为了不把正确性押在那个巧合上。
+  // ⚠️ 判的是**派生后**的长度不是输入腿:inner join 零重叠就返回 [],空数组在 JS 里是真值,
+  // 直接 put 会落成 `series.expShort10Kw = []` —— 既不进 unavailable,面板还要拿空序列去算分位。
+  put('expShort10Kw', subtractAt(raw.kwFitted10 ?? [], raw.tp10Kw ?? []));
   put('jgb10y', jgb10y?.length ? jgb10y : undefined);
   put('jgbVix', jgbVix?.length ? jgbVix : undefined);
   // ⚠️ 字段名带 `Current`:将来接 real-time 那套会撞名,且**现在就有人会误读** ——
   // current 的历史值是今天用全部数据回头重画的,不是当时看得到的值(前视偏差)。
   put('rstarHlwCurrent', rstar?.length ? rstar : undefined);
   // L 的粗代理 = HLW r*(实际中枢) + 5y5y 通胀远期(通胀锚)。**只为了和 A 并排读符号**,
-  // 面板上不做 L − A、不乘 (T₂−T₁)/T₂ 系数、不出单一数字 —— 三层污染叠着,减出来的量不可识别:
+  // 面板上不做 L − A、不乘 (T₂−T₁)/T₂ 系数、不出单一数字 —— 四层污染叠着,减出来的量不可识别:
   //   ① L 与 A 出自不同模型家族(HLW 宏观状态空间 vs Kim-Wright 期限结构),差里装着两模型的分歧,
   //      而那个分歧无法与真实的 L − A 分离;
   //   ② T5YIFR 是第 6-10 年,L 要的是第 11-30 年,而第 6-10 年恰好还在 A 的覆盖区间内(两边共用一段);
@@ -415,7 +424,8 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   //   外加口径混用:THREEFY10 是零息,而要对照的 30Y−10Y 来自 par yield。
   // 符号(A 在上 = 偏差为负 = 利差低估两段溢价之差)比量级稳健得多,不依赖上面任何一条成立。
   // 按 r* 的季度日取点(见 sumAtAnchorDates):L 的分辨率由 r* 那一半决定,拉成日频是虚报精度。
-  put('lProxyHlwT5yifr', rstar?.length && raw.t5yifr?.length ? sumAtAnchorDates(rstar, raw.t5yifr) : undefined);
+  // 同上判派生后:所有锚点日都早于日频腿首个观测时 sumAtAnchorDates 返回 []。
+  put('lProxyHlwT5yifr', sumAtAnchorDates(rstar ?? [], raw.t5yifr ?? []));
   // CAPE 图只画 1990+(全历史 1871 太远、可眼看互联网泡沫);分位窗口更近(前端 pctlSince 2000+)。
   const cape1990 = cape?.filter((p) => p.date >= '1990-01-01');
   put('cape', cape1990?.length ? cape1990 : undefined);

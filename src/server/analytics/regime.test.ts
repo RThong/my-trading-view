@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { subtractAligned, divideAligned, yoyPct, scale, sumAtAnchorDates } from './regime';
+import { subtractAligned, subtractAt, divideAligned, yoyPct, scale, sumAtAnchorDates } from './regime';
 
 test('scale:逐点乘常数(单位对齐)', () => {
   expect(
@@ -114,4 +114,24 @@ test('sumAtAnchorDates:日频腿尚无观测的锚点日跳过,不补 0', () => 
   const daily = [{ date: '2018-03-15', value: 2.0 }];
 
   expect(sumAtAnchorDates(anchor, daily)).toEqual([{ date: '2018-04-01', value: 3.3 }]);
+});
+
+// 构造用例(KW 两腿真实日历是一致的):锁住「日历一旦分叉,inner join 不跨日配对」这个保证。
+test('subtractAt:inner join,任一腿缺日就跳过(不跨日配对)', () => {
+  const fitted = [
+    { date: '2018-01-12', value: 4.0 },
+    { date: '2018-01-16', value: 4.2 },
+  ];
+  const tp = [
+    { date: '2018-01-12', value: 0.5 },
+    { date: '2018-01-15', value: 0.6 }, // 只有 b 腿有 → 不能用 a 腿 01-12 的 4.0 去减
+    { date: '2018-01-16', value: 0.7 },
+  ];
+
+  expect(subtractAt(fitted, tp)).toEqual([
+    { date: '2018-01-12', value: 4.0 - 0.5 },
+    { date: '2018-01-16', value: 4.2 - 0.7 },
+  ]);
+  // 对照:前向填充版本会多出 01-15 那个跨日配对的点
+  expect(subtractAligned([fitted, tp]).some((p) => p.date === '2018-01-15')).toBe(true);
 });

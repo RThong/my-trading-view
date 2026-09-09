@@ -31,7 +31,10 @@ export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Inter
   // 右上角提示:序列缺失 + SEC 滞后 + 断档裁剪。三者可同时成立
   // (某格空着、另一家落后一季、还有一格被裁短)。裁剪那条见 secTrimNote:
   // 裁本身是对的,但不说的话「线怎么这么短」无处可查。
-  const missing = panes.map((p) => p.key).filter((k) => data.unavailable.includes(k));
+  // overlay 也要算进来:它在 seriesName/colors 里有名有色,缺了却不提示,那格会静默少一条线。
+  const missing = panes
+    .flatMap((p) => [p.key, ...(p.overlay ? [p.overlay.key] : [])])
+    .filter((k) => data.unavailable.includes(k));
   const notes = [
     missing.length ? `暂不可用: ${missing.map((k) => seriesName[k]).join(', ')}` : undefined,
     secLagNote(data, dim),

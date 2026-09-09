@@ -382,3 +382,15 @@ test('buildRegimeSpecs:overlay 缺失只少那条线,主线照画', () => {
   expect(keysOf(withL)).toEqual(['expShort10Kw', 'lProxyHlwT5yifr']);
   expect(keysOf(noL)).toEqual(['expShort10Kw']);
 });
+
+// buildRegimeSpecs 在 candle / signed 两个分支提前 return,不带 overlay —— 那两种 pane 配了
+// overlay 会被静默丢弃(不报错、图上就是少一条线)。与其给用不到的分支拼代码,不如把约束钉住。
+test('REGIME_DIMS:overlay 只能配 line 型 pane(candle/signed 分支不带 overlay)', () => {
+  for (const [dim, cfg] of Object.entries(REGIME_DIMS)) {
+    const bad = cfg.panes.filter((p) => p.overlay && p.render && p.render.kind !== 'line');
+    expect(
+      bad.map((p) => p.key),
+      `${dim} 给非 line 型 pane 配了 overlay`,
+    ).toEqual([]);
+  }
+});

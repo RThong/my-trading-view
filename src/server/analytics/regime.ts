@@ -18,6 +18,26 @@ export function divideAligned(num: Point[], den: Point[]): Point[] {
   });
 }
 
+/**
+ * 逐日相减 a−b(按日期 inner join,任一腿缺日则该日跳过)。
+ *
+ * ⚠️ **同期恒等式型的相减用这个,不要用 subtractAligned。** 后者前向填充,会把「一腿有、
+ * 另一腿缺」的日子配成「昨天的 a − 今天的 b」—— 对净流动性那种「各腿各自频率、要的是当下水位」
+ * 的组合是对的,对「同一模型切出来的两块,相加必须等于第三块」这种就是错的。
+ *
+ * Kim-Wright 那两条(THREEFY10 / THREEFYTP10)**目前日历一致**(2018 起各 2170 个观测,
+ * 94 个缺日完全相同),所以此处两种写法当前输出相同。仍用 inner join:正确性不该依赖
+ * 「两条独立发布的序列碰巧同步」这个巧合。
+ */
+export function subtractAt(a: Point[], b: Point[]): Point[] {
+  const bMap = new Map(b.map((p) => [p.date, p.value]));
+
+  return a.flatMap((p) => {
+    const v = bMap.get(p.date);
+    return v === undefined ? [] : [{ date: p.date, value: p.value - v }];
+  });
+}
+
 /** 逐点乘常数 k:单位/量纲对齐用(如 RRP 十亿→百万 ×1000、柴油 $/gal→$/bbl ×42)。 */
 export function scale(rows: Point[], k: number): Point[] {
   return rows.map((p) => ({ date: p.date, value: p.value * k }));
