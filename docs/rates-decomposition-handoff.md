@@ -194,8 +194,9 @@ TIPS 流动性变差 → TIPS 收益率被推高 → **测得的 BEI 被压低**
 | 档三 3b HLW R* | ✅ 只做 `current`，见 §7 | `fetchers/nyfedRstar.ts` |
 
 前端：`real` 进了 `DEFAULT_TENORS`、两个面板的 `VIEW_DESC` 与 `SPREAD_DESC`；利率视角加了三个 tab
-（实际收益率曲线 · 实际走势 30Y−10Y · 长端分解）。`ratesDecomp` 是新的 `RegimeDim`，三格：
-5y5y 通胀远期 / 期限溢价(KW) / 预期短端(KW)。
+（实际收益率曲线 · 实际走势 30Y−10Y · 长端分解）。`ratesDecomp` 是新的 `RegimeDim`，**四格**：
+5y5y 通胀远期 / 期限溢价(KW) / A vs L 缺口（预期短端 + L 代理 overlay）/ r*(HLW)。
+（初稿写的「三格」是 HLW 那格接进来之前的状态，见 §7/§8。）
 
 §2 档一那条「⚠️ 未验证」的提醒是对的：`DEFAULT_TENORS` 确实要加一项（`real: ['5Y','10Y','30Y']`，
 与 `bei` 同组），且 `tenorHistory.hooks.test.ts` 里有一条断言键名全集的用例要同步改。
@@ -209,7 +210,10 @@ TIPS 流动性变差 → TIPS 收益率被推高 → **测得的 BEI 被压低**
 预期短端均值 = THREEFY10 − THREEFYTP10
 ```
 
-两腿同源、同模型、同频，不像跨源相减那样有对齐风险。分解式的预期腿到手，
+两腿同源、同模型、同频，**日历也实测一致**（2018 起各 2170 个观测，94 个缺日完全相同）。
+即便如此，实现走的是 inner join（`subtractAt`）而非前向填充的 `subtractAligned`：这是**同期恒等式**
+不是水位组合，缺日就该跳过。两种写法此刻输出相同，写成 inner join 只为不把正确性押在
+「两条独立发布的序列碰巧同步」这个巧合上。分解式的预期腿到手，
 **不必为这条腿去写纽约联储那个 fetcher** —— 这正是 §5 预判的「若有，档三 3a 的价值会下降」。
 
 ### 剩下的：ACM 与 HLW，以及为什么先停在这里
@@ -230,20 +234,26 @@ HLW **已做**，但优先级排序被推翻了 —— 见 §7。
 
 ### 核实过的数字（2026-09-09，走 FRED 免 key 的 fredgraph.csv 直取）
 
-| 序列 | 2018 起交易日数 | 最新 |
+| 序列 | 2018 起**实际观测数** | 最新 |
 |---|---|---|
-| `DFII5/7/10/20/30` | 各 2264 | 2026-09-04，30Y = 2.96 |
-| `T5YIFR` | 2266 | 2026-09-08 = 2.34（与 §4 验收里写的量级一致）|
-| `THREEFYTP10` | 2264 | 2026-09-04 = 0.8892 |
+| `DFII5/7/10/20/30` | 各 2170 | 2026-09-04，30Y = 2.96 |
+| `T5YIFR` | 2171 | 2026-09-08 = 2.34（与 §4 验收里写的量级一致）|
+| `THREEFYTP10` | 2170 | 2026-09-04 = 0.8892 |
 | `THREEFY10` | 2170 | 2026-09-04 = 4.8380 |
 
-- **`DFII30` 全程有数**（验收第 3 条，本批改动的主要目的）：2264 天，无大面积缺口。
+⚠️ **订正**：本表初稿写的 2264 / 2266 / 2170 是把 `fredgraph.csv` 的**行数**（含缺日的空值行）
+当成了观测数，同一张表里两个口径混用。按非空观测重数，上面这几条 2018 起**全是 2170**
+（`T5YIFR` 因多发一天 = 2171）。曾据此推出「`THREEFY10` 比 `THREEFYTP10` 少 94 天」的结论，
+**是错的**——那 94 天是两条序列**共同**的缺日（债市假日）。
+
+- **`DFII30` 全程有数**（验收第 3 条，本批改动的主要目的）：**2170 个观测**，无大面积缺口
+  （对应 2264 个工作日行，缺的 94 天是债市假日，与其它 FRED 利率序列共同缺）。
 - 恒等关系抽查（2026-09-04）：10Y `4.78 − 2.43 = 2.35`；30Y `5.24 − 2.96 = 2.28`。
   ⚠️ 这里的名义腿是 `DGS30`（`buildBei` 用的那条）。面板的 `treasury` 源走的是**财政部 par yield 直发**，
   与 `DGS` 差 1–2 天的发布时点，所以 `treasury[t] − real[t]` 与 `bei[t]` 的实际差距会比这个抽查更大 ——
   §3 ⑤「别写死这个恒等式」在面板上比在 FRED 内部更成立。
 
-### 本地没验到的
+### 本地没验到的（**已过期，见本节末订正**）
 
 **开发机没有 `FRED_API_KEY`**（仓库只有 `.env.example`），所以没能跑通带真实数据的
 `GET /api/yield-curve?source=real`。实际验到的是：
@@ -252,9 +262,17 @@ HLW **已做**，但优先级排序被推翻了 —— 见 §7。
 - `/api/regime` 的 `unavailable` 里出现了 `t5yifr` / `tp10Kw` / `expShort10Kw` 三个新键，
   且**与 `hyOas` / `wages` / `stickyCpi` 等既有 FRED 序列一同缺失**，而非 FRED 的 `fng` / `vixeq` 正常 ——
   即降级来自缺 key，不是新接线出错。
-- `bun test` 465 passed；`typecheck` 与 `biome check` 均干净。
+- `typecheck` 与 `biome check` 均干净（测试总数见 §9.5；此处原有的阶段流水号已删，理由见 §7）。
 
 **填上 key 后仍要人工过一眼验收清单的头两条**（`source=real` 真有数、10Y 恒等抽查）。
+
+⚠️ **订正（本节写完之后）**：`.env`（gitignored）里**已有可用的 `FRED_API_KEY`**，Bun 自动加载，
+上面「没验到」的两条**都已实跑通过**：
+- `GET /api/yield-curve?source=real` → 5 档 `5Y/7Y/10Y/20Y/30Y`、各 2170 点、`unavailable` 为空，
+  30Y 最新 `2026-09-04 = 2.96`（验收第 1、3 条，**30Y 段是这批改动的主要目的**）
+- 恒等抽查：`bei[10Y]` 最新 `2026-09-04 = 2.35` = `DGS10 4.78 − DFII10 2.43`（验收第 2 条）
+- `/api/regime`：`t5yifr` 2171、`tp10Kw` 2170、`expShort10Kw` 2170、`rstarHlwCurrent` 34、
+  `lProxyHlwT5yifr` 33，五个新键全部落在 `series`，不在 `unavailable`
 
 ---
 
@@ -287,10 +305,16 @@ L（名义长期中枢）的粗代理 = HLW r*  +  T5YIFR              ✅ 本�
 ⚠️ 但**接了 HLW 不解决 §6 自我批评里那个问题**。r\* 与 Kim-Wright 期限溢价是两个不同的量，
 不构成互相对照。「只报单一模型点估计」那一条仍然成立，**真正的对照仍只能靠 ACM**。
 
-### 落点与三个硬条件
+### 落点与四个硬条件
 
 `fetchers/nyfedRstar.ts`（+ 同名 test）：下载 `Holston_Laubach_Williams_current_estimates.xlsx`，
-`fflate` 解 zip，取 `xl/worksheets/sheet2.xml`（工作表 `HLW Estimates`）的 A 列与 K 列。
+`fflate` 解 zip，取工作表 `HLW Estimates` 的 A 列与 K 列。
+
+⚠️ **工作表按名字解,不写死 `sheet2.xml`** —— `resolveSheetPath(workbook, rels, 'HLW Estimates')`
+读 `xl/workbook.xml` 拿到该表的 `r:id`，再经 `xl/_rels/workbook.xml.rels` 解到 zip 内路径。
+当前实测确实落在 `xl/worksheets/sheet2.xml`，**但别照这个结果去简化**：zip 里的 `sheetN` 编号
+与工作簿的表顺序无绑定关系，官方在前面插一张表，`sheet2.xml` 就成了别的表 —— 而那种表照样可能
+「A 列是数值、K 列也是数值」，于是**静默产出错误的 r\***，不报错。按名字解 → 改版时是「找不到」抛错。
 
 表结构（已实测）：四个指标块 × 三国（US / Canada / Euro Area），
 `C-E` 趋势增长 g、`G-I` 其他决定项 z、**`K-M` 自然利率 r\***、`O-Q` 产出缺口 —— 美国是各块首列，故 r\* = K。
@@ -301,6 +325,7 @@ A 列是 Excel 序列日、且是**季度首日**（`46113` → `2026-04-01`，�
 | ① 字段名带 `current` | 序列名 `rstarHlwCurrent`（不是 `rstar`）—— 将来接 real_time 不撞名，且现在就防误读 |
 | ② 面板标「历史值经事后重估」 | 写进 pane `desc`，明写「不能用它论证『当时市场定价错了』——那是前视偏差」 |
 | ③ 季频画阶梯不画折线 | `LineSpec.step` + `LineType.WithSteps`；一年只发 4 次，平滑折线是在伪造发布间的信息 |
+| ④ 改版要抛错不要静默出错值 | 工作表按名字解（见上）；`workbook.xml` / `rels` / 目标 sheet 任一缺失或表被改名 → 抛错 → 上层归 `unavailable` |
 
 还钉进注释的陷阱（`fetchers/nyfedRstar.ts` 文件头 + pane `desc`）：
 
@@ -317,7 +342,9 @@ HLW 的 r\* 是**短期**自然利率，而 10Y 实际里装的是未来十年�
 - `bun -e` 直调 fetcher：34 个季度点，`2018-01-01 = 1.2124` → `2026-04-01 = 1.0086`
 - `/api/regime` 真实返回：`rstarHlwCurrent` 在 `series` 里、34 点、不在 `unavailable`
   —— 这条**不吃 `FRED_API_KEY`**（纽约联储直发），所以本地就能端到端验通，不像 §6 那几条
-- 解析器单测 5 条（含「不会把趋势增长那一块的 C 列当成 r\*」）；`bun test` 470 passed；typecheck / biome 干净
+- 解析器单测 9 条：`excelSerialToIso` 3 + `parseHlwSheet` 2（含「不会把趋势增长那一块的 C 列当成 r\*」）
+  + `resolveSheetPath` 4（含「官方在前面插一张表后仍跟着名字走」「表被改名 → null」）；
+  typecheck / biome 干净（`bun test` 的总数只在 §9.5 报一次 —— 按阶段记流水号会前后打架）
 
 ### ACM 现状（另查过 GitHub）
 
@@ -404,13 +431,14 @@ series 键、图表 series 句柄的 Map 键（`paneChart.hooks.ts` 的 `seriesR
 
 - `sumAtAnchorDates` 单测 2 条（含「锚点日在日频腿首个观测之前 → 跳过，不补 0」，
   以及「元旦这种非交易日锚点要取前一笔、不能取后一笔」）
-- 真实数据验算术（r\* 走 fetcher，T5YIFR 走免 key 的 fredgraph）：34 个季度点，
+- 真实数据验算术（r\* 走 fetcher，T5YIFR 走免 key 的 fredgraph）：r\* 34 点 → **L 33 点**
+  （首个锚点 `2018-01-01` 因 T5YIFR 首观测在 `2018-01-02` 被跳过 —— 正是「不补 0」的实测证据）；
   `2026-01-01` 正确取到 `2025-12-31` 的 2.24；`2026-04-01` L = 1.0086 + 2.07 = **3.0786**
 - 当期符号：A = 4.8380 − 0.8892 = **3.9488 > L 3.0786** → 偏差为负 → 30Y−10Y **低估**两段溢价之差
   （与「短端远在中性之上 → A > L」一致）
-- `/api/regime`：本地 `lProxyHlwT5yifr` 归 `unavailable`（通胀腿要 FRED key），
-  overlay 缺失时主线照画 —— 有单测覆盖
-- `bun test` 472 passed；typecheck / biome 干净
+- `/api/regime`：`lProxyHlwT5yifr` 实跑 33 点落在 `series`（写这条时以为本地缺 FRED key 会归
+  `unavailable`，实际 `.env` 里有 key，见 §6 末订正）；overlay 缺失时主线照画 —— 有单测覆盖
+- typecheck / biome 干净（测试总数见 §9.5）
 
 ### 遗留
 
@@ -470,4 +498,9 @@ review 阶段实核纽约联储 Treasury Term Premia 页的结果：**日频与�
 |---|---|
 | ACM 期限溢价（对照线） | ⬜ 停在依赖取舍上，见 §6「剩下的」 |
 | HLW `real_time`（回测口径） | ⬜ 无回测需求时不做，见 §7 |
-| `?source=real` 带真实数据跑通 | ⬜ **唯一还挂着的验收项**——开发机无 `FRED_API_KEY`（§6「本地没验到的」）。配上 key 起 dev server，确认 `unavailable` 为空、30Y 档有数即可 |
+| `?source=real` 带真实数据跑通 | ✅ **已关闭**——`.env` 里本来就有可用的 `FRED_API_KEY`。实跑 5 档各 2170 点、`unavailable` 为空、30Y 最新 2.96，10Y 恒等抽查也过（见 §6 末订正） |
+
+全量测试(工作区最终状态)：`bun test` **481 passed / 0 failed**、`tsc --noEmit` 干净、
+`bun run lint` 仅剩 `twseRevenue.ts` / `secBackfillInstances.test.ts` 两处既有告警。
+本批相对 base `1410807`(465 passed)共加 16 条：`regime.test.ts` 3 + `nyfedRstar.test.ts` 9
++ `regimeChart.hooks.test.ts` 4。

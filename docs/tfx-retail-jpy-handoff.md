@@ -221,16 +221,16 @@ export async function updateTfxRetail(db, fetch = fetchTfxRetailUsdJpy) {
 
 ⚠️ **成败判据的坑**：这是**周频**数据，daily job 每天拉到的是同一个文件。
 **别把「没有新的一周」判成 failed** —— 那会让当天守卫永远不绿、整条 pipeline 白重跑 5 次。
-性质同 `AGENTS.md:86` 那条 MOVE 的注释。建议判据：**拿到 ≥1 行且能解析出 `USD/JPY` 两列即 success**；
+性质同 `AGENTS.md:87` 那条 MOVE 的注释。建议判据：**拿到 ≥1 行且能解析出 `USD/JPY` 两列即 success**；
 真正该告警的是「解析不出 USD/JPY 列」（= 源改版）。
 
 **不要**加进 `REQUIRED_JOBS`（`daily.ts:182`）—— 周频数据缺一天不是异常。
 
 ### 5.4 让 regime 路由读到
 
-- `routes/regime.ts` 的 `JOB_WRITTEN_SERIES`（`:102`）加两行：
+- `routes/regime.ts` 的 `JOB_WRITTEN_SERIES`（`:110`）加两行：
   `['tfxRetailSell', 'TFX_SELL_USDJPY']`、`['tfxRetailBuy', 'TFX_BUY_USDJPY']`
-- `DB_BACKED_KEYS`（`:173`）由 `JOB_WRITTEN_SERIES` 自动派生，不用改
+- `DB_BACKED_KEYS`（`:181`）由 `JOB_WRITTEN_SERIES` 自动派生，不用改
 - 缓存命中路径也走同一个 `readDbBacked`，不用额外处理（那处注释解释了为什么抽成一处）
 
 ### 5.5 前端：`jpy` 视角加一格
@@ -263,7 +263,9 @@ export async function updateTfxRetail(db, fetch = fetchTfxRetailUsdJpy) {
 ### ACM 期限溢价（一旦 SheetJS 进来，边际成本≈0）
 
 `docs/rates-decomposition-handoff.md` §6 当时把 ACM 挂起了，理由是「为一条对照线加一个 xls 依赖不值」。
-**那个理由现在不成立了** —— 依赖为 TFX 已经加了。
+**一旦本方案落地，那个理由就不成立了** —— 依赖会为 TFX 一起加进来。
+⚠️ 写作时点(2026-09-09)**依赖还没加**:`package.json` 里只有 `fflate`，没有 SheetJS。
+本节是「TFX 落地之后」的顺带收益，不是现状；别据此以为可以直接开写 ACM fetcher。
 
 已实测 `https://www.newyorkfed.org/medialibrary/media/research/data_indicators/ACMTermPremium.xls`
 （10.1 MB BIFF8）能被 SheetJS 0.20.3 读开：
@@ -281,7 +283,7 @@ ACM Daily: 16,273 行 × 31 列
 而且 `ACMRNY` 列直接给预期短端，不用像 KW 那样靠 `拟合 − 溢价` 现减。
 
 ⚠️ ACM **可回填全历史**（一个文件 1961→今），按规矩该读时现拉。但它 10.1 MB，
-而 regime 路由是 6h 内存 TTL（`routes/regime.ts:65`）、现拉全部源已约 1.3s ——
+而 regime 路由是 6h 内存 TTL（`routes/regime.ts:73`）、现拉全部源已约 1.3s ——
 **建议也落库**，理由是体积不是不可回填。这个理由要写进注释，免得后人以为规矩变了。
 
 ### FFAJ 店頭 FX（要第二个依赖，不急）

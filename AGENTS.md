@@ -9,7 +9,8 @@
 |---|---|---|---|
 | **CBOE 指数** | VIX 家族 / SKEW / RXM | **静态 CSV 直下**:`cdn.cboe.com/api/global/us_indices/daily_prices/{指数}_History.csv`(无需 key,免爬虫) | 1990 至今全历史 |
 | **CBOE VX 期货** | VX 近月连续(存为 `VX1`) | API 列清单(`www-api.cboe.com/.../product/list/VX/`)+ `cdn.cboe.com/{path}` 下 CSV | 全历史 |
-| **FRED** | 利率(UST/TIPS)/ 信用利差(HY+IG 梯队)/ 流动性(WALCL/TGA/RRP/SOFR/IORB)/ 通胀(BEI=DGS−DFII、Sticky CPI、薪资) | JSON API `api.stlouisfed.org/fred/series/observations`(要 key) | 全历史 |
+| **FRED** | 利率(UST/TIPS)/ 信用利差(HY+IG 梯队)/ 流动性(WALCL/TGA/RRP/SOFR/IORB)/ 通胀(BEI=DGS−DFII、**5y5y 远期 T5YIFR**、Sticky CPI、薪资)/ **Kim-Wright 期限溢价(THREEFYTP10 + 拟合 THREEFY10)** | JSON API `api.stlouisfed.org/fred/series/observations`(要 key) | 全历史 |
+| **NY Fed** | HLW 自然利率 r\*(`rstarHlwCurrent`,**季频**) | 官方 xlsx = **zip+XML**,`fflate` 解开后**按工作表名**(`HLW Estimates`)经 `workbook.xml`+rels 解路径 —— 不写死 `sheetN`,官方插表要抛错不要静默取错表 | 1961 起全历史;⚠️ **current estimates 的历史值会被事后重估**(前视偏差,不能用来论证「当时市场定价错了」) |
 | **Yahoo** | 股票 EOD + **DXY(`DX-Y.NYB` 真 ICE 美元指数)/ MOVE(`^MOVE`)/ 油品期货(`CL=F`/`BZ=F`/`HO=F`/`RB=F`)/ USD/JPY** | `yahoo-finance2` **v4** npm(class API `new YahooFinance()`) | 可回填多年 |
 | **其它** | Eris(SOFR OIS 曲线)/ MOF+JPX(JGB 收益率/JGB VIX)/ CFTC(日元净持仓)/ Shiller(CAPE) | 各自 adapter(见 `fetchers/`)| 多为全历史 |
 | **ICE** | AI 巨头 + 甲骨文单名 CDS EOD 结算价(`iceCds`) | 公开 JSON `www.ice.com/api/cds-settlement-prices/icc-single-names`(免 key) | **仅当天快照,不可回填** |

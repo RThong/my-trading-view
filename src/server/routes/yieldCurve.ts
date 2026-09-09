@@ -118,7 +118,8 @@ const BUILDERS: Record<string, () => CurveBody | Promise<CurveBody>> = {
   bei: buildBei, // 通胀预期(BEI = DGS − DFII 现算)
   // 实际收益率曲线(TIPS)。DFII 各档本就是 BEI 的减数腿、buildBei 每次都在拉,
   // 这里只是把它单独暴露出来 —— 与 bei 同档位,便于 名义 / 实际 / 通胀 三条对读。
-  // ⚠️ ACM / Kim-Wright 期限溢价模型只发到 10Y,30Y 段的成分拆解只能靠这条「名义 − BEI」。
+  // ⚠️ ACM / Kim-Wright 期限溢价模型只发到 10Y,30Y 段的成分拆解只能靠这条实际收益率
+  //(注意方向:面板上 real 是 DFII 直读,反倒是 bei 由 DGS − DFII 现算 —— 别写成「名义 − BEI」)。
   real: () => buildFredCurve(BEI_TENORS.map((t) => ({ tenor: t.tenor, series: t.real }))),
   jgb: buildJgb, // 日本国债收益曲线(MOF)
   ai_cds: buildAiCds, // AI 巨头 + 甲骨文单名 CDS(ICE 结算价读时换算 spread bp)

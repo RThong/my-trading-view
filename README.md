@@ -158,7 +158,7 @@ several horizontal tabs:
 | 情绪 Sentiment | 波动率 (COR1M · VIXEQ · VIX · VXN · VX1−V3 term · RXM/SPX risk-reversal) · 情绪 (Fear&Greed) | CBOE / CNN |
 | 宏观 Macro | growth/inflation/policy regime read | FRED |
 | 能源 Energy | Brent−WTI spread · diesel crack (油市结构 / 物理紧张) | Yahoo |
-| 利率 Rates | 收益曲线 · 期限走势 · SOFR OIS · OIS 走势 · 利率波动率 (MOVE) · 实际收益率 (TIPS 曲线) · 实际走势 · 长端分解 (5y5y 通胀远期 + Kim-Wright 期限溢价/预期短端 + HLW r* + A vs L 缺口) | FRED / Eris / NY Fed / Yahoo |
+| 利率 Rates | 收益曲线 · 期限走势 · SOFR OIS · OIS 走势 · 利率波动率 (MOVE) · 实际收益率 (TIPS 曲线) · 实际走势 · 长端分解 (5y5y 通胀远期 + Kim-Wright 期限溢价 + A vs L 缺口(KW 预期短端 vs HLW r*+5y5y) + HLW r*) | FRED / Eris / NY Fed / Yahoo |
 | 日本 Japan | 日元 (USD-JPY + CFTC 持仓) · JGB 收益曲线 · 期限走势 · 日债波动率 (JGB VIX) | Yahoo / CFTC / MOF / JPX |
 | 信用曲线 Credit curve | 评级利差 · 期限结构 | FRED |
 | AI | 算力价格 (H100/H200/B200/B300 GPU 租赁价指数) · 买方合计 (AI 链 capex/FCF 判据线) · AI CDS (AI 巨头 + Oracle 单名 CDS，价近似 spread bp) · 产业链 (15 家公司财务明细) | Computable / ICE / SEC / TWSE |
