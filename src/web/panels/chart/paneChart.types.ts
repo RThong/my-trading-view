@@ -13,6 +13,8 @@ export type LineSpec = {
   data: LinePoint[];
   baseline?: number;
   refLines?: { price: number; title: string }[];
+  /** 阶梯线。低频序列(季频 r*)专用:两次发布之间值就是不变的,平滑折线是在伪造发布间的信息。 */
+  step?: boolean;
 };
 export type CandleSpec = { key: string; pane: number; kind: 'candle'; title: string; data: Bar[] };
 export type HistoPoint = { time: string; value: number; color: string };

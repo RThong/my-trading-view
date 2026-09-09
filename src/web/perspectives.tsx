@@ -94,6 +94,12 @@ export const PERSPECTIVES: Perspective[] = [
       curveTab('sofr_ois', 'SOFR OIS', 'sofr_ois'),
       historyTab('ois_history', 'OIS 走势', 'sofr_ois', '12M', '3M', '1Y − 3M'),
       regimeTab('rates_vol', '利率波动率', 'ratesVol'),
+      // 长端分解三件套。名义在「收益曲线 / 期限走势」,通胀那一块在「通胀」视角的 BEI 两格,
+      // 剩下的实际腿与期限溢价腿放这里 —— 长端上行时靠这几格分「动的是通胀还是实际利率」。
+      curveTab('real_curve', '实际收益率', 'real'),
+      // 30Y − 10Y:实际曲线自身的长端陡峭度。剥掉通胀后,这条走阔就是久期风险补偿在抬。
+      historyTab('real_history', '实际走势', 'real', '30Y', '10Y', '30Y − 10Y'),
+      regimeTab('rates_decomp', '长端分解', 'ratesDecomp'),
     ],
   },
   {

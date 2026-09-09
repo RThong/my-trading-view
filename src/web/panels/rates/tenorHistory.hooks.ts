@@ -26,6 +26,8 @@ export const DEFAULT_TENORS: Record<string, string[]> = {
   treasury: ['1Y', '10Y'],
   sofr_ois: ['1M', '3M', '6M', '12M', '2Y', '10Y'],
   bei: ['5Y', '10Y', '30Y'],
+  // 实际收益率与 bei 同档位、刻意同一组默认勾选 —— 两格并排就是「名义 − BEI = 实际」的两边。
+  real: ['5Y', '10Y', '30Y'],
   jgb: ['1Y', '10Y'],
   // AI CDS:默认展示除 Broadcom/Dell/Intel 外的 7 家(这三条较次要,留 chip 按需勾)。
   // 须与 rateCurves.ts AI_CDS 的 core 名单一致(core 缺失会让每日 job failed 告警)。

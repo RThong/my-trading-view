@@ -1,7 +1,14 @@
 // 通用多 pane 图表栈:图表引擎(建图/series 同步)+ 布局(换位/折叠)+ 图例(crosshair)。
 // 与数据源无关——AssetChart / RegimeChart / AttackDefensePanel 三方复用,故从 assetChart.hooks 抽出。
 import { useEffect, useRef, useState } from 'react';
-import { createChart, LineSeries, CandlestickSeries, HistogramSeries, type IChartApi } from 'lightweight-charts';
+import {
+  createChart,
+  LineSeries,
+  CandlestickSeries,
+  HistogramSeries,
+  LineType,
+  type IChartApi,
+} from 'lightweight-charts';
 import { useStable } from '../../hooks/useStable';
 import { CHART_OPTIONS, changeStats, needsLogScale } from '../../lib/chart';
 import type { PaneDef, Spec, LegendCell, AnySeries } from './paneChart.types';
@@ -65,7 +72,17 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
     return s;
   }
 
-  const s = chart.addSeries(LineSeries, { color: spec.color, title: spec.title, lineWidth: 2 }, spec.pane);
+  const s = chart.addSeries(
+    LineSeries,
+    {
+      color: spec.color,
+      title: spec.title,
+      lineWidth: 2,
+      // 阶梯线:低频序列(季频)不该在两次发布之间画出斜坡,那是凭空造出来的中间值。
+      ...(spec.step ? { lineType: LineType.WithSteps } : {}),
+    },
+    spec.pane,
+  );
   if (spec.baseline !== undefined) {
     s.createPriceLine({
       price: spec.baseline,

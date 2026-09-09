@@ -39,6 +39,24 @@ export function yoyPct(rows: Point[]): Point[] {
   return out;
 }
 
+/**
+ * 把 daily 序列在 anchor 的每个日期上取点后相加(逐点前向填充:取 ≤ 该日的最近观测)。
+ *
+ * ⚠️ **刻意不把 anchor 拉成日频。** 用途是低频腿 + 高频腿拼一个复合量(季频 r* + 日频通胀远期):
+ * 复合量的分辨率由低频那半决定,前向填充成日频会让它在图上看起来比实际精细。
+ * 高频腿自身的日内变动不会因此丢失 —— 它在自己那一格里照常是日频线。
+ *
+ * anchor / daily 都要求按日期升序。daily 在某锚点日之前尚无观测 → 该点跳过。
+ */
+export function sumAtAnchorDates(anchor: Point[], daily: Point[]): Point[] {
+  let j = -1; // 指向 ≤ 当前锚点日的最近一行;锚点日单调增,j 只前进
+
+  return anchor.flatMap((a) => {
+    while (j + 1 < daily.length && daily[j + 1].date <= a.date) j++;
+    return j < 0 ? [] : [{ date: a.date, value: a.value + daily[j].value }];
+  });
+}
+
 export function subtractAligned(series: Point[][]): Point[] {
   const maps = series.map((s) => new Map(s.map((p) => [p.date, p.value])));
   const dates = [...new Set(series.flatMap((s) => s.map((p) => p.date)))].sort();

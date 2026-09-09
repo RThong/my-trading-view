@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { subtractAligned, divideAligned, yoyPct, scale } from './regime';
+import { subtractAligned, divideAligned, yoyPct, scale, sumAtAnchorDates } from './regime';
 
 test('scale:逐点乘常数(单位对齐)', () => {
   expect(
@@ -86,4 +86,32 @@ test('三序列净流动性:WALCL - TGA - RRP', () => {
   const t = [{ date: '2020-01-01', value: 20 }];
   const r = [{ date: '2020-01-01', value: 5 }];
   expect(subtractAligned([w, t, r])).toEqual([{ date: '2020-01-01', value: 75 }]);
+});
+
+test('sumAtAnchorDates:只在锚点日出点,日频腿前向填充', () => {
+  const anchor = [
+    { date: '2026-01-01', value: 1.09 }, // 元旦非交易日 → 取 2025-12-31 那笔
+    { date: '2026-04-01', value: 1.0 },
+  ];
+  const daily = [
+    { date: '2025-12-30', value: 2.3 },
+    { date: '2025-12-31', value: 2.31 },
+    { date: '2026-01-02', value: 2.35 }, // 锚点日之后 → 不该被 2026-01-01 用上
+    { date: '2026-04-01', value: 2.4 },
+  ];
+
+  expect(sumAtAnchorDates(anchor, daily)).toEqual([
+    { date: '2026-01-01', value: 1.09 + 2.31 },
+    { date: '2026-04-01', value: 1.0 + 2.4 },
+  ]);
+});
+
+test('sumAtAnchorDates:日频腿尚无观测的锚点日跳过,不补 0', () => {
+  const anchor = [
+    { date: '2018-01-01', value: 1.2 },
+    { date: '2018-04-01', value: 1.3 },
+  ];
+  const daily = [{ date: '2018-03-15', value: 2.0 }];
+
+  expect(sumAtAnchorDates(anchor, daily)).toEqual([{ date: '2018-04-01', value: 3.3 }]);
 });

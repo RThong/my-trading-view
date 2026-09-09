@@ -1,7 +1,9 @@
 import { test, expect } from 'bun:test';
 import {
   buildRegimeSpecs,
+  derivePaneMeta,
   dimPanes,
+  REGIME_DIMS,
   regimePercentiles,
   secLagNote,
   secTrimNote,
@@ -341,4 +343,42 @@ test('VIX6M:低位染红(riskTail low),缺数据则整格不出', () => {
   expect(buildRegimeSpecs({ series: {}, unavailable: ['vix6m'] }, 'vol', '1D').some((s) => s.key === 'vix6m')).toBe(
     false,
   );
+});
+
+// pane key 同时是 series 键、图表 series 句柄的 Map 键(paneChart.hooks 的 seriesRef)、
+// 以及 desc/colors 那几张 Object.fromEntries 的键。重键不会报错,只会让后一格静默覆盖前一格
+// (曾经真踩到:A vs L 那格想复用 expShort10Kw 当主线,结果把预期短端那格的说明冲掉了)。
+test('REGIME_DIMS:每个 dim 内的 pane key(含 overlay)不得重复', () => {
+  for (const [dim, cfg] of Object.entries(REGIME_DIMS)) {
+    const keys = cfg.panes.flatMap((p) => [p.key, ...(p.overlay ? [p.overlay.key] : [])]);
+    expect(new Set(keys).size, `${dim} 有重复 pane/overlay key`).toBe(keys.length);
+  }
+});
+
+test('derivePaneMeta:overlay 进同一 pane 的 series,且带上自己的名字与颜色', () => {
+  const meta = derivePaneMeta(dimPanes('ratesDecomp'));
+  const gap = meta.paneDefs.find((d) => d.key === 'expShort10Kw')!;
+
+  expect(gap.series).toEqual(['expShort10Kw', 'lProxyHlwT5yifr']);
+  expect(meta.seriesName.lProxyHlwT5yifr).toContain('L 代理');
+  expect(meta.colors.lProxyHlwT5yifr).toBeTruthy();
+});
+
+test('buildRegimeSpecs:overlay 缺失只少那条线,主线照画', () => {
+  const withL: RegimeData = {
+    series: {
+      expShort10Kw: [{ date: '2026-01-02', value: 3.9 }],
+      lProxyHlwT5yifr: [{ date: '2026-01-01', value: 3.4 }],
+    },
+    unavailable: [],
+  };
+  const noL: RegimeData = { series: withL.series, unavailable: ['lProxyHlwT5yifr'] };
+
+  const keysOf = (d: RegimeData) =>
+    buildRegimeSpecs(d, 'ratesDecomp', '1D')
+      .filter((s) => s.pane === dimPanes('ratesDecomp').findIndex((p) => p.key === 'expShort10Kw'))
+      .map((s) => s.key);
+
+  expect(keysOf(withL)).toEqual(['expShort10Kw', 'lProxyHlwT5yifr']);
+  expect(keysOf(noL)).toEqual(['expShort10Kw']);
 });

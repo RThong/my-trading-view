@@ -9,8 +9,9 @@ import { fetchJgbVix } from '../fetchers/jpxJgbVix';
 import { fetchCftcJpyNet } from '../fetchers/cftcCot';
 import { fetchMoveSeries, mergeMove } from '../fetchers/moveIndex';
 import { fetchShillerCape } from '../fetchers/capeShiller';
+import { fetchHlwRstar } from '../fetchers/nyfedRstar';
 import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
-import { subtractAligned, divideAligned, yoyPct, scale, type Point } from '../analytics/regime';
+import { subtractAligned, divideAligned, yoyPct, scale, sumAtAnchorDates, type Point } from '../analytics/regime';
 import { nearMinusFar } from '../analytics/termStructure';
 import { rollingSharpe } from '../analytics/sharpe';
 import { openDb } from '../storage/db';
@@ -276,6 +277,18 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     // dgs10 / dgs2 改走财政部 par yield 直发源(当天出,FRED DGS 慢 1-2 天),见下方 ustP。
     wages: fredSeries('FRBATLWGT3MMAUMHWGO'), // Atlanta Fed 薪资增速 tracker(3mma,月频 %)
     stickyCpi: fredSeries('CORESTICKM159SFRBATL'), // Sticky Price CPI(服务黏性,YoY%,月频)
+    // 5y5y 通胀远期:剥掉近 5 年、只看第 6-10 年的通胀定价,比 10Y BEI 更贴"长期通胀锚"。日频 %。
+    // 用 FRED 官方口径,不自己拿 2×BEI10 − BEI5 算 —— DGS/DFII 是固定期限收益率不是零息,自算是近似。
+    t5yifr: fredSeries('T5YIFR'),
+    // Kim-Wright (2005) 三因子模型估的 10Y 零息期限溢价(Board of Governors,日频 %)。
+    // ⚠️ 字段名必须带模型名:ACM(纽约联储)是另一套模型的同名指标,同一天可以差不少,
+    // 两条并排看分歧带宽才是置信度,叫成 termPremium10y 会让两者被误当同一个东西。
+    tp10Kw: fredSeries('THREEFYTP10'),
+    // Kim-Wright 同一模型的 10Y 零息**拟合收益率**。单独没什么可看的,拉它是为了减出下面那条
+    // 预期腿 —— 分解式 `长端 = 预期短端路径均值 + 期限溢价` 的左边一项,模型自己就发了,不必估。
+    // (交接文档留的开放问题「KW 有没有配套预期短端序列」:没有直发,但 拟合 − 溢价 就是它,
+    // 所以纽约联储 ACM 那个 10MB BIFF8 .xls 的 fetcher 不必为这条腿而写。)
+    kwFitted10: fredSeries('THREEFY10'),
     cor1m: cboeSeries('COR1M'),
     vixeq: cboeSeries('VIXEQ'),
     // 恒定期限的即期隐含波动率指数。**和已有的 VX1/VX3 期货不是一回事**:VX3 是"三个月后那个
@@ -311,6 +324,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const cftcJpyP = fetchCftcJpyNet('2018-01-01').catch(() => null);
   // 席勒 CAPE(月频,Robert Shiller 数据集;全历史 1871→今)。
   const capeP = fetchShillerCape().catch(() => null);
+  // HLW 自然利率 r*(纽约联储,**季频**,一年只发 4 次)。分解式里 L(名义长期中枢)= r* + T5YIFR 的前半。
+  // 口径与陷阱见 fetchers/nyfedRstar 的文件头 —— 尤其「r* 是 L 不是减数」那条。
+  const rstarP = fetchHlwRstar(HISTORY_START_DATE).catch(() => null);
   // 油品近月期货(Yahoo 连续近月,自带全历史,live 不落库)。派生油市结构 + 汽油 YoY。
   const yahooClose = (sym: string): Promise<Point[] | null> =>
     createYahooFetcher()
@@ -326,13 +342,14 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     if (s.status === 'fulfilled') raw[names[i]] = s.value;
   });
   const usdBars = await usdBarsP;
-  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape, ust] = await Promise.all([
+  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape, ust, rstar] = await Promise.all([
     usdjpyBarsP,
     jgbCurveP,
     cftcJpyP,
     jgbVixP,
     capeP,
     ustP,
+    rstarP,
   ]);
   const [wti, brent, diesel, rbob] = await oilP;
   const jgb2y = jgbCurve?.series['2Y'] ?? null;
@@ -363,6 +380,8 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     repoUsage: 'rpo',
     wages: 'wages',
     stickyCpi: 'stickyCpi',
+    t5yifr: 't5yifr',
+    tp10Kw: 'tp10Kw',
   };
   // ⚠️ 空数组要当缺失传:`put` 判的是真值,而 `[]` 在 JS 里是真的 —— 直接 `put(out, raw[s])`
   // 会让"源返回 200 但内容为空"(CBOE 只回表头 / 数据行全解析失败)落成 `series.x = []`,
@@ -376,8 +395,27 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('cftcJpy', cftcJpy?.length ? cftcJpy : undefined);
   put('dgs10', dgs10?.length ? dgs10 : undefined); // 10Y 国债(财政部直发,利率波动率 pane)
   put('usjp2y', dgs2?.length && jgb2y?.length ? subtractAligned([dgs2, jgb2y]) : undefined); // 美日 2Y 利差 = UST2Y − JGB2Y
+  // KW 预期腿 = 拟合 10Y − 期限溢价 = 未来 10 年预期短端利率的平均。两腿同源同模型同频,
+  // subtractAligned 的前向填充在这里几乎不做事(缺日也一起缺),不像跨源相减那样有对齐风险。
+  put(
+    'expShort10Kw',
+    raw.kwFitted10?.length && raw.tp10Kw?.length ? subtractAligned([raw.kwFitted10, raw.tp10Kw]) : undefined,
+  );
   put('jgb10y', jgb10y?.length ? jgb10y : undefined);
   put('jgbVix', jgbVix?.length ? jgbVix : undefined);
+  // ⚠️ 字段名带 `Current`:将来接 real-time 那套会撞名,且**现在就有人会误读** ——
+  // current 的历史值是今天用全部数据回头重画的,不是当时看得到的值(前视偏差)。
+  put('rstarHlwCurrent', rstar?.length ? rstar : undefined);
+  // L 的粗代理 = HLW r*(实际中枢) + 5y5y 通胀远期(通胀锚)。**只为了和 A 并排读符号**,
+  // 面板上不做 L − A、不乘 (T₂−T₁)/T₂ 系数、不出单一数字 —— 三层污染叠着,减出来的量不可识别:
+  //   ① L 与 A 出自不同模型家族(HLW 宏观状态空间 vs Kim-Wright 期限结构),差里装着两模型的分歧,
+  //      而那个分歧无法与真实的 L − A 分离;
+  //   ② T5YIFR 是第 6-10 年,L 要的是第 11-30 年,而第 6-10 年恰好还在 A 的覆盖区间内(两边共用一段);
+  //   ③ HLW r* 是**当下**的自然利率(现时状态量),不是「第 10 年以后的预期短端」。
+  //   外加口径混用:THREEFY10 是零息,而要对照的 30Y−10Y 来自 par yield。
+  // 符号(A 在上 = 偏差为负 = 利差低估两段溢价之差)比量级稳健得多,不依赖上面任何一条成立。
+  // 按 r* 的季度日取点(见 sumAtAnchorDates):L 的分辨率由 r* 那一半决定,拉成日频是虚报精度。
+  put('lProxyHlwT5yifr', rstar?.length && raw.t5yifr?.length ? sumAtAnchorDates(rstar, raw.t5yifr) : undefined);
   // CAPE 图只画 1990+(全历史 1871 太远、可眼看互联网泡沫);分位窗口更近(前端 pctlSince 2000+)。
   const cape1990 = cape?.filter((p) => p.date >= '1990-01-01');
   put('cape', cape1990?.length ? cape1990 : undefined);
