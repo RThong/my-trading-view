@@ -5,11 +5,13 @@ import {
   dimPanes,
   REGIME_DIMS,
   regimePercentiles,
+  type RegimeDim,
   secLagNote,
   secTrimNote,
   type RegimeData,
 } from './regimeChart.hooks';
-import { ACTIVE_TICKERS, fundKey, kindsOf } from '../../../shared/aiChain';
+import { ACTIVE_TICKERS, fundKey, kindsOf, SEC_BUYER_FCF_KEY, SEC_BUYER_FCFQ_KEY } from '../../../shared/aiChain';
+import { REGIME_SERIES, isSeriesKey } from '../../../shared/regimeSeries';
 
 const data: RegimeData = {
   series: {
@@ -393,4 +395,31 @@ test('REGIME_DIMS:overlay 只能配 line 型 pane(candle/signed 分支不带 ove
       `${dim} 给非 line 型 pane 配了 overlay`,
     ).toEqual([]);
   }
+});
+
+// 类型已经挡住「pane key 拼错」了(PaneSpec.key 收窄成 SeriesKey),这两条守的是**另一半**:
+// 枚举本身与后端实际产出漂移。类型只保证两端用同一份名单,不保证名单还对得上代码。
+test('REGIME_SERIES:无重复、无 fund: 前缀(动态键不进枚举)', () => {
+  expect(new Set(REGIME_SERIES).size).toBe(REGIME_SERIES.length);
+  expect(REGIME_SERIES.filter((k) => k.startsWith('fund:'))).toEqual([]);
+});
+
+test('每个固定 dim 的 pane/overlay key 都是合法序列名', () => {
+  const dims = Object.keys(REGIME_DIMS) as RegimeDim[];
+  for (const dim of dims) {
+    for (const p of dimPanes(dim)) {
+      expect(isSeriesKey(p.key), `${dim}.${p.key} 不是合法序列名`).toBe(true);
+      if (p.overlay) expect(isSeriesKey(p.overlay.key), `${dim}.${p.overlay.key} 不合法`).toBe(true);
+    }
+  }
+});
+
+// 买方合计那两条聚合键**不走 kindsOf**,所以上面「每家的 panes 与 kindsOf 一一对应」那条
+// (只遍历 ACTIVE_TICKERS)覆盖不到它;而类型也挡不住 —— `FundSeries` 是 `fund:${string}`,
+// 前缀对就通过。键写错 = 永远空白的一格,编译过、测试过、只有打开面板才看得见。
+test('fundamentals:buyer 的 pane key 是后端真会产的那两条', () => {
+  const emitted = new Set([SEC_BUYER_FCF_KEY, SEC_BUYER_FCFQ_KEY]);
+  const keys = dimPanes('fundamentals:buyer').map((p) => p.key);
+
+  expect(new Set(keys)).toEqual(emitted);
 });

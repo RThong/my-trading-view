@@ -20,6 +20,7 @@ import {
   sumAtAnchorDates,
   type Point,
 } from '../analytics/regime';
+import type { RegimeSeries, FundSeries, SeriesKey } from '../../shared/regimeSeries';
 import { nearMinusFar } from '../analytics/termStructure';
 import { rollingSharpe } from '../analytics/sharpe';
 import { openDb } from '../storage/db';
@@ -139,7 +140,7 @@ export function readDbBacked(
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
   const ohlc: Record<string, OhlcBar[]> = {};
-  const put = (name: string, value: Point[] | undefined) => {
+  const put = (name: SeriesKey, value: Point[] | undefined) => {
     if (value?.length) series[name] = value;
     else unavailable.push(name);
   };
@@ -374,13 +375,13 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // ⚠️ 判的是 **length 不是真值**:`[]` 在 JS 里是真的,而「源返回 200 但内容为空」
   // (CBOE 只回表头 / 解析全失败 / inner join 零重叠)必须归 unavailable —— 否则那格既不进
   // 缺失提示,面板还要拿空序列去算分位。放在这里判,调用方就不必人人记得自己 guard 一遍。
-  const put = (name: string, value: Point[] | undefined) => {
+  const put = (name: SeriesKey, value: Point[] | undefined) => {
     if (value?.length) series[name] = value;
     else unavailable.push(name);
   };
 
   // 直接对外的序列(对外名 → 原始源名)。
-  const direct: Record<string, keyof typeof src> = {
+  const direct: Partial<Record<RegimeSeries, keyof typeof src>> = {
     hyOas: 'hyOas',
     cor1m: 'cor1m',
     vixeq: 'vixeq',
@@ -394,7 +395,8 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     tp10Kw: 'tp10Kw',
   };
   // 空数组归 unavailable 由 put 统一兜(见其注释),这里直接传。
-  for (const [out, s] of Object.entries(direct)) put(out, raw[s]);
+  // Object.entries 会把 key 拓宽回 string,这里断言回来 —— 真正的校验发生在上面的对象字面量。
+  for (const [out, s] of Object.entries(direct) as [RegimeSeries, keyof typeof src][]) put(out, raw[s!]);
 
   // DXY:close 进 series(unavailable/存在性),OHLC 进 ohlc(蜡烛)。缺 → 归 unavailable。
   put('usd', usdBars?.length ? usdBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
@@ -463,7 +465,8 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     put('vixSpotTerm', spotTerm.length ? spotTerm : undefined);
 
     const sec = readSecSeries(db);
-    for (const [out, rows] of Object.entries(sec.series)) put(out, rows);
+    // 基本面是按名单派生的动态键(fund:NVDA:fcf / fund:buyerFcf),枚举不了,由 FundSeries 覆盖。
+    for (const [out, rows] of Object.entries(sec.series) as [FundSeries, Point[]][]) put(out, rows);
     unavailable.push(...sec.unavailable);
     secLag = sec.lag;
     secTrim = sec.trims;

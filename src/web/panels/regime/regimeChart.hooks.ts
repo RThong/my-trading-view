@@ -3,6 +3,7 @@
 import useSWR from 'swr';
 import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../lib/chart';
 import { percentile, percentileRank } from '../../../shared/stats';
+import type { SeriesKey } from '../../../shared/regimeSeries';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../chart/paneChart.types';
 import {
@@ -121,7 +122,8 @@ type FixedDim = Exclude<RegimeDim, `fundamentals:${string}`>;
 // 取代原来 ~10 张按同一 key 索引的平行 map(paneDefs/seriesName/colors/baseline/riskTail/
 // signed/candle/pctlSince/bands/desc)——避免 key desync 与"signed 却忘配颜色"这类不可表达状态。
 type PaneSpec = {
-  key: string;
+  /** 既是 pane 身份,也是 data.series[key] 的数据键 —— 收窄成后端对外名的全集,拼错即编译错误。 */
+  key: SeriesKey;
   label: string; // 工具条 chip 名
   title: string; // 图例 / 命名
   color?: string; // 线色 / 图例色;符号柱与部分蜡烛不需要(留空则图例用默认色)
@@ -138,7 +140,7 @@ type PaneSpec = {
    * 相减成单序列会把「谁在上面」这个稳健信息,换成一个不可识别的量级。
    * 主 key 缺失 → 整格不建(同无 overlay);overlay 自己缺失 → 只少这条线,主线照画。
    */
-  overlay?: { key: string; title: string; color: string; step?: boolean };
+  overlay?: { key: SeriesKey; title: string; color: string; step?: boolean };
 };
 
 type DimConfig = { panes: PaneSpec[] };

@@ -4,6 +4,7 @@
 //  · buyer(花钱建算力)= §6.14「capex 有没有吃穿现金流」的对象,只有这一侧进买方合计 FCF。
 //  · seller(收钱)= 看毛利率(稀缺溢价 / 产能紧张),**绝不能进合计**——卖方在涨价周期里正 FCF 极大
 //    (实测 NVDA+MU 一度垫 +1290 亿),混进来会把零轴永远垫在下方,「跌破零轴」永远不成立。
+import type { FundSeries } from './regimeSeries';
 export type SecSide = 'buyer' | 'seller';
 
 /**
@@ -599,7 +600,7 @@ export const financeLeaseCeiling = (ticker: string): number | undefined => FINAN
  * 报出来就是一盏永远修不掉的常驻黄灯 —— 同 KNOWN_GAPS 与 CAPEX_SCOPE_EXPECTED 的理由。
  */
 export type FundTrim = {
-  key: string; // fundKey(...)
+  key: FundSeries; // fundKey(...)
   dropped: number; // 被裁掉的点数
   gapFrom: string; // 断档前的最后一点(被裁掉的那侧)
   gapTo: string; // 断档后的第一点(可见段起点)
@@ -622,7 +623,7 @@ export type SecLag = {
  * 早先叫 `sec:`,加了 TWSE 源之后那个前缀就成了谎(`sec:TSM:revM` 的数据来自台湾证交所)。
  * 路由的缓存规则也按这个前缀判断,改前缀时两处要一起改。
  */
-export const fundKey = (ticker: string, kind: FundKind): string => `fund:${ticker}:${kind}`;
+export const fundKey = (ticker: string, kind: FundKind): FundSeries => `fund:${ticker}:${kind}`;
 export const FUND_KEY_PREFIX = 'fund:';
-export const SEC_BUYER_FCF_KEY = 'fund:buyerFcf';
-export const SEC_BUYER_FCFQ_KEY = 'fund:buyerFcfQ';
+export const SEC_BUYER_FCF_KEY: FundSeries = 'fund:buyerFcf';
+export const SEC_BUYER_FCFQ_KEY: FundSeries = 'fund:buyerFcfQ';
