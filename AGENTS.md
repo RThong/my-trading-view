@@ -46,7 +46,6 @@
 | 日本物価連動国債收益率曲线 | **不存在现成曲线**。JSDA 只发**按銘柄的价格**(实测每日 10 只券),要自己选券 + 处理想定元金額 + 插值。MOF 只发名义(`jgbcmi_all.csv` → 404),BOJ API 里 `物価連動` 零命中(扫过 FM01–FM12) | — |
 | 日元通胀掉期(ZCIS) | **无免费源**。JSCC 只清算普通 IRS(页面「物価/インフレ」零命中) | — |
 | ACM 期限溢价的 CSV/JSON | **没有**,官方只发 10.1 MB BIFF8 `.xls`;FRED 上 `ACMTP10`/`ACMY10` 全 404;GitHub 上全是**复现代码**不是数据 | 扫过 npm/GitHub |
-| TFX 散户多空拆分 | **不在日频 CSV 里**(那个只有建玉总数),在另一个**周频** `.xls`。⚠️ `tfx.co.jp/mkinfo/document/fx_sellbuy.xls` 是**停在 2012 的僵尸文件**(200 OK、同结构,搜索引擎先命中它),活的在 `click365.jp/resorces/doc/weekly_sellbuy.xls` | 都下载过 |
 
 **候选源清单**(查过能用、还没接)见 `docs/data-sources-candidates.md`。
 

@@ -70,7 +70,7 @@ DATE  ACMY01..ACMY10 (fitted yields)  ACMTP01..ACMTP10 (期限溢价)  ACMRNY01.
 2. 対内証券投資【非居住者による取得・処分】 同上
 ```
 
-**补的空白**：日元 carry 的**资金流上游**。现有 `cftcJpy` 是海外投机头寸、待接的 TFX 是散户头寸，
+**补的空白**：日元 carry 的**资金流上游**。现有 `cftcJpy` 是海外投机头寸，
 而「日本机构买外债」这个最大的结构性流完全没有。生保 / GPIF 的行为都会先反映在这条上，
 比直接抓生保季度组合高频得多。
 
@@ -156,25 +156,7 @@ DB 名对照在官方手册 `https://www.stat-search.boj.or.jp/info/api_manual.p
 ⚠️ 里面的物価連動国債只有 10 只，且**是价格不是收益率**——想做日本 BEI 仍然要自己定价，见
 `AGENTS.md`「查过、确认没有的」。
 
-### 2.6 TFX 取引所散户 USD/JPY 売買別建玉
-
-**已有独立交接文档：`docs/tfx-retail-jpy-handoff.md`**，含滚动窗口、单位陷阱、僵尸 URL 等全部细节。
-要 SheetJS。
-
-### 2.7 FFAJ 店頭 FX 月次（日本散户的最大一块）
-
-| | |
-|---|---|
-| URL | `https://www.ffaj.or.jp/wp-content/uploads/2026/01/fx_flash_e.doc`（按年一个文件，2008-12 起） |
-| 格式 | **OLE Word `.doc`** → 要 `word-extractor`（116 KB，`bun audit` 干净）。SheetJS 读不了 |
-| 频率 | 月频 |
-| 回填 | ✅ 按年归档到 2008，**什么时候接都不丢历史**（不像 TFX 有时效压力） |
-| 已验 | `【Open Positions】` → `USDJPY, Cross Yen`，`①Short / ②Long / Net long=②-①`，単位 億円。2025-12：`42,094 / 40,499 / −1,595` |
-
-**补的空白**：三个日元头寸桶里 **gross 最大的一个（8.26 兆円，CFTC 的 2 倍、TFX 的 6 倍）**。
-详见 `tfx-retail-jpy-handoff.md` §6。
-
-### 2.8 内閣府 景気動向指数
+### 2.6 内閣府 景気動向指数
 
 | | |
 |---|---|
@@ -184,7 +166,7 @@ DB 名对照在官方手册 `https://www.stat-search.boj.or.jp/info/api_manual.p
 
 CI / DI 的**先行指数**，日本景气拐点的标准判据。
 
-### 2.9 投資信託協会 统计
+### 2.7 投資信託協会 统计
 
 | | |
 |---|---|
@@ -192,7 +174,7 @@ CI / DI 的**先行指数**，日本景气拐点的标准判据。
 | 格式 | `.xlsx` → `fflate` |
 | 频率 | 月频 |
 
-投信资金流出入。日本散户风险偏好的另一个侧面（和 FFAJ 的 FX 头寸互补）。
+投信资金流出入。日本散户风险偏好的一个侧面。
 
 ---
 
@@ -202,7 +184,7 @@ CI / DI 的**先行指数**，日本景气拐点的标准判据。
 |---|---|---|
 | **一** | 免 key、干净 CSV/JSON、URL 可构造、**零依赖** | **MOF 跨境流** · **BOJ API** · JSDA |
 | **二** | `.xlsx`，`fflate` 够，**不用加依赖** | BOJ オペ · JSCC · 内閣府 · 投信協会 |
-| **三** | 要爬索引 / BIFF8 / OLE / 反爬 | JPX 投資部門別 · TFX · FFAJ · METI(403) · 日本相互証券 |
+| **三** | 要爬索引 / BIFF8 / OLE / 反爬 | JPX 投資部門別 · METI(403) · 日本相互証券 |
 
 **优先接第一梯队** —— 零依赖意味着不用做「值不值得加一个包」这个决策。
 
@@ -240,5 +222,5 @@ MARKET_CATALOG      (shared/marketCatalog)   标的目录
 再抽一层通用抽象会是**一个接口配十个互不兼容的实现** —— CSV / xlsx / BIFF8 / OLE Word /
 JSON REST / 本地 WebSocket，鉴权、编码、分页、增量语义全不同，公共部分只剩「有个 URL」。
 
-**唯一值得抽的**：等 SheetJS 真的进来、且有 **2 个以上**使用者（TFX + ACM）之后，
+**唯一值得抽的**：等 SheetJS 真的进来、且有 **2 个以上**使用者之后，
 把「下载 → 解 zip/OLE → 按表头名取列」抽成 `fetchers/xlsx.ts`。**两个用户才抽，现在零个。**
