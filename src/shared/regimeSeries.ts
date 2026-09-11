@@ -46,6 +46,9 @@ export const REGIME_SERIES = [
   'move',
 
   // ── 现拉 + 派生(主 handler)
+  // ACM 期限溢价(纽约联储,月频)。不在 `direct` 映射里,是主 handler 单独现拉 + catch → null,
+  // 给同格的 tp10Kw 当独立对照。见 fetchers/nyfedAcm。
+  'tp10Acm',
   'netLiquidity',
   'repoStress',
   'usd',

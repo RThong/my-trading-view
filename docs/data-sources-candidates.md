@@ -4,7 +4,7 @@
 > 「查过、确认没有的」——先读那一节，能省掉重复调研。
 > 本文只放**实际访问 / 下载验证过**的候选。未验的线索单独放在文末 §4，别混。
 >
-> 最近核实：2026-09-10。
+> 最近核实：2026-09-11。
 
 ---
 
@@ -21,13 +21,22 @@
 
 ## 1. 美国（补现有拆解的缺口）
 
-### ACM 期限溢价（纽约联储）
+### ACM 期限溢价（纽约联储）—— ✅ **已接（2026-09-11）**
+
+落点：`fetchers/nyfedAcm.ts`，序列 `tp10Acm`，叠在「长端分解」视角 `tp10Kw` 同一格当对照线。
+
+⚠️ **下面这张表说的是那个 10.1 MB 的 `.xls`，实现走的不是它。** 实际用的是
+`newyorkfed.org/medialibrary/media/research/data_indicators/acmPlot_data.csv` ——
+**49 KB 纯 CSV、零依赖**，月频（当月最后一个交易日）、只有 10Y，列 `RunDates,TERMYld,ACMFITYld,GSWYld`。
+它是该页交互图表的取数源，已逐字对账确认内容等同 xls 的 `ACM Monthly` 表（15 位有效数字相同）。
+于是 xls 那条路的三个结论都作废了：**不要 SheetJS、不必落库、也不是「面板只有 KW 一家」**。
+`.xls` 只在需要**日频**或 **1–9Y 其它期限**时才有必要回去啃。
 
 | | |
 |---|---|
 | URL | `https://www.newyorkfed.org/medialibrary/media/research/data_indicators/ACMTermPremium.xls` |
 | 格式 | **BIFF8 `.xls`（OLE），10.1 MB** → 要 SheetJS |
-| 频率 | 日频，**每周更新** |
+| 频率 | 日频 ⚠️ 「**每周更新**」是错的（来自未核实的搜索摘要）——实核为**月度更新**，见 `rates-decomposition-handoff.md` §9.2 |
 | 回填 | ✅ 一个文件 1961→今 |
 | 已验 | sheets `['ACM Monthly', 'ACM Daily']`；`ACM Daily` **16,273 行 × 31 列** |
 
@@ -39,13 +48,11 @@ DATE  ACMY01..ACMY10 (fitted yields)  ACMTP01..ACMTP10 (期限溢价)  ACMRNY01.
 对照同日 Kim-Wright:  TP10 = 0.8892   预期短端 = 3.9488     → 两模型差 21bp / 17bp
 ```
 
-**补的空白**：`rates-decomposition-handoff.md` §3 口径纪律 ② 要求「两个期限溢价模型并排，
-分歧带宽本身就是置信度」。现在面板只有 Kim-Wright 一家，正落在它点名的「只报单一模型点估计」。
-**这 21bp 就是那条纪律要的东西。** 且 `ACMRNY` 列直接给预期短端，不用像 KW 那样 `拟合 − 溢价` 现减。
+**补的空白（已兑现）**：`rates-decomposition-handoff.md` §3 口径纪律 ② 要求「两个期限溢价模型并排，
+分歧带宽本身就是置信度」。两条现已并排，实测带宽平均 57 bp / 中位 47 / P90 124 / 最大 222（440 个月）。
 
-⚠️ 按规矩可回填 → 该读时现拉，但**建议落库**，理由是**体积**不是回填性：
-10.1 MB × 每 6h（`routes/regime.ts` 的内存 TTL）× 每个冷进程，压在已经约 1.3s 的 regime 路由上。
-这是个新理由，实现时要写进注释，免得后人以为规矩改了。
+⚠️ **原先「建议落库」那条理由（10.1 MB × 每 6h × 每个冷进程）随 CSV 一起作废** ——
+49 KB 读时现拉，按规矩办即可，没有例外。别照旧文再去加 job。
 
 ---
 

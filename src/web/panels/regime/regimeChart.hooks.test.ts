@@ -423,3 +423,26 @@ test('fundamentals:buyer 的 pane key 是后端真会产的那两条', () => {
 
   expect(new Set(keys)).toEqual(emitted);
 });
+
+// ACM 与 KW 必须同格:这条线的产品是**两个模型的分歧带宽**(实测平均 57bp),
+// 分成两格就读不出带宽了。ACM 月频、KW 日频,故 ACM 走阶梯线。
+test('tp10Kw 那格叠 ACM 对照线,ACM 缺失只少那条、KW 主线照画', () => {
+  const both: RegimeData = {
+    series: {
+      tp10Kw: [{ date: '2026-08-31', value: 0.88 }],
+      tp10Acm: [{ date: '2026-08-31', value: 0.7625 }],
+    },
+    unavailable: [],
+  };
+  const noAcm: RegimeData = { series: both.series, unavailable: ['tp10Acm'] };
+
+  const specsOf = (d: RegimeData) =>
+    buildRegimeSpecs(d, 'ratesDecomp', '1D').filter(
+      (s) => s.pane === dimPanes('ratesDecomp').findIndex((p) => p.key === 'tp10Kw'),
+    );
+
+  expect(specsOf(both).map((s) => s.key)).toEqual(['tp10Kw', 'tp10Acm']);
+  expect(specsOf(noAcm).map((s) => s.key)).toEqual(['tp10Kw']);
+  // 月频线不能在两次发布之间画斜坡
+  expect(specsOf(both).find((s) => s.key === 'tp10Acm')).toHaveProperty('step', true);
+});

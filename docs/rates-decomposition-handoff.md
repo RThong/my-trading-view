@@ -190,12 +190,12 @@ TIPS 流动性变差 → TIPS 收益率被推高 → **测得的 BEI 被压低**
 | 档一 实际收益率曲线 | ✅ 按方案，一行 | `routes/yieldCurve.ts` 的 `BUILDERS.real` |
 | 档二 T5YIFR / THREEFYTP10 | ✅ 按方案，各 2 行 | `routes/regime.ts` 的 `src` + `direct` |
 | 档三 3a 预期短端腿 | ✅ **不用写 fetcher**，见下 | `routes/regime.ts` 的 `expShort10Kw` |
-| 档三 3a ACM 期限溢价 | ⬜ 未做，见「剩下的」 | — |
+| 档三 3a ACM 期限溢价 | ✅ **已接**（2026-09-11，见 §7「ACM 现状」末订正） | `fetchers/nyfedAcm.ts` |
 | 档三 3b HLW R* | ✅ 只做 `current`，见 §7 | `fetchers/nyfedRstar.ts` |
 
 前端：`real` 进了 `DEFAULT_TENORS`、两个面板的 `VIEW_DESC` 与 `SPREAD_DESC`；利率视角加了三个 tab
 （实际收益率曲线 · 实际走势 30Y−10Y · 长端分解）。`ratesDecomp` 是新的 `RegimeDim`，**四格**：
-5y5y 通胀远期 / 期限溢价(KW) / A vs L 缺口（预期短端 + L 代理 overlay）/ r*(HLW)。
+5y5y 通胀远期 / 期限溢价（KW + **ACM 对照 overlay**，见 §7 末订正）/ A vs L 缺口（预期短端 + L 代理 overlay）/ r*(HLW)。
 （初稿写的「三格」是 HLW 那格接进来之前的状态，见 §7/§8。）
 
 §2 档一那条「⚠️ 未验证」的提醒是对的：`DEFAULT_TENORS` 确实要加一项（`real: ['5Y','10Y','30Y']`，
@@ -216,7 +216,12 @@ TIPS 流动性变差 → TIPS 收益率被推高 → **测得的 BEI 被压低**
 「两条独立发布的序列碰巧同步」这个巧合上。分解式的预期腿到手，
 **不必为这条腿去写纽约联储那个 fetcher** —— 这正是 §5 预判的「若有，档三 3a 的价值会下降」。
 
-### 剩下的：ACM 与 HLW，以及为什么先停在这里
+### 剩下的：ACM 与 HLW，以及为什么先停在这里（ACM 部分**已过期，见 §7「ACM 现状」末订正**）
+
+> ⚠️ 下面关于 ACM 的三条结论**都已被推翻**（2026-09-11）：「页面上也扒不到 CSV / JSON 端点」是错的
+> —— CSV 端点就藏在该页交互图表的 Angular bundle 里；「要新加一个 xlsx 依赖」「面板上只有
+> Kim-Wright 一家」也随之作废。保留原文只为记录当时的判断依据。HLW 那部分仍然有效。
+
 
 - **ACM 在 FRED 上没有**（实测 `ACMTP10` / `ACMY10` / `ACMTP01` 全 404）。
 - 纽约联储只发 `medialibrary/media/research/data_indicators/ACMTermPremium.xls`，
@@ -289,6 +294,9 @@ HLW **已做**，但优先级排序被推翻了 —— 见 §7。
 
 所以 ACM 与 HLW 的成本关系是反的：**ACM 贵（BIFF8，要新依赖），HLW 便宜（现成工具链）。**
 
+> ⚠️ **已过期（2026-09-11）**：这个成本判断的前提是「ACM 只能走 BIFF8」，而那个前提已被推翻
+> （见 §7「ACM 现状」末订正）。实际接入走的是 49 KB 纯 CSV，**ACM 与 HLW 一样是零依赖**。
+
 ### 真正的理由不是「R\* 那一格是空的」，是**补 L**
 
 第二刀的两条腿：
@@ -303,7 +311,9 @@ L（名义长期中枢）的粗代理 = HLW r*  +  T5YIFR              ✅ 本�
 **别照这一节的措辞去做减法。**
 
 ⚠️ 但**接了 HLW 不解决 §6 自我批评里那个问题**。r\* 与 Kim-Wright 期限溢价是两个不同的量，
-不构成互相对照。「只报单一模型点估计」那一条仍然成立，**真正的对照仍只能靠 ACM**。
+不构成互相对照。「只报单一模型点估计」那一条当时仍然成立，**真正的对照只能靠 ACM**。
+
+> ✅ **已解决（2026-09-11）**：ACM 已接（见 §7「ACM 现状」末订正），两条模型并排，该自我批评闭合。
 
 ### 落点与四个硬条件
 
@@ -357,7 +367,20 @@ GitHub 上**没有更好的数据源**，找到的全是复现代码：`gusamara
 `csv.gz`），但★0、单人维护、月更、且 CSV 那份是**复现值不是官方值** —— 我们要 ACM 恰恰是为了
 「官方第二个模型」，换成非官方复现就把这个理由抵消了。比直接拉官方 xls 更差。
 
-**结论：ACM 没有官方 CSV / JSON，只有 BIFF8，绕不过 SheetJS 那类依赖。**这个取舍仍然挂起。
+**结论（已推翻，见下）：ACM 没有官方 CSV / JSON，只有 BIFF8，绕不过 SheetJS 那类依赖。**
+
+⚠️ **订正（2026-09-11）：有 CSV，只是没公开文档。**
+`newyorkfed.org/medialibrary/media/research/data_indicators/acmPlot_data.csv` —— **49 KB 纯 CSV、零依赖**，
+1961-06 起、**月频**（当月最后一个交易日）、列 `RunDates,TERMYld,ACMFITYld,GSWYld`。
+它是 NY Fed 自家 term-premia 交互图表的取数源，从该页 Angular bundle（`interactives/term-premia/js/main-es2015.js`）里挖出来的。
+当时查的是「扩展名互换 / FRED / GitHub」三条路，**没查图表自己的端点**。
+
+已做的验证：
+- 对官方 10.1 MB xls 的 `ACM Monthly` 表逐字对账 —— **15 位有效数字相同**，行数同为 784，末点同日
+- 模型拟合 10Y vs 同文件内的市场观测（GSW 10Y）平均差 **1.1 bp**；该市场观测 vs FRED `DGS10` 平均 15.3 bp（零息 vs 恒定期限 par 的口径差）
+
+代价：**月频**（xls 才有日频）、**只有 10Y**（xls 有 1–10Y）、且是**无文档端点**（改版可能消失 → 归 unavailable，不重试）。
+面板只要 10Y 的对照，这笔换零依赖 + 49 KB，划算。**取舍已解除，ACM 于 2026-09-11 接入。**
 
 ---
 
@@ -496,11 +519,15 @@ review 阶段实核纽约联储 Treasury Term Premia 页的结果：**日频与�
 
 | 项 | 状态 |
 |---|---|
-| ACM 期限溢价（对照线） | ⬜ 停在依赖取舍上，见 §6「剩下的」 |
-| HLW `real_time`（回测口径） | ⬜ 无回测需求时不做，见 §7 |
+| ACM 期限溢价（对照线） | ✅ **已关闭**（2026-09-11）——`acmPlot_data.csv` 49 KB 纯 CSV、零依赖，叠在 `tp10Kw` 同格当对照。§3 口径纪律 ② 点名的「只报单一模型点估计」自我批评就此闭合。实测带宽：平均 57 bp / 中位 47 / P90 124 / 最大 222 |
+| HLW `real_time`（回测口径） | ⬜ 无回测需求时不做，见 §7。实测该文件 1.8 MB / **35 张 sheet**（2015Q4 起每季一张 vintage），`fflate` 够用、技术上不难；挡住它的是需求不是成本 |
+| 理事会 DKW 当第三条对照 | ❌ **查过，不做**。`federalreserve.gov/econres/notes/feds-notes/dkw_updates.csv`（4.6 MB 纯 CSV，1983 起日频，给 5Y/10Y/5y5y 的预期实际短端 / 预期通胀 / 实际期限溢价 / 通胀风险溢价 / TIPS 流动性溢价，四分量恒等式实测完全闭合）。**但它与 KW 平均只差 8.5 bp** —— D'Amico-**Kim**-Wei 与 **Kim**-Wright 同一个 Don Kim，同族精化不是独立模型，加进来会让带宽看起来收窄而其实没有。⚠️ 也**别拿它去"修正"T5YIFR**：同口径 5y5y，DKW 说市场补偿低估预期 29 bp、克利夫兰联储模型说高估 18 bp，**两个独立模型连符号都不一致**，而它们彼此差 47 bp——比各自的楔子还大。那个"污染量"不可识别，正是 §8 拒绝算 `L − A` 的同一个理由 |
 | `?source=real` 带真实数据跑通 | ✅ **已关闭**——`.env` 里本来就有可用的 `FRED_API_KEY`。实跑 5 档各 2170 点、`unavailable` 为空、30Y 最新 2.96，10Y 恒等抽查也过（见 §6 末订正） |
 
-全量测试(工作区最终状态)：`bun test` **481 passed / 0 failed**、`tsc --noEmit` 干净、
-`bun run lint` 仅剩 `twseRevenue.ts` / `secBackfillInstances.test.ts` 两处既有告警。
-本批相对 base `1410807`(465 passed)共加 16 条：`regime.test.ts` 3 + `nyfedRstar.test.ts` 9
-+ `regimeChart.hooks.test.ts` 4。
+测试门：`bun test` 全绿、`tsc --noEmit` 干净、`bun run lint` 仅剩 `twseRevenue.ts` /
+`secBackfillInstances.test.ts` 两处既有告警。
+
+⚠️ **这里不再记具体的通过条数。** 之前记过流水号（465 / 472 / 480 / 481），每加一批测试就全部
+过期一次，反而变成「文档与实现矛盾」的常客。要数字就现跑 `bun test`——它比任何抄在文档里的数都准。
+本批新增的测试落点：`nyfedRstar.test.ts`（HLW 解析）、`nyfedAcm.test.ts`（ACM 解析 + 降级）、
+`regime.test.ts`（`subtractAt`）、`regimeChart.hooks.test.ts`（overlay 与 pane 约束）。

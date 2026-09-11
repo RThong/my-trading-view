@@ -10,6 +10,7 @@ import { fetchCftcJpyNet } from '../fetchers/cftcCot';
 import { fetchMoveSeries, mergeMove } from '../fetchers/moveIndex';
 import { fetchShillerCape } from '../fetchers/capeShiller';
 import { fetchHlwRstar } from '../fetchers/nyfedRstar';
+import { fetchAcmTermPremium } from '../fetchers/nyfedAcm';
 import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
 import {
   subtractAligned,
@@ -336,6 +337,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // HLW 自然利率 r*(纽约联储,**季频**,一年只发 4 次)。分解式里 L(名义长期中枢)= r* + T5YIFR 的前半。
   // 口径与陷阱见 fetchers/nyfedRstar 的文件头 —— 尤其「r* 是 L 不是减数」那条。
   const rstarP = fetchHlwRstar(HISTORY_START_DATE).catch(() => null);
+  // ACM 期限溢价(纽约联储,**月频**)。给同格的 Kim-Wright 当独立对照 —— 两条的间距才是产品。
+  // 源是个无文档端点(图表取数用),挂了就归 unavailable:少一条对照线,主线照画。见 fetchers/nyfedAcm。
+  const acmP = fetchAcmTermPremium(HISTORY_START_DATE).catch(() => null);
   // 油品近月期货(Yahoo 连续近月,自带全历史,live 不落库)。派生油市结构 + 汽油 YoY。
   const yahooClose = (sym: string): Promise<Point[] | null> =>
     createYahooFetcher()
@@ -351,7 +355,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     if (s.status === 'fulfilled') raw[names[i]] = s.value;
   });
   const usdBars = await usdBarsP;
-  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape, ust, rstar] = await Promise.all([
+  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape, ust, rstar, acm] = await Promise.all([
     usdjpyBarsP,
     jgbCurveP,
     cftcJpyP,
@@ -359,6 +363,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     capeP,
     ustP,
     rstarP,
+    acmP,
   ]);
   const [wti, brent, diesel, rbob] = await oilP;
   const jgb2y = jgbCurve?.series['2Y'] ?? null;
@@ -417,6 +422,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // ⚠️ 字段名带 `Current`:将来接 real-time 那套会撞名,且**现在就有人会误读** ——
   // current 的历史值是今天用全部数据回头重画的,不是当时看得到的值(前视偏差)。
   put('rstarHlwCurrent', rstar?.length ? rstar : undefined);
+  put('tp10Acm', acm ?? undefined);
   // L 的粗代理 = HLW r*(实际中枢) + 5y5y 通胀远期(通胀锚)。**只为了和 A 并排读符号**,
   // 面板上不做 L − A、不乘 (T₂−T₁)/T₂ 系数、不出单一数字 —— 四层污染叠着,减出来的量不可识别:
   //   ① L 与 A 出自不同模型家族(HLW 宏观状态空间 vs Kim-Wright 期限结构),差里装着两模型的分歧,

@@ -10,7 +10,7 @@
 | **CBOE 指数** | VIX 家族 / SKEW / RXM | 日频 | 零 | **静态 CSV 直下**:`cdn.cboe.com/api/global/us_indices/daily_prices/{指数}_History.csv`(无需 key,免爬虫) | 1990 至今全历史 |
 | **CBOE VX 期货** | VX 近月连续(存为 `VX1`) | 日频 | 零 | API 列清单(`www-api.cboe.com/.../product/list/VX/`)+ `cdn.cboe.com/{path}` 下 CSV | 全历史 |
 | **FRED** | 利率(UST/TIPS)/ 信用利差(HY+IG 梯队)/ 流动性(WALCL/TGA/RRP/SOFR/IORB)/ 通胀(BEI=DGS−DFII、**5y5y 远期 T5YIFR**、Sticky CPI、薪资)/ **Kim-Wright 期限溢价(THREEFYTP10 + 拟合 THREEFY10)** | 日/月频 | 零(要 key) | JSON API `api.stlouisfed.org/fred/series/observations`(要 key) | 全历史 |
-| **NY Fed** | HLW 自然利率 r\*(`rstarHlwCurrent`,**季频**) | **季频** | `fflate` | 官方 xlsx = **zip+XML**,`fflate` 解开后**按工作表名**(`HLW Estimates`)经 `workbook.xml`+rels 解路径 —— 不写死 `sheetN`,官方插表要抛错不要静默取错表 | 1961 起全历史;⚠️ **current estimates 的历史值会被事后重估**(前视偏差,不能用来论证「当时市场定价错了」) |
+| **NY Fed** | HLW 自然利率 r\*(`rstarHlwCurrent`,**季频**)+ ACM 10Y 期限溢价(`tp10Acm`,**月频**,给 KW 当独立对照) | 季/**月** | 零;**HLW 用 `fflate`** | HLW:官方 xlsx = **zip+XML**,`fflate` 解开后**按工作表名**(`HLW Estimates`)经 `workbook.xml`+rels 解路径 —— 不写死 `sheetN`。ACM:**纯 CSV 零依赖**(`acmPlot_data.csv`,49 KB)⚠️ 这是图表的**无文档端点**,官方公开发布的是同目录 10.1 MB 的 BIFF8 `.xls`;已逐字对账确认内容等同 xls 的 `ACM Monthly` 表,但随时可能挪走 → 拿不到就归 unavailable | 1961 起全历史;⚠️ **current estimates 的历史值会被事后重估**(前视偏差,不能用来论证「当时市场定价错了」) |
 | **Yahoo** | 股票 EOD + **DXY(`DX-Y.NYB` 真 ICE 美元指数)/ MOVE(`^MOVE`)/ 油品期货(`CL=F`/`BZ=F`/`HO=F`/`RB=F`)/ USD/JPY** | 日频 | `yahoo-finance2` | `yahoo-finance2` **v4** npm(class API `new YahooFinance()`) | 可回填多年 |
 | **其它** | Eris(SOFR OIS 曲线)/ MOF+JPX(JGB 收益率/JGB VIX)/ CFTC(日元净持仓)/ Shiller(CAPE) | 混:Eris 日 / MOF 日 / JPX 日 / **CFTC 周** / Shiller 月 | 零;**JPX JGB VIX 用 `fflate`** | 各自 adapter(见 `fetchers/`)| 多为全历史 |
 | **ICE** | AI 巨头 + 甲骨文单名 CDS EOD 结算价(`iceCds`) | 日频 | 零 | 公开 JSON `www.ice.com/api/cds-settlement-prices/icc-single-names`(免 key) | **仅当天快照,不可回填** |
@@ -26,7 +26,7 @@
 
 | 档位 | 谁 | 说明 |
 |---|---|---|
-| **零依赖** | FRED · CBOE · ICE · SEC · Deribit · MOF · CFTC · Shiller | `fetch` + 自己解 CSV/JSON |
+| **零依赖** | FRED · CBOE · ICE · SEC · Deribit · MOF · CFTC · Shiller · **NY Fed ACM** | `fetch` + 自己解 CSV/JSON |
 | **`fflate`**(已有) | NY Fed HLW · JPX JGB VIX | `.xlsx` = zip+XML,解 zip 后正则取 |
 | **SheetJS**(⚠️ 未加) | — | BIFF8 `.xls`(OLE)。**npm 上的 `xlsx@0.18.5` 有 2 个 high CVE**,必须走 `bun add "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"` |
 | **`word-extractor`**(⚠️ 未加) | — | OLE Word `.doc`。SheetJS 读不了(`Cannot find Workbook stream`) |
@@ -45,7 +45,6 @@
 | 日本期限溢价 | ACM / Kim-Wright **都只做美债**,日本无公开模型序列 | — |
 | 日本物価連動国債收益率曲线 | **不存在现成曲线**。JSDA 只发**按銘柄的价格**(实测每日 10 只券),要自己选券 + 处理想定元金額 + 插值。MOF 只发名义(`jgbcmi_all.csv` → 404),BOJ API 里 `物価連動` 零命中(扫过 FM01–FM12) | — |
 | 日元通胀掉期(ZCIS) | **无免费源**。JSCC 只清算普通 IRS(页面「物価/インフレ」零命中) | — |
-| ACM 期限溢价的 CSV/JSON | **没有**,官方只发 10.1 MB BIFF8 `.xls`;FRED 上 `ACMTP10`/`ACMY10` 全 404;GitHub 上全是**复现代码**不是数据 | 扫过 npm/GitHub |
 
 **候选源清单**(查过能用、还没接)见 `docs/data-sources-candidates.md`。
 
