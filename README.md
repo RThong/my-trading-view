@@ -30,6 +30,8 @@ well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local pag
   - NY Fed — HLW natural rate r\* (`current estimates` xlsx, quarterly) · ACM 10Y term premium (monthly CSV, the independent cross-check on Kim-Wright); no key
   - Yahoo (`yahoo-finance2` v4) — DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY · stock EOD fallback
   - Eris — SOFR OIS par curve · MOF + JPX — JGB yields / JGB VIX · CFTC — JPY net positioning · Shiller — CAPE · CNN — Fear & Greed
+  - [BOJ](https://www.boj.or.jp/research/research_data/gap/) — output gap + potential growth with its four contributions (official xlsx = zip+XML, quarterly, no key)
+  - [Nakajima](https://github.com/jouchinakajima/program) (BOJ researcher, **personal model estimates, not a BOJ release**) — JGB 10Y term premium + expected short rate (daily, **nominal**; the two sum exactly to the MOF 10Y) and natural rate r\* with a 95% band (quarterly, **real** — never plot it against the nominal pair). Ships irregularly every 2-4 months; judge staleness by commit date, not by the data's last point
   - [ICE](https://www.ice.com/cds-settlement-prices/icc/single-name-instruments) — free public single-name CDS EOD settlement prices (AI 巨头 + Oracle)
   - [SEC XBRL](https://data.sec.gov) — quarterly company fundamentals (TTM gross margin / capex / FCF for the AI chain); needs `SEC_USER_AGENT`
   - SEC 6-K public exhibits — quarterly figures for foreign private issuers (TSMC / ASML) that don't file XBRL
@@ -160,7 +162,7 @@ several horizontal tabs:
 | 宏观 Macro | growth/inflation/policy regime read | FRED |
 | 能源 Energy | 油市结构 (Brent−WTI · diesel/gasoline/3-2-1 crack) · 炼厂·库存 (开工率 + 馏分油收率 + 加工量/产量同比 + 库存与出口的**季节 z**，判紧张来自需求还是供应) | Yahoo / EIA |
 | 利率 Rates | 收益曲线 · 期限走势 · SOFR OIS · OIS 走势 · 利率波动率 (MOVE) · 实际收益率 (TIPS 曲线) · 实际走势 · 长端分解 (5y5y 通胀远期 + 期限溢价(Kim-Wright vs NY Fed ACM 两模型并排) + A vs L 缺口(KW 预期短端 vs HLW r*+5y5y) + HLW r*) | FRED / Eris / NY Fed / Yahoo |
-| 日本 Japan | 日元 (USD-JPY + CFTC 持仓) · JGB 收益曲线 · 期限走势 · 日债波动率 (JGB VIX) | Yahoo / CFTC / MOF / JPX |
+| 日本 Japan | 日元 (USD-JPY + CFTC 持仓) · JGB 收益曲线 · 期限走势 · 日债波动率 (JGB VIX) · 产出缺口 (需給ギャップ + 潜在成長率及四项贡献度) · 长端分解 (期限溢价 + 预期短端 + 自然利率 r\* 及 95% 区间，**r\* 是实际口径、与名义两条分格**) | Yahoo / CFTC / MOF / JPX / BOJ / Nakajima |
 | 信用曲线 Credit curve | 评级利差 · 期限结构 | FRED |
 | AI | 算力价格 (H100/H200/B200/B300 GPU 租赁价指数) · 买方合计 (AI 链 capex/FCF 判据线) · AI CDS (AI 巨头 + Oracle 单名 CDS，价近似 spread bp) · 产业链 (15 家公司财务明细) | Computable / ICE / SEC / TWSE |
 | 通胀 Inflation | 通胀预期 (BEI) · 通胀走势 · 通胀来源 (RBOB YoY 等) | FRED / Yahoo |

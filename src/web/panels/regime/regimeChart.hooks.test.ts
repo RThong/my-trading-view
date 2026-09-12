@@ -11,7 +11,7 @@ import {
   type RegimeData,
 } from './regimeChart.hooks';
 import { ACTIVE_TICKERS, fundKey, kindsOf, SEC_BUYER_FCF_KEY, SEC_BUYER_FCFQ_KEY } from '../../../shared/aiChain';
-import { REGIME_SERIES, isSeriesKey } from '../../../shared/regimeSeries';
+import { REGIME_SERIES, isSeriesKey, type SeriesKey } from '../../../shared/regimeSeries';
 
 const data: RegimeData = {
   series: {
@@ -412,6 +412,30 @@ test('buildRegimeSpecs:日银潜在增速那格 = 总量 + 四项贡献度同 pa
     'jpPotCapital',
     'jpPotWorkers',
   ]);
+});
+
+// 口径隔离。**这条守的是一个已经犯过的错**:r* 曾被叠在「预期短端」同格,而两者一个实际、一个名义,
+// 图上比高低得到的结论正好是反的(实际 0.72 < 名义 1.70 → 误判成「政策已高于中性」)。
+// 分格是唯一有效的防线 —— desc 拦不住「两条线摆在一起就去比」。
+//
+// 写成**集合级**断言而不是钉死那两个 key:只钉「预期短端那格不叠东西」的话,把 r* 叠到**期限溢价**
+// 那格(同样是名义口径)照样全绿,洞还在。这里要求的是「任何一格都不得同时出现两种口径」。
+test('REGIME_DIMS:实际口径的 r* 只准独占自己那一格', () => {
+  // **反着钉,不维护「名义白名单」**:白名单是开放集合(面板里绝大多数利率序列都是名义),
+  // 漏登记一个就有洞 —— 把 r* 叠到美债的 expShort10Kw 那格,白名单版照样全绿。
+  // 而实际口径的键是**封闭的三个**,所以约束写成「含 r* 的格,内容必须恰好是这三条」,
+  // 覆盖全部 dim 的全部 pane,不需要知道别的键是什么口径。
+  const REAL: SeriesKey[] = ['jpRstar10Nakajima', 'jpRstar10NakajimaLo', 'jpRstar10NakajimaHi'];
+
+  const panesWithReal = Object.entries(REGIME_DIMS).flatMap(([dim, cfg]) =>
+    cfg.panes
+      .map((p) => ({ dim, key: p.key, keys: [p.key, ...(p.overlays ?? []).map((o) => o.key)] as SeriesKey[] }))
+      .filter((p) => p.keys.some((k) => REAL.includes(k))),
+  );
+
+  // 恰好一格,且那一格里除了这三条没有别的 —— 混进任何名义序列都会在这里红。
+  expect(panesWithReal.map((p) => `${p.dim}.${p.key}`)).toEqual(['jpTermPremium.jpRstar10Nakajima']);
+  expect(new Set(panesWithReal[0].keys)).toEqual(new Set(REAL));
 });
 
 // buildRegimeSpecs 在 candle / signed 两个分支提前 return,不带 overlay —— 那两种 pane 配了

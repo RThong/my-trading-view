@@ -66,6 +66,14 @@ export const REGIME_SERIES = [
   'jpPotCapital',
   'jpPotHours',
   'jpPotWorkers',
+  // 日本长端分解(中島上智模型,GitHub CSV)。名字带模型名是因为**同名指标会有第二套模型** ——
+  // 美债那边 KW 与 ACM 同一天能差 100bp 以上,叫成 jpTp10 就会让两套被误当同一个东西。
+  // 期限溢价 / 预期短端日频,r* 季频(带 95% 区间)。见 fetchers/nakajimaJgb。
+  'jpTp10Nakajima',
+  'jpExpShort10Nakajima',
+  'jpRstar10Nakajima',
+  'jpRstar10NakajimaLo',
+  'jpRstar10NakajimaHi',
   'cape',
   'rxmSpx',
   'vixSpotTerm',

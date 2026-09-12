@@ -12,6 +12,7 @@
 | **FRED** | 利率(UST/TIPS)/ 信用利差(HY+IG 梯队)/ 流动性(WALCL/TGA/RRP/SOFR/IORB)/ 通胀(BEI=DGS−DFII、**5y5y 远期 T5YIFR**、Sticky CPI、薪资)/ **Kim-Wright 期限溢价(THREEFYTP10 + 拟合 THREEFY10)** | 日/月频 | 零(要 key) | JSON API `api.stlouisfed.org/fred/series/observations`(要 key) | 全历史 |
 | **NY Fed** | HLW 自然利率 r\*(`rstarHlwCurrent`,**季频**)+ ACM 10Y 期限溢价(`tp10Acm`,**月频**,给 KW 当独立对照) | 季/**月** | 零;**HLW 用 `fflate`** | HLW:官方 xlsx = **zip+XML**,`fflate` 解开后**按工作表名**(`HLW Estimates`)经 `workbook.xml`+rels 解路径 —— 不写死 `sheetN`。ACM:**纯 CSV 零依赖**(`acmPlot_data.csv`,49 KB)⚠️ 这是图表的**无文档端点**,官方公开发布的是同目录 10.1 MB 的 BIFF8 `.xls`;已逐字对账确认内容等同 xls 的 `ACM Monthly` 表,但随时可能挪走 → 拿不到就归 unavailable | 1961 起全历史;⚠️ **current estimates 的历史值会被事后重估**(前视偏差,不能用来论证「当时市场定价错了」) |
 | **日本银行(BOJ)** | 需給ギャップ(产出缺口,`jpOutputGap`)+ 潜在成長率及四项贡献度(`jpPot*`) | **季频**(1/4/7/10 月第三个工作日) | 零;**用 `fflate`** | 官方 `gap.xlsx` = **zip+XML**(52 KB,免鉴权),同 HLW 的解法:按工作表名(`data1`/`data2`)解路径。⚠️ 两张表**时间轴不同**(`data1` 日历季度 / `data2` 财年半期),不可 join;⚠️ 末尾有**只有短观 DI、没有 gap** 的待发布行,按「总量列非空」过滤,别按行号取末行 | 1983 起全历史(一次 GET 拿全,故不落库);⚠️ **是估算量不是统计量**,日银自陈方法差异可致数值相差甚大 |
+| **Nakajima(中島上智)** | JGB 10Y 期限溢价 + 预期短端(`jpTp10Nakajima` / `jpExpShort10Nakajima`,日频 1995 起)、自然利率 r\* 10Y 及 95% 区间(季频) | 日 + 季;**但发布 2-4 个月不规律** | 零 | GitHub raw CSV `raw.githubusercontent.com/jouchinakajima/program/main/{yield_D,rstar}.csv`。⚠️ `rstar.csv` 表头在**第 2 行**(第 1 行是 `Data as of ...` 元数据),`YYYYQ` 是 **5 位**(`20262`=2026Q2);⚠️ 判停更看 **commit 时间**不看数据末点(>150 天无 commit 才算;门槛取两文件历史最大间隔 —— `yield_D.csv` 111d / `rstar.csv` 114d —— 再留余量),两者在图上长得一样 | 1995 起全历史;✅ `期限溢价+预期短端 = MOF 名义 10Y`,**7724 个重叠日残差全 0**;⚠️ **单模型无对照**,不同于美债 KW+ACM 双模型 |
 | **Yahoo** | 股票 EOD + **DXY(`DX-Y.NYB` 真 ICE 美元指数)/ MOVE(`^MOVE`)/ 油品期货(`CL=F`/`BZ=F`/`HO=F`/`RB=F`)/ USD/JPY** | 日频 | `yahoo-finance2` | `yahoo-finance2` **v4** npm(class API `new YahooFinance()`) | 可回填多年 |
 | **其它** | Eris(SOFR OIS 曲线)/ MOF+JPX(JGB 收益率/JGB VIX)/ CFTC(日元净持仓)/ Shiller(CAPE) | 混:Eris 日 / MOF 日 / JPX 日 / **CFTC 周** / Shiller 月 | 零;**JPX JGB VIX 用 `fflate`** | 各自 adapter(见 `fetchers/`)| 多为全历史 |
 | **EIA** | 周度石油报告:炼厂开工率 / 加工量 + 馏分油产量(→ 收率、同比)/ 馏分油+汽油库存 / 馏分油出口(→ 季节 z) | **周频**(周三 10:30 ET 发,截止上周五,滞后 ~5 天) | 零(要 key) | JSON `api.eia.gov/v2/seriesid/PET.{ID}.W`(要 key)⚠️ 裸 ID 404,必须带 `PET.` 前缀 + `.W` 后缀;`start`/`end`/`data[]` **全被忽略**,唯一生效的裁剪参数是 `length`;返回**倒序** | 1982 起全历史;**已发布值下周会被修订**(每次拉全量,故不落库) |
@@ -28,7 +29,7 @@
 
 | 档位 | 谁 | 说明 |
 |---|---|---|
-| **零依赖** | FRED · CBOE · ICE · **EIA** · SEC · Deribit · MOF · CFTC · Shiller · **NY Fed ACM** | `fetch` + 自己解 CSV/JSON |
+| **零依赖** | FRED · CBOE · ICE · **EIA** · SEC · Deribit · MOF · CFTC · Shiller · **NY Fed ACM** · **Nakajima** | `fetch` + 自己解 CSV/JSON |
 | **`fflate`**(已有) | NY Fed HLW · JPX JGB VIX · **BOJ 产出缺口** | `.xlsx` = zip+XML,解 zip 后正则取(公共解包在 `fetchers/xlsx.ts`) |
 | **SheetJS**(⚠️ 未加) | — | BIFF8 `.xls`(OLE)。**npm 上的 `xlsx@0.18.5` 有 2 个 high CVE**,必须走 `bun add "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"` |
 | **`word-extractor`**(⚠️ 未加) | — | OLE Word `.doc`。SheetJS 读不了(`Cannot find Workbook stream`) |
@@ -43,8 +44,8 @@
 | 想要的 | 结论 | 查证方式(2026-09) |
 |---|---|---|
 | 日本 BEI / 实际收益率 / 期限溢价 / r\* | **FRED 全都没有** | 目录搜 "Japan breakeven inflation" 232 条全是美国的 `T10YIE` 之流;搜 "Japan term premium / natural rate" 只回日本名义 10Y + 美国 `DLTIIT` |
-| 日本 r\* | **HLW 官方文件不含日本**(只有 US / Canada / Euro Area);BOJ 自己的估计是**一年一更的区间**(2026-03 那版 −0.9%～+0.5%),发在日銀レビュー PDF 里,不是序列 | 解开官方 xlsx 看表头 |
-| 日本期限溢价 | ACM / Kim-Wright **都只做美债**,日本无公开模型序列 | — |
+| 日本 r\* | **HLW 官方文件不含日本**(只有 US / Canada / Euro Area);BOJ 自己的估计是**一年一更的区间**(2026-03 那版 −0.9%～+0.5%),发在日銀レビュー PDF 里,不是序列。→ **另有出路(2026-09)**:中島模型的 `rstar.csv` 是季频序列带 95% 区间,**已接**;但那是**单研究员模型、非日银官方**,且是**实际口径**(日银官方另发六模型并排的一份,未接) | 解开官方 xlsx 看表头 |
+| ~~日本期限溢价~~ | ~~ACM / Kim-Wright 都只做美债,日本无公开模型序列~~ → **结论已推翻(2026-09)**:中島上智公开了 JGB 期限溢价 / 预期短端 / r\* 的模型估计,**已接**(见上表 Nakajima 行)。ACM / KW 确实只做美债这半句仍成立 | GitHub `jouchinakajima/program` |
 | 日本物価連動国債收益率曲线 | **不存在现成曲线**。JSDA 只发**按銘柄的价格**(实测每日 10 只券),要自己选券 + 处理想定元金額 + 插值。MOF 只发名义(`jgbcmi_all.csv` → 404),BOJ API 里 `物価連動` 零命中(扫过 FM01–FM12) | — |
 | 日元通胀掉期(ZCIS) | **无免费源**。JSCC 只清算普通 IRS(页面「物価/インフレ」零命中) | — |
 | 柴油交割地(PADD1)的实物对照 | **源可用但不接** —— `WDISTP11` 端点正常,是**形式**不成立:PADD1 季节 z 与全国 z 相关 **r=0.937**、末值差 0.04、「一破一不破 −2」近两年仅 1.9%,没有增量。想要的判别(裂解爆表时分「交割地真缺货」还是「纸面挤压」)实际几乎不发生 | 拉 780 周实算(2026-09) |

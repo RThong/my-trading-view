@@ -14,6 +14,7 @@
 // ⚠️ 2026 年 3 月日银改过一次推计方法(论文 ron260326a.pdf,**未核原文**)。跨年份比水平前自己确认断点。
 import { fetchWithTimeout } from './http';
 import { openXlsx } from './xlsx';
+import { quarterEndIso } from './quarter';
 
 const XLSX_URL = 'https://www.boj.or.jp/research/research_data/gap/gap.xlsx';
 
@@ -25,9 +26,6 @@ const QUARTERLY_SHEET = 'data1';
 const SEMIANNUAL_SHEET = 'data2';
 const CONTRIBUTION_COLS = ['C', 'D', 'E', 'F'] as const;
 
-/** 季末日。季度值代表整个季度,落在季末比季初更贴「这一季的读数」。 */
-const QUARTER_END = ['03-31', '06-30', '09-30', '12-31'];
-
 /**
  * 行标签 → ISO 日期。**取标签里最后一个 `YYYY.NQ`**,两张表因此共用一个解析器:
  *   data1 `2026.1Q`                  → 2026-03-31
@@ -36,7 +34,7 @@ const QUARTER_END = ['03-31', '06-30', '09-30', '12-31'];
  */
 export function labelToIso(label: string): string | null {
   const last = [...label.matchAll(/(\d{4})\.([1-4])Q/g)].at(-1);
-  return last ? `${last[1]}-${QUARTER_END[Number(last[2]) - 1]}` : null;
+  return last ? quarterEndIso(last[1], Number(last[2])) : null;
 }
 
 /**

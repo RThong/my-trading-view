@@ -9,6 +9,7 @@ import { fetchJgbCurve } from '../fetchers/mofJgb';
 import { fetchJgbVix } from '../fetchers/jpxJgbVix';
 import { fetchCftcJpyNet } from '../fetchers/cftcCot';
 import { fetchBojGap } from '../fetchers/bojOutputGap';
+import { fetchNakajimaJgb } from '../fetchers/nakajimaJgb';
 import { fetchMoveSeries, mergeMove } from '../fetchers/moveIndex';
 import { fetchShillerCape } from '../fetchers/capeShiller';
 import { fetchHlwRstar } from '../fetchers/nyfedRstar';
@@ -372,6 +373,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 日银产出缺口 + 潜在增速(**季度更新**,1/4/7/10 月第三个工作日发)。一次 GET 拿全历史 → 不落库。
   // 起点 1994 不是 HISTORY_START_DATE:季频序列从 2018 起只剩 30 来个点,读不出泡沫破灭后那段长期负缺口。
   const bojGapP = fetchBojGap().catch(() => null);
+  // 日本长端分解 + r*(中島上智模型)。**发布 2-4 个月不规律**(不是季频),两个 CSV 同日打包发。
+  // 全历史 1995 起一次拿全 → 不落库;模型重估会改写整条历史,攒增量会把新旧 vintage 混成一条线。
+  const nakajimaP = fetchNakajimaJgb().catch(() => null);
   // 席勒 CAPE(月频,Robert Shiller 数据集;全历史 1871→今)。
   const capeP = fetchShillerCape().catch(() => null);
   // HLW 自然利率 r*(纽约联储,**季频**,一年只发 4 次)。分解式里 L(名义长期中枢)= r* + T5YIFR 的前半。
@@ -424,7 +428,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     if (s.status === 'fulfilled') raw[names[i]] = s.value;
   });
   const usdBars = await usdBarsP;
-  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape, ust, rstar, acm, bojGap] = await Promise.all([
+  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape, ust, rstar, acm, bojGap, nakajima] = await Promise.all([
     usdjpyBarsP,
     jgbCurveP,
     cftcJpyP,
@@ -434,6 +438,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     rstarP,
     acmP,
     bojGapP,
+    nakajimaP,
   ]);
   const [wti, brent, diesel, rbob] = await oilP;
   const [refUtil, distStocks, gasStocks, distExports, crudeRuns, distProd] = await eiaP;
@@ -498,6 +503,16 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('jpPotCapital', bojGap?.potCapital);
   put('jpPotHours', bojGap?.potHours);
   put('jpPotWorkers', bojGap?.potWorkers);
+  // 日本长端分解:期限溢价 + 预期短端(日频)、r* 及其 95% 区间(季频)。
+  // ⭐ 实测 `期限溢价 + 预期短端 − MOF 名义 10Y` 残差恒为 0 —— 这套分解重构的就是同一条曲线,不是第三方近似。
+  // **基准是 MOF 全历史 CSV(1986 起)下的 7724 个重叠日**;拿面板自己的 `jgb10y`(2018 起)复现只会得到
+  // 2071 天,不是注释写错了。
+  // ⚠️ r* 与这两条**不是一套口径**:它是实际利率(日银自然利子率定义),那两条是名义。别在任何一层相减或比高低。
+  put('jpTp10Nakajima', nakajima?.termPremium10);
+  put('jpExpShort10Nakajima', nakajima?.expectedRate10);
+  put('jpRstar10Nakajima', nakajima?.rstar10);
+  put('jpRstar10NakajimaLo', nakajima?.rstar10Lo);
+  put('jpRstar10NakajimaHi', nakajima?.rstar10Hi);
   // ⚠️ 字段名带 `Current`:将来接 real-time 那套会撞名,且**现在就有人会误读** ——
   // current 的历史值是今天用全部数据回头重画的,不是当时看得到的值(前视偏差)。
   put('rstarHlwCurrent', rstar?.length ? rstar : undefined);

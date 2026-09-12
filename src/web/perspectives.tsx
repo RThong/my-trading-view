@@ -124,6 +124,8 @@ export const PERSPECTIVES: Perspective[] = [
       // 产能面(日银试算,季度更新)。放日本视角最后一格:前面几格是市场怎么定价,这格是产能够不够 ——
       // BOJ 加息叙事的前提在这里,和曲线/日元那几格配读。
       regimeTab('jp_output_gap', '产出缺口', 'jpGap'),
+      // 长端分解(中島上智模型)。对称利率视角同名那格,但只有一套模型 —— 读法差异写在两格 desc 里。
+      regimeTab('jp_term_premium', '长端分解', 'jpTermPremium'),
     ],
   },
   {
