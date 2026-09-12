@@ -93,3 +93,46 @@ export function aggregateBars(bars: Bar[], interval: Interval): Bar[] {
   }
   return sortBy([...byKey.values()], (b) => b.time);
 }
+
+/**
+ * 把自动缩放算出的价格轴范围**夹进一个上限框**,只改轴、不改数据。
+ *
+ * 为什么要有它:有的序列日常波动在 ±2 内,却带着单周 −27 这样的真实极值
+ * (Uri 寒潮冻停德州炼厂的开工率季节 z、2020 停摆的同比基数)。一根这样的点把其余 8 年
+ * 压成一条直线,那格就废了。**服务端不截断数据** —— 那个值是真的,截了会骗人;
+ * 在轴这一层夹,线仍然画出去、hover 仍读到真值,只是不让它决定整幅的高度。
+ *
+ * 语义是**求交不是覆盖**:数据本来就在框内时,照常自动缩放(不会强行撑到框的边界)。
+ * 可视窗口整段落在框外时(缩放到那一周),夹出来的区间会倒挂 —— 此时**退回原范围**,
+ * 否则那格什么都看不见。所以「放大到极值那周去看真值」这条路始终是通的。
+ */
+export function clampPriceRange(
+  range: { minValue: number; maxValue: number },
+  [lo, hi]: [number, number],
+): { minValue: number; maxValue: number } {
+  const minValue = Math.max(range.minValue, lo);
+  const maxValue = Math.min(range.maxValue, hi);
+
+  return minValue < maxValue ? { minValue, maxValue } : range;
+}
+
+/**
+ * 造 lightweight-charts 的 `autoscaleInfoProvider` 回调:把自动算出的范围夹进 `box`。
+ *
+ * **抽成纯函数只为可测** —— 原本这段内联在 `paneChart.hooks` 的建图流程里,而那层要跑起来
+ * 得有真的 chart 实例。变异检验实测:把 null 守卫删掉、或把整个 clamp 分支短路成 `if (false)`,
+ * 全套测试都照样绿。夹轴的语义(求交 / 倒挂退回 / null 守卫)不该靠「没人动它」来保证。
+ *
+ * `priceRange` 为 null = 该 series 在当前可视窗口内没有数据 —— 原样退回,
+ * 别去夹一个不存在的范围(会在图表自己的渲染循环里抛,排查极难定位)。
+ */
+export function clampAutoscaleProvider<T extends { priceRange: { minValue: number; maxValue: number } | null }>(
+  box: [number, number],
+): (original: () => T | null) => T | null {
+  return (original) => {
+    const info = original();
+    if (!info?.priceRange) return info;
+
+    return { ...info, priceRange: clampPriceRange(info.priceRange, box) };
+  };
+}

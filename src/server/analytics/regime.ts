@@ -97,3 +97,128 @@ export function subtractAligned(series: Point[][]): Point[] {
   }
   return out;
 }
+
+/** 逐点相加(前向填充对齐,口径同 subtractAligned)。首项 + 其余项。 */
+export function sumAligned(series: Point[][]): Point[] {
+  const [head, ...rest] = series;
+  return subtractAligned([head, ...rest.map((s) => scale(s, -1))]);
+}
+
+/**
+ * 季节性 z-score:每个点对照**往年同期**的分布,输出 (今值 − 同期均值) / 同期标准差。
+ *
+ * 为什么要有它:库存/开工率这类序列的绝对水位单看不携带信息 —— 柴油库存 1.05 亿桶是高是低,
+ * 取决于现在是 3 月还是 9 月。「按季节性去看已经非常低」这句话,只有这条线画得出来。
+ *
+ * 口径(三个都是刻意的,别随手改):
+ *  · **按 day-of-year ± 窗口取样,不按 week-of-year。** 周号跨年会错位(52/53 周),
+ *    同一个季节位置在不同年会落到不同周号上。日序差取环形距离,跨年末年初正确。
+ *  · **窗口 ±10 天 × 5 年 ≈ 15 个样本。** 严格「同一周号」每年只有 1 个点,5 年 = 5 个样本,
+ *    σ 由 n=5 估出来噪声极大,z 会乱跳 —— 那不是信号。
+ *  · **基准期排除当年**,只取 [y−years, y−1]。否则最新那个点参与了自己的均值,z 被系统性压小
+ *    (EIA 官方的 5-year average 也是这个口径)。
+ *
+ * ⚠️ **这条线读的是「相对往年同期」,不是「相对历史常态」。** 5 年窗里含 2020-22 的柴油乱期,
+ * 且美国炼能在那之后永久退出了一部分 —— 水位的**趋势性**下移会被算进基准,z 因此偏向 0。
+ * 换句话说:z 不极端 ≠ 不紧张,可能只是「和前几年一样紧」。判紧张要配水位与裂解一起读。
+ *
+ * ⚠️ **σ 用样本口径 ÷(n−1),不是 ÷n。** 前者是无偏估计;÷n 会在「15 个样本估 σ 本就低估离散度」
+ * 之上再叠一层可避免的低估(n=15 时 σ 偏小约 3.4%,|z| 相应偏大)。实测改过来后馏分油库存 z
+ * 的 ±2 带外从 11.1% 降到 8.2% —— 剩下那截才是真胖尾与基准漂移,也就是面板文案真正要讲的东西。
+ *
+ * ⚠️ **基准期按日历年筛,不按「距当前点多久」—— 这是量过之后的选择,别改。**
+ * 日历年判据有个理论缺口:1 月上旬的点,其 ±10 天窗会够到前一年 12 月底的观测,那是同一个冬天、
+ * 仅 5 天前,库存自相关又极强 → 会把 |z| 压小。但实测(馏分油库存 2018+ 共 453 点)把「实际相距
+ * 不足半年」的样本剔掉后:点数不变,|Δz| 均值 **0.002**、最大 0.26(12/1 月的点均值 0.010),
+ * 每点平均只掉 0.02 个样本,末值一模一样。代价却是要在下面并存两个判据。**买不到精度,不改。**
+ *
+ * 样本不足(< minSamples,且至少 2 个)或 σ 非正的点直接跳过 —— 宁可线短一截,不出不可信的 z。
+ */
+export function seasonalZ(
+  rows: Point[],
+  // ⚠️ `years` **没有默认值**:基准期年数的真源是 config 的 SEASONAL_BASELINE_YEARS
+  // (它同时决定 fetcher 要多拉多少周)。这里再写一个 5 就成了第二个真源,改一处漏一处而且无声。
+  { years, windowDays = 10, minSamples = 8 }: { years: number; windowDays?: number; minSamples?: number },
+): Point[] {
+  const DAY = 86_400_000;
+  const yearOf = (d: string) => Number(d.slice(0, 4));
+  const isLeapYear = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  /**
+   * 日序**归一到非闰年日历**:2/29 并入 2/28,其后各日减 1。
+   *
+   * 不归一的话,闰年 3/1 之后的日序整体比平年多 1,而下面的环长是固定的 365 ——
+   * 跨闰年比较就会错开一天:2020-12-28 到 2021-01-02 实际隔 5 天,会被算成 4 天。
+   * ±10 天的窗口下这只是让窗口一侧胖一天/瘦一天,但那是纯粹的实现瑕疵,没有任何好处。
+   */
+  const dayOfYear = (d: string) => {
+    const raw = Math.round((Date.parse(d) - Date.parse(`${d.slice(0, 4)}-01-01`)) / DAY);
+    return isLeapYear(yearOf(d)) && raw >= 59 ? raw - 1 : raw;
+  };
+  // 环形距离:12/28 与 01/03 相差 6 天,不是 359 天。
+  const seasonalGap = (a: number, b: number) => {
+    const raw = Math.abs(a - b);
+    return Math.min(raw, 365 - raw);
+  };
+
+  const enriched = rows.map((p) => ({ ...p, year: yearOf(p.date), doy: dayOfYear(p.date) }));
+
+  return enriched.flatMap((p) => {
+    const base = enriched
+      .filter((q) => q.year >= p.year - years && q.year <= p.year - 1 && seasonalGap(q.doy, p.doy) <= windowDays)
+      .map((q) => q.value);
+    // 下限 2:÷(n−1) 在 n=1 时是除以 0(sd 变 NaN,而 NaN 过不了下面的 sd > 0 判断但也不该走到那);
+    // 且单个样本本来就估不出离散度。调用方把 minSamples 传成 1 也不放行。
+    if (base.length < Math.max(minSamples, 2)) return [];
+
+    const mean = base.reduce((a, b) => a + b, 0) / base.length;
+    const sd = Math.sqrt(base.reduce((a, b) => a + (b - mean) ** 2, 0) / (base.length - 1));
+
+    // 判 `sd > 0` 而不是 `sd !== 0`:一并挡掉 NaN(任何比较都为 false),不让 NaN/Infinity 漏进序列。
+    return sd > 0 ? [{ date: p.date, value: (p.value - mean) / sd }] : [];
+  });
+}
+
+/**
+ * 能源派生层。**提成纯函数只为可测** —— 原本内联在 `/api/regime` 的 handler 里,
+ * 而那层要跑起来得有真实网络。变异检验实测:把 crack321 的权重 1/3 改成 1/2、把收率的分子分母
+ * 互换、把「先算 z 再裁」的顺序颠倒、把缺腿短路掉,全套测试**一条都不 fail**。
+ * 这几个都是改错了也不报错、只让图默默变成另一个量的地方,不该靠「没人动它」来保证。
+ *
+ * 缺腿一律返回 undefined(由调用方 `put` 归入 unavailable),不出半对的数。
+ */
+/** 裂解只用到这三条腿 —— Brent 不进裂解(它和 WTI 的差价是另一格),别为了「凑齐油品」把它塞进来。 */
+export type CrackLegs = { wti: Point[] | null; diesel: Point[] | null; rbob: Point[] | null };
+
+/** ULSD / RBOB 报价是 $/gal,裂解要 $/bbl → ×42(1 桶 = 42 加仑)。 */
+const GAL_PER_BBL = 42;
+
+export function oilCracks({ wti, diesel, rbob }: CrackLegs): {
+  dieselCrack?: Point[];
+  rbobCrack?: Point[];
+  crack321?: Point[];
+} {
+  const dieselCrack = diesel && wti ? subtractAligned([scale(diesel, GAL_PER_BBL), wti]) : null;
+  const rbobCrack = rbob && wti ? subtractAligned([scale(rbob, GAL_PER_BBL), wti]) : null;
+  // 3-2-1:3 桶原油 → 2 汽油 + 1 馏分。写成两条单品裂解的加权平均,省掉重复表达 ×42 与权重。
+  const crack321 = rbobCrack && dieselCrack ? scale(sumAligned([scale(rbobCrack, 2), dieselCrack]), 1 / 3) : null;
+
+  return { dieselCrack: dieselCrack ?? undefined, rbobCrack: rbobCrack ?? undefined, crack321: crack321 ?? undefined };
+}
+
+/**
+ * 馏分油收率 = 馏分油产量 / 炼厂加工量 × 100 (%)。分子分母别写反 —— 写反了值仍在合理量级
+ * (约 3.3 而不是 30),图上只是"换了个单位",肉眼看不出。
+ */
+export function distillateYield(distProd: Point[] | null, crudeRuns: Point[] | null): Point[] | undefined {
+  return distProd && crudeRuns ? scale(divideAligned(distProd, crudeRuns), 100) : undefined;
+}
+
+/**
+ * 季节 z + 按展示起点裁剪。**顺序是要害**:多拉的那几年历史是给基准期用的,
+ * 先裁再算 = 把基准期一起砍掉,四条 z 会悄悄从 (起点 + years) 才开始,而且不报错。
+ */
+export function seasonalZFrom(rows: Point[] | null, opts: { years: number; from: string }): Point[] | undefined {
+  if (!rows) return undefined;
+
+  return seasonalZ(rows, { years: opts.years }).filter((p) => p.date >= opts.from);
+}

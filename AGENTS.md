@@ -13,6 +13,7 @@
 | **NY Fed** | HLW 自然利率 r\*(`rstarHlwCurrent`,**季频**)+ ACM 10Y 期限溢价(`tp10Acm`,**月频**,给 KW 当独立对照) | 季/**月** | 零;**HLW 用 `fflate`** | HLW:官方 xlsx = **zip+XML**,`fflate` 解开后**按工作表名**(`HLW Estimates`)经 `workbook.xml`+rels 解路径 —— 不写死 `sheetN`。ACM:**纯 CSV 零依赖**(`acmPlot_data.csv`,49 KB)⚠️ 这是图表的**无文档端点**,官方公开发布的是同目录 10.1 MB 的 BIFF8 `.xls`;已逐字对账确认内容等同 xls 的 `ACM Monthly` 表,但随时可能挪走 → 拿不到就归 unavailable | 1961 起全历史;⚠️ **current estimates 的历史值会被事后重估**(前视偏差,不能用来论证「当时市场定价错了」) |
 | **Yahoo** | 股票 EOD + **DXY(`DX-Y.NYB` 真 ICE 美元指数)/ MOVE(`^MOVE`)/ 油品期货(`CL=F`/`BZ=F`/`HO=F`/`RB=F`)/ USD/JPY** | 日频 | `yahoo-finance2` | `yahoo-finance2` **v4** npm(class API `new YahooFinance()`) | 可回填多年 |
 | **其它** | Eris(SOFR OIS 曲线)/ MOF+JPX(JGB 收益率/JGB VIX)/ CFTC(日元净持仓)/ Shiller(CAPE) | 混:Eris 日 / MOF 日 / JPX 日 / **CFTC 周** / Shiller 月 | 零;**JPX JGB VIX 用 `fflate`** | 各自 adapter(见 `fetchers/`)| 多为全历史 |
+| **EIA** | 周度石油报告:炼厂开工率 / 加工量 + 馏分油产量(→ 收率、同比)/ 馏分油+汽油库存 / 馏分油出口(→ 季节 z) | **周频**(周三 10:30 ET 发,截止上周五,滞后 ~5 天) | 零(要 key) | JSON `api.eia.gov/v2/seriesid/PET.{ID}.W`(要 key)⚠️ 裸 ID 404,必须带 `PET.` 前缀 + `.W` 后缀;`start`/`end`/`data[]` **全被忽略**,唯一生效的裁剪参数是 `length`;返回**倒序** | 1982 起全历史;**已发布值下周会被修订**(每次拉全量,故不落库) |
 | **ICE** | AI 巨头 + 甲骨文单名 CDS EOD 结算价(`iceCds`) | 日频 | 零 | 公开 JSON `www.ice.com/api/cds-settlement-prices/icc-single-names`(免 key) | **仅当天快照,不可回填** |
 | **moomoo** | 期权链(股票/ETF/指数:SPY/.VIX) | 日频 | `moomoo-api` | 本地 OpenD WebSocket `127.0.0.1:33333` | **仅当天快照,不可回填** |
 | **SEC XBRL** | AI 链公司季报财务(TTM 毛利率/capex/FCF) | **季频** | 零 | 公开 JSON `data.sec.gov`(免 key,**必须带 User-Agent**);submissions 比 filed → 有新申报才拉 companyfacts | 全历史(季频) |
@@ -26,7 +27,7 @@
 
 | 档位 | 谁 | 说明 |
 |---|---|---|
-| **零依赖** | FRED · CBOE · ICE · SEC · Deribit · MOF · CFTC · Shiller · **NY Fed ACM** | `fetch` + 自己解 CSV/JSON |
+| **零依赖** | FRED · CBOE · ICE · **EIA** · SEC · Deribit · MOF · CFTC · Shiller · **NY Fed ACM** | `fetch` + 自己解 CSV/JSON |
 | **`fflate`**(已有) | NY Fed HLW · JPX JGB VIX | `.xlsx` = zip+XML,解 zip 后正则取 |
 | **SheetJS**(⚠️ 未加) | — | BIFF8 `.xls`(OLE)。**npm 上的 `xlsx@0.18.5` 有 2 个 high CVE**,必须走 `bun add "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"` |
 | **`word-extractor`**(⚠️ 未加) | — | OLE Word `.doc`。SheetJS 读不了(`Cannot find Workbook stream`) |
@@ -45,6 +46,9 @@
 | 日本期限溢价 | ACM / Kim-Wright **都只做美债**,日本无公开模型序列 | — |
 | 日本物価連動国債收益率曲线 | **不存在现成曲线**。JSDA 只发**按銘柄的价格**(实测每日 10 只券),要自己选券 + 处理想定元金額 + 插值。MOF 只发名义(`jgbcmi_all.csv` → 404),BOJ API 里 `物価連動` 零命中(扫过 FM01–FM12) | — |
 | 日元通胀掉期(ZCIS) | **无免费源**。JSCC 只清算普通 IRS(页面「物価/インフレ」零命中) | — |
+| 柴油交割地(PADD1)的实物对照 | **源可用但不接** —— `WDISTP11` 端点正常,是**形式**不成立:PADD1 季节 z 与全国 z 相关 **r=0.937**、末值差 0.04、「一破一不破 −2」近两年仅 1.9%,没有增量。想要的判别(裂解爆表时分「交割地真缺货」还是「纸面挤压」)实际几乎不发生 | 拉 780 周实算(2026-09) |
+| 炼厂检修日历 | **无免费权威源**(IIR / Genscape 均需订阅)。替代:用已接的 `refUtilZ5y`(开工率季节 z)当代理 —— 检修季开工率会季节性走低,z 扣掉那层后剩下的才是非计划停车 | 商业源官网询价页(2026-09) |
+| ↑ 为什么 z 看不见 | PADD1 在**结构性萎缩**,5 年基准跟着降 → z 归零。同日 PADD1 同比 −24.5% 而全国 −8.3%;9 月上旬中位 2015 年 57,687 千桶(占全国 38.2%)→ 2026 年 21,003(20.2%),**十一年缩 64%**。要接只能接**绝对水位**(逼仓看池子多大,与季节偏离无关),而那是慢变量,不值一格周频图 | 同上 |
 
 **候选源清单**(查过能用、还没接)见 `docs/data-sources-candidates.md`。
 

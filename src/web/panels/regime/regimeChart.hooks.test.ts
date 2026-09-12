@@ -446,3 +446,64 @@ test('tp10Kw 那格叠 ACM 对照线,ACM 缺失只少那条、KW 主线照画', 
   // 月频线不能在两次发布之间画斜坡
   expect(specsOf(both).find((s) => s.key === 'tp10Acm')).toHaveProperty('step', true);
 });
+
+test('band + percentile 同配:参考线用常态带、不被 P5/P95 覆盖,而背景带仍由 riskTail 染', () => {
+  // 回归点。这两个配置曾经同时存在于库存 z 两格,而 spec 构造里 percentile 分支
+  // **整体重新赋值** refLines → band 写的 ±2 从来没画出来过,图上是 P5/P95。
+  // 同屏另外两格 z 只配了 band、画的是 ±2 —— 四条 z 两套尺,肉眼看不出,改回去测试也照绿。
+  // 故这条必须断言「画的是哪两条」,不能只断言「有两条」。
+  const pane = REGIME_DIMS.refinery.panes.find((p) => p.key === 'distStocksZ5y');
+  expect(pane?.band).toEqual({ lo: -2, hi: 2 }); // 前提:这格确实同配了两者
+  expect(pane?.percentile?.riskTail).toBe('low');
+
+  // 构造分布使 P5/P95 明显不等于 ±2,否则断言区分不出两种来源。
+  const distStocksZ5y = Array.from({ length: 21 }, (_, i) => ({
+    date: `2021-01-${String(i + 1).padStart(2, '0')}`,
+    value: (i - 10) * 0.5, // −5 … +5,P5=−4.5、P95=4.5
+  }));
+  const specs = buildRegimeSpecs({ series: { distStocksZ5y }, unavailable: [] }, 'refinery', '1D');
+
+  const line = specs.find((s) => s.key === 'distStocksZ5y') as { refLines?: { price: number; title: string }[] };
+  expect(line.refLines).toEqual([
+    { price: -2, title: '常态下限' },
+    { price: 2, title: '常态上限' },
+  ]);
+
+  // 背景带是另一条代码路径,不依赖 refLines —— 必须仍在,且按 riskTail='low' 把低端染红。
+  const bg = specs.find((s) => s.key === 'distStocksZ5y-bg') as { data: Array<{ value: number; color: string }> };
+  expect(bg).toBeDefined();
+  expect(bg.data[0]).toMatchObject({ value: 1, color: 'rgba(239,68,68,0.45)' }); // 最低值 < P5,低端=风险=红
+  expect(bg.data[20]).toMatchObject({ value: 1, color: 'rgba(34,197,94,0.45)' }); // 最高值 > P95,反向=绿
+});
+
+test('clampVisibleTo:有 overlay 的格子,主线与叠加线必须都夹', () => {
+  // 两条线共用同一条价格轴 —— 只夹主线的话,overlay 的极值照样把整幅撑开,
+  // 而这格的 overlay(distProdYoy)本身就是离群腿(min/P1 ≈ 2.3)。
+  // 删掉 overlay 那侧的 spread 后本断言会 fail;不加这条则全套测试照绿。
+  const pane = REGIME_DIMS.refinery.panes.find((p) => p.key === 'crudeRunsYoy');
+  expect(pane?.clampVisibleTo).toEqual([-15, 15]);
+  expect(pane?.overlay?.key).toBe('distProdYoy');
+
+  const pt = (d: string, v: number) => ({ date: d, value: v });
+  const specs = buildRegimeSpecs(
+    {
+      series: {
+        crudeRunsYoy: [pt('2021-01-01', 1), pt('2021-01-02', 2)],
+        distProdYoy: [pt('2021-01-01', -3), pt('2021-01-02', 60)],
+      },
+      unavailable: [],
+    },
+    'refinery',
+    '1D',
+  );
+
+  const clamped = specs
+    .filter((s) => s.key === 'crudeRunsYoy' || s.key === 'distProdYoy')
+    .map((s) => (s as { clampVisibleTo?: [number, number] }).clampVisibleTo);
+
+  expect(clamped).toHaveLength(2);
+  expect(clamped).toEqual([
+    [-15, 15],
+    [-15, 15],
+  ]);
+});

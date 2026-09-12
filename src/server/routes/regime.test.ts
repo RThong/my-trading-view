@@ -1,4 +1,5 @@
 import { test, expect } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { nearMinusFar } from '../analytics/termStructure';
 
 // 两条期限结构价差(VX1−V3 与 VIX−VIX3M)的**减号方向**必须一致 —— 这是这条线上唯一
@@ -48,7 +49,7 @@ test('nearMinusFar:任一腿为空 → 空结果', () => {
 // 往名单里加一条不叫 gpu* 的(vix 就是)就会漏剔、unavailable 里出现重复。所以按 key 集合剔。
 import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
-import { JOB_WRITTEN_SERIES, GPU_KEY_PREFIX, DB_BACKED_KEYS, readDbBacked } from './regime';
+import { JOB_WRITTEN_SERIES, GPU_KEY_PREFIX, DB_BACKED_KEYS, readDbBacked, shouldCache, EIA_SERIES } from './regime';
 
 test('JOB_WRITTEN_SERIES:out 键唯一、symbol 唯一', () => {
   const outs = JOB_WRITTEN_SERIES.map(([out]) => out);
@@ -84,4 +85,41 @@ test('DB_BACKED_KEYS 等于 readDbBacked 实际产出的 key 全集', () => {
   } finally {
     db.close();
   }
+});
+
+const ok = (u: string[], hasEiaKey: boolean) => shouldCache(u, { hasEiaKey });
+
+test('shouldCache:全成功 → 缓存', () => {
+  expect(ok([], true)).toBe(true);
+});
+
+test('shouldCache:SEC / GPU 缺席是常态,不挡缓存', () => {
+  expect(ok(['fund:NVDA:fcf', 'gpuB300'], true)).toBe(true);
+});
+
+test('shouldCache:没配 EIA key 时那八条恒缺,必须豁免 —— 否则缓存永久关不上', () => {
+  // 这正是回归点:不豁免的话每次请求都会重拉 FRED/CBOE/Yahoo 全套上游。
+  expect(ok([...EIA_SERIES], false)).toBe(true);
+  expect(ok([...EIA_SERIES, 'fund:NVDA:fcf'], false)).toBe(true);
+});
+
+test('shouldCache:配了 key 还缺 = 真失败,照旧挡住缓存等下次重试', () => {
+  expect(ok([...EIA_SERIES], true)).toBe(false);
+  expect(ok(['distStocksZ5y'], true)).toBe(false);
+});
+
+test('shouldCache:豁免只覆盖 EIA 那八条,别的源缺席照样挡', () => {
+  expect(ok(['hyOas'], false)).toBe(false);
+  expect(ok([...EIA_SERIES, 'hyOas'], false)).toBe(false);
+});
+
+test('EIA_SERIES 必须与路由实际发出的那批 EIA 线一致(手抄名单的防漂移锁)', () => {
+  // 回归点:名单漏一条 → 缺 key 时那条不在豁免里 → shouldCache 恒 false → 缓存永久关不上。
+  // 「实际发出哪些」的真源是 regime.ts 里 put() 那一段;这里用源码文本对齐,避免跑真实网络。
+  const src = readFileSync(new URL('./regime.ts', import.meta.url), 'utf8');
+  const seg = src.slice(src.indexOf("put('refUtil'"), src.indexOf("put('rbobYoy'"));
+  const actual = [...seg.matchAll(/put\(\s*'([A-Za-z0-9]+)'/g)].map((m) => m[1]);
+
+  expect(actual.length).toBeGreaterThan(0);
+  expect([...EIA_SERIES].sort()).toEqual([...new Set(actual)].sort() as (typeof EIA_SERIES)[number][]);
 });

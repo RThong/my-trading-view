@@ -15,6 +15,16 @@ export type LineSpec = {
   refLines?: { price: number; title: string }[];
   /** 阶梯线。低频序列(季频 r*)专用:两次发布之间值就是不变的,平滑折线是在伪造发布间的信息。 */
   step?: boolean;
+  /**
+   * 价格轴的**上限框** `[lo, hi]`:自动缩放出来的范围与它求交(见 `lib/chart` 的 `clampPriceRange`)。
+   * 只影响可视轴范围 —— 不改数据、不改 hover 读数、不改导出。
+   *
+   * 给「日常波动很窄、但带真实极端单点」的序列用(开工率季节 z 的 Uri 寒潮 −27、
+   * 同比线的 2020 停摆基数 ±60)。**刻意做成声明式的两个数,不开 autoscaleInfoProvider 回调**:
+   * 这里要的只是一个框,把 lightweight-charts 的回调签名漏进 spec 层,
+   * 等于让每个调用方自己去实现「求交 + 倒挂退回」那套语义,迟早各写各的。
+   */
+  clampVisibleTo?: [number, number];
 };
 export type CandleSpec = { key: string; pane: number; kind: 'candle'; title: string; data: Bar[] };
 export type HistoPoint = { time: string; value: number; color: string };

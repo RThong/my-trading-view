@@ -8,9 +8,10 @@ import {
   HistogramSeries,
   LineType,
   type IChartApi,
+  type AutoscaleInfo,
 } from 'lightweight-charts';
 import { useStable } from '../../hooks/useStable';
-import { CHART_OPTIONS, changeStats, needsLogScale } from '../../lib/chart';
+import { CHART_OPTIONS, changeStats, needsLogScale, clampAutoscaleProvider } from '../../lib/chart';
 import type { PaneDef, Spec, LegendCell, AnySeries } from './paneChart.types';
 import { useTrendlines } from './trendlines.hooks';
 
@@ -83,6 +84,10 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
     },
     spec.pane,
   );
+  // 轴的上限框。lightweight-charts 只开 autoscaleInfoProvider 这一个口子,故回调在这里就地收掉 ——
+  // spec 层只声明 [lo, hi];语义(求交 / 倒挂退回 / null 守卫)在 lib/chart 的纯函数里,那边有变异检验覆盖。
+  if (spec.clampVisibleTo)
+    s.applyOptions({ autoscaleInfoProvider: clampAutoscaleProvider<AutoscaleInfo>(spec.clampVisibleTo) });
   if (spec.baseline !== undefined) {
     s.createPriceLine({
       price: spec.baseline,

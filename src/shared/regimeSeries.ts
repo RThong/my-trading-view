@@ -63,7 +63,19 @@ export const REGIME_SERIES = [
   'vixSpotTerm',
   'brentWti',
   'dieselCrack',
+  'rbobCrack',
+  'crack321',
   'rbobYoy',
+
+  // ── EIA 周报(周三 10:30 ET,数据截止上周五)。水位 + 季节 z 见 analytics/seasonalZ。
+  'refUtil',
+  'refUtilZ5y',
+  'distStocksZ5y',
+  'gasStocksZ5y',
+  'distExportsZ5y',
+  'distYield',
+  'crudeRunsYoy',
+  'distProdYoy',
 
   // ── 长端分解(rates-decomposition)
   'expShort10Kw',

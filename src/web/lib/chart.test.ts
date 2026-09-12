@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { changeStats, needsLogScale, type Bar } from './chart';
+import { changeStats, needsLogScale, clampPriceRange, clampAutoscaleProvider, type Bar } from './chart';
 
 describe('changeStats', () => {
   test('正常涨幅', () => {
@@ -38,5 +38,42 @@ describe('needsLogScale', () => {
   test('非正 low 被忽略,不影响判定', () => {
     expect(needsLogScale(bars([0, 4, 60000], [1, 5, 124785]))).toBe(true);
     expect(needsLogScale(bars([0], [1]))).toBe(false); // 全是脏数据 → 不切对数
+  });
+});
+
+test('clampPriceRange:数据在框内时不动(求交不是覆盖)', () => {
+  expect(clampPriceRange({ minValue: -1.2, maxValue: 2.4 }, [-5, 5])).toEqual({ minValue: -1.2, maxValue: 2.4 });
+});
+
+test('clampPriceRange:极值撑破框时只夹被撑破的那一侧', () => {
+  expect(clampPriceRange({ minValue: -27.3, maxValue: 4.1 }, [-5, 5])).toEqual({ minValue: -5, maxValue: 4.1 });
+  expect(clampPriceRange({ minValue: -2, maxValue: 60 }, [-15, 15])).toEqual({ minValue: -2, maxValue: 15 });
+});
+
+test('clampPriceRange:可视窗口整段落在框外 → 退回原范围,不能让那格空掉', () => {
+  // 缩放到 Uri 那几周:全部数据都 < −5,夹出来会倒挂(min −5 > max −20)。
+  expect(clampPriceRange({ minValue: -27.3, maxValue: -20 }, [-5, 5])).toEqual({ minValue: -27.3, maxValue: -20 });
+  // 退化成一点(min === max)同样不可用 → 退回。
+  expect(clampPriceRange({ minValue: -27.3, maxValue: -5 }, [-5, 5])).toEqual({ minValue: -27.3, maxValue: -5 });
+});
+
+test('clampAutoscaleProvider:priceRange 为 null 时原样退回,不去夹不存在的范围', () => {
+  const provider = clampAutoscaleProvider<{ priceRange: { minValue: number; maxValue: number } | null }>([-5, 5]);
+
+  expect(provider(() => null)).toBeNull();
+  const noRange = { priceRange: null };
+  expect(provider(() => noRange)).toBe(noRange); // 原对象退回,不是新造一个
+});
+
+test('clampAutoscaleProvider:有范围时按 clampPriceRange 求交,且保留其余字段', () => {
+  const provider = clampAutoscaleProvider<{
+    priceRange: { minValue: number; maxValue: number } | null;
+    margins?: { above: number; below: number };
+  }>([-5, 5]);
+
+  const info = { priceRange: { minValue: -27.3, maxValue: 4.1 }, margins: { above: 10, below: 10 } };
+  expect(provider(() => info)).toEqual({
+    priceRange: { minValue: -5, maxValue: 4.1 },
+    margins: { above: 10, below: 10 }, // margins 不能被丢掉
   });
 });

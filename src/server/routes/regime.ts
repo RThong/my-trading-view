@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Database } from 'bun:sqlite';
 import { createFredFetcher } from '../fetchers/fred';
+import { createEiaFetcher } from '../fetchers/eia';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 import { fetchFearGreed } from '../fetchers/cnnFearGreed';
 import { createYahooFetcher } from '../fetchers/yahoo';
@@ -19,6 +20,9 @@ import {
   yoyPct,
   scale,
   sumAtAnchorDates,
+  seasonalZFrom,
+  oilCracks,
+  distillateYield,
   type Point,
 } from '../analytics/regime';
 import type { RegimeSeries, FundSeries, SeriesKey } from '../../shared/regimeSeries';
@@ -26,7 +30,7 @@ import { nearMinusFar } from '../analytics/termStructure';
 import { rollingSharpe } from '../analytics/sharpe';
 import { openDb } from '../storage/db';
 import { getMarketSeries, getPriceBars, getSecLag } from '../storage/repository';
-import { HISTORY_START_DATE } from '../config';
+import { HISTORY_START_DATE, SEASONAL_BASELINE_YEARS } from '../config';
 import {
   BUYER_FCF_SERIES,
   BUYER_FCFQ_SERIES,
@@ -122,6 +126,38 @@ export const JOB_WRITTEN_SERIES = [
 
 /** 只有 gpu 这几条允许"缺着也缓存"(库没跑过 job 时必然缺、B300 长期允许缺)。 */
 export const GPU_KEY_PREFIX = 'gpu';
+/**
+ * 这次响应能不能进缓存。**只缓存全成功**(降级响应不缓存,下次重试),三类例外:
+ *  · `fund:` —— SEC 季频,靠独立 job 逐季攒,从没跑过 job 的库里必然缺。
+ *  · `gpu`  —— 新接的 experimental 源,允许缺。
+ *  · EIA 八条,**且仅当没配 key 时** —— 那是配置状态,不是失败。
+ *
+ * ⚠️ 第三条的「仅当」是要害:配了 key 还缺 = 网络挂了或源结构变了,属 transient,
+ * 就该挡住缓存让下次重试。一律豁免的话会把降级响应缓存 6 小时。
+ * ⚠️ 反过来不豁免也不行:README 把 EIA key 写成可选项,缺 key 时这八条恒缺 →
+ * `every` 恒 false → 缓存永久关不上,每次请求重拉 FRED/CBOE/Yahoo/财政部…全套上游。
+ */
+export function shouldCache(unavailable: readonly string[], { hasEiaKey }: { hasEiaKey: boolean }): boolean {
+  const exempt = new Set<string>(hasEiaKey ? [] : EIA_SERIES);
+
+  return unavailable.every((n) => n.startsWith(FUND_KEY_PREFIX) || n.startsWith(GPU_KEY_PREFIX) || exempt.has(n));
+}
+
+/**
+ * ⚠️ **这张名单是手抄的,必须和主 handler 里实际 `put()` 的那八条一致** ——
+ * 将来加第九条 EIA 线却忘了同步,缺 key 时那条不在豁免里 → 缓存又会永久关不上(见 `shouldCache`)。
+ * 同文件的 `DB_BACKED_KEYS` 有同构的回归测试,这里同样在 `routes/regime.test.ts` 里钉住。
+ */
+export const EIA_SERIES: readonly SeriesKey[] = [
+  'refUtil',
+  'refUtilZ5y',
+  'distStocksZ5y',
+  'gasStocksZ5y',
+  'distExportsZ5y',
+  'distYield',
+  'crudeRunsYoy',
+  'distProdYoy',
+];
 
 /**
  * 读**全部来自本地库**的东西:market_series 的直读几条、price_eod 的蜡烛、以及由它们派生的量。
@@ -349,6 +385,35 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 各标的已 catch→null,Promise.all 不会拒绝;先建后 await(与其它源同批),
   // 别在 allSettled(src) 挂处理器前 await——否则 src 源在此窗口拒绝会成 unhandled。
   const oilP = Promise.all(['CL=F', 'BZ=F', 'HO=F', 'RB=F'].map(yahooClose));
+  // EIA 周报(周三 10:30 ET 发,数据截止上周五)。六条都不落库:一次 GET 给全量历史,
+  // 修订(下周会改上周值)因此自然带回来,不必攒增量。各自 catch→null,挂了只丢那一格。
+  //
+  // **这一条 catch 会出声,同文件另外那些不会** —— 不是随手加的:EIA 的 fetcher 会在
+  // 「源给了行但一行都解析不出来」时抛错(见 fetchers/eia),那是**源还活着但响应结构变了**,
+  // 与网络挂掉是两回事,且只能靠改代码修。静默吞掉的话两者都只表现为那格 unavailable,查不出区别。
+  // 其余源的失败是网络/源侧不可用,unavailable 本身已经说明问题,不必再刷日志。
+  const eiaKey = process.env.EIA_API_KEY ?? '';
+  const eia = createEiaFetcher({ apiKey: eiaKey });
+  // 没 key 就别发这六个请求 —— 每个都会往回抛同一句「缺 key」,徒增六次往返和六行日志。
+  // 那不是失败,是没配;下面 hasEiaKey 也据此把这八条从缓存条件里豁免。
+  if (!eiaKey) console.warn('[regime] 未配 EIA_API_KEY,「炼厂·库存」整块不可用(其余视角不受影响)');
+  const eiaWeekly = (id: string): Promise<Point[] | null> =>
+    eiaKey
+      ? eia.fetchWeekly(id).catch((e: unknown) => {
+          console.warn(`[regime] EIA ${id} 现拉失败,本次该格 unavailable: ${(e as Error).message}`);
+          return null;
+        })
+      : Promise.resolve(null);
+  const eiaP = Promise.all(
+    [
+      'WPULEUS3', // 炼厂开工率 %
+      'WDISTUS1', // 馏分油库存 千桶
+      'WGTSTUS1', // 汽油总库存 千桶
+      'WDIEXUS2', // 馏分油出口 千桶/日
+      'WGIRIUS2', // 炼厂原油加工量 千桶/日
+      'WDIRPUS2', // 馏分油产量 千桶/日
+    ].map(eiaWeekly),
+  );
   const settled = await Promise.allSettled(Object.values(src));
   const raw: Partial<Record<keyof typeof src, Point[]>> = {};
   settled.forEach((s, i) => {
@@ -366,6 +431,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     acmP,
   ]);
   const [wti, brent, diesel, rbob] = await oilP;
+  const [refUtil, distStocks, gasStocks, distExports, crudeRuns, distProd] = await eiaP;
   const jgb2y = jgbCurve?.series['2Y'] ?? null;
   const jgb10y = jgbCurve?.series['10Y'] ?? null;
   const dgs10 = ust?.['10Y'] ?? null;
@@ -453,8 +519,35 @@ export const regimeRoute = new Hono().get('/', async (c) => {
 
   // 油市结构(物理紧张):Brent−WTI 海运 vs 内陆;柴油裂解 = ULSD×42 − WTI(HO 单位 $/gal→$/bbl)。
   put('brentWti', brent && wti ? subtractAligned([brent, wti]) : undefined);
-  const dieselBbl = diesel ? scale(diesel, 42) : null; // ULSD $/gal → $/bbl
-  put('dieselCrack', dieselBbl && wti ? subtractAligned([dieselBbl, wti]) : undefined);
+  // 三条裂解在 analytics/oilCracks 里算(纯函数,带变异检验;口径与「为什么写成加权平均」见那边)。
+  const cracks = oilCracks({ wti, diesel, rbob });
+  put('dieselCrack', cracks.dieselCrack);
+  put('rbobCrack', cracks.rbobCrack);
+  put('crack321', cracks.crack321);
+
+  // EIA 周报六条原始序列 → 八条对外线。**水位只发炼厂开工率** —— 它是有绝对刻度的(口播的"98%"就是它,
+  // 且 100% 是硬顶,一眼看得出还剩多少余量)。库存/出口的裸水位单看不携带信息
+  // (1.05 亿桶是高是低取决于现在是 3 月还是 9 月),所以库存两条与出口只发季节 z。
+  // EIA 多拉的那几年历史(展示起点再往前垫 SEASONAL_BASELINE_YEARS 年,约 2013 起)是**给季节 z 当基准期用的**,不该画到图上(别的线都从 2018 起,
+  // 混在一起会让 hover 对不上)。所以先算 z 再裁 —— 顺序反了就等于把基准期一起砍掉。
+  const fromHistoryStart = (rows: Point[]) => rows.filter((p) => p.date >= HISTORY_START_DATE);
+  const seasonal = (rows: Point[] | null) =>
+    seasonalZFrom(rows, { years: SEASONAL_BASELINE_YEARS, from: HISTORY_START_DATE });
+
+  put('refUtil', refUtil ? fromHistoryStart(refUtil) : undefined);
+  put('refUtilZ5y', seasonal(refUtil));
+  put('distStocksZ5y', seasonal(distStocks));
+  put('gasStocksZ5y', seasonal(gasStocks));
+  put('distExportsZ5y', seasonal(distExports));
+
+  // 「开得更狠也不够」那条论证的两条腿。**发收率 + 两条同比,不发两条水位** ——
+  // 加工量 1760 万桶/日、馏分油产量 535 万桶/日,这两个水位单看谁也答不了「够不够」;
+  // 有判别力的是「一桶原油出多少柴油」(收率)和「比去年多炼了,柴油有没有跟着多出来」(同比)。
+  // 开工率那格已经答了「开多狠」,这里不重复发加工量水位。
+  const yieldPct = distillateYield(distProd, crudeRuns);
+  put('distYield', yieldPct && fromHistoryStart(yieldPct));
+  put('crudeRunsYoy', crudeRuns ? fromHistoryStart(yoyPct(crudeRuns)) : undefined);
+  put('distProdYoy', distProd ? fromHistoryStart(yoyPct(distProd)) : undefined);
   // 汽油 RBOB 同比:CPI 汽油分项的高频前瞻,进「通胀来源」与薪资/服务黏性并读。
   const rbobYoyS = rbob ? yoyPct(rbob) : null;
   put('rbobYoy', rbobYoyS?.length ? rbobYoyS : undefined);
@@ -484,7 +577,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 只缓存全成功(降级响应不缓存,下次重试)。例外:SEC 那几条是季频、GPU 那几条(gpu 前缀)
   // 是新接的 experimental 源(B300 允许缺、库还没跑过 job 时四条都缺)—— 两者都靠独立 job 逐日/逐季攒,
   // 从没跑过 job 的库里必然缺——不能让这类常态把整条路由的缓存永久关掉。
-  if (unavailable.every((n) => n.startsWith(FUND_KEY_PREFIX) || n.startsWith(GPU_KEY_PREFIX)))
+  // 没配 key 时 EIA 那八条恒缺 —— 与 SEC/GPU 同属「必然缺」,不能让它把缓存永久关掉。
+  // 配了 key 才缺则是真失败(网络/源结构变了),照旧挡住缓存等下次重试。
+  if (shouldCache(unavailable, { hasEiaKey: Boolean(eiaKey) }))
     cache = { at: Date.now(), body, moveLive: raw.move ?? [] };
   return c.json(body);
 });

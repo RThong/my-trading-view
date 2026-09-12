@@ -76,7 +76,13 @@ export const PERSPECTIVES: Perspective[] = [
     tabs: [regimeTab('vol', '波动率', 'vol'), regimeTab('sentiment', '情绪', 'sentiment')],
   },
   regimePersp('macro', '宏观'),
-  regimePersp('oil', '能源'), // Brent−WTI + 柴油裂解:油市结构 / 物理紧张
+  {
+    // 能源两 tab:价差(市场怎么定价)与实物(EIA 周报的开工率 / 库存 / 出口)。
+    // 分开是因为两边频率与读法都不同 —— 价差日频看拐点,实物周频 + 季节 z 看因果。
+    id: 'oil',
+    label: '能源',
+    tabs: [regimeTab('oil', '油市结构', 'oil'), regimeTab('refinery', '炼厂·库存', 'refinery')],
+  },
   {
     id: 'btc',
     label: 'BTC',
