@@ -58,6 +58,14 @@ export const REGIME_SERIES = [
   'usjp2y',
   'jgb10y',
   'jgbVix',
+  // 日银产出缺口 / 潜在增速(季度更新,**两条时间轴不同**:缺口是日历季度,潜在增速是财年半期)。
+  // 见 fetchers/bojOutputGap —— 尤其「别 join 这两条」与「末尾待发布行」两条。
+  'jpOutputGap',
+  'jpPotentialGrowth',
+  'jpPotTfp',
+  'jpPotCapital',
+  'jpPotHours',
+  'jpPotWorkers',
   'cape',
   'rxmSpx',
   'vixSpotTerm',

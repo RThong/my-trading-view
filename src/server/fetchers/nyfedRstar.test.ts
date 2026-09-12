@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { excelSerialToIso, parseHlwSheet, resolveSheetPath } from './nyfedRstar';
+import { excelSerialToIso, parseHlwSheet } from './nyfedRstar';
 
 describe('excelSerialToIso', () => {
   // 官方文件的末点(实测 2026-09-09):序列 46113,官方标为 2026Q2 → 季度首日。
@@ -36,38 +36,4 @@ describe('parseHlwSheet', () => {
     const vals = parseHlwSheet(sheet, '2018-01-01').map((r) => r.value);
     expect(vals).not.toContain(1.22);
   });
-});
-
-describe('resolveSheetPath', () => {
-  // 官方文件实测形状(2026-09-09):HLW Estimates 是 rId2 → worksheets/sheet2.xml。
-  const workbook =
-    `<workbook><sheets>` +
-    `<sheet name="Read Me" sheetId="1" r:id="rId1"/>` +
-    `<sheet name="HLW Estimates" sheetId="2" r:id="rId2"/>` +
-    `</sheets></workbook>`;
-  const rels =
-    `<Relationships>` +
-    `<Relationship Id="rId1" Target="worksheets/sheet1.xml"/>` +
-    `<Relationship Id="rId2" Target="worksheets/sheet2.xml"/>` +
-    `</Relationships>`;
-
-  test('按名字解到 zip 路径', () =>
-    expect(resolveSheetPath(workbook, rels, 'HLW Estimates')).toBe('xl/worksheets/sheet2.xml'));
-
-  // 关键保证:官方在前面插一张表,靠 sheetN 编号会静默取到别的表,按名字解则跟着走。
-  test('前面插表后仍跟着名字走', () => {
-    const shifted = workbook.replace(
-      '<sheet name="Read Me"',
-      '<sheet name="Notes" sheetId="9" r:id="rId9"/><sheet name="Read Me"',
-    );
-    expect(resolveSheetPath(shifted, rels, 'HLW Estimates')).toBe('xl/worksheets/sheet2.xml');
-  });
-
-  test('表被改名 → null(上层抛错,不静默取错表)', () =>
-    expect(resolveSheetPath(workbook, rels, 'HLW Estimates v2')).toBeNull());
-
-  test('绝对 Target 去掉前导斜杠', () =>
-    expect(
-      resolveSheetPath(workbook, rels.replace('worksheets/sheet2.xml', '/xl/worksheets/sheet2.xml'), 'HLW Estimates'),
-    ).toBe('xl/worksheets/sheet2.xml'));
 });

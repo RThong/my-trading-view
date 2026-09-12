@@ -137,6 +137,7 @@ export type RegimeDim =
   | 'ratesDecomp'
   | 'jpy'
   | 'jgbVol'
+  | 'jpGap'
   | 'valuation'
   | 'oil'
   | 'refinery'
@@ -172,11 +173,12 @@ type PaneSpec = {
   clampVisibleTo?: [number, number];
   percentile?: { riskTail?: 'low' | 'high'; since?: string }; // 有=画 P5/P95+徽标;riskTail 决定背景带红/绿方向;since 限定分位窗口
   /**
-   * 同格叠画的第二条线。给「两个量只能并排读、不能相减」的格子用(见 A vs L 缺口):
+   * 同格叠画的其它线。给「几个量只能并排读、不能相减」的格子用(见 A vs L 缺口):
    * 相减成单序列会把「谁在上面」这个稳健信息,换成一个不可识别的量级。
-   * 主 key 缺失 → 整格不建(同无 overlay);overlay 自己缺失 → 只少这条线,主线照画。
+   * 也给「总量 + 各项贡献度」这种同尺分解用(日银潜在增速那格,四项相加 ≈ 总量)。
+   * 主 key 缺失 → 整格不建;某条 overlay 自己缺失 → 只少那条线,主线照画。
    */
-  overlay?: { key: SeriesKey; title: string; color: string; step?: boolean };
+  overlays?: { key: SeriesKey; title: string; color: string; step?: boolean }[];
 };
 
 type DimConfig = { panes: PaneSpec[] };
@@ -621,7 +623,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
         render: { kind: 'line', baseline: 0 }, // 可转负,且**刻意不套分位** —— 见上方口径注释
         // ACM(纽约联储,月频)叠同格当独立对照。**两条之间的间距才是这格的产品** ——
         // 分成两格就读不出带宽了。ACM 月频走阶梯:一月一个点,中间画斜坡是伪造信息。
-        overlay: { key: 'tp10Acm', title: '对照:ACM 模型估计(纽约联储,月频)', color: '#f472b6', step: true },
+        overlays: [{ key: 'tp10Acm', title: '对照:ACM 模型估计(纽约联储,月频)', color: '#f472b6', step: true }],
         desc: [
           '定义:10 年期零息债的期限溢价 —— **两套模型并排**,不是一个数。',
           '  · 主线(日频)= Kim-Wright (2005) 三因子无套利模型,美联储理事会',
@@ -652,7 +654,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
         // 两条线并排,**刻意不相减**(理由见 desc 的四层近似)。L 那条走阶梯:它的分辨率由季频的
         // r* 那一半决定,一眼看得出「下面这条一个季度才动一次」—— 相减成单序列会把这个信息抹平。
         // 也刻意不套分位:这格读的是「谁在上面」,给其中一条套背景带会把视觉重心压回单条线。
-        overlay: { key: 'lProxyHlwT5yifr', title: 'L 代理:HLW r* + 5y5y(季频)', color: '#34d399', step: true },
+        overlays: [{ key: 'lProxyHlwT5yifr', title: 'L 代理:HLW r* + 5y5y(季频)', color: '#34d399', step: true }],
         desc: [
           '定义:分解式 `长端 = 预期短端路径均值 + 期限溢价` 里的**预期腿(A)**,并排叠上长期中枢的粗代理(L)。',
           '  · A(日频)= Kim-Wright 拟合的 10Y 零息收益率 − 同模型的 10Y 期限溢价(两条 FRED 序列现减)',
@@ -878,7 +880,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
         title: '炼厂加工量 YoY (%) · 叠馏分油产量 YoY',
         color: '#38bdf8',
         render: { kind: 'line', baseline: 0 },
-        overlay: { key: 'distProdYoy', title: '馏分油产量 YoY (%)', color: '#f97316' },
+        overlays: [{ key: 'distProdYoy', title: '馏分油产量 YoY (%)', color: '#f97316' }],
         clampVisibleTo: [-15, 15],
         desc: [
           '定义:炼厂原油加工量(蓝)与馏分油产量(橙)各自的同比 %。**产品是两条线的间距,不是任一条的水位。**',
@@ -1096,6 +1098,54 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
           '',
           '⚠️ 低要分清是「真稳」还是「被干预压出来的稳」。',
           PINNED_VOL,
+        ].join('\n'),
+      },
+    ],
+  },
+  // 日本产能面(日银试算,季度更新):产出缺口 = 当下松紧,潜在增速 = 天花板在往哪走。
+  // 两格频率不同、时间轴也不是一套(缺口=日历季度,潜在增速=财年半期),刻意分两格,别对齐读。
+  jpGap: {
+    panes: [
+      {
+        key: 'jpOutputGap',
+        label: '产出缺口',
+        title: '需給ギャップ (产出缺口, %)',
+        color: '#eab308',
+        render: { kind: 'line', baseline: 0, step: true }, // 季频:两次发布之间就是不变的,平滑折线是伪造信息
+        desc: [
+          '定义:(实际 GDP − 潜在 GDP) / 潜在 GDP。日银调查统计局试算,**日历季度**,1/4/7/10 月第三个工作日更新。',
+          '正 = 需求超过产能(物价往上的一侧),负 = 有闲置(物价往下的一侧)。',
+          '⭐ 这格是 BOJ 加息叙事的**产能前提**:缺口转正并站稳,「通胀不是暂时的」才有产能面的支撑;',
+          '再看同视角的 JGB 曲线与日元,读市场认不认这条传导。本轮 2022.1Q 由负转正(前一季 −0.21 → +0.38)。',
+          '',
+          '⚠️ **潜在 GDP 是估算量不是统计量**。日银自陈「因方法而异可能相差甚大」,只读方向与拐点,别当精确读数。',
+          '⚠️ 内阁府另有一套 GDPギャップ,两家水平常年差零点几个百分点(方向一般一致)—— 别拿本格的数去接别处引用的数。',
+          '⚠️ 2026 年 3 月日银改过一次推计方法,跨年份比水平前要确认有没有断点(本项目未核原文)。',
+          '⚠️ 末端滞后一季:GDP 没出的季度不出点(源里那几行只有短观 DI)。',
+        ].join('\n'),
+      },
+      {
+        key: 'jpPotentialGrowth',
+        label: '潜在增速',
+        title: '潜在成長率 (前年比 %)',
+        color: '#38bdf8',
+        render: { kind: 'line', baseline: 0, step: true },
+        // 总量 + 四项贡献度同格:**四项相加 ≈ 总量**,分开成五格就读不出「谁在拖」这个唯一的产品。
+        overlays: [
+          { key: 'jpPotTfp', title: '贡献:TFP (全要素生产率)', color: '#22c55e', step: true },
+          { key: 'jpPotCapital', title: '贡献:资本存量', color: '#f59e0b', step: true },
+          { key: 'jpPotHours', title: '贡献:劳动时间', color: '#ef4444', step: true },
+          { key: 'jpPotWorkers', title: '贡献:就业者数', color: '#a78bfa', step: true },
+        ],
+        desc: [
+          '定义:潜在成長率(前年比 %)+ 四项贡献度(TFP / 资本存量 / 劳动时间 / 就业者数)。日银试算,**财年半期**。',
+          '主线 = 经济的速度天花板;四条贡献度**相加 ≈ 主线**,故要看的是谁在托、谁在拖。',
+          '⭐ 与上一格配读:缺口是「离天花板还有多远」,这格是「天花板本身在往哪走」。',
+          '天花板压低时,同样的需求更容易把缺口顶正 —— 通胀压力不必来自需求变强。',
+          '近读:TFP 扛着主要正贡献,**劳动时间是长期负贡献**(工时改革 / 兼职化),就业者数的正贡献抵不满它。',
+          '',
+          '⚠️ **横轴与上一格不是一套**:这条是财年半期(上期 = 4-9 月),点落在半期末。两格不可逐点对齐。',
+          '⚠️ 同为估算量,且比缺口更依赖模型假设(TFP 是残差项)。读趋势,别读小数点。',
         ].join('\n'),
       },
     ],
@@ -1669,15 +1719,15 @@ export function derivePaneMeta(panes: PaneSpec[]) {
     paneDefs: panes.map((p) => ({
       key: p.key,
       label: p.label,
-      series: [p.key, ...(p.overlay ? [p.overlay.key] : [])],
+      series: [p.key, ...(p.overlays ?? []).map((o) => o.key)],
     })) as PaneDef[],
     seriesName: Object.fromEntries(
-      panes.flatMap((p) => [[p.key, p.title], ...(p.overlay ? [[p.overlay.key, p.overlay.title]] : [])]),
+      panes.flatMap((p) => [[p.key, p.title], ...(p.overlays ?? []).map((o) => [o.key, o.title])]),
     ),
     colors: Object.fromEntries(
       panes.flatMap((p) => [
         ...(p.color ? [[p.key, p.color]] : []),
-        ...(p.overlay ? [[p.overlay.key, p.overlay.color]] : []),
+        ...(p.overlays ?? []).map((o) => [o.key, o.color]),
       ]),
     ),
     desc: Object.fromEntries(panes.flatMap((p) => (p.desc ? [[p.key, p.desc]] : []))),
@@ -1733,25 +1783,22 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
         { price: p.band.hi, title: '常态上限' },
       ];
 
-    // 叠画的第二条线(同 pane 下标)。overlay 缺失只少这条,主线照画。
-    // 有 overlay 的格子刻意不配 percentile:两条线并排读的是「谁在上面」,给其中一条套分位带
+    // 叠画的其它线(同 pane 下标)。某条 overlay 缺失只少那条,主线照画。
+    // 有 overlay 的格子刻意不配 percentile:多条线并排读的是「谁在上面」,给其中一条套分位带
     // 会把视觉重心压回单条线上。
-    const overlaySpecs: LineSpec[] =
-      p.overlay && !data.unavailable.includes(p.overlay.key) && data.series[p.overlay.key]?.length
-        ? [
-            {
-              key: p.overlay.key,
-              pane,
-              kind: 'line',
-              color: p.overlay.color,
-              title: p.overlay.title,
-              data: aggregate(toLine(data.series[p.overlay.key]), interval),
-              ...(p.overlay.step ? { step: true } : {}),
-              // 同 pane 共用一条价格轴 → 框必须两条都夹,否则 overlay 的极值照样撑开整幅。
-              ...(p.clampVisibleTo ? { clampVisibleTo: p.clampVisibleTo } : {}),
-            },
-          ]
-        : [];
+    const overlaySpecs: LineSpec[] = (p.overlays ?? [])
+      .filter((o) => !data.unavailable.includes(o.key) && data.series[o.key]?.length)
+      .map((o) => ({
+        key: o.key,
+        pane,
+        kind: 'line',
+        color: o.color,
+        title: o.title,
+        data: aggregate(toLine(data.series[o.key]), interval),
+        ...(o.step ? { step: true } : {}),
+        // 同 pane 共用一条价格轴 → 框必须每条都夹,否则 overlay 的极值照样撑开整幅。
+        ...(p.clampVisibleTo ? { clampVisibleTo: p.clampVisibleTo } : {}),
+      }));
 
     if (!p.percentile) return [lineSpec, ...overlaySpecs];
 

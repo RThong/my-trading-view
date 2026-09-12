@@ -11,6 +11,7 @@
 | **CBOE VX 期货** | VX 近月连续(存为 `VX1`) | 日频 | 零 | API 列清单(`www-api.cboe.com/.../product/list/VX/`)+ `cdn.cboe.com/{path}` 下 CSV | 全历史 |
 | **FRED** | 利率(UST/TIPS)/ 信用利差(HY+IG 梯队)/ 流动性(WALCL/TGA/RRP/SOFR/IORB)/ 通胀(BEI=DGS−DFII、**5y5y 远期 T5YIFR**、Sticky CPI、薪资)/ **Kim-Wright 期限溢价(THREEFYTP10 + 拟合 THREEFY10)** | 日/月频 | 零(要 key) | JSON API `api.stlouisfed.org/fred/series/observations`(要 key) | 全历史 |
 | **NY Fed** | HLW 自然利率 r\*(`rstarHlwCurrent`,**季频**)+ ACM 10Y 期限溢价(`tp10Acm`,**月频**,给 KW 当独立对照) | 季/**月** | 零;**HLW 用 `fflate`** | HLW:官方 xlsx = **zip+XML**,`fflate` 解开后**按工作表名**(`HLW Estimates`)经 `workbook.xml`+rels 解路径 —— 不写死 `sheetN`。ACM:**纯 CSV 零依赖**(`acmPlot_data.csv`,49 KB)⚠️ 这是图表的**无文档端点**,官方公开发布的是同目录 10.1 MB 的 BIFF8 `.xls`;已逐字对账确认内容等同 xls 的 `ACM Monthly` 表,但随时可能挪走 → 拿不到就归 unavailable | 1961 起全历史;⚠️ **current estimates 的历史值会被事后重估**(前视偏差,不能用来论证「当时市场定价错了」) |
+| **日本银行(BOJ)** | 需給ギャップ(产出缺口,`jpOutputGap`)+ 潜在成長率及四项贡献度(`jpPot*`) | **季频**(1/4/7/10 月第三个工作日) | 零;**用 `fflate`** | 官方 `gap.xlsx` = **zip+XML**(52 KB,免鉴权),同 HLW 的解法:按工作表名(`data1`/`data2`)解路径。⚠️ 两张表**时间轴不同**(`data1` 日历季度 / `data2` 财年半期),不可 join;⚠️ 末尾有**只有短观 DI、没有 gap** 的待发布行,按「总量列非空」过滤,别按行号取末行 | 1983 起全历史(一次 GET 拿全,故不落库);⚠️ **是估算量不是统计量**,日银自陈方法差异可致数值相差甚大 |
 | **Yahoo** | 股票 EOD + **DXY(`DX-Y.NYB` 真 ICE 美元指数)/ MOVE(`^MOVE`)/ 油品期货(`CL=F`/`BZ=F`/`HO=F`/`RB=F`)/ USD/JPY** | 日频 | `yahoo-finance2` | `yahoo-finance2` **v4** npm(class API `new YahooFinance()`) | 可回填多年 |
 | **其它** | Eris(SOFR OIS 曲线)/ MOF+JPX(JGB 收益率/JGB VIX)/ CFTC(日元净持仓)/ Shiller(CAPE) | 混:Eris 日 / MOF 日 / JPX 日 / **CFTC 周** / Shiller 月 | 零;**JPX JGB VIX 用 `fflate`** | 各自 adapter(见 `fetchers/`)| 多为全历史 |
 | **EIA** | 周度石油报告:炼厂开工率 / 加工量 + 馏分油产量(→ 收率、同比)/ 馏分油+汽油库存 / 馏分油出口(→ 季节 z) | **周频**(周三 10:30 ET 发,截止上周五,滞后 ~5 天) | 零(要 key) | JSON `api.eia.gov/v2/seriesid/PET.{ID}.W`(要 key)⚠️ 裸 ID 404,必须带 `PET.` 前缀 + `.W` 后缀;`start`/`end`/`data[]` **全被忽略**,唯一生效的裁剪参数是 `length`;返回**倒序** | 1982 起全历史;**已发布值下周会被修订**(每次拉全量,故不落库) |
@@ -28,7 +29,7 @@
 | 档位 | 谁 | 说明 |
 |---|---|---|
 | **零依赖** | FRED · CBOE · ICE · **EIA** · SEC · Deribit · MOF · CFTC · Shiller · **NY Fed ACM** | `fetch` + 自己解 CSV/JSON |
-| **`fflate`**(已有) | NY Fed HLW · JPX JGB VIX | `.xlsx` = zip+XML,解 zip 后正则取 |
+| **`fflate`**(已有) | NY Fed HLW · JPX JGB VIX · **BOJ 产出缺口** | `.xlsx` = zip+XML,解 zip 后正则取(公共解包在 `fetchers/xlsx.ts`) |
 | **SheetJS**(⚠️ 未加) | — | BIFF8 `.xls`(OLE)。**npm 上的 `xlsx@0.18.5` 有 2 个 high CVE**,必须走 `bun add "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"` |
 | **`word-extractor`**(⚠️ 未加) | — | OLE Word `.doc`。SheetJS 读不了(`Cannot find Workbook stream`) |
 

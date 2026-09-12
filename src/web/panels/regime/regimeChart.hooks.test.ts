@@ -352,7 +352,7 @@ test('VIX6M:低位染红(riskTail low),缺数据则整格不出', () => {
 // (曾经真踩到:A vs L 那格想复用 expShort10Kw 当主线,结果把预期短端那格的说明冲掉了)。
 test('REGIME_DIMS:每个 dim 内的 pane key(含 overlay)不得重复', () => {
   for (const [dim, cfg] of Object.entries(REGIME_DIMS)) {
-    const keys = cfg.panes.flatMap((p) => [p.key, ...(p.overlay ? [p.overlay.key] : [])]);
+    const keys = cfg.panes.flatMap((p) => [p.key, ...(p.overlays ?? []).map((o) => o.key)]);
     expect(new Set(keys).size, `${dim} 有重复 pane/overlay key`).toBe(keys.length);
   }
 });
@@ -385,11 +385,40 @@ test('buildRegimeSpecs:overlay 缺失只少那条线,主线照画', () => {
   expect(keysOf(noL)).toEqual(['expShort10Kw']);
 });
 
+// 多条 overlay(总量 + 四项贡献度)。单条那版只证明了「第一条」画得出来,
+// 而这格的产品是**五条同框**:四项相加 ≈ 总量,分开成五格就读不出「谁在拖」。
+test('buildRegimeSpecs:日银潜在增速那格 = 总量 + 四项贡献度同 pane,缺哪条只少哪条', () => {
+  const pt = { date: '2026-03-31', value: 0.69 };
+  const full: RegimeData = {
+    series: {
+      jpPotentialGrowth: [pt],
+      jpPotTfp: [pt],
+      jpPotCapital: [pt],
+      jpPotHours: [pt],
+      jpPotWorkers: [pt],
+    },
+    unavailable: [],
+  };
+  const pane = dimPanes('jpGap').findIndex((p) => p.key === 'jpPotentialGrowth');
+  const keysOf = (d: RegimeData) =>
+    buildRegimeSpecs(d, 'jpGap', '1D')
+      .filter((sp) => sp.pane === pane)
+      .map((sp) => sp.key);
+
+  expect(keysOf(full)).toEqual(['jpPotentialGrowth', 'jpPotTfp', 'jpPotCapital', 'jpPotHours', 'jpPotWorkers']);
+  expect(keysOf({ series: full.series, unavailable: ['jpPotHours'] })).toEqual([
+    'jpPotentialGrowth',
+    'jpPotTfp',
+    'jpPotCapital',
+    'jpPotWorkers',
+  ]);
+});
+
 // buildRegimeSpecs 在 candle / signed 两个分支提前 return,不带 overlay —— 那两种 pane 配了
 // overlay 会被静默丢弃(不报错、图上就是少一条线)。与其给用不到的分支拼代码,不如把约束钉住。
 test('REGIME_DIMS:overlay 只能配 line 型 pane(candle/signed 分支不带 overlay)', () => {
   for (const [dim, cfg] of Object.entries(REGIME_DIMS)) {
-    const bad = cfg.panes.filter((p) => p.overlay && p.render && p.render.kind !== 'line');
+    const bad = cfg.panes.filter((p) => p.overlays?.length && p.render && p.render.kind !== 'line');
     expect(
       bad.map((p) => p.key),
       `${dim} 给非 line 型 pane 配了 overlay`,
@@ -409,7 +438,7 @@ test('每个固定 dim 的 pane/overlay key 都是合法序列名', () => {
   for (const dim of dims) {
     for (const p of dimPanes(dim)) {
       expect(isSeriesKey(p.key), `${dim}.${p.key} 不是合法序列名`).toBe(true);
-      if (p.overlay) expect(isSeriesKey(p.overlay.key), `${dim}.${p.overlay.key} 不合法`).toBe(true);
+      for (const o of p.overlays ?? []) expect(isSeriesKey(o.key), `${dim}.${o.key} 不合法`).toBe(true);
     }
   }
 });
@@ -482,7 +511,7 @@ test('clampVisibleTo:有 overlay 的格子,主线与叠加线必须都夹', () =
   // 删掉 overlay 那侧的 spread 后本断言会 fail;不加这条则全套测试照绿。
   const pane = REGIME_DIMS.refinery.panes.find((p) => p.key === 'crudeRunsYoy');
   expect(pane?.clampVisibleTo).toEqual([-15, 15]);
-  expect(pane?.overlay?.key).toBe('distProdYoy');
+  expect(pane?.overlays?.[0]?.key).toBe('distProdYoy');
 
   const pt = (d: string, v: number) => ({ date: d, value: v });
   const specs = buildRegimeSpecs(

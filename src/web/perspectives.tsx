@@ -121,6 +121,9 @@ export const PERSPECTIVES: Perspective[] = [
       // (美债那格挂 BTC 是另一个道理:那是流动性链条最末端的 beta。)
       historyTab('jgb_history', '期限走势', 'jgb', '10Y', '1Y', '10Y − 1Y', '8306.T'),
       regimeTab('jgb_vol', '日债波动率', 'jgbVol'),
+      // 产能面(日银试算,季度更新)。放日本视角最后一格:前面几格是市场怎么定价,这格是产能够不够 ——
+      // BOJ 加息叙事的前提在这里,和曲线/日元那几格配读。
+      regimeTab('jp_output_gap', '产出缺口', 'jpGap'),
     ],
   },
   {

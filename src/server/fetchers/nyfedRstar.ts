@@ -1,4 +1,4 @@
-// HLW 自然利率 r*(纽约联储 Holston-Laubach-Williams,季频)。官方 xlsx(=zip+XML),同 jpxJgbVix 的解法。
+// HLW 自然利率 r*(纽约联储 Holston-Laubach-Williams,季频)。官方 xlsx(=zip+XML),解包见 fetchers/xlsx。
 //
 // **只取 current estimates 那一套,不取 real-time。** real-time 的价值只在回测时兑现(避免前视偏差),
 // 现在没有回测需求;那份 1.8 MB、每个 vintage 一张 sheet,为不存在的需求付解析成本不值。
@@ -12,7 +12,7 @@
 // ⚠️ **r* 是 L 的一半,不是减数。** 别拿 `10Y实际 − r*` 当实际期限溢价:
 //     10Y实际 − r* = (A_real − r*) + 实际期限溢价
 //   第一项是政策周期残留(当前短端远在中性之上时显著为正),不是溢价。直接相减会高估期限溢价。
-import { unzipSync, strFromU8 } from 'fflate';
+import { openXlsx } from './xlsx';
 import { fetchWithTimeout } from './http';
 
 const XLSX_URL =
@@ -56,36 +56,12 @@ export function parseHlwSheet(sheetXml: string, since: string): { date: string; 
   return out.sort((x, y) => x.date.localeCompare(y.date));
 }
 
-/**
- * 按**工作表名**解出它在 zip 里的路径。
- *
- * ⚠️ 不能直接写死 `sheet2.xml`:zip 里的 sheetN 编号与工作簿的表顺序无绑定关系,官方在前面
- * 插一张表,`sheet2.xml` 就成了别的表 —— 而那种表照样可能「A 列是数值、K 列也是数值」,
- * 于是静默产出错误的 r*,不报错。按名字解 → 改版时是「找不到」抛错,不是悄悄画错线。
- */
-export function resolveSheetPath(workbookXml: string, relsXml: string, name: string): string | null {
-  const rid = new RegExp(`<sheet[^>]*\\bname="${name}"[^>]*\\br:id="([^"]+)"`).exec(workbookXml)?.[1];
-  if (!rid) return null;
-
-  const target = new RegExp(`<Relationship[^>]*\\bId="${rid}"[^>]*\\bTarget="([^"]+)"`).exec(relsXml)?.[1];
-  if (!target) return null;
-
-  // Target 多为相对 workbook.xml 的 'worksheets/sheetN.xml';偶见绝对 '/xl/...'。
-  return target.startsWith('/') ? target.slice(1) : `xl/${target}`;
-}
-
 /** 下载 HLW current xlsx → 解 zip → 取美国 r*。默认 2018 起。 */
 export async function fetchHlwRstar(since = '2018-01-01'): Promise<{ date: string; value: number }[]> {
   const resp = await fetchWithTimeout(XLSX_URL, { headers: { 'User-Agent': UA } });
   if (!resp.ok) throw new Error(`NY Fed HLW ${resp.status}`); // 非 2xx 抛错 → 上层归 unavailable,别把错误页当空数据吞
 
-  const files = unzipSync(new Uint8Array(await resp.arrayBuffer()));
-  const read = (p: string) => (files[p] ? strFromU8(files[p]) : null);
-
-  const workbook = read('xl/workbook.xml');
-  const rels = read('xl/_rels/workbook.xml.rels');
-  const path = workbook && rels ? resolveSheetPath(workbook, rels, SHEET_NAME) : null;
-  const sheet = path ? read(path) : null;
+  const sheet = openXlsx(await resp.arrayBuffer()).sheet(SHEET_NAME);
   if (!sheet) throw new Error(`NY Fed HLW: 找不到工作表「${SHEET_NAME}」(表结构可能改版)`);
 
   return parseHlwSheet(sheet, since);

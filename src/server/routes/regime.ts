@@ -8,6 +8,7 @@ import { createYahooFetcher } from '../fetchers/yahoo';
 import { fetchJgbCurve } from '../fetchers/mofJgb';
 import { fetchJgbVix } from '../fetchers/jpxJgbVix';
 import { fetchCftcJpyNet } from '../fetchers/cftcCot';
+import { fetchBojGap } from '../fetchers/bojOutputGap';
 import { fetchMoveSeries, mergeMove } from '../fetchers/moveIndex';
 import { fetchShillerCape } from '../fetchers/capeShiller';
 import { fetchHlwRstar } from '../fetchers/nyfedRstar';
@@ -368,6 +369,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const ustP = fetchTreasuryCurve().catch(() => null);
   const jgbVixP = fetchJgbVix('2018-01-01').catch(() => null);
   const cftcJpyP = fetchCftcJpyNet('2018-01-01').catch(() => null);
+  // 日银产出缺口 + 潜在增速(**季度更新**,1/4/7/10 月第三个工作日发)。一次 GET 拿全历史 → 不落库。
+  // 起点 1994 不是 HISTORY_START_DATE:季频序列从 2018 起只剩 30 来个点,读不出泡沫破灭后那段长期负缺口。
+  const bojGapP = fetchBojGap().catch(() => null);
   // 席勒 CAPE(月频,Robert Shiller 数据集;全历史 1871→今)。
   const capeP = fetchShillerCape().catch(() => null);
   // HLW 自然利率 r*(纽约联储,**季频**,一年只发 4 次)。分解式里 L(名义长期中枢)= r* + T5YIFR 的前半。
@@ -420,7 +424,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     if (s.status === 'fulfilled') raw[names[i]] = s.value;
   });
   const usdBars = await usdBarsP;
-  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape, ust, rstar, acm] = await Promise.all([
+  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape, ust, rstar, acm, bojGap] = await Promise.all([
     usdjpyBarsP,
     jgbCurveP,
     cftcJpyP,
@@ -429,6 +433,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     ustP,
     rstarP,
     acmP,
+    bojGapP,
   ]);
   const [wti, brent, diesel, rbob] = await oilP;
   const [refUtil, distStocks, gasStocks, distExports, crudeRuns, distProd] = await eiaP;
@@ -485,6 +490,14 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('expShort10Kw', subtractAt(raw.kwFitted10 ?? [], raw.tp10Kw ?? []));
   put('jgb10y', jgb10y?.length ? jgb10y : undefined);
   put('jgbVix', jgbVix?.length ? jgbVix : undefined);
+  // 日银产出缺口(日历季度)+ 潜在增速及四项贡献度(财年半期)。**两条频率不同、时间轴不是一套**,
+  // 各发各的,面板上也分两格 —— 别在任何一层把它们对齐(见 fetchers/bojOutputGap 的文件头)。
+  put('jpOutputGap', bojGap?.outputGap);
+  put('jpPotentialGrowth', bojGap?.potentialGrowth);
+  put('jpPotTfp', bojGap?.potTfp);
+  put('jpPotCapital', bojGap?.potCapital);
+  put('jpPotHours', bojGap?.potHours);
+  put('jpPotWorkers', bojGap?.potWorkers);
   // ⚠️ 字段名带 `Current`:将来接 real-time 那套会撞名,且**现在就有人会误读** ——
   // current 的历史值是今天用全部数据回头重画的,不是当时看得到的值(前视偏差)。
   put('rstarHlwCurrent', rstar?.length ? rstar : undefined);
