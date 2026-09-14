@@ -7,7 +7,7 @@ import { fetchFearGreed } from '../fetchers/cnnFearGreed';
 import { createYahooFetcher } from '../fetchers/yahoo';
 import { fetchJgbCurve } from '../fetchers/mofJgb';
 import { fetchJgbVix } from '../fetchers/jpxJgbVix';
-import { fetchCftcJpyNet } from '../fetchers/cftcCot';
+import { fetchCftcJpyNet, fetchCftcVixNetOi } from '../fetchers/cftcCot';
 import { fetchBojGap } from '../fetchers/bojOutputGap';
 import { fetchNakajimaJgb } from '../fetchers/nakajimaJgb';
 import { fetchMoveSeries, mergeMove } from '../fetchers/moveIndex';
@@ -370,6 +370,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const ustP = fetchTreasuryCurve().catch(() => null);
   const jgbVixP = fetchJgbVix('2018-01-01').catch(() => null);
   const cftcJpyP = fetchCftcJpyNet('2018-01-01').catch(() => null);
+  // VIX 期货持仓(TFF):波动率的 **positioning** 轴,和上面 VIX / 期限结构那组 **pricing** 轴互补。
+  // 一次请求出两类(Asset Manager / Leveraged Money),别拆成两次。
+  const vixCotP = fetchCftcVixNetOi('2018-01-01').catch(() => null);
   // 日银产出缺口 + 潜在增速(**季度更新**,1/4/7/10 月第三个工作日发)。一次 GET 拿全历史 → 不落库。
   // 起点 1994 不是 HISTORY_START_DATE:季频序列从 2018 起只剩 30 来个点,读不出泡沫破灭后那段长期负缺口。
   const bojGapP = fetchBojGap().catch(() => null);
@@ -428,10 +431,11 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     if (s.status === 'fulfilled') raw[names[i]] = s.value;
   });
   const usdBars = await usdBarsP;
-  const [usdjpyBars, jgbCurve, cftcJpy, jgbVix, cape, ust, rstar, acm, bojGap, nakajima] = await Promise.all([
+  const [usdjpyBars, jgbCurve, cftcJpy, vixCot, jgbVix, cape, ust, rstar, acm, bojGap, nakajima] = await Promise.all([
     usdjpyBarsP,
     jgbCurveP,
     cftcJpyP,
+    vixCotP,
     jgbVixP,
     capeP,
     ustP,
@@ -484,6 +488,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 日元 carry 三序列
   put('usdjpy', usdjpyBars?.length ? usdjpyBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
   put('cftcJpy', cftcJpy?.length ? cftcJpy : undefined);
+  // VIX 期货持仓两类(周频,周二持仓 / 周五 15:30 ET 发)
+  put('vixCotAm', vixCot?.assetMgr);
+  put('vixCotLm', vixCot?.levMoney);
   put('dgs10', dgs10?.length ? dgs10 : undefined); // 10Y 国债(财政部直发,利率波动率 pane)
   put('usjp2y', dgs2?.length && jgb2y?.length ? subtractAligned([dgs2, jgb2y]) : undefined); // 美日 2Y 利差 = UST2Y − JGB2Y
   // KW 预期腿 = 拟合 10Y − 期限溢价 = 未来 10 年预期短端利率的平均。

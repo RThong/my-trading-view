@@ -54,6 +54,8 @@ export const REGIME_SERIES = [
   'usd',
   'usdjpy',
   'cftcJpy',
+  'vixCotAm',
+  'vixCotLm',
   'dgs10',
   'usjp2y',
   'jgb10y',
