@@ -784,7 +784,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
       {
         key: 'dieselCrack',
         label: '柴油裂解',
-        title: '柴油裂解 (ULSD×42 − WTI, $/桶)',
+        title: '柴油裂解 (ULSD×42 − WTI, $/桶) · 外称 取暖油 / Heating Oil / HO crack',
         color: '#f97316',
         percentile: { riskTail: 'high' },
         desc: [
@@ -805,7 +805,17 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
           '',
           '⚠️ 单看它分不清是需求变化还是炼厂 / 供应约束 —— 需配「炼厂·库存」tab 的库存季节 z + 月差确认。',
           '⚠️ 新闻里的「裂解创新高」先分口径:3-2-1(含汽油)是同 tab 下面那格,不是本线;' +
-            '纯 diesel crack / Nymex 近月柴油裂解就是本线,逐日可对。',
+            '纯 diesel crack / Nymex 近月柴油裂解就是本线。',
+          '',
+          '**外部名称对照(为什么外面叫「取暖油」)** —— 本线的成品油腿是 NYMEX HO 合约:',
+          '历史上叫 Heating Oil,但 2013 年 5 月合约起交割规格已改成 ULSD(超低硫柴油),',
+          'CME 的正式产品名也随之改为 NY Harbor ULSD Futures,只有代码 HO 留了下来。',
+          '所以 Bloomberg / LSEG 里的 **Heating Oil Crack / Heating−Crude Spread / HO1**,',
+          '以及中文行情商(新浪 / 文华 / 东方财富)写的 **取暖油期货 / 取暖油裂解**,',
+          '在 NYMEX 期货这个语境下指的就是本线这套指标 —— 本页写「柴油裂解」是按交割标的写的。',
+          '⚠️ 名称对上不等于数值对得上:原油腿(WTI 还是 Brent)、合约月份、连续合约的展期规则得先对齐,才能逐日比。',
+          '⚠️ 也别反推成「柴油和取暖油是同一种油」—— 两者同属 distillate fuel oil(馏分燃料油),馏分切口与物性相近,',
+          '但最终用途、税务(取暖 / 非道路用染红免燃油税)与部分规格不同。ULSD 是给这一族产品当定价基准的,不是说它们本身是一个东西。',
         ].join('\n'),
       },
       {
