@@ -151,7 +151,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   // ice_cds 在 daily 的 REQUIRED 里,所以当天后续触发点会因为它没绿而重跑整组;
   // computable_gpu 故意**不进** cryptoDaily 的 REQUIRED(见那个文件的注释),于是只要
   // options_crypto + btc_price 已绿,后续触发就整体跳过,它当天不会再跑。
-  // 这样取舍是因为 CGI **可回填**(服务端保留十几天历史、抓取是幂等覆盖),靠次日跑补就够,
+  // 这样取舍是因为 CGI **可回填**(服务端保留 26~39 天历史、抓取是幂等覆盖),靠次日跑补就够,
   // 不值得为一个 experimental 源让整组 crypto job 每个触发点都重跑一遍。
   if (opts.computableGpuUpdater) {
     await withJobRun(opts.db, 'computable_gpu', async () => {

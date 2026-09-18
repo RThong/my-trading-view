@@ -1,12 +1,21 @@
 import { fetchWithTimeout } from './http';
 
 // Computable GPU Index(CGI):公开 REST,匿名只读,免 key。滚动窗口(不可回溯补更早的历史)。
-// ⚠️ 粒度**不是固定 15 分钟**:实测源自己改过两次(6h → 1h → 15min),而且保留窗口只有十几到三十天
-// (H100/H200 ~17 天、B200 ~24 天、B300 ~30 天),不是 90 天。下面 HISTORY_LIMIT/MAX_PAGES 的余量
-// 因此远远够用(实测 limit=2880 时 next_cursor 直接是 null,一页就取完全部历史),但别照「15 分钟 × N 天」
-// 去推容量 —— 那个前提本身是错的。
+// 采集器与算法开源:github.com/getcomputable/gpu-index(Apache-2.0,CHANGELOG 记每次换代的生效时间)。
+// ⚠️ 粒度**不是固定 15 分钟**,保留窗口也**不是** /v1/methodology 自称的 90 天 —— 两者都在变,别写死:
+//   2026-09-18 实测窗口 H100/H200 回到 08-23(26 天)、B200 到 08-16(33 天)、B300 到 08-10(39 天),
+//   比 2026-09 初实测的 17/24/30 天更长(窗口在变长,所以余量只会更宽松,不会更紧)。
+//   粒度实测改过三档(6h → 1h → 15min),各 SKU 切换日还不同(H100 在 08-24 进 1h、08-28 进 15min;
+//   B200/B300 在 08-24 才从 6h 进 1h)。下面 HISTORY_LIMIT/MAX_PAGES 的余量因此远远够用(实测
+//   limit=2880 时 next_cursor 直接是 null,一页就取完全部历史),但别照「15 分钟 × N 天」去推容量。
 // 官方发布的 SKU 只有这 4 个(GET /v1/methodology 的 skus 字段实测确认;H100/H200 内部即 SXM 口径,
 // BROAD 变体虽在 GitHub config 里但未对外发布,请求返回 404 unknown_sku)。
+//
+// 方法论会换代,每个观测点自带 `methodology_id`(如 `h100_sxm_v1_calc_v16`),我们**故意不读**:
+// 2026-09-18 逐日量过两次换代(09-03 H100/H200 加席 Hyperbolic v8→v10;09-15 四条线全上一小时 EWMA
+// 平滑 + carried vote,v10→v16 / v14→v17),**换代日的日均值变化量小于相邻普通日的变化量** ——
+// 断点埋在日内噪音里不可识别,加标注等于加噪音。换代日那天会混两代 id(切换不卡日界)。
+// 真要重查:curl 全量 history,按 UTC 日聚合后看 methodology_id 变的那天有没有台阶。
 const BASE = 'https://api.getcomputable.com/v1/index';
 export const CGI_SKUS = ['H100', 'H200', 'B200', 'B300'] as const;
 export type CgiSku = (typeof CGI_SKUS)[number];
@@ -25,9 +34,10 @@ const doFetch0 = fetchWithTimeout;
 
 /**
  * 每 SKU 每天一个 period rate = 当日(UTC)全部 ok 观测点的**算术**平均。
- * ⚠️ 方法论口径是「时间平均」,两者相等的前提是当日采样间隔均匀。实测源换粒度那两次(6h→1h、1h→15min)
- * 恰好都卡在 UTC 日界上,所以目前成立;哪天在**日内**换粒度,细粒度那半天会被加权过重、当日值静默偏移。
- * 真要挡住得按相邻点间隔做梯形加权 —— 眼下不值得,但别把这个巧合当成保证。
+ * ⚠️ 方法论口径是「时间平均」,两者相等的前提是当日采样间隔均匀 —— 这个前提**已经破过一次**:
+ * H100 在 2026-08-23 只有 20 个点(非整日),当日均值确实被细粒度那半天加权过重、静默偏移。
+ * 真要挡住得按相邻点间隔做梯形加权;不做是因为偏移的那天正随滚动窗口滑出去,且只影响窗口最老一格。
+ * 别把「换粒度恰好卡在日界」当成保证 —— 它只在后来那两次成立。
  */
 export function toDailyAverages(points: CgiHistoryPoint[]): CgiDailyPoint[] {
   const byDate = new Map<string, number[]>();

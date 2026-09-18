@@ -20,6 +20,7 @@
 | **moomoo** | 期权链(股票/ETF/指数:SPY/.VIX) | 日频 | `moomoo-api` | 本地 OpenD WebSocket `127.0.0.1:33333` | **仅当天快照,不可回填** |
 | **SEC XBRL** | AI 链公司季报财务(TTM 毛利率/capex/FCF) | **季频** | 零 | 公开 JSON `data.sec.gov`(免 key,**必须带 User-Agent**);submissions 比 filed → 有新申报才拉 companyfacts | 全历史(季频) |
 | **Deribit** | 加密期权链(BTC/ETH) | 日频 | 零 | 公开 REST `deribit.com/api/v2/public`(免 key) | 链快照型;但 **DVOL** 波动率指数有历史 |
+| **Computable(CGI)** | GPU 算力租赁价指数 `CGI_{H100,H200,B200,B300}`(USD/GPU/小时) | 源 15 分钟 → 我们按 UTC 日聚合 | 零 | 公开 REST `api.getcomputable.com/v1/index/{sku}/history`(免 key,匿名只读)。**采集器与算法开源:[getcomputable/gpu-index](https://github.com/getcomputable/gpu-index)**(Apache-2.0)—— 面板成员、换代生效时间、口径争议全在 CHANGELOG/METHODOLOGY 里,查口径去仓库不要猜。⚠️ `/v1/methodology` 自称窗口 90 天 / 粒度 15 分钟,**两个都不实**(见下) | **滚动窗口,不可回填更早**;2026-09-18 实测 H100/H200 26 天、B200 33 天、B300 39 天 |
 
 **关键差异**:**两个期权源(moomoo + Deribit)的链都是快照型**——25Δ 序列只能从今往后每个
 交易日攒一个点,拿不到历史(25Δ 行权价每天滚动,固定合约的历史 IV 无法重建该序列)。
@@ -29,7 +30,7 @@
 
 | 档位 | 谁 | 说明 |
 |---|---|---|
-| **零依赖** | FRED · CBOE · ICE · **EIA** · SEC · Deribit · MOF · CFTC · Shiller · **NY Fed ACM** · **Nakajima** | `fetch` + 自己解 CSV/JSON |
+| **零依赖** | FRED · CBOE · ICE · **EIA** · SEC · Deribit · MOF · CFTC · Shiller · **NY Fed ACM** · **Nakajima** · **Computable** | `fetch` + 自己解 CSV/JSON |
 | **`fflate`**(已有) | NY Fed HLW · JPX JGB VIX · **BOJ 产出缺口** | `.xlsx` = zip+XML,解 zip 后正则取(公共解包在 `fetchers/xlsx.ts`) |
 | **SheetJS**(⚠️ 未加) | — | BIFF8 `.xls`(OLE)。**npm 上的 `xlsx@0.18.5` 有 2 个 high CVE**,必须走 `bun add "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"` |
 | **`word-extractor`**(⚠️ 未加) | — | OLE Word `.doc`。SheetJS 读不了(`Cannot find Workbook stream`) |
@@ -126,6 +127,14 @@
   **不认 ICE 的 `name` 字段**(有 "Oracle Cop" 等错拼);筛 SNRFOR+USD+100bp 票息,同名多到期取最长(on-the-run 5Y)。
   ③价 ≤0 当缺价滤掉(`Number('')→0` 会伪装成 ~2228bp 假数据)。④**仅当天快照、不可回填**,靠 daily 每天攒;
   故 `ice_cds` 列入 `REQUIRED_JOBS`,且默认展示的 core 标的缺任一即 job failed 告警(`missingCoreCds`)。
+- **Computable GPU Index(算力租赁价)**:公开挂牌价的聚合,**不是成交价**;CoreWeave 在四个面板里占三个,
+  所以这条线跟 CRWV 不独立,别拿它给 CRWV 做交叉验证。几个实测坑:
+  ①**窗口和粒度都在变,别写死**。文档说 90 天 / 15 分钟,实测 2026-09-18 是 26~39 天(比两周前实测的 17~30 天**更长**),
+  粒度改过三档(6h → 1h → 15min)且各 SKU 切换日不同。`limit` 文档写上限 20000,实测 ~2950 才是真上限,取 2880。
+  ②**方法论每隔几周换代**(`methodology_id`,如 `h100_sxm_v1_calc_v16`),换代日一天内混两代 id(切换不卡 UTC 日界)。
+  已逐日量过 09-03 加席与 09-15 上 EWMA 平滑两次换代:**换代日的变化量小于相邻普通日的变化量**,断点不可识别,
+  故**不读 `methodology_id`、不做图上标注**。重查方法见 `fetchers/computableGpu.ts` 顶部注释。
+  ③`./reproduce`、collector 那套只对自建索引的人有用,我们是纯 API 消费方,仓库的 commit 大多与我们无关。
 - **图表**:用 BusinessDay(字符串日期)压掉周末空隙;跨标的共享 X 轴时先 `dropWeekends()`。
 
 ## 约定
