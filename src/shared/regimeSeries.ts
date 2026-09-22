@@ -84,6 +84,10 @@ export const REGIME_SERIES = [
   'rbobCrack',
   'crack321',
   'rbobYoy',
+  // ULSD(NYMEX HO)批发价 $/gal。裂解三条一直在拿它当输入腿,这里单独发出来是因为
+  // **零售加价(泵价 − 批发)要它当减数** —— 只发零售泵价的话,泵价涨了归因不了是原油、
+  // 裂解还是零售端在加价。⚠️ 单位是 $/gal 不是 $/桶(裂解那几条 ×42 换过),别混着读。
+  'ulsd',
 
   // ── EIA 周报(周三 10:30 ET,数据截止上周五)。水位 + 季节 z 见 analytics/seasonalZ。
   'refUtil',
@@ -94,6 +98,16 @@ export const REGIME_SERIES = [
   'distYield',
   'crudeRunsYoy',
   'distProdYoy',
+  // 零售泵价两条 + 各自的零售加价(EIA 周度零售价调查,**周一发**,与上面那批周三的不同天)。
+  // 加价 = 泵价 − 同口径批发期货,$/gal。材料里「加油站并没有按同样比例降价」「下调慢于上调」
+  // 说的就是这一层 —— 批发价与裂解都在批发口径,看不见它。
+  // ⚠️ 加价里含联邦 + 州燃油税(柴油约 $0.55/gal、汽油约 $0.50/gal,各州不同):
+  // **水位不是纯毛利,但税近乎常数,所以变动仍然是加价的变动**。
+  // ⚠️ 汽油那条是判别腿:柴油加价走阔时,只有对照汽油才分得清「全行业零售在加价」还是「柴油独有」。
+  'dieselRetail',
+  'gasRetail',
+  'dieselRetailMargin',
+  'gasRetailMargin',
 
   // ── 长端分解(rates-decomposition)
   'expShort10Kw',

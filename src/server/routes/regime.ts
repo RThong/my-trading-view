@@ -25,6 +25,7 @@ import {
   seasonalZFrom,
   oilCracks,
   distillateYield,
+  retailMargin,
   type Point,
 } from '../analytics/regime';
 import type { RegimeSeries, FundSeries, SeriesKey } from '../../shared/regimeSeries';
@@ -159,6 +160,12 @@ export const EIA_SERIES: readonly SeriesKey[] = [
   'distYield',
   'crudeRunsYoy',
   'distProdYoy',
+  // 零售两条与两条加价同样只在配了 key 时才有 —— 加价虽然有一条 Yahoo 腿(ULSD/RBOB),
+  // 但缺 key 时零售腿为空、整条出不来,所以照样要豁免。裸 `ulsd` 不在此列(它与 EIA 无关)。
+  'dieselRetail',
+  'gasRetail',
+  'dieselRetailMargin',
+  'gasRetailMargin',
 ];
 
 /**
@@ -423,6 +430,12 @@ export const regimeRoute = new Hono().get('/', async (c) => {
       'WDIEXUS2', // 馏分油出口 千桶/日
       'WGIRIUS2', // 炼厂原油加工量 千桶/日
       'WDIRPUS2', // 馏分油产量 千桶/日
+      // 零售泵价两条($/gal,**周一发**,与上面六条周三的不是同一天)。
+      // ⚠️ 柴油取 **XL0**(ULSD 0-15ppm,DOE 每周口播的 on-highway 头条数)而不是 `EMD_EPD2D_...`
+      // (No.2 全类型):只有 XL0 与批发腿的 ULSD 期货同口径,减出来的加价才干净。2007 年后两条
+      // 数值几乎重合,所以选错不会露馅 —— 正因为不露馅,这里写死并注明。
+      'EMD_EPD2DXL0_PTE_NUS_DPG', // 零售柴油 $/gal
+      'EMM_EPM0_PTE_NUS_DPG', // 零售汽油(全等级)$/gal
     ].map(eiaWeekly),
   );
   const settled = await Promise.allSettled(Object.values(src));
@@ -445,7 +458,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     nakajimaP,
   ]);
   const [wti, brent, diesel, rbob] = await oilP;
-  const [refUtil, distStocks, gasStocks, distExports, crudeRuns, distProd] = await eiaP;
+  const [refUtil, distStocks, gasStocks, distExports, crudeRuns, distProd, dieselRetail, gasRetail] = await eiaP;
   const jgb2y = jgbCurve?.series['2Y'] ?? null;
   const jgb10y = jgbCurve?.series['10Y'] ?? null;
   const dgs10 = ust?.['10Y'] ?? null;
@@ -559,6 +572,11 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('dieselCrack', cracks.dieselCrack);
   put('rbobCrack', cracks.rbobCrack);
   put('crack321', cracks.crack321);
+  // ULSD 批发裸价 $/gal。裂解已经用它当输入腿,这里只是把腿本身发出来 —— 零售加价那格要拿它当减数,
+  // 泵价单独一条线归因不了「涨的是原油、裂解还是零售加价」。⚠️ Yahoo 腿不是 EIA 腿:
+  // 缺 key 时零售那几条恒缺而这条照常有,所以**它不能进 EIA_SERIES 的豁免名单**(进了就等于
+  // 把一条真失败也放行)。
+  put('ulsd', diesel ?? undefined);
 
   // EIA 周报六条原始序列 → 八条对外线。**水位只发炼厂开工率** —— 它是有绝对刻度的(口播的"98%"就是它,
   // 且 100% 是硬顶,一眼看得出还剩多少余量)。库存/出口的裸水位单看不携带信息
@@ -583,6 +601,18 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('distYield', yieldPct && fromHistoryStart(yieldPct));
   put('crudeRunsYoy', crudeRuns ? fromHistoryStart(yoyPct(crudeRuns)) : undefined);
   put('distProdYoy', distProd ? fromHistoryStart(yoyPct(distProd)) : undefined);
+  // 零售泵价与零售加价。**加价才是可测量,泵价水位不是** —— 家庭体感钉的是泵价,
+  // 但泵价里同时装着原油、裂解、零售加价三层,只发水位则涨跌归因不了。
+  // 加价 = 泵价 − 同口径批发($/gal 直接减,不 ×42),锚在零售的周一上(见 analytics/retailMargin)。
+  // ⚠️ 汽油那条是判别腿:柴油加价走阔时,对照汽油才分得清「全行业零售在加价」还是「柴油独有」。
+  //    材料整条论证(柴油打供应链、汽油打家庭出行)靠的正是「柴油独有」。
+  const dieselRetailS = dieselRetail && fromHistoryStart(dieselRetail);
+  const gasRetailS = gasRetail && fromHistoryStart(gasRetail);
+
+  put('dieselRetail', dieselRetailS ?? undefined);
+  put('gasRetail', gasRetailS ?? undefined);
+  put('dieselRetailMargin', retailMargin(dieselRetailS, diesel));
+  put('gasRetailMargin', retailMargin(gasRetailS, rbob));
   // 汽油 RBOB 同比:CPI 汽油分项的高频前瞻,进「通胀来源」与薪资/服务黏性并读。
   const rbobYoyS = rbob ? yoyPct(rbob) : null;
   put('rbobYoy', rbobYoyS?.length ? rbobYoyS : undefined);

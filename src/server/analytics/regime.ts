@@ -206,6 +206,22 @@ export function oilCracks({ wti, diesel, rbob }: CrackLegs): {
 }
 
 /**
+ * 零售加价 = 零售泵价 − 同口径批发期货,$/gal(两腿同单位,**不 ×42** —— 裂解那几条才换桶)。
+ *
+ * ⚠️ **必须锚在零售那一侧的日期上。** 零售是 EIA 周一调查、批发是日频期货:反过来锚在日频腿上
+ * (或前向填充成日频)会让这条线每天都动,而动的全是批发腿 —— 一个「零售加价日频变动」的假象,
+ * 恰好把这条线唯一想测的东西(零售端调价比批发慢)洗掉。锚在周一 = 每周一个点,取当日或之前
+ * 最近一个批发收盘(周一休市就取上周五,正是那天的批发参照)。
+ *
+ * 复用 `sumAtAnchorDates`(它做的就是「锚点日 + 高频腿前向填充」),减号靠 ×(−1) 表达。
+ */
+export function retailMargin(retail: Point[] | null, wholesale: Point[] | null): Point[] | undefined {
+  if (!retail?.length || !wholesale?.length) return undefined;
+
+  return sumAtAnchorDates(retail, scale(wholesale, -1));
+}
+
+/**
  * 馏分油收率 = 馏分油产量 / 炼厂加工量 × 100 (%)。分子分母别写反 —— 写反了值仍在合理量级
  * (约 3.3 而不是 30),图上只是"换了个单位",肉眼看不出。
  */

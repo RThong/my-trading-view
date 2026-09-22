@@ -11,6 +11,7 @@ import {
   seasonalZFrom,
   oilCracks,
   distillateYield,
+  retailMargin,
 } from './regime';
 
 test('scale:逐点乘常数(单位对齐)', () => {
@@ -296,6 +297,39 @@ test('oilCracks:三条裂解的数学(×42、权重 2:1、缺腿返回 undefined
   expect(oilCracks({ wti: null, diesel, rbob }).dieselCrack).toBeUndefined();
   expect(oilCracks({ wti, diesel, rbob: null }).crack321).toBeUndefined();
   expect(oilCracks({ wti, diesel, rbob: null }).dieselCrack).toBeDefined(); // 只丢受影响的那条
+});
+
+test('retailMargin:锚在零售的周频日期上,批发腿取当日或之前最近一根', () => {
+  // 零售 = 每周一调查;批发 = 日频期货(含零售没有的那几天)。
+  const retail = [
+    { date: '2026-09-07', value: 6.0 },
+    { date: '2026-09-14', value: 6.3 },
+  ];
+  const wholesale = [
+    { date: '2026-09-04', value: 4.4 },
+    { date: '2026-09-07', value: 4.5 },
+    { date: '2026-09-10', value: 4.9 }, // 周中的跳动不该自己出一个点
+    { date: '2026-09-14', value: 4.6 },
+  ];
+
+  // 每周一个点(不是每天一个)—— 前向填充成日频会让「零售调价慢」这件事被批发腿的抖动洗掉。
+  expect(retailMargin(retail, wholesale)).toEqual([
+    { date: '2026-09-07', value: 6.0 - 4.5 },
+    { date: '2026-09-14', value: 6.3 - 4.6 },
+  ]);
+
+  // 锚点日批发休市(周一假日)→ 取之前最近一根(上周五),不跳过该周。
+  expect(retailMargin(retail, [{ date: '2026-09-04', value: 4.4 }])).toEqual([
+    { date: '2026-09-07', value: 6.0 - 4.4 },
+    { date: '2026-09-14', value: 6.3 - 4.4 },
+  ]);
+
+  // ⚠️ 方向:零售 − 批发,恒为正(泵价含税与零售毛利)。写反了仍是「合理量级的负数」,不报错。
+  expect(retailMargin(retail, wholesale)?.every((p) => p.value > 0)).toBe(true);
+
+  // 缺腿 → undefined,由路由归 unavailable
+  expect(retailMargin(null, wholesale)).toBeUndefined();
+  expect(retailMargin(retail, [])).toBeUndefined();
 });
 
 test('distillateYield:分子是产量、分母是加工量(写反了值仍在合理量级,肉眼看不出)', () => {
