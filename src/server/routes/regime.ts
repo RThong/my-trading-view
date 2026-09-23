@@ -331,7 +331,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     hyOas: fredSeries('BAMLH0A0HYM2'),
     // dgs10 / dgs2 改走财政部 par yield 直发源(当天出,FRED DGS 慢 1-2 天),见下方 ustP。
     wages: fredSeries('FRBATLWGT3MMAUMHWGO'), // Atlanta Fed 薪资增速 tracker(3mma,月频 %)
-    stickyCpi: fredSeries('CORESTICKM159SFRBATL'), // Sticky Price CPI(服务黏性,YoY%,月频)
+    stickyCpi: fredSeries('CORESTICKM159SFRBATL'), // Atlanta Fed 核心黏性价格 CPI(Sticky Price CPI less food & energy,YoY%,月频;不等于服务通胀)
     // 5y5y 通胀远期:剥掉近 5 年、只看第 6-10 年的通胀定价,比 10Y BEI 更贴"长期通胀锚"。日频 %。
     // 用 FRED 官方口径,不自己拿 2×BEI10 − BEI5 算 —— DGS/DFII 是固定期限收益率不是零息,自算是近似。
     t5yifr: fredSeries('T5YIFR'),
@@ -613,7 +613,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('gasRetail', gasRetailS ?? undefined);
   put('dieselRetailMargin', retailMargin(dieselRetailS, diesel));
   put('gasRetailMargin', retailMargin(gasRetailS, rbob));
-  // 汽油 RBOB 同比:CPI 汽油分项的高频前瞻,进「通胀来源」与薪资/服务黏性并读。
+  // 汽油 RBOB 同比:CPI 汽油分项的高频前瞻,进「通胀来源」与薪资/核心黏性 CPI 并读。
   const rbobYoyS = rbob ? yoyPct(rbob) : null;
   put('rbobYoy', rbobYoyS?.length ? rbobYoyS : undefined);
 
