@@ -125,6 +125,12 @@ export const JOB_WRITTEN_SERIES = [
   ['gpuH200', 'CGI_H200'],
   ['gpuB200', 'CGI_B200'],
   ['gpuB300', 'CGI_B300'],
+  // ISM 四条(月频,daily 的 ism 分组写库)。**不进 gpu 那种「缺着也缓存」的豁免**:
+  // 回填过就恒有,缺了说明库没回填或 job 坏了 —— 那种状态不该被缓存 6 小时。
+  ['ismMfg', 'ISM_MFG_PMI'],
+  ['ismSvc', 'ISM_SVC_PMI'],
+  ['ismMfgPrices', 'ISM_MFG_PRICES'],
+  ['ismSvcPrices', 'ISM_SVC_PRICES'],
 ] as const;
 
 /** 只有 gpu 这几条允许"缺着也缓存"(库没跑过 job 时必然缺、B300 长期允许缺)。 */

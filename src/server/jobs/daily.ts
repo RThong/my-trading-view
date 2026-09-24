@@ -13,6 +13,7 @@ import { updateVxTermStructure } from './vxTermStructure';
 import { updateErisSnapshot } from './erisSnapshot';
 import { updateIceCds } from './iceCdsSnapshot';
 import { updateMoveIndex, type MoveUpdateResult } from './moveSnapshot';
+import { updateIsm, type IsmResult } from './ismSnapshot';
 
 type RunDailyJobOpts = {
   db: Database;
@@ -34,6 +35,8 @@ type RunDailyJobOpts = {
   iceCdsUpdater?: (db: Database) => Promise<{ total: number; missing: string[] }>;
   /** MOVE 债市波动率更新器(注入式;CLI 传 updateMoveIndex,测试省略以免联网)。 */
   moveUpdater?: (db: Database) => Promise<MoveUpdateResult>;
+  /** ISM 制造业 / 服务业 PMI 更新器(注入式;CLI 传 updateIsm,测试省略以免联网)。 */
+  ismUpdater?: (db: Database) => Promise<IsmResult>;
   /** Computable GPU Index(H100/H200/B200/B300 算力租赁价)更新器(注入式;cryptoDaily 传 updateComputableGpu,测试省略以免联网)。 */
   computableGpuUpdater?: (db: Database) => Promise<{ total: number; missing: string[]; errors: string[] }>;
 };
@@ -164,6 +167,20 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     });
   }
 
+  // ism 分组:ISM PMI(月频,PR Newswire)。稳态每次只打一次列表页 —— 新月报一个月才来两篇。
+  // **不进 REQUIRED_JOBS**:可回填(漏一天次日补),不值得为它让整组 daily 每个触发点重跑。
+  // 美东 10:00 发布 = JST 23:00,当天最后一个触发点(22 点)赶不上,次日第一个触发点拿到。
+  if (opts.ismUpdater) {
+    await withJobRun(opts.db, 'ism', async () => {
+      const { fetched, failed, stale, written } = await opts.ismUpdater!(opts.db);
+      // 某扇区停更 = 直接 failed(红灯),不因为这一轮另一个扇区拉到了新数就被 threeState 降成 partial:
+      // 停更不会自愈(多半是 slug 改名 / 版式变了,要改代码),黄灯太容易被忽略。
+      if (stale.length) return { status: 'failed', error: [...stale, ...failed].join('; '), recordsWritten: written };
+      // 稳态 fetched=0 且无失败 → success(没有新月报是常态,不是失败)。
+      return threeState(written, fetched.length, failed);
+    });
+  }
+
   // btc_price 分组:BTC 现货日 bar(Deribit 主源 / Yahoo 降级;成功/失败两态)。
   if (opts.btcPriceUpdater) {
     await withJobRun(opts.db, 'btc_price', async () => {
@@ -199,6 +216,7 @@ if (import.meta.main) {
       erisUpdater: updateErisSnapshot,
       iceCdsUpdater: updateIceCds,
       moveUpdater: updateMoveIndex,
+      ismUpdater: updateIsm,
     });
     console.log('Daily job complete.');
   }

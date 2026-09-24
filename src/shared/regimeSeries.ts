@@ -37,6 +37,12 @@ export const REGIME_SERIES = [
   'gpuH200',
   'gpuB200',
   'gpuB300',
+  // ISM 制造业 / 服务业 PMI 及各自 Prices 分项(月频,PR Newswire 全文解析,daily 增量写库)。
+  // 见 fetchers/ismPrn 与 jobs/ismSnapshot。
+  'ismMfg',
+  'ismSvc',
+  'ismMfgPrices',
+  'ismSvcPrices',
 
   // ── 库里读 + 派生(readDbBacked)
   'qqq',

@@ -75,7 +75,11 @@ export const PERSPECTIVES: Perspective[] = [
     label: '情绪',
     tabs: [regimeTab('vol', '波动率', 'vol'), regimeTab('sentiment', '情绪', 'sentiment')],
   },
-  regimePersp('macro', '宏观'),
+  {
+    id: 'macro',
+    label: '宏观',
+    tabs: [regimeTab('macro', '美元', 'macro'), regimeTab('ism', 'ISM 景气', 'ism')],
+  },
   {
     // 能源三 tab:价差(市场怎么定价)、实物(EIA 周报的开工率 / 库存 / 出口)、泵价(链条末端 + 零售加价)。
     // 分开是因为三边频率与读法都不同 —— 价差日频看拐点,实物周三周频 + 季节 z 看因果,

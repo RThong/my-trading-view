@@ -87,6 +87,26 @@ describe('daily job (options-only)', () => {
     expect(h?.status).toBe('success');
   });
 
+  test('ism: 没有新月报是常态 → success;某扇区停更 → failed,即使另一扇区这一轮拉到了新数', async () => {
+    const ism = (r: Partial<{ fetched: string[]; failed: string[]; stale: string[] }>) => async () => ({
+      fetched: [],
+      skipped: 17,
+      failed: [],
+      stale: [],
+      written: 0,
+      ...r,
+    });
+
+    await runDailyJob({ db, ismUpdater: ism({}) });
+    expect(getJobHealth(db).find((h) => h.name === 'ism')?.status).toBe('success');
+
+    // threeState 会把「有成功 + 有问题」判成 partial(黄灯);停更不会自愈,必须是红灯。
+    await runDailyJob({ db, ismUpdater: ism({ fetched: ['mfg:2026-09'], stale: ['svc 最新报告月 2026-07 落后'] }) });
+    const h = getJobHealth(db).find((h) => h.name === 'ism')!;
+    expect(h.status).toBe('failed');
+    expect(h.error).toContain('svc');
+  });
+
   test('move: 拿到 meta 快照点记 success', async () => {
     await runDailyJob({
       db,

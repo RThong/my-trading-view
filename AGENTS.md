@@ -16,6 +16,7 @@
 | **Yahoo** | 股票 EOD + **DXY(`DX-Y.NYB` 真 ICE 美元指数)/ MOVE(`^MOVE`)/ 油品期货(`CL=F`/`BZ=F`/`HO=F`/`RB=F`)/ USD/JPY** | 日频 | `yahoo-finance2` | `yahoo-finance2` **v4** npm(class API `new YahooFinance()`) | 可回填多年 |
 | **其它** | Eris(SOFR OIS 曲线)/ MOF+JPX(JGB 收益率/JGB VIX)/ CFTC(日元净持仓 Legacy / VIX 净持仓 TFF)/ Shiller(CAPE) | 混:Eris 日 / MOF 日 / JPX 日 / **CFTC 周** / Shiller 月 | 零;**JPX JGB VIX 用 `fflate`** | 各自 adapter(见 `fetchers/`)| 多为全历史 |
 | **EIA** | 周度石油报告:炼厂开工率 / 加工量 + 馏分油产量(→ 收率、同比)/ 馏分油+汽油库存 / 馏分油出口(→ 季节 z)· **零售柴油/汽油泵价**(→ 与批发期货减出零售加价) | **周频**(实物六条周三 10:30 ET 发、截止上周五,滞后 ~5 天;**零售两条周一发**,两批右端日期不齐是常态) | 零(要 key) | JSON `api.eia.gov/v2/seriesid/PET.{ID}.W`(要 key)⚠️ 裸 ID 404,必须带 `PET.` 前缀 + `.W` 后缀;`start`/`end`/`data[]` **全被忽略**,唯一生效的裁剪参数是 `length`;返回**倒序** | 1982 起全历史;**已发布值下周会被修订**(每次拉全量,故不落库) |
+| **ISM(经 PR Newswire)** | 制造业 / 服务业 PMI 头条 + 各自 Prices 分项(`ismMfg` / `ismSvc` / `ismMfgPrices` / `ismSvcPrices`) | **月频**(制造业第 1 个工作日、服务业第 3 个工作日,10:00 ET) | 零 | newsroom 列表页 `prnewswire.com/news/institute-for-supply-management/?page=N&pagesize=M` 按 slug 认月报 → 单篇解析「AT A GLANCE」表(**按行首标签取行,不按行号**)。⚠️ 三代版式都实测过:报告月可能在表头第二行(2021~2023)、年份可能被拆进两个 span 成「202 1」(2020-10~2022-02)、2020 年前服务业叫 NMI;⚠️ 服务业表右半边是制造业对照列,只取前两格 | **落库**(daily `ism` 分组增量;`bun run src/server/jobs/ismSnapshot.ts --backfill` 回填,已回填 2018-01 起)。⚠️ 回填 = 每月「最后一次被发布的读数」拼接:次月那篇带回的上月值会覆盖(1 月季节因子重估由此带回一个月),更早月份不改 —— 非官方修订后全序列。**停更防护**:每轮写完查两个扇区各自最新报告月,落后当前月 >2 个月 → `ism` 记 failed(状态灯红,悬停见原因);只看列表页认不认得出月报挡不住单扇区改名(旧名月报会在第一页挂一年) |
 | **ICE** | AI 巨头 + 甲骨文单名 CDS EOD 结算价(`iceCds`) | 日频 | 零 | 公开 JSON `www.ice.com/api/cds-settlement-prices/icc-single-names`(免 key) | **仅当天快照,不可回填** |
 | **moomoo** | 期权链(股票/ETF/指数:SPY/.VIX) | 日频 | `moomoo-api` | 本地 OpenD WebSocket `127.0.0.1:33333` | **仅当天快照,不可回填** |
 | **SEC XBRL** | AI 链公司季报财务(TTM 毛利率/capex/FCF) | **季频** | 零 | 公开 JSON `data.sec.gov`(免 key,**必须带 User-Agent**);submissions 比 filed → 有新申报才拉 companyfacts | 全历史(季频) |
@@ -30,7 +31,7 @@
 
 | 档位 | 谁 | 说明 |
 |---|---|---|
-| **零依赖** | FRED · CBOE · ICE · **EIA** · SEC · Deribit · MOF · CFTC · Shiller · **NY Fed ACM** · **Nakajima** · **Computable** | `fetch` + 自己解 CSV/JSON |
+| **零依赖** | FRED · CBOE · ICE · **EIA** · SEC · Deribit · MOF · CFTC · Shiller · **NY Fed ACM** · **Nakajima** · **Computable** · **ISM(PRN)** | `fetch` + 自己解 CSV/JSON/HTML |
 | **`fflate`**(已有) | NY Fed HLW · JPX JGB VIX · **BOJ 产出缺口** | `.xlsx` = zip+XML,解 zip 后正则取(公共解包在 `fetchers/xlsx.ts`) |
 | **SheetJS**(⚠️ 未加) | — | BIFF8 `.xls`(OLE)。**npm 上的 `xlsx@0.18.5` 有 2 个 high CVE**,必须走 `bun add "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"` |
 | **`word-extractor`**(⚠️ 未加) | — | OLE Word `.doc`。SheetJS 读不了(`Cannot find Workbook stream`) |
@@ -47,6 +48,8 @@
 | 日本 BEI / 实际收益率 / 期限溢价 / r\* | **FRED 全都没有** | 目录搜 "Japan breakeven inflation" 232 条全是美国的 `T10YIE` 之流;搜 "Japan term premium / natural rate" 只回日本名义 10Y + 美国 `DLTIIT` |
 | 日本 r\* | **HLW 官方文件不含日本**(只有 US / Canada / Euro Area);BOJ 自己的估计是**一年一更的区间**(2026-03 那版 −0.9%～+0.5%),发在日銀レビュー PDF 里,不是序列。→ **另有出路(2026-09)**:中島模型的 `rstar.csv` 是季频序列带 95% 区间,**已接**;但那是**单研究员模型、非日银官方**,且是**实际口径**(日银官方另发六模型并排的一份,未接) | 解开官方 xlsx 看表头 |
 | ~~日本期限溢价~~ | ~~ACM / Kim-Wright 都只做美债,日本无公开模型序列~~ → **结论已推翻(2026-09)**:中島上智公开了 JGB 期限溢价 / 预期短端 / r\* 的模型估计,**已接**(见上表 Nakajima 行)。ACM / KW 确实只做美债这半句仍成立 | GitHub `jouchinakajima/program` |
+| ISM PMI 的**官方 / 结构化**源 | **都拉不到** → 已改走 PR Newswire 全文(见取数总览)。ismworld.org 的 Report On Business 页全部跳 SSO,SSO 页是 **reCAPTCHA v3 自动提交表单**(脚本拉不到,也不该绕);FRED 2016 年起就没有 ISM(`series/search` 零命中);DBnomics 有 `ISM` provider 但**停更在 2026-01**,`pmi` 数据集里唯一序列值 ~10,不是头条 | curl + FRED API + DBnomics API(2026-09) |
+| S&P Global PMI(含 flash) | **源可用但不接**。官网新闻稿列表(浏览器 UA 可拉)→ 每篇是 PDF,**免费件只有 4 个头条数字,价格等分项只有文字和图、没有数值**;历史是订阅制,免费只带当期 + 上期 → 只能从今往后攒。flash 的唯一增量是时点(月中,早 ISM 一周),而 flash 当天的利率反应面板上本来就有 | 下载 2026-09-23 flash PDF 实抽(2026-09) |
 | 日本物価連動国債收益率曲线 | **不存在现成曲线**。JSDA 只发**按銘柄的价格**(实测每日 10 只券),要自己选券 + 处理想定元金額 + 插值。MOF 只发名义(`jgbcmi_all.csv` → 404),BOJ API 里 `物価連動` 零命中(扫过 FM01–FM12) | — |
 | 日元通胀掉期(ZCIS) | **无免费源**。JSCC 只清算普通 IRS(页面「物価/インフレ」零命中) | — |
 | 柴油交割地(PADD1)的实物对照 | **源可用但不接** —— `WDISTP11` 端点正常,是**形式**不成立:PADD1 季节 z 与全国 z 相关 **r=0.937**、末值差 0.04、「一破一不破 −2」近两年仅 1.9%,没有增量。想要的判别(裂解爆表时分「交割地真缺货」还是「纸面挤压」)实际几乎不发生 | 拉 780 周实算(2026-09) |

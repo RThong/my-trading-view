@@ -95,7 +95,8 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
       lineWidth: 1,
       lineStyle: 2,
       axisLabelVisible: true,
-      title: '0',
+      // 标题跟着基线值走:扩散指数的分界线是 50、比值类是 1,写死 '0' 会在那几格上标错。
+      title: String(spec.baseline),
     });
   }
   // 参考线(如情绪指标的 P10/P90 分位带);期权侧不传 refLines 即无。
