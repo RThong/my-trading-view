@@ -37,6 +37,8 @@ export type HistoSpec = {
   data: HistoPoint[];
   baseline?: number;
   priceScaleId?: string;
+  /** overlay 轴顶部留白比例(默认 0 = 满高)。设 0.94 → 柱子只占 pane 底部 6%,当细色带用。 */
+  scaleTop?: number;
 };
 export type Spec = LineSpec | CandleSpec | HistoSpec;
 export type LegendCell =

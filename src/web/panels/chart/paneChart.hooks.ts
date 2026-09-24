@@ -58,8 +58,8 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
       },
       spec.pane,
     );
-    // overlay 背景带:独立轴去掉上下留白 → 柱子满 pane 高。
-    if (spec.priceScaleId) s.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
+    // overlay 背景带:独立轴去掉上下留白 → 柱子满 pane 高;给 scaleTop 则只占底部一条。
+    if (spec.priceScaleId) s.priceScale().applyOptions({ scaleMargins: { top: spec.scaleTop ?? 0, bottom: 0 } });
     if (spec.baseline !== undefined) {
       s.createPriceLine({
         price: spec.baseline,
