@@ -33,7 +33,7 @@ export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Inter
   // 裁本身是对的,但不说的话「线怎么这么短」无处可查。
   // overlay 也要算进来:它在 seriesName/colors 里有名有色,缺了却不提示,那格会静默少一条线。
   const missing = panes
-    .flatMap((p) => [p.key, ...(p.overlays ?? []).map((o) => o.key)])
+    .flatMap((p) => [p.key, ...(p.overlays ?? []).map((o) => o.key), ...(p.events ?? []).map((e) => e.key)])
     .filter((k) => data.unavailable.includes(k));
   const notes = [
     missing.length ? `暂不可用: ${missing.map((k) => seriesName[k]).join(', ')}` : undefined,

@@ -43,6 +43,43 @@ export function scale(rows: Point[], k: number): Point[] {
   return rows.map((p) => ({ date: p.date, value: p.value * k }));
 }
 
+/**
+ * 月频指数的 N 个月年化变动 %:((今 / N 个月前)^(12/N) − 1)×100。N=12 即同比,N=3 即 3 个月年化。
+ *
+ * ⚠️ 对照月**必须精确命中**,缺了就跳过 —— 不像 yoyPct 那样往前贴。月频序列会有真缺月
+ * (2025-10 的 CPI 因停摆从未发布),往前贴就会把 4 个月的涨幅当成 3 个月年化。
+ */
+export function monthlyAnnualizedPct(rows: Point[], months: number): Point[] {
+  const byMonth = new Map(rows.map((p) => [p.date.slice(0, 7), p.value]));
+  const monthsBack = (d: string) => {
+    const t = new Date(`${d.slice(0, 7)}-01T00:00:00Z`);
+    t.setUTCMonth(t.getUTCMonth() - months);
+    return t.toISOString().slice(0, 7);
+  };
+
+  return rows.flatMap((p) => {
+    const prev = byMonth.get(monthsBack(p.date));
+    return prev ? [{ date: p.date, value: ((p.value / prev) ** (12 / months) - 1) * 100 }] : [];
+  });
+}
+
+/**
+ * 例行发布日 → 标记点:date = 发布日,value = 该次发布那个月在 `byMonth` 里的值(当前修订后,不是首发值)。
+ * 同一天发两个月(停摆后补发,如 2026-01-22 的 PCE 一次出了 10、11 月)只留较新的那个月;
+ * 那个月在 byMonth 里没值 → 跳过。releases 须按所属月份升序(FRED 默认如此),发布日随之单调,故输出已升序。
+ */
+export function releaseMarkers(releases: { obsDate: string; releaseDate: string }[], byMonth: Point[]): Point[] {
+  const monthValue = new Map(byMonth.map((p) => [p.date, p.value]));
+  const byDay = new Map(
+    releases.flatMap((r) => {
+      const v = monthValue.get(r.obsDate);
+      return v === undefined ? [] : [[r.releaseDate, v] as const];
+    }),
+  );
+
+  return [...byDay].map(([date, value]) => ({ date, value }));
+}
+
 /** 日频序列的同比 %:每点对齐到约一年前(≤ 当日−1年 的最近观测),(今/去年−1)×100。
  *  头一年无对照 → 跳过;去年值为 0 → 跳过。用于把 RBOB 等价格转成可与 CPI 并读的 YoY。 */
 export function yoyPct(rows: Point[]): Point[] {

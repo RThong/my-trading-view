@@ -119,6 +119,32 @@ export const REGIME_SERIES = [
   'expShort10Kw',
   'rstarHlwCurrent',
   'lProxyHlwT5yifr',
+
+  // ── 利率预期的三样参照(FRED 现拉)。派生算法见 shared/policyPath。
+  // SOFR 定盘值(FRED,日频 %,次日早上发)。OIS 加息次数的基准 —— 不是 Eris 的 SOFR1D(那是 T+2 起息的掉期)。
+  'sofr',
+  // 政策利率目标区间上 / 下限(DFEDTARU / DFEDTARL,日频 %)
+  'fedTargetUpper',
+  'fedTargetLower',
+  // SEP 点阵图中值:⚠️ 日期 = **预测的那一年年底**(YYYY-12-31),不是发布日;FRED 只留最新一版 SEP。
+  'sepMedian',
+  // 点阵图长期水平(FEDTARMDLR):日期 = SEP 发布日,季频,自带历史。
+  'sepMedianLr',
+  // 核心 CPI / 核心 PCE 的同比与 3 个月年化(%)。⚠️ 日期 = **数据所属月份**,不是发布日。
+  'coreCpiYoy',
+  'coreCpi3m',
+  'corePceYoy',
+  'corePce3m',
+  // 例行发布日(ALFRED 首发 vintage,已天然排除季调 / 年度修订那类 vintage)。
+  // 日期 = 发布日;值 = 该次发布那个月的**当前修订后**同比(不是首发值)。给日线断点对齐用。
+  'coreCpiRelease',
+  'corePceRelease',
+
+  // ── 库里读 + 派生:SOFR OIS 隐含的「到 N 为止累计计入几次 25bp」(次,负 = 降息)。近似值,见 shared/policyPath。
+  'oisHikes3m',
+  'oisHikes6m',
+  'oisHikes12m',
+  'oisHikes2y',
 ] as const;
 
 export type RegimeSeries = (typeof REGIME_SERIES)[number];

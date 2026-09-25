@@ -4,6 +4,8 @@ import {
   subtractAt,
   divideAligned,
   yoyPct,
+  monthlyAnnualizedPct,
+  releaseMarkers,
   scale,
   sumAtAnchorDates,
   sumAligned,
@@ -39,6 +41,43 @@ test('yoyPct:对齐到约一年前算同比%', () => {
   expect(out.map((p) => p.date)).toEqual(['2024-01-02', '2024-06-01']); // 头一年跳过
   expect(out[0].value).toBeCloseTo(50);
   expect(out[1].value).toBeCloseTo(20);
+});
+
+test('monthlyAnnualizedPct:同比与 3 个月年化;对照月缺失就跳过,不往前贴', () => {
+  const rows = [
+    { date: '2025-01-01', value: 100 },
+    { date: '2025-04-01', value: 101 },
+    // 2025-10 停摆未发布 → 2026-01 没有 3 个月对照
+    { date: '2025-11-01', value: 102 },
+    { date: '2026-01-01', value: 103 },
+    { date: '2026-04-01', value: 104 },
+  ];
+
+  expect(monthlyAnnualizedPct(rows, 12)).toEqual([
+    { date: '2026-01-01', value: expect.closeTo(3, 9) },
+    { date: '2026-04-01', value: expect.closeTo((104 / 101 - 1) * 100, 9) },
+  ]);
+  expect(monthlyAnnualizedPct(rows, 3).map((p) => p.date)).toEqual(['2025-04-01', '2026-04-01']);
+  expect(monthlyAnnualizedPct(rows, 3)[0].value).toBeCloseTo((1.01 ** 4 - 1) * 100, 9);
+});
+
+test('releaseMarkers:一天发两个月只留新的那个月;没值的月跳过', () => {
+  const releases = [
+    { obsDate: '2025-09-01', releaseDate: '2025-12-05' },
+    { obsDate: '2025-10-01', releaseDate: '2026-01-22' },
+    { obsDate: '2025-11-01', releaseDate: '2026-01-22' },
+    { obsDate: '2025-12-01', releaseDate: '2026-02-20' },
+  ];
+  const yoy = [
+    { date: '2025-10-01', value: 2.8 },
+    { date: '2025-11-01', value: 2.9 },
+    { date: '2025-12-01', value: 3.0 },
+  ];
+
+  expect(releaseMarkers(releases, yoy)).toEqual([
+    { date: '2026-01-22', value: 2.9 },
+    { date: '2026-02-20', value: 3.0 },
+  ]);
 });
 
 test('divideAligned:逐日 num/den,den=0 跳过', () => {

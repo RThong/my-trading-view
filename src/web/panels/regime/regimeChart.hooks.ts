@@ -36,6 +36,9 @@ const BG_NONE = 'rgba(0,0,0,0)';
 // 符号柱状图(期限结构):正=backwardation 绿、负=contango 红。
 const SIGNED_UP = '#22c55e';
 const SIGNED_DOWN = '#ef4444';
+// 通胀发布日竖线:CPI 黄、PCE 蓝(与 desc 里的说明对应,改色要同步改文案)。
+const RELEASE_CPI = 'rgba(250,204,21,0.55)';
+const RELEASE_PCE = 'rgba(96,165,250,0.55)';
 
 // 跨格复用的框架文本:同一判据被多个 desc 引用,抽常量避免改一处漏一处。
 // 一律写成条件判据,不写「某年某月读数」——快照会过期,而图上就有当期值。
@@ -135,6 +138,7 @@ export type RegimeDim =
   | 'vol'
   | 'ratesVol'
   | 'inflSource'
+  | 'policyRepricing'
   | 'ratesDecomp'
   | 'jpy'
   | 'jgbVol'
@@ -182,6 +186,8 @@ type PaneSpec = {
    * 主 key 缺失 → 整格不建;某条 overlay 自己缺失 → 只少那条线,主线照画。
    */
   overlays?: { key: SeriesKey; title: string; color: string; step?: boolean }[];
+  /** 事件竖线:序列里每个点的日期画一根满高细柱(发布日这类「哪天发生」的标记,值不画)。 */
+  events?: { key: SeriesKey; title: string; color: string }[];
 };
 
 type DimConfig = { panes: PaneSpec[] };
@@ -628,7 +634,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
       },
     ],
   },
-  // 通胀来源(供给侧):薪资增速 + 服务黏性 + 汽油同比。与 BEI(市场前瞻预期)并读。高=通胀压力=风险。
+  // 通胀来源(供给侧):薪资增速 + 服务黏性 + 汽油同比,外加核心 CPI / PCE 发布值。与 BEI(市场前瞻预期)并读。高=通胀压力=风险。
   // RBOB YoY:CPI 汽油分项的高频前瞻(汽油是 headline CPI 波动最大的分项),领先约 0-1 月。
   inflSource: {
     panes: [
@@ -676,6 +682,66 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
           '⚠️ 真正要盯的不只是水平,是油价波动率 —— 油是 FICC 低波三角之一,',
           '波动率急放大 = 通胀预期重定价 → 曲线剧动 → 杀成长股贴现。',
           '⚠️ 地缘冲击到油价有约 60–90 天缓冲(航运调节 + SPR + 炼厂库存),缓冲长度按事件重估。',
+        ].join('\n'),
+      },
+      {
+        key: 'coreCpiYoy',
+        label: '核心 CPI',
+        title: '核心 CPI 同比%',
+        color: '#e879f9',
+        overlays: [{ key: 'coreCpi3m', title: '核心 CPI 3 个月年化%', color: '#a3e635' }],
+        desc: [
+          '定义:BLS 核心 CPI(CPILFESL,剔除食品能源,季调)的同比与 3 个月年化。月频 %。',
+          '3 个月年化比同比早转向 —— 两条交叉、或 3 个月那条单月跳开,就是「这次数据推没推动重定价」要查的那种月份。',
+          '',
+          '⚠️ **横轴是数据所属月份,不是发布日**(8 月的数 9 月中才发)。别拿它对日线的断点;',
+          '对断点请看「利率 → 定价走势」那格的发布日竖线。',
+          '⚠️ 值是**当前修订后**的,不是当时首发的那个数;2025-10 因停摆从未发布,那一月及依赖它的 3 个月年化空着。',
+        ].join('\n'),
+      },
+      {
+        key: 'corePceYoy',
+        label: '核心 PCE',
+        title: '核心 PCE 同比%',
+        color: '#60a5fa',
+        overlays: [{ key: 'corePce3m', title: '核心 PCE 3 个月年化%', color: '#a3e635' }],
+        desc: [
+          '定义:BEA 核心 PCE 价格指数(PCEPILFE)的同比与 3 个月年化。月频 %。**联储 2% 目标盯的是这条,不是 CPI**。',
+          '比 CPI 晚两周左右出(同月的 CPI / PPI 已经把大部分信息放出来了),市场对它的反应通常小于 CPI。',
+          '',
+          '⚠️ 横轴是所属月份不是发布日;值是当前修订后的(PCE 修订幅度大于 CPI)。发布日竖线见「定价走势」。',
+        ].join('\n'),
+      },
+    ],
+  },
+  // 加息定价走势:SOFR OIS 反推的「到 N 为止累计计入几次」逐日历史 + 核心 CPI / PCE 发布日竖线。
+  // 快照(远期曲线 vs 点阵图)在「利率 → 加息定价」那个 tab。
+  policyRepricing: {
+    panes: [
+      {
+        key: 'oisHikes12m',
+        label: '累计计入',
+        title: '12 个月内计入(次)',
+        color: '#f43f5e',
+        render: { kind: 'line', baseline: 0 },
+        overlays: [
+          { key: 'oisHikes3m', title: '3 个月内(次)', color: '#fde047' },
+          { key: 'oisHikes6m', title: '6 个月内(次)', color: '#fb923c' },
+          { key: 'oisHikes2y', title: '2 年内(次)', color: '#a78bfa' },
+        ],
+        events: [
+          { key: 'coreCpiRelease', title: '核心 CPI 发布日', color: RELEASE_CPI },
+          { key: 'corePceRelease', title: '核心 PCE 发布日', color: RELEASE_PCE },
+        ],
+        desc: [
+          '定义:SOFR OIS(Eris)反推的分段远期 − 当日 SOFR 定盘值(FRED),÷ 25bp。「12 个月内」= 9M–12M 那段远期相对今天高几次。',
+          '正 = 计入加息,负 = 计入降息。逐日用当天整条曲线重算。',
+          '',
+          '⭐ 竖线 = 例行发布日:**黄 = 核心 CPI,蓝 = 核心 PCE**(ALFRED 首发日,季调修订那类不算)。',
+          '线在竖线当天跳 = 这次重定价大概率是数据推的;没竖线的跳变去查别的(FOMC、就业、讲话)。',
+          '',
+          '⚠️ **近似值,精度约几 bp**:OIS 节点间隔约 3 个月,相邻两次 FOMC 被抹平,不拆单次会议(单会议概率看 CME FedWatch)。',
+          '⚠️ 1Y 以上是按年付息 bootstrap 的,「2 年内」那条比短端几条更糙。历史从 2020-10 起(Eris SOFR 曲线起点)。',
         ].join('\n'),
       },
     ],
@@ -1967,7 +2033,11 @@ export function derivePaneMeta(panes: PaneSpec[]) {
       series: [p.key, ...(p.overlays ?? []).map((o) => o.key)],
     })) as PaneDef[],
     seriesName: Object.fromEntries(
-      panes.flatMap((p) => [[p.key, p.title], ...(p.overlays ?? []).map((o) => [o.key, o.title])]),
+      panes.flatMap((p) => [
+        [p.key, p.title],
+        ...(p.overlays ?? []).map((o) => [o.key, o.title]),
+        ...(p.events ?? []).map((e) => [e.key, e.title]),
+      ]),
     ),
     colors: Object.fromEntries(
       panes.flatMap((p) => [
@@ -2045,7 +2115,21 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
         ...(p.clampVisibleTo ? { clampVisibleTo: p.clampVisibleTo } : {}),
       }));
 
-    if (!p.percentile) return [lineSpec, ...overlaySpecs];
+    // 事件竖线:各自一条独立 overlay 轴(同 bg 带的画法),先建 → 画在线的下层。
+    // 裁到主线的起点:竖线比主线早开始的话,时间轴会给那段只有竖线的日子留位置,把主线挤到一边。
+    const eventSpecs: HistoSpec[] = (p.events ?? [])
+      .filter((e) => data.series[e.key]?.length)
+      .map((e) => ({
+        key: `${key}-ev-${e.key}`,
+        pane,
+        kind: 'histogram',
+        title: '',
+        data: data.series[e.key]
+          .filter((r) => r.date >= rows[0].date)
+          .map((r) => ({ time: r.date, value: 1, color: e.color })),
+        priceScaleId: `ev-${e.key}`,
+      }));
+    if (!p.percentile) return [...eventSpecs, lineSpec, ...overlaySpecs];
 
     // 分位:P5/P95 参考线用原始日频算(与显示 interval 无关);极端期画满高背景带。
     // since 给了则只用该子窗口算阈值(线仍画全部 rows);阈值再铺回整条线。
@@ -2064,7 +2148,7 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
       ];
     const risk = p.percentile.riskTail;
     // 背景带 = 风险/机会信号,需已知风险端;无 riskTail(如 10Y 收益率,高低方向不单一)只留 P5/P95 线,不染背景。
-    if (risk === undefined) return [lineSpec, ...overlaySpecs];
+    if (risk === undefined) return [...eventSpecs, lineSpec, ...overlaySpecs];
     // 背景带按原始日频逐日判定极端(不用聚合点),保证与显示 interval 无关。
     const bgData: HistoPoint[] = rows.map((r) => {
       if (r.value < lo) return { time: r.date, value: 1, color: risk === 'low' ? BG_RED : BG_GREEN };
@@ -2079,7 +2163,7 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
       data: bgData,
       priceScaleId: `bg-${key}`,
     };
-    return [bgSpec, lineSpec, ...overlaySpecs]; // bg 先建 → 画在线的下层
+    return [...eventSpecs, bgSpec, lineSpec, ...overlaySpecs]; // bg 先建 → 画在线的下层
   });
 }
 

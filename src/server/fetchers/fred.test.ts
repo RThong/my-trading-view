@@ -32,6 +32,25 @@ describe('fred fetcher', () => {
     await expect(fetcher.fetchSeries('DGS10', '2026-05-01')).rejects.toThrow(/FRED/);
   });
 
+  test('fetchFirstReleaseDates:取 realtime_start 当发布日,丢掉从未发布的期(停摆那月)', async () => {
+    const fakeFetch = async (input: string) => {
+      expect(String(input)).toContain('output_type=4');
+      return Response.json({
+        observations: [
+          { date: '2025-09-01', value: '330.5', realtime_start: '2025-10-24' },
+          { date: '2025-10-01', value: '.', realtime_start: '2025-12-18' },
+          { date: '2025-11-01', value: '331.0', realtime_start: '2025-12-18' },
+        ],
+      });
+    };
+
+    const fetcher = createFredFetcher({ apiKey: 'k', fetch: fakeFetch });
+    expect(await fetcher.fetchFirstReleaseDates('CPILFESL', '2025-01-01')).toEqual([
+      { obsDate: '2025-09-01', releaseDate: '2025-10-24' },
+      { obsDate: '2025-11-01', releaseDate: '2025-12-18' },
+    ]);
+  });
+
   test('fetchSeries throws on missing api key', async () => {
     const fetcher = createFredFetcher({ apiKey: '', fetch });
     await expect(fetcher.fetchSeries('DGS10', '2026-05-01')).rejects.toThrow(/FRED_API_KEY/);

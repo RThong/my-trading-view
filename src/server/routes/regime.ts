@@ -26,8 +26,11 @@ import {
   oilCracks,
   distillateYield,
   retailMargin,
+  monthlyAnnualizedPct,
+  releaseMarkers,
   type Point,
 } from '../analytics/regime';
+import { OIS_INPUT_TENORS, hikesByTenor } from '../../shared/policyPath';
 import type { RegimeSeries, FundSeries, SeriesKey } from '../../shared/regimeSeries';
 import { nearMinusFar } from '../analytics/termStructure';
 import { rollingSharpe } from '../analytics/sharpe';
@@ -85,7 +88,7 @@ const TTL_MS = 6 * 60 * 60 * 1000;
  * 而库那半边由 daily job(别的进程)写 —— 只缓存合并结果的话,job 补上的那天最长要等满 TTL 才出现。
  * 存住 live 腿,缓存命中时就能拿它重新和库里的 merge 一次,和 readDbBacked 的动机同一个。
  */
-let cache: { at: number; body: RegimeBody; moveLive: Point[] } | null = null;
+let cache: { at: number; body: RegimeBody; moveLive: Point[]; sofrLive: Point[] } | null = null;
 
 /**
  * AI 链基本面派生量(季频/月频,由 jobs/aiChainFundamentals 每天跑着维护)。库里没有就归 unavailable,
@@ -184,6 +187,8 @@ export function readDbBacked(
   db: Database,
   /** MOVE 现拉的那条腿。它不来自库,但 MOVE 的最终值是「它 + 库里补丁」合并出来的,所以合并动作得放在这。 */
   moveLive: Point[],
+  /** FRED SOFR 定盘值:OIS 加息次数的基准(现拉),曲线那半在库里,所以同样得在这里合。 */
+  sofrLive: Point[],
 ): {
   series: Record<string, Point[]>;
   unavailable: string[];
@@ -227,7 +232,45 @@ export function readDbBacked(
   // MOVE:实时拉的优先,库里的补丁只填 Yahoo 断供的那些天。
   put('move', mergeMove(moveLive, getMarketSeries(db, 'MOVE')));
 
+  // OIS 隐含「到 N 为止累计计入几次加息」:逐日用当天整条曲线反推。Eris 由 daily job 写库,所以归这一批重读。
+  // 基准 = 当日 SOFR 定盘值;FRED 次日早上才发,当天没有就沿用上一个(≤ 当日最近)。
+  const oisPar = [...oisParByDate(db)].map(([date, par]) => ({
+    date,
+    par,
+    base: sofrLive.findLast((p) => p.date <= date)?.value,
+  }));
+  for (const [out, tenor] of OIS_HIKE_HORIZONS)
+    put(
+      out,
+      oisPar.flatMap(({ date, par, base }) => {
+        const v = base === undefined ? null : hikesByTenor(par, date, tenor, base);
+        return v === null ? [] : [{ date, value: v }];
+      }),
+    );
+
   return { series, unavailable, ohlc };
+}
+
+/** OIS 隐含累计加息次数:对外名 → 以哪个期限结尾的那一段远期(见 shared/policyPath)。 */
+const OIS_HIKE_HORIZONS = [
+  ['oisHikes3m', '3M'],
+  ['oisHikes6m', '6M'],
+  ['oisHikes12m', '12M'],
+  ['oisHikes2y', '2Y'],
+] as const;
+
+/** 库里 Eris 各档按日拼成整条曲线(期限 → 百分点)。插入顺序跟 1D 的日期升序走。 */
+function oisParByDate(db: Database): Map<string, Record<string, number>> {
+  const byDate = new Map<string, Record<string, number>>();
+
+  for (const tenor of OIS_INPUT_TENORS)
+    for (const p of getMarketSeries(db, `ERIS_OIS_${tenor}`)) {
+      const par = byDate.get(p.date) ?? {};
+      par[tenor] = p.value;
+      byDate.set(p.date, par);
+    }
+
+  return byDate;
 }
 
 /** 这一批的 key 全集:缓存命中时要先把旧条目按 key 剔掉,再塞新读到的。 */
@@ -238,6 +281,7 @@ export const DB_BACKED_KEYS: ReadonlySet<string> = new Set<string>([
   'btcSharpe1y',
   'vxTermSpread',
   'move',
+  ...OIS_HIKE_HORIZONS.map(([out]) => out),
 ]);
 
 function readSecSeries(db: Database): {
@@ -298,7 +342,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     const db = openDb();
     try {
       const sec = readSecSeries(db);
-      const job = readDbBacked(db, cache.moveLive);
+      const job = readDbBacked(db, cache.moveLive, cache.sofrLive);
       return c.json({
         ...cache.body,
         series: { ...cache.body.series, ...sec.series, ...job.series },
@@ -350,6 +394,12 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     // (交接文档留的开放问题「KW 有没有配套预期短端序列」:没有直发,但 拟合 − 溢价 就是它,
     // 所以纽约联储 ACM 那个 10MB BIFF8 .xls 的 fetcher 不必为这条腿而写。)
     kwFitted10: fredSeries('THREEFY10'),
+    // 政策利率目标区间(日频 %)。只当参照:算加息次数的基准是 SOFR 隔夜,不是区间中值(见 shared/policyPath)。
+    fedTargetUpper: fredSeries('DFEDTARU'),
+    fedTargetLower: fredSeries('DFEDTARL'),
+    // SEP 点阵图中值。⚠️ FEDTARMD 的日期轴是「预测哪一年」(YYYY-01-01),FRED 只留最新一版 → 下面改记为年底。
+    sepMedian: fredSeries('FEDTARMD'),
+    sepMedianLr: fredSeries('FEDTARMDLR'),
     cor1m: cboeSeries('COR1M'),
     vixeq: cboeSeries('VIXEQ'),
     // 恒定期限的即期隐含波动率指数。**和已有的 VX1/VX3 期货不是一回事**:VX3 是"三个月后那个
@@ -400,6 +450,15 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // ACM 期限溢价(纽约联储,**月频**)。给同格的 Kim-Wright 当独立对照 —— 两条的间距才是产品。
   // 源是个无文档端点(图表取数用),挂了就归 unavailable:少一条对照线,主线照画。见 fetchers/nyfedAcm。
   const acmP = fetchAcmTermPremium(HISTORY_START_DATE).catch(() => null);
+  // 核心 CPI / PCE 指数 + 各自的例行发布日。指数多拉一年给同比垫对照期;任一腿失败整组归 unavailable。
+  const yearBeforeStart = `${Number(HISTORY_START_DATE.slice(0, 4)) - 1}${HISTORY_START_DATE.slice(4)}`;
+  const coreInflP = Promise.all(
+    ['CPILFESL', 'PCEPILFE'].map((id) =>
+      Promise.all([fred.fetchSeries(id, yearBeforeStart), fred.fetchFirstReleaseDates(id, HISTORY_START_DATE)]).catch(
+        () => null,
+      ),
+    ),
+  );
   // 油品近月期货(Yahoo 连续近月,自带全历史,live 不落库)。派生油市结构 + 汽油 YoY。
   const yahooClose = (sym: string): Promise<Point[] | null> =>
     createYahooFetcher()
@@ -464,6 +523,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     nakajimaP,
   ]);
   const [wti, brent, diesel, rbob] = await oilP;
+  const [coreCpi, corePce] = await coreInflP;
   const [refUtil, distStocks, gasStocks, distExports, crudeRuns, distProd, dieselRetail, gasRetail] = await eiaP;
   const jgb2y = jgbCurve?.series['2Y'] ?? null;
   const jgb10y = jgbCurve?.series['10Y'] ?? null;
@@ -484,6 +544,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     else unavailable.push(name);
   };
 
+  // 多拉的对照期(季节 z 的基准年、同比的前一年)不画到图上:别的线都从 HISTORY_START_DATE 起,混着会让 hover 对不上。
+  const fromHistoryStart = (rows: Point[]) => rows.filter((p) => p.date >= HISTORY_START_DATE);
+
   // 直接对外的序列(对外名 → 原始源名)。
   const direct: Partial<Record<RegimeSeries, keyof typeof src>> = {
     hyOas: 'hyOas',
@@ -497,6 +560,10 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     stickyCpi: 'stickyCpi',
     t5yifr: 't5yifr',
     tp10Kw: 'tp10Kw',
+    sofr: 'sofr',
+    fedTargetUpper: 'fedTargetUpper',
+    fedTargetLower: 'fedTargetLower',
+    sepMedianLr: 'sepMedianLr',
   };
   // 空数组归 unavailable 由 put 统一兜(见其注释),这里直接传。
   // Object.entries 会把 key 拓宽回 string,这里断言回来 —— 真正的校验发生在上面的对象字面量。
@@ -543,6 +610,30 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // current 的历史值是今天用全部数据回头重画的,不是当时看得到的值(前视偏差)。
   put('rstarHlwCurrent', rstar?.length ? rstar : undefined);
   put('tp10Acm', acm ?? undefined);
+  // 点阵图:日期改记为预测年的年底,和 OIS 远期落在同一条日期轴上才能比。
+  put(
+    'sepMedian',
+    raw.sepMedian?.map((p) => ({ date: `${p.date.slice(0, 4)}-12-31`, value: p.value })),
+  );
+  // 核心通胀:同比 + 3 个月年化(日期 = 所属月份),外加例行发布日标记(日期 = 发布日)。
+  // 标记的值取当前修订后的同比,不是首发值 —— 我们只要发布日来对齐日线断点,不做意外差。
+  const inflation = (leg: typeof coreCpi) => {
+    if (!leg) return { yoy: undefined, ann3m: undefined, releases: undefined };
+
+    const [index, releases] = leg;
+    const pts = index.map((r) => ({ date: r.obsDate, value: r.value }));
+    const yoy = fromHistoryStart(monthlyAnnualizedPct(pts, 12));
+
+    return { yoy, ann3m: fromHistoryStart(monthlyAnnualizedPct(pts, 3)), releases: releaseMarkers(releases, yoy) };
+  };
+  const cpi = inflation(coreCpi);
+  const pce = inflation(corePce);
+  put('coreCpiYoy', cpi.yoy);
+  put('coreCpi3m', cpi.ann3m);
+  put('coreCpiRelease', cpi.releases);
+  put('corePceYoy', pce.yoy);
+  put('corePce3m', pce.ann3m);
+  put('corePceRelease', pce.releases);
   // L 的粗代理 = HLW r*(实际中枢) + 5y5y 通胀远期(通胀锚)。**只为了和 A 并排读符号**,
   // 面板上不做 L − A、不乘 (T₂−T₁)/T₂ 系数、不出单一数字 —— 四层污染叠着,减出来的量不可识别:
   //   ① L 与 A 出自不同模型家族(HLW 宏观状态空间 vs Kim-Wright 期限结构),差里装着两模型的分歧,
@@ -589,7 +680,6 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // (1.05 亿桶是高是低取决于现在是 3 月还是 9 月),所以库存两条与出口只发季节 z。
   // EIA 多拉的那几年历史(展示起点再往前垫 SEASONAL_BASELINE_YEARS 年,约 2013 起)是**给季节 z 当基准期用的**,不该画到图上(别的线都从 2018 起,
   // 混在一起会让 hover 对不上)。所以先算 z 再裁 —— 顺序反了就等于把基准期一起砍掉。
-  const fromHistoryStart = (rows: Point[]) => rows.filter((p) => p.date >= HISTORY_START_DATE);
   const seasonal = (rows: Point[] | null) =>
     seasonalZFrom(rows, { years: SEASONAL_BASELINE_YEARS, from: HISTORY_START_DATE });
 
@@ -626,7 +716,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // VIX / VXN 已在库里(market_series,daily job 维护)→ 直接读,不外拉。
   const db = openDb();
   try {
-    const dbBacked = readDbBacked(db, raw.move ?? []);
+    const dbBacked = readDbBacked(db, raw.move ?? [], raw.sofr ?? []);
     Object.assign(series, dbBacked.series);
     Object.assign(ohlc, dbBacked.ohlc);
     unavailable.push(...dbBacked.unavailable);
@@ -651,6 +741,6 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 没配 key 时 EIA 那八条恒缺 —— 与 SEC/GPU 同属「必然缺」,不能让它把缓存永久关掉。
   // 配了 key 才缺则是真失败(网络/源结构变了),照旧挡住缓存等下次重试。
   if (shouldCache(unavailable, { hasEiaKey: Boolean(eiaKey) }))
-    cache = { at: Date.now(), body, moveLive: raw.move ?? [] };
+    cache = { at: Date.now(), body, moveLive: raw.move ?? [], sofrLive: raw.sofr ?? [] };
   return c.json(body);
 });

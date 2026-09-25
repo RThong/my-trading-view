@@ -78,7 +78,7 @@ test('DB_BACKED_KEYS 等于 readDbBacked 实际产出的 key 全集', () => {
   migrate(db);
   try {
     // 空库 → 每一格都进 unavailable,于是 unavailable 就是全集。
-    const { unavailable, series } = readDbBacked(db, []);
+    const { unavailable, series } = readDbBacked(db, [], []);
 
     expect(series).toEqual({});
     expect(new Set(unavailable)).toEqual(new Set(DB_BACKED_KEYS));
