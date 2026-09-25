@@ -119,6 +119,8 @@ export const REGIME_SERIES = [
   'expShort10Kw',
   'rstarHlwCurrent',
   'lProxyHlwT5yifr',
+  // SEP 口径的 r* = 点阵图长期水平(FEDTARMDLR,名义)− 2%(长期 PCE 目标)。日期 = SEP 发布日,季频。
+  'rstarSepImplied',
 
   // ── 利率预期的三样参照(FRED 现拉)。派生算法见 shared/policyPath。
   // SOFR 定盘值(FRED,日频 %,次日早上发)。OIS 加息次数的基准 —— 不是 Eris 的 SOFR1D(那是 T+2 起息的掉期)。

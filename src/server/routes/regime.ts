@@ -610,6 +610,12 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // current 的历史值是今天用全部数据回头重画的,不是当时看得到的值(前视偏差)。
   put('rstarHlwCurrent', rstar?.length ? rstar : undefined);
   put('tp10Acm', acm ?? undefined);
+  // 联储自己定价的 r*:长期名义中性利率 − 2% 通胀目标,与 HLW 同为实际口径才能并排。
+  // 取整到 0.01:SEP 本身只给到 0.1,不取整会冒出 1.1000000000000001 这种浮点尾巴。
+  put(
+    'rstarSepImplied',
+    raw.sepMedianLr?.map((p) => ({ date: p.date, value: Math.round((p.value - 2) * 100) / 100 })),
+  );
   // 点阵图:日期改记为预测年的年底,和 OIS 远期落在同一条日期轴上才能比。
   put(
     'sepMedian',

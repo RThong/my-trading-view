@@ -366,6 +366,15 @@ test('derivePaneMeta:overlay 进同一 pane 的 series,且带上自己的名字�
   expect(meta.colors.lProxyHlwT5yifr).toBeTruthy();
 });
 
+test('derivePaneMeta:r* 那格叠上 SEP 口径 r*', () => {
+  const meta = derivePaneMeta(dimPanes('ratesDecomp'));
+
+  expect(meta.paneDefs.find((d) => d.key === 'rstarHlwCurrent')!.series).toEqual([
+    'rstarHlwCurrent',
+    'rstarSepImplied',
+  ]);
+});
+
 test('buildRegimeSpecs:overlay 缺失只少那条线,主线照画', () => {
   const withL: RegimeData = {
     series: {
