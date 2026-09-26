@@ -26,8 +26,8 @@ SRC="data/mtv.db"
 
 [[ -f "$SRC" ]] || { echo "找不到 $SRC" >&2; exit 1; }
 
-# 份数必须是正整数:轮转用 `tail -n +$((KEEP+1))`,KEEP=0 会退化成 `tail -n +1` =
-# **吐出全部文件然后删光**,包括刚生成的这一份。一个手滑的环境变量不该能清空所有备份。
+# 份数必须是正整数:轮转是「数满 KEEP 份之后的全删」,KEEP=0 会一份不留、**全部删光**,
+# 包括刚生成的这一份。一个手滑的环境变量不该能清空所有备份。
 for n in "$KEEP_DAILY" "$KEEP_WEEKLY"; do
   [[ "$n" =~ ^[1-9][0-9]*$ ]] || { echo "保留份数必须是正整数,得到:$n" >&2; exit 1; }
 done
@@ -108,14 +108,26 @@ if [[ ! -f "$weekly" ]] || ! gzip -t "$weekly" 2>/dev/null; then
   publish "$tmpd/db" "$weekly"
 fi
 
-# 两级各自轮转。glob 必须分开:`mtv-*` 会同时吃到周备。
-# 日备 `mtv-20…`(日期以 20 开头),周备 `mtv-w-…`。
-prune() { ls -1t "$DEST"/$1 2>/dev/null | tail -n +$(($2 + 1)) | while IFS= read -r old; do rm -f "$old"; done; }
-prune 'mtv-20*.db.gz' "$KEEP_DAILY"
-prune 'mtv-w-*.db.gz' "$KEEP_WEEKLY"
+# 两级各自轮转。**不能列目录**:launchd 下 TCC 拦 iCloud 目录的 readdir,而 stat / 读写不拦
+# (2026-09-26 用 launchctl submit 实测:`ls` 报 Operation not permitted、glob 原样不展开)。
+# 旧版用 `ls | tail | rm`,自动跑时静默失败 → set -e 退出,轮转从没执行过、日志还谎报「备份失败」。
+# 所以按文件名规律从今天往回推,逐个 test -f:数满 $keep 份之后遇到的一律删。
+# ponytail: 只回看 $horizon 个周期,断更超过这个跨度时更老的文件不会被删,到时手动清。
+rotate() { # $1 = 文件名前缀 $2 = date 格式 $3 = 步长单位(d/w) $4 = 保留份数 $5 = 回看周期数
+  local kept=0 i f
+  for ((i = 0; i < $5; i++)); do
+    f="$DEST/$1$(date -v-"$i$3" +"$2").db.gz"
+    [[ -f "$f" ]] || continue
+    # 不用 ((kept++)):kept 为 0 时它的退出码是 1,会被 set -e 当失败。
+    if ((kept < $4)); then kept=$((kept + 1)); else rm -f "$f"; fi
+  done
+  echo "$kept"
+}
+daily_n=$(rotate 'mtv-' '%F' d "$KEEP_DAILY" 400)
+weekly_n=$(rotate 'mtv-w-' '%G-W%V' w "$KEEP_WEEKLY" 104)
 
 echo "备份完成:$out ($(du -h "$out" | cut -f1),market_series $bak_rows 行)"
-echo "现有 日备 $(ls -1 "$DEST"/mtv-20*.db.gz 2>/dev/null | wc -l | tr -d ' ')/$KEEP_DAILY,周备 $(ls -1 "$DEST"/mtv-w-*.db.gz 2>/dev/null | wc -l | tr -d ' ')/$KEEP_WEEKLY"
+echo "现有 日备 $daily_n/$KEEP_DAILY,周备 $weekly_n/$KEEP_WEEKLY"
 
 # ── 怎么恢复(写在这里是因为要用到它的时候没人想去翻文档)────────────────────────
 #   路径写死不用变量 —— 你在终端里没有这个脚本的变量。
