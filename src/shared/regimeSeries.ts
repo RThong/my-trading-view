@@ -103,6 +103,11 @@ export const REGIME_SERIES = [
   'jp2yMinusCall',
   // 日银加息决定日(静态表,见 analytics/jpBanks 的 BOJ_HIKES)。值 = 新的拆借诱导目标 %;面板只用日期画竖线。
   'bojHikeDates',
+  // 日本通胀(「日本 · 通胀」那格,月频 %,日期 = 数据所属月份的 1 日)。
+  // 企业物价指数(CGPI,日银 PR01 PRCG20_2200000000,2020=100)同比 —— 生产端,领先消费端。
+  'jpCgpiYoy',
+  // CPI 生鮮食品及びエネルギーを除く総合(新核心核心)前年同月比,e-Stat 2025 年基准。**要 ESTAT_APP_ID**。
+  'jpCoreCoreCpiYoy',
   // 三菱 UFJ(东证 8306,Yahoo 8306.T)蜡烛,「银行」那格的现货参照。
   'mufg',
   'cape',

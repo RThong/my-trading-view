@@ -11,6 +11,7 @@ import { fetchCftcJpyNet, fetchCftcVixNetOi } from '../fetchers/cftcCot';
 import { fetchBojGap } from '../fetchers/bojOutputGap';
 import { fetchNakajimaJgb } from '../fetchers/nakajimaJgb';
 import { fetchBojSeries } from '../fetchers/bojStat';
+import { fetchCoreCoreCpiYoy } from '../fetchers/estatCpi';
 import { BOJ_HIKES, betaLegs, depositBeta, jpBankSpreads, monthlyMean } from '../analytics/jpBanks';
 import { fetchMoveSeries, mergeMove } from '../fetchers/moveIndex';
 import { fetchShillerCape } from '../fetchers/capeShiller';
@@ -141,18 +142,23 @@ export const JOB_WRITTEN_SERIES = [
 /** 只有 gpu 这几条允许"缺着也缓存"(库没跑过 job 时必然缺、B300 长期允许缺)。 */
 export const GPU_KEY_PREFIX = 'gpu';
 /**
- * 这次响应能不能进缓存。**只缓存全成功**(降级响应不缓存,下次重试),三类例外:
+ * 这次响应能不能进缓存。**只缓存全成功**(降级响应不缓存,下次重试),四类例外:
  *  · `fund:` —— SEC 季频,靠独立 job 逐季攒,从没跑过 job 的库里必然缺。
  *  · `gpu`  —— 新接的 experimental 源,允许缺。
  *  · EIA 八条,**且仅当没配 key 时** —— 那是配置状态,不是失败。
+ *  · e-Stat 那条(新核心核心 CPI),同样**仅当没配 ESTAT_APP_ID 时**。
  *
  * ⚠️ 第三条的「仅当」是要害:配了 key 还缺 = 网络挂了或源结构变了,属 transient,
  * 就该挡住缓存让下次重试。一律豁免的话会把降级响应缓存 6 小时。
  * ⚠️ 反过来不豁免也不行:README 把 EIA key 写成可选项,缺 key 时这八条恒缺 →
  * `every` 恒 false → 缓存永久关不上,每次请求重拉 FRED/CBOE/Yahoo/财政部…全套上游。
  */
-export function shouldCache(unavailable: readonly string[], { hasEiaKey }: { hasEiaKey: boolean }): boolean {
-  const exempt = new Set<string>(hasEiaKey ? [] : EIA_SERIES);
+export function shouldCache(
+  unavailable: readonly string[],
+  { hasEiaKey, hasEstatKey }: { hasEiaKey: boolean; hasEstatKey: boolean },
+): boolean {
+  // e-Stat 同理:没配 appId 时新核心核心 CPI 恒缺,是配置状态不是失败。
+  const exempt = new Set<string>([...(hasEiaKey ? [] : EIA_SERIES), ...(hasEstatKey ? [] : ESTAT_SERIES)]);
 
   return unavailable.every((n) => n.startsWith(FUND_KEY_PREFIX) || n.startsWith(GPU_KEY_PREFIX) || exempt.has(n));
 }
@@ -178,6 +184,9 @@ export const EIA_SERIES: readonly SeriesKey[] = [
   'dieselRetailMargin',
   'gasRetailMargin',
 ];
+
+/** 只在配了 e-Stat appId 时才有的序列(见 shouldCache)。 */
+export const ESTAT_SERIES: readonly SeriesKey[] = ['jpCoreCoreCpiYoy'];
 
 /**
  * 读**全部来自本地库**的东西:market_series 的直读几条、price_eod 的蜡烛、以及由它们派生的量。
@@ -451,6 +460,18 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     fetchBojSeries('IR04', ['DLLR2CIDBST1'], '202201'),
     fetchBojSeries('FM01', ['STRDCLUCON'], '202201'),
   ]).catch(() => null);
+  // 日本通胀两条(「日本 · 通胀」那格)。CGPI:日银 PR01 月度指数,多拉一年给同比垫对照期;
+  // 新核心核心 CPI:e-Stat(要 appId),表里现成有同比列,从展示起点拉即可。没配 appId 不发请求,归 unavailable。
+  const cgpiP = fetchBojSeries('PR01', ['PRCG20_2200000000'], '201701').catch(() => null);
+  const estatKey = process.env.ESTAT_APP_ID ?? '';
+  const coreCoreCpiP = estatKey
+    ? // 这条 catch 出声(同 EIA):配了 appId 还失败会一直挡缓存,静默的话查不到是 key 过期还是源挂了。
+      // fetcher 保证 message 里不含 appId,可以直接打。
+      fetchCoreCoreCpiYoy(estatKey, HISTORY_START_DATE.slice(0, 7)).catch((e: unknown) => {
+        console.warn(`[regime] e-Stat 新核心核心 CPI 现拉失败,本次该格 unavailable: ${(e as Error).message}`);
+        return null;
+      })
+    : Promise.resolve(null);
   const mufgBarsP = createYahooFetcher()
     .fetchDailyBars('8306.T', new Date(HISTORY_START_DATE))
     .catch(() => null);
@@ -534,7 +555,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     bojGapP,
     nakajimaP,
   ]);
-  const [bojBank, mufgBars] = await Promise.all([bojBankP, mufgBarsP]);
+  const [bojBank, mufgBars, cgpi, coreCoreCpi] = await Promise.all([bojBankP, mufgBarsP, cgpiP, coreCoreCpiP]);
   const [wti, brent, diesel, rbob] = await oilP;
   const [coreCpi, corePce] = await coreInflP;
   const [refUtil, distStocks, gasStocks, distExports, crudeRuns, distProd, dieselRetail, gasRetail] = await eiaP;
@@ -642,6 +663,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('jpCallMinusDeposit', jpSpreads?.callDeposit);
   put('jp2yMinusCall', jpSpreads?.jgb2yCall);
   put('bojHikeDates', [...BOJ_HIKES]);
+  // 企业物价同比(对照月精确命中,不往前贴 —— 见 monthlyAnnualizedPct)。指数最新月可能是 null,解析时已跳过。
+  put('jpCgpiYoy', cgpi ? fromHistoryStart(monthlyAnnualizedPct(cgpi.PRCG20_2200000000, 12)) : undefined);
+  put('jpCoreCoreCpiYoy', coreCoreCpi ?? undefined);
   put(
     'mufg',
     mufgBars?.map((b) => ({ date: b.tradeDate, value: b.close })),
@@ -787,7 +811,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 从没跑过 job 的库里必然缺——不能让这类常态把整条路由的缓存永久关掉。
   // 没配 key 时 EIA 那八条恒缺 —— 与 SEC/GPU 同属「必然缺」,不能让它把缓存永久关掉。
   // 配了 key 才缺则是真失败(网络/源结构变了),照旧挡住缓存等下次重试。
-  if (shouldCache(unavailable, { hasEiaKey: Boolean(eiaKey) }))
+  if (shouldCache(unavailable, { hasEiaKey: Boolean(eiaKey), hasEstatKey: Boolean(estatKey) }))
     cache = { at: Date.now(), body, moveLive: raw.move ?? [], sofrLive: raw.sofr ?? [] };
   return c.json(body);
 });

@@ -121,6 +121,8 @@ export const PERSPECTIVES: Perspective[] = [
       historyTab('jgb_history', '期限走势', 'jgb'),
       // 银行业利率传导:存贷利率 + 存款贝塔 + 8306。主变量 JGB 2Y 就在前两格,故紧挨着放。
       regimeTab('jp_banks', '银行', 'jpBanks'),
+      // 通胀两条(CGPI 先行 + 新核心核心):「银行」利差里靠预期的那一截能不能兑现,看日银会不会继续加。
+      regimeTab('jp_inflation', '通胀', 'jpInflation'),
       regimeTab('jgb_vol', '日债波动率', 'jgbVol'),
       // 产能面(日银试算,季度更新)。放日本视角最后一格:前面几格是市场怎么定价,这格是产能够不够 ——
       // BOJ 加息叙事的前提在这里,和曲线/日元那几格配读。

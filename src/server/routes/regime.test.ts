@@ -49,7 +49,15 @@ test('nearMinusFar:任一腿为空 → 空结果', () => {
 // 往名单里加一条不叫 gpu* 的(vix 就是)就会漏剔、unavailable 里出现重复。所以按 key 集合剔。
 import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
-import { JOB_WRITTEN_SERIES, GPU_KEY_PREFIX, DB_BACKED_KEYS, readDbBacked, shouldCache, EIA_SERIES } from './regime';
+import {
+  JOB_WRITTEN_SERIES,
+  GPU_KEY_PREFIX,
+  DB_BACKED_KEYS,
+  readDbBacked,
+  shouldCache,
+  EIA_SERIES,
+  ESTAT_SERIES,
+} from './regime';
 
 test('JOB_WRITTEN_SERIES:out 键唯一、symbol 唯一', () => {
   const outs = JOB_WRITTEN_SERIES.map(([out]) => out);
@@ -87,7 +95,7 @@ test('DB_BACKED_KEYS 等于 readDbBacked 实际产出的 key 全集', () => {
   }
 });
 
-const ok = (u: string[], hasEiaKey: boolean) => shouldCache(u, { hasEiaKey });
+const ok = (u: string[], hasEiaKey: boolean, hasEstatKey = true) => shouldCache(u, { hasEiaKey, hasEstatKey });
 
 test('shouldCache:全成功 → 缓存', () => {
   expect(ok([], true)).toBe(true);
@@ -111,6 +119,11 @@ test('shouldCache:配了 key 还缺 = 真失败,照旧挡住缓存等下次重�
 test('shouldCache:豁免只覆盖 EIA 那八条,别的源缺席照样挡', () => {
   expect(ok(['hyOas'], false)).toBe(false);
   expect(ok([...EIA_SERIES, 'hyOas'], false)).toBe(false);
+});
+
+test('shouldCache:没配 e-Stat appId 时新核心核心 CPI 恒缺 → 豁免;配了还缺 → 挡', () => {
+  expect(ok([...ESTAT_SERIES], true, false)).toBe(true);
+  expect(ok([...ESTAT_SERIES], true, true)).toBe(false);
 });
 
 test('EIA_SERIES 必须与路由实际发出的那批 EIA 线一致(手抄名单的防漂移锁)', () => {
