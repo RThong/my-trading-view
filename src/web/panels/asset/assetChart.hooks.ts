@@ -15,9 +15,6 @@ export type PriceBar = {
   high: number | null;
   low: number | null;
   close: number;
-  /** 成交量。**只有读时现拉的标的才有**(见 marketCatalog 的 `price: 'live'`);
-   *  走 price_eod 的那些整个不带这个字段 —— 那张表没有 volume 列。 */
-  volume?: number | null;
 };
 
 export const COLORS = {

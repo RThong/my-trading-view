@@ -7,7 +7,6 @@ import {
   tenorSeriesData,
   pickDefaultTenors,
   spotBars,
-  spotVolume,
   useTenorChart,
   type TenorSpec,
   type SpreadSpec,
@@ -172,10 +171,7 @@ export function TenorHistoryPanel({
 
   // 没配 spot、或数据还没到 → null,不建那个 pane(而不是建一个空 pane 占着高度)。
   const spotBarsData = spotBars(spotRes.data, interval);
-  const spotSpec: SpotSpec | null =
-    spot && spotBarsData.length
-      ? { label: spot, data: spotBarsData, volume: spotVolume(spotRes.data, spotBarsData, interval) }
-      : null;
+  const spotSpec: SpotSpec | null = spot && spotBarsData.length ? { label: spot, data: spotBarsData } : null;
 
   useTenorChart(containerRef, specs, spread, spotSpec);
 
