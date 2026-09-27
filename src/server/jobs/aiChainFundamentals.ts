@@ -1,5 +1,5 @@
 import { openDb, migrate } from '../storage/db';
-import { startJobRun, finishJobRun } from '../storage/repository';
+import { startJobRun, finishJobRun, getTodaySucceededJobs } from '../storage/repository';
 import { updateSecFundamentals } from './secFundamentals';
 import { updateTwseRevenue } from './twseRevenue';
 import { updateSec6kReports } from './sec6kReports';
@@ -132,9 +132,18 @@ if (import.meta.main) {
   const db = openDb();
   migrate(db);
 
+  // 同 daily / crypto:当天已成功过的源,后续触发点不再跑 —— 19 点那次只兜 13 点没成功的源。
+  // 按源各判(不是全绿才跳):各源互相独立,一个源失败不该拖着已成功的源陪跑。
+  // 手动带 TICKER / --force / --full 是有意重跑,不受此限。
+  const done = tickers || force || full ? [] : getTodaySucceededJobs(db);
+  const todo = sources.filter((s) => !done.includes(JOB_NAMES[s]));
+  if (todo.length < sources.length) {
+    console.log(`今天已成功、本次跳过:${sources.filter((s) => !todo.includes(s)).map((s) => JOB_NAMES[s])}`);
+  }
+
   try {
     // 逐源串行:两个源都要打外部网络,而且各自内部已经是串行(SEC 限速 10 req/s)。
-    for (const source of sources) {
+    for (const source of todo) {
       const runId = startJobRun(db, JOB_NAMES[source]);
       try {
         const r = await RUNNERS[source](db, { tickers, force, full });
