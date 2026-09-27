@@ -29,8 +29,8 @@ describe('pickDefaultTenors', () => {
   // 美债 / JGB 默认只开差值那两条腿(见 DEFAULT_TENORS 的注释)。两格都断言,免得只改一边。
   it('treasury 默认只开 10Y−1Y 的两条腿', () =>
     expect(pickDefaultTenors('treasury', available)).toEqual(['1Y', '10Y']));
-  it('jgb 默认同样只开这两条腿(与美债口径一致)', () =>
-    expect(pickDefaultTenors('jgb', ['1Y', '2Y', '5Y', '10Y', '30Y'])).toEqual(['1Y', '10Y']));
+  it('jgb 默认开 2Y + 10Y(没有差值 pane,2Y 是银行股主变量)', () =>
+    expect(pickDefaultTenors('jgb', ['1Y', '2Y', '5Y', '10Y', '30Y'])).toEqual(['2Y', '10Y']));
   it('表里有但数据没有的期限被剔除', () => expect(pickDefaultTenors('sofr_ois', ['3M', '10Y'])).toEqual(['3M', '10Y']));
   it('无表项 → 回退前 4 个', () => expect(pickDefaultTenors('unknown', available)).toEqual(['1M', '3M', '6M', '1Y']));
   it('DEFAULT_TENORS 含 treasury / sofr_ois / bei / jgb / ai_cds', () =>

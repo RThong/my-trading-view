@@ -37,24 +37,14 @@ const historyTab = (
   id: string,
   label: string,
   source: string,
-  long: string,
-  short: string,
-  spreadLabel: string,
+  /** 差值 pane(长腿 − 短腿)。省略 = 不画。 */
+  spread?: { long: string; short: string; label: string },
   /** 现货参照标的。只给真的相关的那个 tab 配 —— 不是每格都该挂一条风险资产。 */
   spot?: string,
 ): TabDef => ({
   id,
   label,
-  render: (interval) => (
-    <TenorHistoryPanel
-      source={source}
-      interval={interval}
-      long={long}
-      short={short}
-      spreadLabel={spreadLabel}
-      spot={spot}
-    />
-  ),
+  render: (interval) => <TenorHistoryPanel source={source} interval={interval} spread={spread} spot={spot} />,
 });
 
 // 单视图 regime 视角:无横 tab 条(tab 与视角同 id,TabBar 单 tab 时不渲染横条)。
@@ -106,9 +96,9 @@ export const PERSPECTIVES: Perspective[] = [
     tabs: [
       curveTab('treasury', '收益曲线', 'treasury'),
       // 挂 BTC 现货当对照:它是流动性链条最末端、beta 最高的那个,曲线松紧的传导在它身上最先见效。
-      historyTab('tenor_history', '期限走势', 'treasury', '10Y', '1Y', '10Y − 1Y', 'BTC'),
+      historyTab('tenor_history', '期限走势', 'treasury', { long: '10Y', short: '1Y', label: '10Y − 1Y' }, 'BTC'),
       curveTab('sofr_ois', 'SOFR OIS', 'sofr_ois'),
-      historyTab('ois_history', 'OIS 走势', 'sofr_ois', '12M', '3M', '1Y − 3M'),
+      historyTab('ois_history', 'OIS 走势', 'sofr_ois', { long: '12M', short: '3M', label: '1Y − 3M' }),
       // 加息定价:OIS 远期 vs 当前政策利率 / 点阵图(快照)+ 累计计入次数的逐日走势(带 CPI / PCE 发布日竖线)。
       { id: 'policy_path', label: '加息定价', render: () => <PolicyPathPanel /> },
       regimeTab('policy_repricing', '定价走势', 'policyRepricing'),
@@ -117,7 +107,7 @@ export const PERSPECTIVES: Perspective[] = [
       // 剩下的实际腿与期限溢价腿放这里 —— 长端上行时靠这几格分「动的是通胀还是实际利率」。
       curveTab('real_curve', '实际收益率', 'real'),
       // 30Y − 10Y:实际曲线自身的长端陡峭度。剥掉通胀后,这条走阔就是久期风险补偿在抬。
-      historyTab('real_history', '实际走势', 'real', '30Y', '10Y', '30Y − 10Y'),
+      historyTab('real_history', '实际走势', 'real', { long: '30Y', short: '10Y', label: '30Y − 10Y' }),
       regimeTab('rates_decomp', '长端分解', 'ratesDecomp'),
     ],
   },
@@ -127,12 +117,10 @@ export const PERSPECTIVES: Perspective[] = [
     tabs: [
       regimeTab('jpy', '日元', 'jpy'),
       curveTab('jgb_curve', '收益曲线', 'jgb'),
-      // 短腿与美债那格统一成 1Y —— 两个 tab 并排读时口径必须一样,否则没人会注意到定义不同。
-      // (JGB 本来也没有更短的:MOF 曲线最短就是 1Y。)
-      // 挂 8306(三菱UFJ)当现货参照腿:银行拿短端存款、放长端贷款,10Y−1Y 走阔直接扩净息差 ——
-      // 它是这条曲线**最直接的受益标的**,和利差同图才读得出「市场认不认这条传导」。
-      // (美债那格挂 BTC 是另一个道理:那是流动性链条最末端的 beta。)
-      historyTab('jgb_history', '期限走势', 'jgb', '10Y', '1Y', '10Y − 1Y', '8306.T'),
+      // 只看各期限水平:利差 pane 与 8306 蜡烛挪去了「银行」那格(银行业传导在那边读)。
+      historyTab('jgb_history', '期限走势', 'jgb'),
+      // 银行业利率传导:存贷利率 + 存款贝塔 + 8306。主变量 JGB 2Y 就在前两格,故紧挨着放。
+      regimeTab('jp_banks', '银行', 'jpBanks'),
       regimeTab('jgb_vol', '日债波动率', 'jgbVol'),
       // 产能面(日银试算,季度更新)。放日本视角最后一格:前面几格是市场怎么定价,这格是产能够不够 ——
       // BOJ 加息叙事的前提在这里,和曲线/日元那几格配读。
@@ -152,7 +140,7 @@ export const PERSPECTIVES: Perspective[] = [
     label: '通胀',
     tabs: [
       curveTab('bei', '通胀预期', 'bei'),
-      historyTab('bei_history', '通胀走势', 'bei', '10Y', '5Y', '10Y − 5Y'),
+      historyTab('bei_history', '通胀走势', 'bei', { long: '10Y', short: '5Y', label: '10Y − 5Y' }),
       regimeTab('infl_source', '通胀来源', 'inflSource'),
     ],
   },
@@ -167,7 +155,7 @@ export const PERSPECTIVES: Perspective[] = [
     tabs: [
       regimeTab('gpu_compute', '算力价格', 'compute'),
       regimeTab('buyer', '买方合计', 'fundamentals:buyer'),
-      historyTab('ai_cds', 'AI CDS', 'ai_cds', 'Oracle', 'Apple', 'Oracle − Apple'),
+      historyTab('ai_cds', 'AI CDS', 'ai_cds', { long: 'Oracle', short: 'Apple', label: 'Oracle − Apple' }),
       { id: 'industry_chain', label: '产业链', render: (interval) => <IndustryChainPanel interval={interval} /> },
     ],
   },

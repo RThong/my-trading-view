@@ -41,7 +41,7 @@ const VIEW_DESC: Record<string, { title: string; desc: string }> = {
   },
   jgb: {
     title: 'JGB 走势',
-    desc: '定义:日本国债各期限收益率的时间走势。看 BOJ 政策与 YCC 松绑的传导;差值读法见下方 pane 的 ⓘ。',
+    desc: '定义:日本国债各期限收益率的时间走势。看 BOJ 政策与 YCC 松绑的传导。\n银行业的利率传导(存款贝塔 / 存贷利差 / 8306)在「银行」那格。',
   },
   bei: {
     title: '通胀走势',
@@ -85,12 +85,6 @@ const SPREAD_DESC: Record<string, string> = {
     '',
     '⚠️ 是定价不是预测,会随数据反复改口;通胀黏性不落,降息定价会被迫回吐。',
   ].join('\n'),
-  jgb: [
-    '定义:10Y − 1Y(虚线 = 0)。看 BOJ 政策与 YCC 松绑向长端的传导。',
-    '走阔 = 长端先松绑;收窄 / 转负 = 短端相对更高,或长端重新被压住。',
-    '',
-    '⚠️ 短腿刻意与美债那格统一成 1Y,为的是两边能并排读同一个东西(换掉 2Y 对形状几乎无影响)。',
-  ].join('\n'),
   bei: '定义:10Y − 5Y BEI(虚线 = 0)。远端通胀补偿相对近端的差:正 = 市场把通胀风险定价在更远端。',
   real: [
     '定义:30Y − 10Y 实际收益率(虚线 = 0)= **实际**曲线自身的长端陡峭度,剥掉了通胀那一块。',
@@ -129,16 +123,13 @@ const getSpotJson = async (url: string) => {
 export function TenorHistoryPanel({
   source,
   interval,
-  long,
-  short,
-  spreadLabel,
+  spread: spreadDef,
   spot,
 }: {
   source: string;
   interval: Interval;
-  long: string;
-  short: string;
-  spreadLabel: string;
+  /** 差值 pane(长腿 − 短腿)。省略 = 不画这一格,工具条也不出它的 chip。 */
+  spread?: { long: string; short: string; label: string };
   /** 现货参照标的(如 'BTC')。省略 = 不画这一格 —— 只有真的相关的那个 tab 才配。 */
   spot?: string;
 }) {
@@ -164,16 +155,20 @@ export function TenorHistoryPanel({
     .map((t) => ({ tenor: t, color: colorOf(t), data: tenorSeriesData(data.series[t], interval) }));
 
   // 收起时传 null:hook 会摘掉那个 pane,期限线独占全高。
-  const spread: SpreadSpec | null = showSpread
-    ? {
-        label: spreadLabel,
-        color: SERIES_COLORS[0],
-        data: aggregate(
-          spreadSeries(data.series[long], data.series[short]).map((p) => ({ time: p.date, value: p.value })),
-          interval,
-        ),
-      }
-    : null;
+  const spread: SpreadSpec | null =
+    showSpread && spreadDef
+      ? {
+          label: spreadDef.label,
+          color: SERIES_COLORS[0],
+          data: aggregate(
+            spreadSeries(data.series[spreadDef.long], data.series[spreadDef.short]).map((p) => ({
+              time: p.date,
+              value: p.value,
+            })),
+            interval,
+          ),
+        }
+      : null;
 
   // 没配 spot、或数据还没到 → null,不建那个 pane(而不是建一个空 pane 占着高度)。
   const spotBarsData = spotBars(spotRes.data, interval);
@@ -206,17 +201,19 @@ export function TenorHistoryPanel({
             <InfoTip text={view.desc} />
           </div>
         )}
-        <div className="flex items-center gap-0.5 rounded border border-neutral-700 px-1 py-0.5">
-          <button
-            onClick={() => setShowSpread((v) => !v)}
-            title={showSpread ? '收起差值' : '展开差值'}
-            className="px-1 text-neutral-300"
-          >
-            {showSpread ? '▾' : '▸'}
-          </button>
-          <span className={showSpread ? 'text-neutral-300' : 'text-neutral-600'}>{spreadLabel}</span>
-          {SPREAD_DESC[source] && <InfoTip text={SPREAD_DESC[source]} />}
-        </div>
+        {spreadDef && (
+          <div className="flex items-center gap-0.5 rounded border border-neutral-700 px-1 py-0.5">
+            <button
+              onClick={() => setShowSpread((v) => !v)}
+              title={showSpread ? '收起差值' : '展开差值'}
+              className="px-1 text-neutral-300"
+            >
+              {showSpread ? '▾' : '▸'}
+            </button>
+            <span className={showSpread ? 'text-neutral-300' : 'text-neutral-600'}>{spreadDef.label}</span>
+            {SPREAD_DESC[source] && <InfoTip text={SPREAD_DESC[source]} />}
+          </div>
+        )}
       </div>
       {/* 期限 chip 多选:颜色 = 线色 */}
       <div className="flex flex-wrap gap-1.5">

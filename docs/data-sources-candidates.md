@@ -107,6 +107,9 @@ DATE  ACMY01..ACMY10 (fitted yields)  ACMTP01..ACMTP10 (期限溢价)  ACMRNY01.
 
 ### 2.2 BOJ 短観 企業の物価見通し（日本的通胀预期代理）
 
+> ✅ **BOJ 统计 API 本身已接(2026-09)**,但接的是存贷利率那几个库(IR02 / IR04 / FM01,见 `AGENTS.md` 取数总览「日本银行 统计 API」行与 `fetchers/bojStat`),
+> **本条的短観(`CO` 库)仍未接**。接它只需 `fetchBojSeries('CO', [...], ...)` + 季频日期解析(见下方坑 1),不必再写 fetcher。
+
 | | |
 |---|---|
 | API | `https://www.stat-search.boj.or.jp/api/v1/getDataCode?format=csv&lang=en&db=CO&startDate=202301&endDate=202602&code=<codes>` |

@@ -57,8 +57,8 @@ export const MARKET_CATALOG: MarketAsset[] = [
     vrp: { ivIndex: 'DVOL', window: 30, periodsPerYear: 365 },
   },
   { underlying: 'NOBL', optionSource: 'none' }, // 只做价格:攻防指标的防御腿
-  // 三菱 UFJ(MUFG,东证 8306)。「日本」视角期限走势那格的现货参照腿 —— 它是 JGB 收益率
-  // 上行最直接的受益标的:银行拿短端存款、放长端贷款,10Y−1Y 走阔直接扩净息差。
+  // 三菱 UFJ(MUFG,东证 8306)。⚠️ 面板已不走这里:「日本 · 银行」那格的 8306 蜡烛由 /api/regime
+  // 现拉(序列名 `mufg`),期限走势那格已撤掉它。本条只留给 /api/price/8306.T 直接查询用。
   //
   // `price: 'live'` —— 股票日线随时能整段重取,存进 price_eod 只是白占一份会腐坏的副本。
   // ⚠️ moomoo 的日本行情权限要单独开通,未开通时 RequestHistoryKL 回 retType=-1

@@ -10,6 +10,8 @@ import { fetchJgbVix } from '../fetchers/jpxJgbVix';
 import { fetchCftcJpyNet, fetchCftcVixNetOi } from '../fetchers/cftcCot';
 import { fetchBojGap } from '../fetchers/bojOutputGap';
 import { fetchNakajimaJgb } from '../fetchers/nakajimaJgb';
+import { fetchBojSeries } from '../fetchers/bojStat';
+import { BOJ_HIKES, betaLegs, depositBeta, jpBankSpreads, monthlyMean } from '../analytics/jpBanks';
 import { fetchMoveSeries, mergeMove } from '../fetchers/moveIndex';
 import { fetchShillerCape } from '../fetchers/capeShiller';
 import { fetchHlwRstar } from '../fetchers/nyfedRstar';
@@ -442,6 +444,16 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 日本长端分解 + r*(中島上智模型)。**发布 2-4 个月不规律**(不是季频),两个 CSV 同日打包发。
   // 全历史 1995 起一次拿全 → 不落库;模型重估会改写整条历史,攒增量会把新旧 vintage 混成一条线。
   const nakajimaP = fetchNakajimaJgb().catch(() => null);
+  // 日本银行业利率传导(日银统计 API,月频;跨 DB 只能分开请求)。能回填全历史 → 读时现拉、不落库。
+  // 存款 2022-04 才开始有,所以都从 2022 起拉:贷款利率虽然 1993 起就有,单看水平不是这格要读的东西。
+  const bojBankP = Promise.all([
+    fetchBojSeries('IR02', ['DLDR121N'], '202201'),
+    fetchBojSeries('IR04', ['DLLR2CIDBST1'], '202201'),
+    fetchBojSeries('FM01', ['STRDCLUCON'], '202201'),
+  ]).catch(() => null);
+  const mufgBarsP = createYahooFetcher()
+    .fetchDailyBars('8306.T', new Date(HISTORY_START_DATE))
+    .catch(() => null);
   // 席勒 CAPE(月频,Robert Shiller 数据集;全历史 1871→今)。
   const capeP = fetchShillerCape().catch(() => null);
   // HLW 自然利率 r*(纽约联储,**季频**,一年只发 4 次)。分解式里 L(名义长期中枢)= r* + T5YIFR 的前半。
@@ -522,6 +534,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     bojGapP,
     nakajimaP,
   ]);
+  const [bojBank, mufgBars] = await Promise.all([bojBankP, mufgBarsP]);
   const [wti, brent, diesel, rbob] = await oilP;
   const [coreCpi, corePce] = await coreInflP;
   const [refUtil, distStocks, gasStocks, distExports, crudeRuns, distProd, dieselRetail, gasRetail] = await eiaP;
@@ -606,6 +619,33 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('jpRstar10Nakajima', nakajima?.rstar10);
   put('jpRstar10NakajimaLo', nakajima?.rstar10Lo);
   put('jpRstar10NakajimaHi', nakajima?.rstar10Hi);
+  // 日本银行业:存款 / 贷款 / 拆借(月频)+ 贝塔与两条利差。三个请求任一失败整组归 unavailable ——
+  // 派生量都要跨腿,缺一腿就出不来,各自降级没有意义。
+  const [bojDep, bojLoan, bojCall] = bojBank ?? [];
+  const jpDeposit = bojDep?.DLDR121N;
+  const jpCallDaily = bojCall?.STRDCLUCON;
+  const jpCall = jpCallDaily && monthlyMean(jpCallDaily);
+  const jpLoanStock = bojLoan?.DLLR2CIDBST1;
+  const jpSpreads =
+    jpDeposit && jpLoanStock && jpCallDaily && jgb2y
+      ? jpBankSpreads({ deposit: jpDeposit, loanStock: jpLoanStock, jgb2y, callDaily: jpCallDaily })
+      : undefined;
+  const jpBeta = jpDeposit && jpCall ? betaLegs(jpDeposit, jpCall) : undefined;
+  put('jpDepositRate', jpDeposit);
+  put('jpLoanRateStock', jpLoanStock);
+  put('jpCallRate', jpCall);
+  put('jpDepositBeta', jpDeposit && jpCall ? depositBeta(jpDeposit, jpCall) : undefined);
+  put('jpDepositDelta', jpBeta?.depositDelta);
+  put('jpCallDelta60', jpBeta?.callDelta60);
+  put('jpLoanDepositSpread', jpSpreads?.loanDeposit);
+  put('jp2yMinusDeposit', jpSpreads?.jgb2yDeposit);
+  put('jpCallMinusDeposit', jpSpreads?.callDeposit);
+  put('jp2yMinusCall', jpSpreads?.jgb2yCall);
+  put('bojHikeDates', [...BOJ_HIKES]);
+  put(
+    'mufg',
+    mufgBars?.map((b) => ({ date: b.tradeDate, value: b.close })),
+  );
   // ⚠️ 字段名带 `Current`:将来接 real-time 那套会撞名,且**现在就有人会误读** ——
   // current 的历史值是今天用全部数据回头重画的,不是当时看得到的值(前视偏差)。
   put('rstarHlwCurrent', rstar?.length ? rstar : undefined);
@@ -656,6 +696,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   put('cape', cape1990?.length ? cape1990 : undefined);
   const ohlc: Record<string, OhlcBar[]> = {};
   if (usdBars?.length) ohlc.usd = toOhlc(usdBars.map((b) => ({ ...b, date: b.tradeDate })));
+  if (mufgBars?.length) ohlc.mufg = toOhlc(mufgBars.map((b) => ({ ...b, date: b.tradeDate })));
 
   // 派生:分量齐才算,缺则整条进 unavailable。
   // RRPONTSYD 源为「十亿美元」,而 WALCL/WTREGEN 为「百万美元」——RRP 腿必须 ×1000 对齐,

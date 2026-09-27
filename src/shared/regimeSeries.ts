@@ -82,6 +82,29 @@ export const REGIME_SERIES = [
   'jpRstar10Nakajima',
   'jpRstar10NakajimaLo',
   'jpRstar10NakajimaHi',
+  // 日本银行业利率传导(日银统计 API + MOF JGB 2Y)。见 fetchers/bojStat、analytics/jpBanks。
+  // 月频的日期 = 数据所属月份的 1 日。
+  // 普通存款平均**挂牌**利率(IR02 DLDR121N,月频 %,2022-04 起;当月调查、当月中旬就发)。
+  'jpDepositRate',
+  // 国内银行存量贷款约定平均利率(IR04 DLLR2CIDBST1,月频 %,**成交**口径,滞后约 2 个月)。
+  'jpLoanRateStock',
+  // 无担保隔夜拆借利率的月均(FM01 STRDCLUCON 日频 → 月均,%)。政策利率的市场实现值,比目标低约 2bp。
+  'jpCallRate',
+  // 存款贝塔(比值,基准月 2024-01,月频)。只供读数、不上图 —— 图上画的是下面那两条变动线。
+  'jpDepositBeta',
+  // 贝塔格的两条阶梯线(月频 %,基准月起累计变动):Δ存款 与 0.6 × Δ拆借。存款线在上 ⇔ 贝塔 > 60%。
+  'jpDepositDelta',
+  'jpCallDelta60',
+  // 存量贷款 − 存款(月频 %,粗代理 / 已兑现的那部分利差)。
+  'jpLoanDepositSpread',
+  // 日频 %,锚在 2Y 的日期上,存款与拆借按日期前向填充。恒等式:2Y−存款 = (拆借−存款) + (2Y−拆借)。
+  'jp2yMinusDeposit',
+  'jpCallMinusDeposit',
+  'jp2yMinusCall',
+  // 日银加息决定日(静态表,见 analytics/jpBanks 的 BOJ_HIKES)。值 = 新的拆借诱导目标 %;面板只用日期画竖线。
+  'bojHikeDates',
+  // 三菱 UFJ(东证 8306,Yahoo 8306.T)蜡烛,「银行」那格的现货参照。
+  'mufg',
   'cape',
   'rxmSpx',
   'vixSpotTerm',

@@ -20,7 +20,7 @@ import { useStable } from '../../hooks/useStable';
 // 各 source 的默认勾选期限(短/前端/中/长各取锚点)。
 // treasury 前端用信息量更大的 2Y;OIS 档位对齐 Eris 真实点,12M 而非 1Y。
 export const DEFAULT_TENORS: Record<string, string[]> = {
-  // 美债 / JGB 默认只开**差值那两条腿**(1Y 与 10Y):这两格的主角是下方的 10Y−1Y,
+  // 美债默认只开**差值那两条腿**(1Y 与 10Y):这格的主角是下方的 10Y−1Y,
   // 上面只需要它的两条腿好对着看。其余期限默认关掉 —— 六条线挤在一起反而看不出腿在动哪条。
   // 要看别的期限点一下就开,是用户侧状态,不必预置。
   treasury: ['1Y', '10Y'],
@@ -28,7 +28,8 @@ export const DEFAULT_TENORS: Record<string, string[]> = {
   bei: ['5Y', '10Y', '30Y'],
   // 实际收益率与 bei 同档位、刻意同一组默认勾选 —— 两格并排就是「名义 − BEI = 实际」的两边。
   real: ['5Y', '10Y', '30Y'],
-  jgb: ['1Y', '10Y'],
+  // JGB 没有差值 pane:2Y 是日本银行股的主变量(见「银行」那格),10Y 是长端锚。
+  jgb: ['2Y', '10Y'],
   // AI CDS:默认展示除 Broadcom/Dell/Intel 外的 7 家(这三条较次要,留 chip 按需勾)。
   // 须与 rateCurves.ts AI_CDS 的 core 名单一致(core 缺失会让每日 job failed 告警)。
   ai_cds: ['Oracle', 'Microsoft', 'Alphabet', 'Amazon', 'Apple', 'Nvidia', 'Meta'],
