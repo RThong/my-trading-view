@@ -46,6 +46,8 @@ $(equity_intervals)
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
+        <string>$ROOT/scripts/wait-net.sh</string>
+        <string>/bin/bash</string>
         <string>$ROOT/scripts/daily-with-opend.sh</string>
     </array>
     <key>WorkingDirectory</key><string>$ROOT</string>
@@ -74,6 +76,8 @@ $(emit "")
     </array>
     <key>ProgramArguments</key>
     <array>
+        <string>/bin/bash</string>
+        <string>$ROOT/scripts/wait-net.sh</string>
         <string>/opt/homebrew/bin/bun</string>
         <string>run</string>
         <string>$ROOT/src/server/jobs/cryptoDaily.ts</string>
@@ -105,6 +109,8 @@ $(for h in "${SEC_HOURS[@]}"; do printf '        <dict><key>Hour</key><integer>%
     </array>
     <key>ProgramArguments</key>
     <array>
+        <string>/bin/bash</string>
+        <string>$ROOT/scripts/wait-net.sh</string>
         <string>/opt/homebrew/bin/bun</string>
         <string>run</string>
         <string>$ROOT/src/server/jobs/aiChainFundamentals.ts</string>
