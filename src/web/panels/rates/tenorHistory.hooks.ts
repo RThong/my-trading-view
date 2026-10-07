@@ -19,10 +19,10 @@ import { useStable } from '../../hooks/useStable';
 // 各 source 的默认勾选期限(短/前端/中/长各取锚点)。
 // treasury 前端用信息量更大的 2Y;OIS 档位对齐 Eris 真实点,12M 而非 1Y。
 export const DEFAULT_TENORS: Record<string, string[]> = {
-  // 美债默认只开**差值那两条腿**(1Y 与 10Y):这格的主角是下方的 10Y−1Y,
-  // 上面只需要它的两条腿好对着看。其余期限默认关掉 —— 六条线挤在一起反而看不出腿在动哪条。
+  // 美债默认只开**差值那几条腿**(1Y / 10Y / 30Y):这格的主角是下方的 10Y−1Y 与 30Y−10Y,
+  // 上面只需要它们的腿好对着看。其余期限默认关掉 —— 六条线挤在一起反而看不出腿在动哪条。
   // 要看别的期限点一下就开,是用户侧状态,不必预置。
-  treasury: ['1Y', '10Y'],
+  treasury: ['1Y', '10Y', '30Y'],
   sofr_ois: ['1M', '3M', '6M', '12M', '2Y', '10Y'],
   bei: ['5Y', '10Y', '30Y'],
   // 实际收益率与 bei 同档位、刻意同一组默认勾选 —— 两格并排就是「名义 − BEI = 实际」的两边。
@@ -98,29 +98,28 @@ export type SpreadSpec = { label: string; color: string; data: LinePoint[] };
 /** 现货参照 pane(蜡烛)。给利率那几格当"曲线在动的时候,风险资产在干什么"的对照物。 */
 export type SpotSpec = { label: string; data: Bar[] };
 
-/** 建图挂 containerRef;期限线 → pane 0;spread 非 null → 一个 pane 画利差线 + 0 基线;
+/** 建图挂 containerRef;期限线 → pane 0;spreads 每条一个 pane 画利差线 + 0 基线;
  *  spot 非 null → 再一个 pane 画现货蜡烛(共享时间轴、联动)。
- *  spread 传 null = 收起差值 pane(不重建图,故缩放/平移保留)。
+ *  从 spreads 里拿掉某条 = 收起它那格(不重建图,故缩放/平移保留)。
  *
- *  ⚠️ **pane 一律用 addPane() 返回的句柄定位,不写死下标** —— 下标随另一个 pane 的显隐而变,
- *  写死会在收起差值时删掉现货那个 pane(或反之)。句柄式没有这个耦合。 */
+ *  ⚠️ **pane 一律用 addPane() 返回的句柄定位,不写死下标** —— 下标随别的 pane 显隐而变,
+ *  写死会在收起某格差值时删掉现货那个 pane(或反之)。句柄式没有这个耦合。 */
 export function useTenorChart(
   containerRef: React.RefObject<HTMLDivElement | null>,
   rawSpecs: TenorSpec[],
-  rawSpread: SpreadSpec | null,
+  rawSpreads: SpreadSpec[],
   rawSpot: SpotSpec | null = null,
 ) {
   // 引用稳定化在 hook 内部扛:调用方传新数组字面量不该让 sync effect 每帧重跑 fitContent。
   const specs = useStable(rawSpecs);
-  const spread = useStable(rawSpread);
+  const spreads = useStable(rawSpreads);
   const spot = useStable(rawSpot);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
-  const spreadRef = useRef<ISeriesApi<'Line'> | null>(null);
-  const spreadPaneRef = useRef<IPaneApi<Time> | null>(null);
+  // 差值格按 label 索引(每格一条线,pane 随线增删)。
+  const spreadsRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
   const spotRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const spotPaneRef = useRef<IPaneApi<Time> | null>(null);
-  const showSpread = spread !== null;
   const showSpot = spot !== null;
 
   // 挂载建一次,卸载销毁。
@@ -128,42 +127,18 @@ export function useTenorChart(
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, CHART_OPTIONS);
     chartRef.current = chart;
-    const seriesMap = seriesRef.current; // 同一 Map(useRef 只建一次),捕获供 cleanup 用
-    // 重建/卸载时清理:seriesMap 用捕获的局部;spreadRef 置空供重建时重新识别。
+    // 同一 Map(useRef 只建一次),捕获供 cleanup 用
+    const seriesMap = seriesRef.current;
+    const spreadMap = spreadsRef.current;
     return () => {
       chart.remove();
       seriesMap.clear();
+      spreadMap.clear();
       chartRef.current = null;
-      spreadRef.current = null;
-      spreadPaneRef.current = null;
       spotRef.current = null;
       spotPaneRef.current = null;
     };
   }, [containerRef]);
-
-  // 差值 pane(主图 2、它 1 的高度比)随显隐增删。单独一个 effect:挂在建图 effect 上会让每次
-  // 切换重建整张图、丢缩放。
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart || !showSpread) return;
-
-    const pane = chart.addPane();
-    spreadPaneRef.current = pane;
-    chart.panes()[0].setStretchFactor(2);
-    pane.setStretchFactor(1);
-
-    return () => {
-      // 卸载时建图 effect 的 cleanup 先跑过、chart 已销毁 → 用 ref 判活,别用捕获的局部。
-      const alive = chartRef.current;
-      // removePane 只是把 pane 从数组里 splice 掉,不销毁 pane 内的 series(v5.2 实现如此)
-      // → 必须自己先 removeSeries,否则反复显隐会把旧差值线连 0 基线一起攒在 chart 里。
-      if (alive && spreadRef.current) alive.removeSeries(spreadRef.current);
-      spreadRef.current = null;
-      // 用句柄现取下标:现货 pane 可能排在它前面,写死 1 会删错人。
-      if (alive && spreadPaneRef.current) alive.removePane(spreadPaneRef.current.paneIndex());
-      spreadPaneRef.current = null;
-    };
-  }, [showSpread]);
 
   // 现货 pane(同样 1 的高度比)。与差值 pane 各自独立:两者显隐互不影响,下标各自从句柄取。
   useEffect(() => {
@@ -176,9 +151,9 @@ export function useTenorChart(
 
     return () => {
       const alive = chartRef.current;
+      // 只 removeSeries:空 pane 由库自动摘掉(见差值格同步处的说明)。
       if (alive && spotRef.current) alive.removeSeries(spotRef.current);
       spotRef.current = null;
-      if (alive && spotPaneRef.current) alive.removePane(spotPaneRef.current.paneIndex());
       spotPaneRef.current = null;
     };
   }, [showSpot]);
@@ -212,30 +187,66 @@ export function useTenorChart(
     chart.timeScale().fitContent();
   }, [specs]);
 
-  // 差值线同步。独立于期限线:这里不碰 timeScale,否则显隐差值会把用户的缩放/平移 fit 掉。
+  // 差值格同步:按 label 增删 pane,已有的只换数据。这里不碰 timeScale,否则显隐差值会把用户的缩放/平移 fit 掉。
   useEffect(() => {
     const chart = chartRef.current;
-    const pane = spreadPaneRef.current;
-    if (!chart || !spread || !pane) return;
+    if (!chart) return;
 
-    if (!spreadRef.current) {
-      spreadRef.current = chart.addSeries(
-        LineSeries,
-        { color: spread.color, title: spread.label, lineWidth: 2, priceLineVisible: false },
-        pane.paneIndex(),
-      );
-      // 穿 0 = 倒挂。只在建线时加一次。
-      spreadRef.current.createPriceLine({
-        price: 0,
-        color: '#71717a',
-        lineWidth: 1,
-        lineStyle: 2,
-        axisLabelVisible: true,
-        title: '',
-      });
+    const live = spreadsRef.current;
+    const keysNow = new Set(spreads.map((s) => s.label));
+    for (const [k, series] of live) {
+      if (keysNow.has(k)) continue;
+      // 只 removeSeries:pane 空了 v5.2 会自动摘掉(addPane 默认不 preserveEmptyPane)。
+      // 再手动 removePane 会拿到已失效的下标 → `Invalid pane index` 崩整个面板。
+      chart.removeSeries(series);
+      live.delete(k);
     }
-    spreadRef.current.setData(spread.data);
-  }, [spread]);
+
+    let added = false;
+    for (const spec of spreads) {
+      let series = live.get(spec.label);
+      if (!series) {
+        const pane = chart.addPane();
+        pane.setStretchFactor(1);
+        // ⚠️ 显式回到库默认:现货格对 'right' 刻度的设置会并进图表全局选项,之后新建的 pane 照单全收
+        // —— 对数刻度让差值穿 0 时画成方波,0.05 留白让重新展开的格跟首次渲染不一样。
+        pane.priceScale('right').applyOptions({
+          mode: PriceScaleMode.Normal,
+          scaleMargins: { top: 0.2, bottom: 0.1 },
+        });
+        series = chart.addSeries(
+          LineSeries,
+          { color: spec.color, title: spec.label, lineWidth: 2, priceLineVisible: false },
+          pane.paneIndex(),
+        );
+        // 穿 0 = 倒挂。只在建线时加一次。
+        series.createPriceLine({
+          price: 0,
+          color: '#71717a',
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: '',
+        });
+        live.set(spec.label, series);
+        added = true;
+      }
+      // 颜色随期限数而定,期限数据到位前后会变 → 每次同步,不只建线时设。
+      series.applyOptions({ color: spec.color });
+      series.setData(spec.data);
+    }
+
+    // addPane 总是追加到末尾:收起再展开会排到别的格(甚至现货)后面。按定义序归位到 1..n,现货自然落在最后。
+    spreads.forEach((spec, i) => {
+      live
+        .get(spec.label)
+        ?.getPane()
+        .moveTo(i + 1);
+    });
+
+    // 主图 2、每格差值 1 的高度比。只在新建过格时设:每次数据同步都设会把用户拖过的分隔条弹回去。
+    if (added) chart.panes()[0].setStretchFactor(2);
+  }, [spreads]);
 
   // 现货蜡烛同步。
   useEffect(() => {

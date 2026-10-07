@@ -26,7 +26,7 @@ const VIEW_DESC: Record<string, { title: string; desc: string }> = {
       '定义:美债各期限收益率的时间走势。这几条线看「谁在动」——是短端被政策推,还是长端在重定价。',
       '两端不对称:短端 = 美国本国(经济 + 通胀 + 就业),长端 = 全球(全球无风险回报基准)。',
       '',
-      '⚠️ 松紧判断不看这里,看下方差值 pane —— 绝对水平只说贵不贵,不说在松还是在紧。',
+      '⚠️ 松紧判断不看这里,看下方 10Y − 1Y 那格 —— 绝对水平只说贵不贵,不说在松还是在紧。',
     ].join('\n'),
   },
   sofr_ois: {
@@ -65,36 +65,55 @@ const VIEW_DESC: Record<string, { title: string; desc: string }> = {
   },
 };
 
-// 差值 pane(pane 1)自己的说明:利差的读法与阈值都归这里,别塞进上方视图说明。
-const SPREAD_DESC: Record<string, string> = {
-  treasury: [
-    '定义:10Y − 1Y(虚线 = 0)。**读松紧的主指标** —— 松紧是整条曲线的事,不是加息降息那个单点。',
-    '正值 = 松,负值(倒挂)= 紧;线往上(陡峭化)= 由紧变松,线往下 = 由松变紧。',
-    '',
-    '⚠️ 「倒挂 = 衰退前兆」不是铁律 —— 它靠央行见倒挂就前置宽松才成立。',
-    '2022 起转成「以短端为锚」,深度倒挂可长期持续,不再是可交易的衰退计时器。',
-    '⚠️ 转正未必是好消息:联储只动短端的预防式宽松同样会让曲线转松,那是换时间不是警报解除。',
-    '⚠️ 短腿用 1Y 而非 3M(实测进场同日、出场早十个月);NY Fed 的衰退概率模型用 10Y−3M,口径不同。',
-  ].join('\n'),
-  sofr_ois: [
-    '定义:OIS 1Y − 3M(虚线 = 0)= 市场定价的政策方向与幅度(3M ≈ 当前政策利率,1Y = 隐含路径)。',
-    '  · 负值 = 降息定价占主导',
-    '  · 转正、约 +0.1 = 方向已转,尚未确认',
-    '  · ⭐ 超过 +0.25 = 开始计入加息预期(确认门槛;仅适用于油价 / 地缘压力持续不解的语境)',
-    '',
-    '⚠️ 是定价不是预测,会随数据反复改口;通胀黏性不落,降息定价会被迫回吐。',
-  ].join('\n'),
-  bei: '定义:10Y − 5Y BEI(虚线 = 0)。远端通胀补偿相对近端的差:正 = 市场把通胀风险定价在更远端。',
-  real: [
-    '定义:30Y − 10Y 实际收益率(虚线 = 0)= **实际**曲线自身的长端陡峭度,剥掉了通胀那一块。',
-    '走阔 = 市场对持有超长久期额外索价(期限溢价 / 财政供给担忧的典型形态),而不是在涨通胀预期。',
-    '',
-    '⚠️ 与「通胀走势」的 30Y / 10Y 两条 BEI 线目视对照读(那格的差值 pane 是 10Y − 5Y,不是这个口径):',
-    '实际这条走阔而 BEI 长端两条不张开 = 归因落在久期风险补偿一侧。',
-  ].join('\n'),
-  ai_cds:
-    '定义:Oracle − Apple 的 5Y CDS 特质溢价(bp,虚线 = 0)。剥掉宏观信用共同因子,只留甲骨文因 AI 举债被额外索取的那部分。',
+// 差值 pane 各自的说明(source → label → 说明):利差的读法与阈值都归这里,别塞进上方视图说明。
+const SPREAD_DESC: Record<string, Record<string, string>> = {
+  treasury: {
+    '10Y − 1Y': [
+      '定义:10Y − 1Y(虚线 = 0)。**读松紧的主指标** —— 松紧是整条曲线的事,不是加息降息那个单点。',
+      '正值 = 松,负值(倒挂)= 紧;线往上(陡峭化)= 由紧变松,线往下 = 由松变紧。',
+      '',
+      '⚠️ 「倒挂 = 衰退前兆」不是铁律 —— 它靠央行见倒挂就前置宽松才成立。',
+      '2022 起转成「以短端为锚」,深度倒挂可长期持续,不再是可交易的衰退计时器。',
+      '⚠️ 转正未必是好消息:联储只动短端的预防式宽松同样会让曲线转松,那是换时间不是警报解除。',
+      '⚠️ 短腿用 1Y 而非 3M(实测进场同日、出场早十个月);NY Fed 的衰退概率模型用 10Y−3M,口径不同。',
+    ].join('\n'),
+    '30Y − 10Y': [
+      '定义:30Y − 10Y 名义收益率(虚线 = 0)= 超长端陡峭度。10Y−1Y 看政策松紧,这条看市场对超长久期的索价。',
+      '走阔 = 超长端相对 10Y 被抛(期限溢价 / 财政供给担忧的典型形态);收窄 = 资金往超长端挤。',
+      '',
+      '⚠️ 名义口径混着通胀补偿。要分清是久期补偿还是远端通胀,对照「实际走势」那格的同口径 30Y − 10Y。',
+    ].join('\n'),
+  },
+  sofr_ois: {
+    '1Y − 3M': [
+      '定义:OIS 1Y − 3M(虚线 = 0)= 市场定价的政策方向与幅度(3M ≈ 当前政策利率,1Y = 隐含路径)。',
+      '  · 负值 = 降息定价占主导',
+      '  · 转正、约 +0.1 = 方向已转,尚未确认',
+      '  · ⭐ 超过 +0.25 = 开始计入加息预期(确认门槛;仅适用于油价 / 地缘压力持续不解的语境)',
+      '',
+      '⚠️ 是定价不是预测,会随数据反复改口;通胀黏性不落,降息定价会被迫回吐。',
+    ].join('\n'),
+  },
+  bei: {
+    '10Y − 5Y': '定义:10Y − 5Y BEI(虚线 = 0)。远端通胀补偿相对近端的差:正 = 市场把通胀风险定价在更远端。',
+  },
+  real: {
+    '30Y − 10Y': [
+      '定义:30Y − 10Y 实际收益率(虚线 = 0)= **实际**曲线自身的长端陡峭度,剥掉了通胀那一块。',
+      '走阔 = 市场对持有超长久期额外索价(期限溢价 / 财政供给担忧的典型形态),而不是在涨通胀预期。',
+      '',
+      '⚠️ 与「通胀走势」的 30Y / 10Y 两条 BEI 线目视对照读(那格的差值 pane 是 10Y − 5Y,不是这个口径):',
+      '实际这条走阔而 BEI 长端两条不张开 = 归因落在久期风险补偿一侧。',
+    ].join('\n'),
+  },
+  ai_cds: {
+    'Oracle − Apple':
+      '定义:Oracle − Apple 的 5Y CDS 特质溢价(bp,虚线 = 0)。剥掉宏观信用共同因子,只留甲骨文因 AI 举债被额外索取的那部分。',
+  },
 };
+
+/** 差值 pane 定义:长腿 − 短腿。label 兼作该格的 key 与说明的索引。 */
+export type SpreadDef = { long: string; short: string; label: string };
 
 const getJson = (url: string) =>
   fetch(url).then((r) => {
@@ -122,13 +141,13 @@ const getSpotJson = async (url: string) => {
 export function TenorHistoryPanel({
   source,
   interval,
-  spread: spreadDef,
+  spreads: spreadDefs = [],
   spot,
 }: {
   source: string;
   interval: Interval;
-  /** 差值 pane(长腿 − 短腿)。省略 = 不画这一格,工具条也不出它的 chip。 */
-  spread?: { long: string; short: string; label: string };
+  /** 差值 pane,每条一格。省略 = 不画,工具条也不出 chip。 */
+  spreads?: SpreadDef[];
   /** 现货参照标的(如 'BTC')。省略 = 不画这一格 —— 只有真的相关的那个 tab 才配。 */
   spot?: string;
 }) {
@@ -137,7 +156,8 @@ export function TenorHistoryPanel({
   const spotRes = useSWR<PriceBar[]>(spot ? `/api/price/${spot}` : null, getSpotJson, SWR_OPTS);
   const containerRef = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [showSpread, setShowSpread] = useState(true);
+  // 收起的差值格(按 label)。
+  const [hiddenSpreads, setHiddenSpreads] = useState<Set<string>>(new Set());
 
   // 数据到位后种一次默认勾选(按 source)。渲染中条件 setState + seeded 单调标志替代 effect。
   const [seeded, setSeeded] = useState(false);
@@ -153,35 +173,34 @@ export function TenorHistoryPanel({
     .filter((t) => selected.has(t))
     .map((t) => ({ tenor: t, color: colorOf(t), data: tenorSeriesData(data.series[t], interval) }));
 
-  // 收起时传 null:hook 会摘掉那个 pane,期限线独占全高。
-  const spread: SpreadSpec | null =
-    showSpread && spreadDef
-      ? {
-          label: spreadDef.label,
-          color: SERIES_COLORS[0],
-          data: aggregate(
-            spreadSeries(data.series[spreadDef.long], data.series[spreadDef.short]).map((p) => ({
-              time: p.date,
-              value: p.value,
-            })),
-            interval,
-          ),
-        }
-      : null;
+  // 收起的不传:hook 会摘掉那个 pane,高度让给其余格。
+  // 差值线取色排在全部期限之后:同一 tab 里不与任何期限线撞色;按定义序号取,收起别的格不变色。
+  const spreads: SpreadSpec[] = spreadDefs
+    .map((d, i) => ({ d, color: SERIES_COLORS[(data.tenors.length + i) % SERIES_COLORS.length] }))
+    .filter(({ d }) => !hiddenSpreads.has(d.label))
+    .map(({ d, color }) => ({
+      label: d.label,
+      color,
+      data: aggregate(
+        spreadSeries(data.series[d.long], data.series[d.short]).map((p) => ({ time: p.date, value: p.value })),
+        interval,
+      ),
+    }));
 
   // 没配 spot、或数据还没到 → null,不建那个 pane(而不是建一个空 pane 占着高度)。
   const spotBarsData = spotBars(spotRes.data, interval);
   const spotSpec: SpotSpec | null = spot && spotBarsData.length ? { label: spot, data: spotBarsData } : null;
 
-  useTenorChart(containerRef, specs, spread, spotSpec);
+  useTenorChart(containerRef, specs, spreads, spotSpec);
 
-  const toggle = (t: string) =>
-    setSelected((prev) => {
-      const n = new Set(prev);
-      if (n.has(t)) n.delete(t);
-      else n.add(t);
-      return n;
-    });
+  const flip = (prev: Set<string>, k: string) => {
+    const n = new Set(prev);
+    if (n.has(k)) n.delete(k);
+    else n.add(k);
+    return n;
+  };
+  const toggle = (t: string) => setSelected((prev) => flip(prev, t));
+  const toggleSpread = (label: string) => setHiddenSpreads((prev) => flip(prev, label));
 
   // 容器必须常驻:三态若提前 return 会卸载 containerRef,建图 effect 首帧拿不到节点、
   // 数据到位后依赖没变又不重跑 → 图永远建不出。故 loading/error/无数据一律作浮层,对齐 PaneChartView。
@@ -197,19 +216,23 @@ export function TenorHistoryPanel({
             <InfoTip text={view.desc} />
           </div>
         )}
-        {spreadDef && (
-          <div className="flex items-center gap-0.5 rounded border border-neutral-700 px-1 py-0.5">
-            <button
-              onClick={() => setShowSpread((v) => !v)}
-              title={showSpread ? '收起差值' : '展开差值'}
-              className="px-1 text-neutral-300"
-            >
-              {showSpread ? '▾' : '▸'}
-            </button>
-            <span className={showSpread ? 'text-neutral-300' : 'text-neutral-600'}>{spreadDef.label}</span>
-            {SPREAD_DESC[source] && <InfoTip text={SPREAD_DESC[source]} />}
-          </div>
-        )}
+        {spreadDefs.map((d) => {
+          const shown = !hiddenSpreads.has(d.label);
+          const desc = SPREAD_DESC[source]?.[d.label];
+          return (
+            <div key={d.label} className="flex items-center gap-0.5 rounded border border-neutral-700 px-1 py-0.5">
+              <button
+                onClick={() => toggleSpread(d.label)}
+                title={shown ? '收起差值' : '展开差值'}
+                className="px-1 text-neutral-300"
+              >
+                {shown ? '▾' : '▸'}
+              </button>
+              <span className={shown ? 'text-neutral-300' : 'text-neutral-600'}>{d.label}</span>
+              {desc && <InfoTip text={desc} />}
+            </div>
+          );
+        })}
       </div>
       {/* 期限 chip 多选:颜色 = 线色 */}
       <div className="flex flex-wrap gap-1.5">

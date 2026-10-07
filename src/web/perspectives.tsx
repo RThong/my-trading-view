@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { AssetChart } from './panels/asset/AssetChart';
 import { RegimeChart } from './panels/regime/RegimeChart';
 import { YieldCurvePanel } from './panels/rates/YieldCurvePanel';
-import { TenorHistoryPanel } from './panels/rates/TenorHistoryPanel';
+import { TenorHistoryPanel, type SpreadDef } from './panels/rates/TenorHistoryPanel';
 import { PolicyPathPanel } from './panels/rates/PolicyPathPanel';
 import { AttackDefensePanel } from './panels/attackDefense/AttackDefensePanel';
 import { IndustryChainPanel } from './panels/regime/IndustryChainPanel';
@@ -37,14 +37,14 @@ const historyTab = (
   id: string,
   label: string,
   source: string,
-  /** 差值 pane(长腿 − 短腿)。省略 = 不画。 */
-  spread?: { long: string; short: string; label: string },
+  /** 差值 pane,每条一格。省略 = 不画。 */
+  spreads?: SpreadDef[],
   /** 现货参照标的。只给真的相关的那个 tab 配 —— 不是每格都该挂一条风险资产。 */
   spot?: string,
 ): TabDef => ({
   id,
   label,
-  render: (interval) => <TenorHistoryPanel source={source} interval={interval} spread={spread} spot={spot} />,
+  render: (interval) => <TenorHistoryPanel source={source} interval={interval} spreads={spreads} spot={spot} />,
 });
 
 // 单视图 regime 视角:无横 tab 条(tab 与视角同 id,TabBar 单 tab 时不渲染横条)。
@@ -100,9 +100,19 @@ export const PERSPECTIVES: Perspective[] = [
     tabs: [
       curveTab('treasury', '收益曲线', 'treasury'),
       // 挂 BTC 现货当对照:它是流动性链条最末端、beta 最高的那个,曲线松紧的传导在它身上最先见效。
-      historyTab('tenor_history', '期限走势', 'treasury', { long: '10Y', short: '1Y', label: '10Y − 1Y' }, 'BTC'),
+      // 两格差值:10Y − 1Y 读政策松紧,30Y − 10Y 读超长端的久期索价。
+      historyTab(
+        'tenor_history',
+        '期限走势',
+        'treasury',
+        [
+          { long: '10Y', short: '1Y', label: '10Y − 1Y' },
+          { long: '30Y', short: '10Y', label: '30Y − 10Y' },
+        ],
+        'BTC',
+      ),
       curveTab('sofr_ois', 'SOFR OIS', 'sofr_ois'),
-      historyTab('ois_history', 'OIS 走势', 'sofr_ois', { long: '12M', short: '3M', label: '1Y − 3M' }),
+      historyTab('ois_history', 'OIS 走势', 'sofr_ois', [{ long: '12M', short: '3M', label: '1Y − 3M' }]),
       // 加息定价:OIS 远期 vs 当前政策利率 / 点阵图(快照)+ 累计计入次数的逐日走势(带 CPI / PCE 发布日竖线)。
       { id: 'policy_path', label: '加息定价', render: () => <PolicyPathPanel /> },
       regimeTab('policy_repricing', '定价走势', 'policyRepricing'),
@@ -111,7 +121,7 @@ export const PERSPECTIVES: Perspective[] = [
       // 剩下的实际腿与期限溢价腿放这里 —— 长端上行时靠这几格分「动的是通胀还是实际利率」。
       curveTab('real_curve', '实际收益率', 'real'),
       // 30Y − 10Y:实际曲线自身的长端陡峭度。剥掉通胀后,这条走阔就是久期风险补偿在抬。
-      historyTab('real_history', '实际走势', 'real', { long: '30Y', short: '10Y', label: '30Y − 10Y' }),
+      historyTab('real_history', '实际走势', 'real', [{ long: '30Y', short: '10Y', label: '30Y − 10Y' }]),
       regimeTab('rates_decomp', '长端分解', 'ratesDecomp'),
     ],
   },
@@ -146,7 +156,7 @@ export const PERSPECTIVES: Perspective[] = [
     label: '通胀',
     tabs: [
       curveTab('bei', '通胀预期', 'bei'),
-      historyTab('bei_history', '通胀走势', 'bei', { long: '10Y', short: '5Y', label: '10Y − 5Y' }),
+      historyTab('bei_history', '通胀走势', 'bei', [{ long: '10Y', short: '5Y', label: '10Y − 5Y' }]),
       regimeTab('infl_source', '通胀来源', 'inflSource'),
     ],
   },
@@ -161,7 +171,7 @@ export const PERSPECTIVES: Perspective[] = [
     tabs: [
       regimeTab('gpu_compute', '算力价格', 'compute'),
       regimeTab('buyer', '买方合计', 'fundamentals:buyer'),
-      historyTab('ai_cds', 'AI CDS', 'ai_cds', { long: 'Oracle', short: 'Apple', label: 'Oracle − Apple' }),
+      historyTab('ai_cds', 'AI CDS', 'ai_cds', [{ long: 'Oracle', short: 'Apple', label: 'Oracle − Apple' }]),
       { id: 'industry_chain', label: '产业链', render: (interval) => <IndustryChainPanel interval={interval} /> },
     ],
   },

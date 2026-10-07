@@ -22,8 +22,8 @@ describe('buildSeriesColors', () => {
 });
 
 describe('SERIES_COLORS', () => {
-  it('前 8 档 = dataviz 验证类别配色,其余生成填满 24', () => {
-    expect(SERIES_COLORS.length).toBe(24);
+  it('前 8 档 = dataviz 验证类别配色,其余生成填满 32', () => {
+    expect(SERIES_COLORS.length).toBe(32);
     expect(SERIES_COLORS.slice(0, 8)).toEqual(CATEGORICAL_DARK);
   });
   it('全部合法 hex 且相邻互不相等', () => {
