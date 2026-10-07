@@ -2,6 +2,7 @@ import { test, expect } from 'bun:test';
 import {
   subtractAligned,
   subtractAt,
+  netLiquidityWeekly,
   divideAligned,
   yoyPct,
   monthlyAnnualizedPct,
@@ -138,6 +139,32 @@ test('三序列净流动性:WALCL - TGA - RRP', () => {
   const t = [{ date: '2020-01-01', value: 20 }];
   const r = [{ date: '2020-01-01', value: 5 }];
   expect(subtractAligned([w, t, r])).toEqual([{ date: '2020-01-01', value: 75 }]);
+});
+
+test('netLiquidityWeekly:只出周三点,季末 RRP 单日尖刺不进图,周三逢假日取前一日 RRP', () => {
+  const walcl = [
+    { date: '2026-09-23', value: 7000 },
+    { date: '2026-09-30', value: 7000 },
+    { date: '2026-12-25', value: 7000 }, // 圣诞周三:RRP 无报价
+  ];
+  const tga = [
+    { date: '2026-09-23', value: 800 },
+    { date: '2026-09-30', value: 900 },
+    { date: '2026-12-25', value: 900 },
+  ];
+  const rrp = [
+    { date: '2026-09-23', value: 0.01 },
+    { date: '2026-09-29', value: 0.5 }, // 非周三尖刺:不该单独出点
+    { date: '2026-09-30', value: 0.2 },
+    { date: '2026-10-01', value: 0.01 },
+    { date: '2026-12-24', value: 0.03 },
+  ];
+
+  expect(netLiquidityWeekly(walcl, tga, rrp)).toEqual([
+    { date: '2026-09-23', value: 7000 - 800 - 10 },
+    { date: '2026-09-30', value: 7000 - 900 - 200 },
+    { date: '2026-12-25', value: 7000 - 900 - 30 },
+  ]);
 });
 
 test('sumAtAnchorDates:只在锚点日出点,日频腿前向填充', () => {

@@ -28,10 +28,10 @@ const data: RegimeData = {
 
 test('流动性维度:pane 下标按 paneDefs 顺序,缺失序列被跳过', () => {
   const specs = buildRegimeSpecs(data, 'liquidity', '1D');
-  // 4 个 paneDef,repoUsage 缺 → 只出 3 条 spec
+  // 5 个 paneDef,reserves 无数据、repoUsage 缺 → 只出 3 条 spec
   expect(specs.map((s) => s.key)).toEqual(['netLiquidity', 'reverseRepo', 'repoStress']);
-  // pane 下标 = 原 paneDefs 索引(repoUsage 是第 2,被跳过后 repoStress 仍是 3)
-  expect(specs.map((s) => s.pane)).toEqual([0, 1, 3]);
+  // pane 下标 = 原 paneDefs 索引(reserves 是第 1、repoUsage 是第 3,被跳过后 repoStress 仍是 4)
+  expect(specs.map((s) => s.pane)).toEqual([0, 2, 4]);
 });
 
 test('repoStress 带 0 基线,其余无', () => {

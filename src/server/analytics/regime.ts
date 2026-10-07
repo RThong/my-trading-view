@@ -5,7 +5,7 @@
  * 对齐口径:在所有序列日期的并集上,各序列用「最近一次已知值」前向填充;输出仅从
  * 「每条序列都已至少有一个观测」的最早日起(否则线性组合缺分量)。
  *
- * 用法(首项减其余):净流动性 = subtractAligned([WALCL, WTREGEN, RRP]);回购利差 = subtractAligned([IORB, SOFR])。
+ * 用法(首项减其余):净流动性 = subtractAligned([WALCL, WDTGAL, RRP]);回购利差 = subtractAligned([IORB, SOFR])。
  */
 export type Point = { date: string; value: number };
 
@@ -112,6 +112,20 @@ export function sumAtAnchorDates(anchor: Point[], daily: Point[]): Point[] {
     while (j + 1 < daily.length && daily[j + 1].date <= a.date) j++;
     return j < 0 ? [] : [{ date: a.date, value: a.value + daily[j].value }];
   });
+}
+
+/**
+ * 净流动性 = WALCL − TGA − RRP,**只在 WALCL 的周三出点**。
+ *
+ * WALCL / WDTGAL 都是周三时点,RRP 却是日频。用 subtractAligned 会在日期并集上前向填充,
+ * 非周三的点 = 过期的周三资产负债表 − 当天 RRP:季末 RRP 单日冲高会被画成净流动性单日暴跌,
+ * 而同周的 TGA 跳变要等周三才进来 —— 正是周三口径要消除的腿时点错配。
+ * 故 WALCL−TGA 按日期 inner join(两腿同出自 H.4.1),RRP 取 ≤ 周三的最近值(周三逢假日也不丢那周)。
+ *
+ * 单位:WALCL/WDTGAL 百万美元,RRPONTSYD 十亿美元 —— RRP 腿 ×1000 对齐,否则被缩小 1000 倍。
+ */
+export function netLiquidityWeekly(walcl: Point[], tga: Point[], rrpBillions: Point[]): Point[] {
+  return sumAtAnchorDates(subtractAt(walcl, tga), scale(rrpBillions, -1000));
 }
 
 export function subtractAligned(series: Point[][]): Point[] {

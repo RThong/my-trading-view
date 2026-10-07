@@ -24,6 +24,7 @@ export const REGIME_SERIES = [
   'fng',
   'vix6m',
   'reverseRepo',
+  'reserves',
   'repoUsage',
   'wages',
   'stickyCpi',

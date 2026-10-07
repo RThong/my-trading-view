@@ -21,9 +21,9 @@ import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
 import {
   subtractAligned,
   subtractAt,
+  netLiquidityWeekly,
   divideAligned,
   yoyPct,
-  scale,
   sumAtAnchorDates,
   seasonalZFrom,
   oilCracks,
@@ -384,7 +384,11 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 并行拉全部原始源。key 为内部名,后面映射到对外序列名。
   const src = {
     walcl: fredSeries('WALCL'),
-    wtregen: fredSeries('WTREGEN'),
+    // TGA 取**周三时点** WDTGAL,与 WALCL(周三时点)同口径。别换回 WTREGEN:那是含周末的周平均,
+    // 相减会把缴税日这类单日抽水摊平并滞后一周(实测 2026-09-09→16 准备金 −115B,用 WTREGEN 算反而 +12B)。
+    wdtgal: fredSeries('WDTGAL'),
+    // 准备金余额,周三时点(百万美元,周频)。不用周平均 WRESBAL,理由同上。
+    reserves: fredSeries('WRBWFRBL'),
     rrp: fredSeries('RRPONTSYD'),
     rpo: fredSeries('RPONTSYD'),
     sofr: fredSeries('SOFR'),
@@ -589,6 +593,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     fng: 'fng',
     vix6m: 'vix6m',
     reverseRepo: 'rrp',
+    reserves: 'reserves',
     repoUsage: 'rpo',
     wages: 'wages',
     stickyCpi: 'stickyCpi',
@@ -722,12 +727,10 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   if (usdBars?.length) ohlc.usd = toOhlc(usdBars.map((b) => ({ ...b, date: b.tradeDate })));
   if (mufgBars?.length) ohlc.mufg = toOhlc(mufgBars.map((b) => ({ ...b, date: b.tradeDate })));
 
-  // 派生:分量齐才算,缺则整条进 unavailable。
-  // RRPONTSYD 源为「十亿美元」,而 WALCL/WTREGEN 为「百万美元」——RRP 腿必须 ×1000 对齐,
-  // 否则被缩小 1000 倍(历史高 RRP 期 ~$2.5T 会让净流动性严重虚高)。
+  // 派生:分量齐才算,缺则整条进 unavailable。净流动性只出周三点、RRP 单位换算,均见 netLiquidityWeekly。
   put(
     'netLiquidity',
-    raw.walcl && raw.wtregen && raw.rrp ? subtractAligned([raw.walcl, raw.wtregen, scale(raw.rrp, 1000)]) : undefined,
+    raw.walcl && raw.wdtgal && raw.rrp ? netLiquidityWeekly(raw.walcl, raw.wdtgal, raw.rrp) : undefined,
   );
   put('repoStress', raw.iorb && raw.sofr ? subtractAligned([raw.iorb, raw.sofr]) : undefined);
   // RXM(Cboe 风险逆转指数:买 25Δ call / 卖 25Δ put 滚动策略)/ SPX:该策略相对 SPX 的累计表现比。

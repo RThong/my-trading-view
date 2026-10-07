@@ -157,7 +157,7 @@ several horizontal tabs:
 | Perspective | Tabs / panes | Source |
 |---|---|---|
 | 信用 Credit | HY OAS credit spread | FRED |
-| 流动性 Liquidity | net liquidity (WALCL−TGA−RRP) · reverse repo · repo usage · repo stress (IORB−SOFR) | FRED |
+| 流动性 Liquidity | net liquidity (WALCL−TGA−RRP, weekly, sampled on Wednesdays) · bank reserves (WRBWFRBL) · reverse repo · repo usage · repo stress (IORB−SOFR) | FRED |
 | 情绪 Sentiment | 波动率 (COR1M · VIXEQ · VIX · VXN · VX1−V3 term · RXM/SPX risk-reversal) · 情绪 (Fear&Greed) | CBOE / CNN |
 | 宏观 Macro | growth/inflation/policy regime read | FRED |
 | 能源 Energy | 油市结构 (Brent−WTI · diesel/gasoline/3-2-1 crack) · 炼厂·库存 (开工率 + 馏分油收率 + 加工量/产量同比 + 库存与出口的**季节 z**，判紧张来自需求还是供应) | Yahoo / EIA |
