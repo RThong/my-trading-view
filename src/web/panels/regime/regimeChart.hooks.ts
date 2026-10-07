@@ -156,6 +156,7 @@ export type RegimeDim =
   | 'refinery'
   | 'pump'
   | 'btc'
+  | 'btcOnchain'
   | 'compute'
   // 基本面按启用名单派生:一家一个 dim(三格),外加一条买方合计。见 dimPanes / companyPanes。
   | `fundamentals:${string}`;
@@ -179,6 +180,10 @@ type PaneSpec = {
     | { kind: 'signed' } // 符号柱状图(正绿负红,0 基线),不套分位/徽标
     | { kind: 'candle' }; // 蜡烛(用 data.ohlc[key]),不套分位/背景带;价格轴线性/对数按数据自判
   band?: { lo: number; hi: number }; // 固定常态带 → 上下参考线(基本面锚,替代自指的 P5/P95)
+  /** 自定义参考线(有绝对含义的阈值,不是「常态上下限」时用,如供应密度的警戒 / 高风险)。与 band 二选一。 */
+  refLines?: { price: number; title: string; color: string }[];
+  /** 轴至少覆盖这段(见 LineSpec.expandVisibleTo):让 refLines 在数据还没走到时也看得见。 */
+  expandVisibleTo?: [number, number];
   /**
    * 价格轴上限框 `[lo, hi]`(见 LineSpec.clampVisibleTo):只夹轴,不改数据。
    * 给「日常很窄 + 真实极端单点」的格子用;**有 overlay 时两条线都要夹** —— 同 pane 共用一条轴,
@@ -220,6 +225,27 @@ const QQQ_SPOT_PANE: PaneSpec = {
     '',
     '⚠️ 口径不配对:同 tab 多数指标(VIX / VIXEQ / COR1M / RXM)以标普为基,只有 VXN 是纳指。',
     '严格配对该看 SPY;放 QQQ 是因为这轮方向由科技权重主导。',
+  ].join('\n'),
+};
+
+/**
+ * BTC 现货蜡烛,**「现货/夏普」与「链上」两个 tab 共用同一份**(同 QQQ_SPOT_PANE 的理由:抄两遍必漂)。
+ * 链上那格要对着价格读:筹码密度冲高之后往哪边破,只有价格答得了。
+ */
+const BTC_SPOT_PANE: PaneSpec = {
+  key: 'btc',
+  label: 'BTC',
+  title: 'BTC 现货 (USD)',
+  color: '#f7931a',
+  render: { kind: 'candle' }, // 用 data.ohlc.btc;跨 4 个数量级 → 价格轴自动走对数(见 needsLogScale)
+  desc: [
+    '定义:BTC 现货日线蜡烛,Bitstamp 全段(UTC 0 点切日;Yahoo BTC-USD 降级)。**参照物,不是判据**。',
+    '「现货/夏普」tab 和下一格夏普同读:价格新高但夏普走低 = 这轮涨幅是靠加波动换来的,不是趋势变强。',
+    '「链上」tab 和下一格供应密度同读:密度冲过 15% 之后往哪边破,看这格。',
+    '',
+    '⚠️ 含周末(crypto 7 天有数),与本站其它 5 天口径的序列并排看时注意日期对不齐。',
+    '⚠️ 单一交易所:收盘与综合价差 ~0.02%,但急跌时 Bitstamp 盘口薄、影线可能比别处深几个点(只影响影线)。',
+    '⚠️ 起于 2012-01(比全站其它序列的 2018 早得多):四轮周期才够看夏普顶部递减,故 BTC 单独放长。',
   ].join('\n'),
 };
 
@@ -1225,21 +1251,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
   // BTC:现货蜡烛 + 1Y 滚动夏普。两格一组读 ——「涨了多少」和「这些涨幅值不值那点波动」。
   btc: {
     panes: [
-      {
-        key: 'btc',
-        label: 'BTC',
-        title: 'BTC 现货 (USD)',
-        color: '#f7931a',
-        render: { kind: 'candle' }, // 用 data.ohlc.btc;跨 4 个数量级 → 价格轴自动走对数(见 needsLogScale)
-        desc: [
-          '定义:BTC 现货日线蜡烛。2012-01 ~ 2018-08 来自 Bitstamp(占 45% 的根),之后 Deribit BTC-PERPETUAL' +
-            '(Yahoo BTC-USD 降级)。**参照物,不是判据**。',
-          '和下一格夏普同读:价格新高但夏普走低 = 这轮涨幅是靠加波动换来的,不是趋势变强。',
-          '',
-          '⚠️ 含周末(crypto 7 天有数),与本站其它 5 天口径的序列并排看时注意日期对不齐。',
-          '⚠️ 起于 2012-01(比全站其它序列的 2018 早得多):四轮周期才够看夏普顶部递减,故 BTC 单独放长。',
-        ].join('\n'),
-      },
+      BTC_SPOT_PANE,
       {
         key: 'btcSharpe1y',
         label: '1Y 夏普',
@@ -1260,8 +1272,39 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
           '⚠️ 顶部递减这条趋势只有四个点,别拿它当可外推的直线用 —— 它解释过去,不定位下一个顶在哪。',
           '⚠️ 未减无风险利率(纯 return/vol);rf 只挪 ~0.08,不影响读法。',
           '⚠️ 滚动 365 天 = **回看**,不是预测。它的顶不会提前告诉你顶到了,只会在事后被确认。',
-          '⚠️ 现货 2012-01 ~ 2018-08 来自 Bitstamp、之后来自 Deribit 永续(见 jobs/btcPrice)——',
-          '换源处有 basis 级别的台阶,对逐日收益率可忽略,但别拿它做跨换源点的精确价格比对。',
+        ].join('\n'),
+      },
+    ],
+  },
+  // BTC 链上:筹码分布类指标(BRK URPD 派生),单独一个 tab。
+  btcOnchain: {
+    panes: [
+      BTC_SPOT_PANE,
+      {
+        key: 'btcSupplyDensity',
+        label: '供应密度',
+        title: 'BTC 已实现供应密度 (收盘价 ±5%,7 日均线,%)',
+        color: '#14b8a6',
+        // 配色与范围照 Murphy 原图(粉 13% 警戒 / 紫 15% 高风险,纵轴 1%~19%)。
+        refLines: [
+          { price: 13, title: '警戒 13%', color: '#ec4899' },
+          { price: 15, title: '高风险 15%', color: '#a855f7' },
+        ],
+        expandVisibleTo: [1, 19],
+        desc: [
+          '定义:链上成本价落在当日收盘价 ±5% 内的 BTC 占总供应的比例,取 7 日均线',
+          '(Glassnode「Realized Supply Density」的免费复刻,@Murphychen888 叫它「供应集中度」)。',
+          '高 = 大量筹码成本挤在现价附近,价格一旦脱离这个区间,同时翻转一大批人的盈亏 → 波动率扩张的前兆。',
+          '**只说「要动」,不说往哪动**:2025-02 / 2025-11 / 2026-01 三次冲过 15% 后都是大跌,',
+          '但同样的结构也能向上突破。',
+          '',
+          '13% 警戒 / 15% 高风险两条线取自 Murphy 的图(2024-10 起两年,三次样本),不是统计出来的分位。',
+          '',
+          '⚠️ 源是 BRK(开源自建节点)的 URPD,不是 Glassnode。对账:与 Murphy 图形状逐段吻合,',
+          '读数偏高 ~0.1–0.3pp(2026-08-01 13.2 vs 12.9,10-02 12.1 vs 12)。压线附近别当已触发。',
+          '⚠️ 为什么是 7 日均线:原始日值单日能跳 10pp(价格一动,±5% 窗口就换一批筹码);',
+          '用 7 日均线和 Murphy 三个公开读数最吻合。代价是比原始值慢几天。',
+          '⚠️ 当天(UTC)那个点是盘中快照,次日重拉才定;含周末(crypto 7 天)。',
         ].join('\n'),
       },
     ],
@@ -2241,6 +2284,7 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
       ...(render.baseline !== undefined ? { baseline: render.baseline } : {}),
       ...(render.step ? { step: true } : {}),
       ...(p.clampVisibleTo ? { clampVisibleTo: p.clampVisibleTo } : {}),
+      ...(p.expandVisibleTo ? { expandVisibleTo: p.expandVisibleTo } : {}),
     };
     // 固定常态带:画上下参考线(基本面锚,替代自指的 P5/P95;出带=告警非确诊)。
     if (p.band)
@@ -2248,6 +2292,7 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
         { price: p.band.lo, title: '常态下限' },
         { price: p.band.hi, title: '常态上限' },
       ];
+    if (p.refLines) lineSpec.refLines = p.refLines;
 
     // 叠画的其它线(同 pane 下标)。某条 overlay 缺失只少那条,主线照画。
     // 有 overlay 的格子刻意不配 percentile:多条线并排读的是「谁在上面」,给其中一条套分位带
@@ -2292,7 +2337,7 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
     // 覆盖过一次 —— 库存季节 z 两格同时配了 `band: ±2` 和 percentile,结果图上画的是 P5/P95,
     // 那个 band 是彻底的死配置;同屏另外两格 z 却画着 ±2,读者对着两套尺互相串读。
     // 现在的分工:**参考线由 band 定(有绝对含义时),背景带仍由 percentile 染**(见 riskTail)。
-    if (!p.band)
+    if (!lineSpec.refLines)
       lineSpec.refLines = [
         { price: lo, title: `P${PCTL_LO}` },
         { price: hi, title: `P${PCTL_HI}` },

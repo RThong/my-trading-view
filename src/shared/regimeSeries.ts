@@ -49,6 +49,8 @@ export const REGIME_SERIES = [
   'qqq',
   'btc',
   'btcSharpe1y',
+  // BTC ±5% 已实现供应密度 7 日均线(cryptoDaily 写原始日值,BRK URPD)。见 fetchers/brkUrpd。
+  'btcSupplyDensity',
   'vxTermSpread',
   'move',
 

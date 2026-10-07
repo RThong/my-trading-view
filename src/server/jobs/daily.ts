@@ -14,6 +14,7 @@ import { updateErisSnapshot } from './erisSnapshot';
 import { updateIceCds } from './iceCdsSnapshot';
 import { updateMoveIndex, type MoveUpdateResult } from './moveSnapshot';
 import { updateIsm, type IsmResult } from './ismSnapshot';
+import type { SupplyDensityResult } from './supplyDensitySnapshot';
 
 type RunDailyJobOpts = {
   db: Database;
@@ -39,6 +40,8 @@ type RunDailyJobOpts = {
   ismUpdater?: (db: Database) => Promise<IsmResult>;
   /** Computable GPU Index(H100/H200/B200/B300 算力租赁价)更新器(注入式;cryptoDaily 传 updateComputableGpu,测试省略以免联网)。 */
   computableGpuUpdater?: (db: Database) => Promise<{ total: number; missing: string[]; errors: string[] }>;
+  /** BTC ±5% 已实现供应密度(BRK URPD)更新器(注入式;cryptoDaily 传 updateSupplyDensity,测试省略以免联网)。 */
+  supplyDensityUpdater?: (db: Database) => Promise<SupplyDensityResult>;
 };
 
 /** 包一次 job_run:开跑 → 按 fn 结果落终态;fn 抛异常记 failed。所有分组共用,免去 4 处重复 try/catch。 */
@@ -181,11 +184,26 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     });
   }
 
-  // btc_price 分组:BTC 现货日 bar(Deribit 主源 / Yahoo 降级;成功/失败两态)。
+  // btc_price 分组:BTC 现货日 bar(Bitstamp 主源 / Yahoo 降级;成功/失败两态)。
   if (opts.btcPriceUpdater) {
     await withJobRun(opts.db, 'btc_price', async () => {
       const total = await opts.btcPriceUpdater!(opts.db);
       return { status: 'success', recordsWritten: total };
+    });
+  }
+
+  // btc_supply_density 分组:BTC ±5% 已实现供应密度(BRK,可回填)。
+  // **不进 REQUIRED**:漏一天次日自动补(增量按「库里缺哪天」拉),同 ism。
+  // 排在 btc_price 之后:首跑全量回填要几分钟,别让 REQUIRED 里的 btc_price 等它。
+  // 停更(源最新日期 >3 天不前进)只挂告警文案、仍记 success:停更不会自愈,记 failed 也不会让它好起来。
+  if (opts.supplyDensityUpdater) {
+    await withJobRun(opts.db, 'btc_supply_density', async () => {
+      const { succeeded, failures, latest, stale } = await opts.supplyDensityUpdater!(opts.db);
+      const state = threeState(succeeded, succeeded, failures);
+      if (!stale || state.status === 'failed') return state;
+
+      const warn = `告警:BRK URPD 疑似停更(源最新 ${latest ?? '无'})`;
+      return { ...state, error: state.error ? `${warn}; ${state.error}` : warn };
     });
   }
 }

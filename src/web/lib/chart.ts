@@ -126,13 +126,36 @@ export function clampPriceRange(
  * `priceRange` 为 null = 该 series 在当前可视窗口内没有数据 —— 原样退回,
  * 别去夹一个不存在的范围(会在图表自己的渲染循环里抛,排查极难定位)。
  */
-export function clampAutoscaleProvider<T extends { priceRange: { minValue: number; maxValue: number } | null }>(
+export function clampAutoscaleProvider<T extends { priceRange: PriceRange | null }>(
   box: [number, number],
+): (original: () => T | null) => T | null {
+  return mapAutoscale((r) => clampPriceRange(r, box));
+}
+
+/**
+ * 与 clamp 相反:把自动缩放范围**撑到至少覆盖** `[lo, hi]`(求并)。
+ * 给「参考线有绝对含义、但数据还没走到线附近」的格子用(供应密度的 13% / 15%):
+ * price line 不参与自动缩放,不撑的话轴缩在数据那一小段,线画在屏外看不见。
+ */
+export function expandAutoscaleProvider<T extends { priceRange: PriceRange | null }>(
+  box: [number, number],
+): (original: () => T | null) => T | null {
+  return mapAutoscale(({ minValue, maxValue }) => ({
+    minValue: Math.min(minValue, box[0]),
+    maxValue: Math.max(maxValue, box[1]),
+  }));
+}
+
+type PriceRange = { minValue: number; maxValue: number };
+
+// null 守卫两者共用(见 clampAutoscaleProvider 的说明)。
+function mapAutoscale<T extends { priceRange: PriceRange | null }>(
+  fn: (r: PriceRange) => PriceRange,
 ): (original: () => T | null) => T | null {
   return (original) => {
     const info = original();
     if (!info?.priceRange) return info;
 
-    return { ...info, priceRange: clampPriceRange(info.priceRange, box) };
+    return { ...info, priceRange: fn(info.priceRange) };
   };
 }

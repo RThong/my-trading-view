@@ -12,7 +12,7 @@ export type LineSpec = {
   title: string;
   data: LinePoint[];
   baseline?: number;
-  refLines?: { price: number; title: string }[];
+  refLines?: { price: number; title: string; color?: string }[];
   /** 阶梯线。低频序列(季频 r*)专用:两次发布之间值就是不变的,平滑折线是在伪造发布间的信息。 */
   step?: boolean;
   /**
@@ -25,6 +25,8 @@ export type LineSpec = {
    * 等于让每个调用方自己去实现「求交 + 倒挂退回」那套语义,迟早各写各的。
    */
   clampVisibleTo?: [number, number];
+  /** 价格轴的**下限框**:自动缩放范围撑到至少覆盖 `[lo, hi]`(见 `lib/chart` 的 `expandAutoscaleProvider`)。与 clampVisibleTo 互斥。 */
+  expandVisibleTo?: [number, number];
 };
 export type CandleSpec = { key: string; pane: number; kind: 'candle'; title: string; data: Bar[] };
 export type HistoPoint = { time: string; value: number; color: string };

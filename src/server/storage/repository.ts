@@ -128,18 +128,11 @@ export function getPriceBars(
   }>;
 }
 
-export function getLatestPriceDate(db: Database, underlying: string): string | null {
-  const row = db.query(`SELECT MAX(obs_date) AS d FROM price_eod WHERE underlying = $u`).get({ $u: underlying }) as {
-    d: string | null;
-  };
-  return row?.d ?? null;
-}
-
-/** 历史回填用:已存最早的一天(判断「前面还缺不缺」)。 */
-export function getEarliestPriceDate(db: Database, underlying: string): string | null {
-  const row = db.query(`SELECT MIN(obs_date) AS d FROM price_eod WHERE underlying = $u`).get({ $u: underlying }) as {
-    d: string | null;
-  };
+/** 已存最新的一天;给了 source 则只看该来源的行(BTC 用它跳过 Yahoo 降级写进来的行,见 jobs/btcPrice)。 */
+export function getLatestPriceDate(db: Database, underlying: string, source?: string): string | null {
+  const row = db
+    .query(`SELECT MAX(obs_date) AS d FROM price_eod WHERE underlying = $u AND ($s IS NULL OR source = $s)`)
+    .get({ $u: underlying, $s: source ?? null }) as { d: string | null };
   return row?.d ?? null;
 }
 
@@ -332,6 +325,19 @@ export function getSecFundamentals(db: Database, ticker: string): SecFundamental
     filed: r.filed,
     fiscalQ: r.fiscal_q,
   }));
+}
+
+/**
+ * 「抓的时候那天还没过完」的日期:fetched_at 早于 obs_date 次日 + graceHours。
+ * 给日内会变的快照型序列用(如 BRK URPD 当天条目),这些行要重拉成收盘值。
+ */
+export function getProvisionalDates(db: Database, seriesId: string, graceHours: number): string[] {
+  const rows = db
+    .query(
+      `SELECT obs_date AS d FROM market_series WHERE series_id = $id AND julianday(fetched_at) < julianday(obs_date) + 1 + $g / 24.0`,
+    )
+    .all({ $id: seriesId, $g: graceHours }) as { d: string }[];
+  return rows.map((r) => r.d);
 }
 
 /** 按前缀取一族序列(SEC 派生量比对用:算出来的和库里的一致就整轮不写)。

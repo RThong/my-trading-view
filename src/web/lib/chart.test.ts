@@ -1,5 +1,12 @@
 import { describe, test, expect } from 'bun:test';
-import { changeStats, needsLogScale, clampPriceRange, clampAutoscaleProvider, type Bar } from './chart';
+import {
+  changeStats,
+  needsLogScale,
+  clampPriceRange,
+  clampAutoscaleProvider,
+  expandAutoscaleProvider,
+  type Bar,
+} from './chart';
 
 describe('changeStats', () => {
   test('正常涨幅', () => {
@@ -76,4 +83,18 @@ test('clampAutoscaleProvider:有范围时按 clampPriceRange 求交,且保留其
     priceRange: { minValue: -5, maxValue: 4.1 },
     margins: { above: 10, below: 10 }, // margins 不能被丢掉
   });
+});
+
+test('expandAutoscaleProvider:求并 —— 数据窄时撑到框,数据出框时跟着数据走,null 原样退回', () => {
+  const provider = expandAutoscaleProvider<{ priceRange: { minValue: number; maxValue: number } | null }>([1, 19]);
+
+  expect(provider(() => ({ priceRange: { minValue: 12.2, maxValue: 12.3 } }))?.priceRange).toEqual({
+    minValue: 1,
+    maxValue: 19,
+  });
+  expect(provider(() => ({ priceRange: { minValue: 3, maxValue: 24 } }))?.priceRange).toEqual({
+    minValue: 1,
+    maxValue: 24,
+  });
+  expect(provider(() => ({ priceRange: null }))).toEqual({ priceRange: null });
 });

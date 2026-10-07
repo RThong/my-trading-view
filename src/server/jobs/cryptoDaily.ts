@@ -14,12 +14,14 @@ import { DERIBIT_UNDERLYINGS } from '../config';
 import { defaultDeribitOptionsClient } from '../fetchers/deribitOptions';
 import { updateBtcPrice } from './btcPrice';
 import { updateComputableGpu } from './computableGpuSnapshot';
+import { updateSupplyDensity } from './supplyDensitySnapshot';
 
 if (import.meta.main) {
   const db = openDb();
   migrate(db);
 
   // computable_gpu 不列入 REQUIRED:早期/experimental 源,失败不该拖着 crypto 组的「成功即止」守卫空转。
+  // btc_supply_density 同理不列入:可回填,漏一天次日补。
   const REQUIRED = ['options_crypto', 'btc_price'];
   if (REQUIRED.every((j) => getTodaySucceededJobs(db).includes(j))) {
     console.log('今天 加密期权 + BTC 现货 均已成功,跳过本次运行。');
@@ -30,6 +32,7 @@ if (import.meta.main) {
       cryptoOptionsClient: defaultDeribitOptionsClient(),
       btcPriceUpdater: updateBtcPrice,
       computableGpuUpdater: updateComputableGpu,
+      supplyDensityUpdater: updateSupplyDensity,
     });
     console.log('Crypto job complete.');
   }

@@ -1,7 +1,7 @@
 /**
- * Bitstamp BTC/USD 日 OHLC —— 只用来补 **Deribit 之前** 的历史。
- * Deribit BTC-PERPETUAL 2018-08 才上线,更早的价格它没有;Yahoo BTC-USD 也只到 2014-09。
- * Bitstamp 2011-08 开市至今连续,免 key 公开 REST,是免费源里回溯最长的那个。
+ * Bitstamp BTC/USD 日 OHLC —— BTC 现货日线的主源(全段,见 jobs/btcPrice 为什么选它)。
+ * 现货、原生 UTC 0 点切日;2011-08 开市至今连续(2012 起实测零缺口、含周末),
+ * 免 key 公开 REST,是免费源里回溯最长的那个(Yahoo BTC-USD 只到 2014-09)。
  *
  * 单次 limit 上限 1000 根,故按 1000 天分页往前推。
  * **要么整段拉全、要么抛** —— 见下面的完整性校验,原因写在那里。
@@ -31,7 +31,7 @@ export async function fetchBitstampBtcDaily(startDate: string, endDate: string):
     const res = await fetchWithTimeout(url);
     if (!res.ok) throw new Error(`Bitstamp OHLC → HTTP ${res.status}`);
 
-    // 空页不中断:区间是写死的历史段(Bitstamp 2011-08 就开市了),这里回空只可能是源抽风。
+    // 空页不中断:Bitstamp 2011-08 就开市了,区间内回空只可能是源抽风。
     // 提前 break 会静默截掉尾巴,而带洞的结果一旦落库、洞就永久留在那儿(见下面的校验)。
     const rows = ((await res.json()) as { data?: { ohlc?: Ohlc[] } }).data?.ohlc ?? [];
 
@@ -49,8 +49,8 @@ export async function fetchBitstampBtcDaily(startDate: string, endDate: string):
   const bars = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 
   // 完整性校验:首尾各补一个哨兵,一次把「头缺 / 中间缺 / 尾巴被截」三种洞都查掉。
-  // 带洞就整次不落库、下次重来 —— 调用方判「补完了」只看最早那天是否已到起点,
-  // 带洞的结果落进去,守卫从此判 false,那个洞就再也没人补。
+  // 带洞就整次抛(调用方降级 Yahoo,下次重来)—— 调用方从库里**最新**那天续抓,
+  // 带洞的结果一旦落库,最新日期就越过了洞,那个洞就再也没人补。
   const marks = [startDate, ...bars.map((b) => b.date), endDate];
   const holes = marks.slice(1).filter((d, i) => dayGap(marks[i], d) > MAX_GAP_DAYS);
   if (holes.length > 0) {

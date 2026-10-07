@@ -11,7 +11,13 @@ import {
   type AutoscaleInfo,
 } from 'lightweight-charts';
 import { useStable } from '../../hooks/useStable';
-import { CHART_OPTIONS, changeStats, needsLogScale, clampAutoscaleProvider } from '../../lib/chart';
+import {
+  CHART_OPTIONS,
+  changeStats,
+  needsLogScale,
+  clampAutoscaleProvider,
+  expandAutoscaleProvider,
+} from '../../lib/chart';
 import type { PaneDef, Spec, LegendCell, AnySeries } from './paneChart.types';
 import { useTrendlines } from './trendlines.hooks';
 
@@ -88,6 +94,8 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
   // spec 层只声明 [lo, hi];语义(求交 / 倒挂退回 / null 守卫)在 lib/chart 的纯函数里,那边有变异检验覆盖。
   if (spec.clampVisibleTo)
     s.applyOptions({ autoscaleInfoProvider: clampAutoscaleProvider<AutoscaleInfo>(spec.clampVisibleTo) });
+  if (spec.expandVisibleTo)
+    s.applyOptions({ autoscaleInfoProvider: expandAutoscaleProvider<AutoscaleInfo>(spec.expandVisibleTo) });
   if (spec.baseline !== undefined) {
     s.createPriceLine({
       price: spec.baseline,
@@ -104,7 +112,7 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
     for (const rl of spec.refLines) {
       s.createPriceLine({
         price: rl.price,
-        color: '#71717a',
+        color: rl.color ?? '#71717a',
         lineWidth: 1,
         lineStyle: 2,
         axisLabelVisible: true,

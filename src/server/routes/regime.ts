@@ -31,6 +31,7 @@ import {
   retailMargin,
   monthlyAnnualizedPct,
   releaseMarkers,
+  rollingMean,
   type Point,
 } from '../analytics/regime';
 import { OIS_INPUT_TENORS, hikesByTenor } from '../../shared/policyPath';
@@ -234,6 +235,8 @@ export function readDbBacked(
   if (btcBars.length) ohlc.btc = toOhlc(btcBars);
   else unavailable.push('btc');
   put('btcSharpe1y', rollingSharpe(btcClose, 365, 365));
+  // 供应密度:库里存原始日值,对外发 7 日均线 —— 原始值单日能跳 10pp,Murphy 原图那条就是 7 日均线。
+  put('btcSupplyDensity', rollingMean(getMarketSeries(db, 'BTC_SUPPLY_DENSITY'), 7));
 
   // 期限结构价差走 nearMinusFar(近端 − 远端,正 = backwardation)。具名 near/far 是刻意的:
   // 方向写反不会报错、只会让人读反图,而位置参数的调换单测抓不住(见 analytics/termStructure)。
@@ -290,6 +293,7 @@ export const DB_BACKED_KEYS: ReadonlySet<string> = new Set<string>([
   'qqq',
   'btc',
   'btcSharpe1y',
+  'btcSupplyDensity',
   'vxTermSpread',
   'move',
   ...OIS_HIKE_HORIZONS.map(([out]) => out),

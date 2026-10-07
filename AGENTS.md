@@ -17,6 +17,7 @@
 | **日本银行 统计 API · 企业物价(PR01)** | 企业物价指数 CGPI(`PRCG20_2200000000`,All commodities,2020=100)→ 同比 `jpCgpiYoy`(「日本 · 通胀」,生产端先行) | **月频**(次月中旬发) | 零 | 同上 `getDataCode`,`db=PR01`,复用 `fetchers/bojStat`。⚠️ 最新月可能是字面量 `null`(未发布),解析时跳过;同比用 `monthlyAnnualizedPct(pts, 12)`,对照月精确命中不往前贴,故多拉一年(2017 起)垫对照期 | 全历史;**读时现拉、不落库** |
 | **e-Stat(总务省统计)** | CPI「生鮮食品及びエネルギーを除く総合」(新核心核心)前年同月比 `jpCoreCoreCpiYoy`(日银判断口径) | **月频**(次月下旬发) | 零(**要免费 appId**,`ESTAT_APP_ID`;没配 → 该序列归 unavailable、不挡缓存,同 EIA) | JSON `api.e-stat.go.jp/rest/3.0/app/json/getStatsData`,`statsDataId=0004052037`(**2025 年基准**)· `cdCat01=0178` · `cdArea=00000`(全国)· `cdTab=3`(前年同月比,现成同比列、不自算)。⚠️ **别用 2020 年基准 `0003427113`**:两张表 2026-09 都还在更新,但 2026 年起同比差 0.1pp,官方头条已切 2025 基准;⚠️ 时间码 `YYYY00MMMM`(月份写两遍),年值 `YYYY000000` 要滤掉;缺值 `***`;返回倒序。表 id / 分类码用 `getStatsList`(`statsCode=00200573`)/ `getMetaInfo` 实测 | 同比列 2016 起;读时现拉、不落库 |
 | **Nakajima(中島上智)** | JGB 10Y 期限溢价 + 预期短端(`jpTp10Nakajima` / `jpExpShort10Nakajima`,日频 1995 起)、自然利率 r\* 10Y 及 95% 区间(季频) | 日 + 季;**但发布 2-4 个月不规律** | 零 | GitHub raw CSV `raw.githubusercontent.com/jouchinakajima/program/main/{yield_D,rstar}.csv`。⚠️ `rstar.csv` 表头在**第 2 行**(第 1 行是 `Data as of ...` 元数据),`YYYYQ` 是 **5 位**(`20262`=2026Q2);⚠️ 判停更看 **commit 时间**不看数据末点(>150 天无 commit 才算;门槛取两文件历史最大间隔 —— `yield_D.csv` 111d / `rstar.csv` 114d —— 再留余量),两者在图上长得一样 | 1995 起全历史;✅ `期限溢价+预期短端 = MOF 名义 10Y`,**7724 个重叠日残差全 0**;⚠️ **单模型无对照**,不同于美债 KW+ACM 双模型 |
+| **Bitstamp** | BTC 现货日 K(`price_eod` 的 `BTC`,全站所有 BTC K 线 / 夏普 / VRP 的 RV 腿共用) | 日频(含周末) | 零 | 公开 REST `bitstamp.net/api/v2/ohlc/btcusd/?step=86400&limit=1000&start=`(免 key,单次 ≤1000 根)。现货、原生 UTC 0 点切日。⚠️ 早年零成交日回 0 价,要滤掉;分页回空会留 ~1000 天的洞 → 整次抛、降级 Yahoo。⚠️ 别换回 Deribit 日线(08:00 UTC 切,见 Deribit 踩坑) | 2011-08 起全历史,2012 起实测零缺口 |
 | **Yahoo** | 股票 EOD + **DXY(`DX-Y.NYB` 真 ICE 美元指数)/ MOVE(`^MOVE`)/ 油品期货(`CL=F`/`BZ=F`/`HO=F`/`RB=F`)/ USD/JPY** | 日频 | `yahoo-finance2` | `yahoo-finance2` **v4** npm(class API `new YahooFinance()`) | 可回填多年 |
 | **其它** | Eris(SOFR OIS 曲线)/ MOF+JPX(JGB 收益率/JGB VIX)/ CFTC(日元净持仓 Legacy / VIX 净持仓 TFF)/ Shiller(CAPE) | 混:Eris 日 / MOF 日 / JPX 日 / **CFTC 周** / Shiller 月 | 零;**JPX JGB VIX 用 `fflate`** | 各自 adapter(见 `fetchers/`)| 多为全历史 |
 | **EIA** | 周度石油报告:炼厂开工率 / 加工量 + 馏分油产量(→ 收率、同比)/ 馏分油+汽油库存 / 馏分油出口(→ 季节 z)· **零售柴油/汽油泵价**(→ 与批发期货减出零售加价) | **周频**(实物六条周三 10:30 ET 发、截止上周五,滞后 ~5 天;**零售两条周一发**,两批右端日期不齐是常态) | 零(要 key) | JSON `api.eia.gov/v2/seriesid/PET.{ID}.W`(要 key)⚠️ 裸 ID 404,必须带 `PET.` 前缀 + `.W` 后缀;`start`/`end`/`data[]` **全被忽略**,唯一生效的裁剪参数是 `length`;返回**倒序** | 1982 起全历史;**已发布值下周会被修订**(每次拉全量,故不落库) |
@@ -25,6 +26,7 @@
 | **moomoo** | 期权链(股票/ETF/指数:SPY/.VIX) | 日频 | `moomoo-api` | 本地 OpenD WebSocket `127.0.0.1:33333` | **仅当天快照,不可回填** |
 | **SEC XBRL** | AI 链公司季报财务(TTM 毛利率/capex/FCF) | **季频** | 零 | 公开 JSON `data.sec.gov`(免 key,**必须带 User-Agent**);submissions 比 filed → 有新申报才拉 companyfacts | 全历史(季频) |
 | **Deribit** | 加密期权链(BTC/ETH) | 日频 | 零 | 公开 REST `deribit.com/api/v2/public`(免 key) | 链快照型;但 **DVOL** 波动率指数有历史 |
+| **BRK(Bitcoin Research Kit)** | BTC ±5% 已实现供应密度原始日值 `BTC_SUPPLY_DENSITY` → 对外发 7 日均线 `btcSupplyDensity`(Glassnode「Realized Supply Density」免费复刻,Murphy 的「供应集中度」) | 日频 | 零 | 公开 REST `bitview.space/api/urpd/all/{YYYY-MM-DD}?agg=log2000`(免 key;响应带 `close` / `total_supply` / 各桶 `price_floor`+`supply`;`/api/urpd/all/dates` 列全部日期)。开源 MIT:[bitcoinresearchkit/mono](https://github.com/bitcoinresearchkit/mono),个人维护无 SLA。⚠️ **必须 `log2000`**:lin200 / log1000 在 ±5% 边界整档进出,最多少算 1.1pp;log2000 与 raw(8MB/天)差 ≤0.14pp。⚠️ 当天 UTC 条目是盘中快照,job 按 `fetched_at` 认出「当天没过完就抓的」行,下次重拉(不用固定窗口:停机几天也不会把盘中值永久留下)。⚠️ 别用 BGeometrics 的 URPD JSON:只有当天快照、$256 粗档、缺 ~250 万币 | **2012 起全历史可回填**(增量按库里缺哪天拉,首跑即回填 ~5400 天,8 路并发约 5 分钟)。2026-10 对账:7 日均线与 Murphy 图逐段吻合,读数偏高 ~0.1–0.3pp |
 | **Computable(CGI)** | GPU 算力租赁价指数 `CGI_{H100,H200,B200,B300}`(USD/GPU/小时) | 源 15 分钟 → 我们按 UTC 日聚合 | 零 | 公开 REST `api.getcomputable.com/v1/index/{sku}/history`(免 key,匿名只读)。**采集器与算法开源:[getcomputable/gpu-index](https://github.com/getcomputable/gpu-index)**(Apache-2.0)—— 面板成员、换代生效时间、口径争议全在 CHANGELOG/METHODOLOGY 里,查口径去仓库不要猜。⚠️ `/v1/methodology` 自称窗口 90 天 / 粒度 15 分钟,**两个都不实**(见下) | **滚动窗口,不可回填更早**;2026-09-18 实测 H100/H200 26 天、B200 33 天、B300 39 天 |
 
 **关键差异**:**两个期权源(moomoo + Deribit)的链都是快照型**——25Δ 序列只能从今往后每个
@@ -35,7 +37,7 @@
 
 | 档位 | 谁 | 说明 |
 |---|---|---|
-| **零依赖** | FRED · CBOE · ICE · **EIA** · SEC · Deribit · MOF · CFTC · Shiller · **NY Fed ACM** · **Nakajima** · **Computable** · **ISM(PRN)** · **BOJ 统计 API** · **e-Stat** | `fetch` + 自己解 CSV/JSON/HTML |
+| **零依赖** | FRED · CBOE · ICE · **Bitstamp** · **EIA** · SEC · Deribit · MOF · CFTC · Shiller · **NY Fed ACM** · **Nakajima** · **Computable** · **BRK** · **ISM(PRN)** · **BOJ 统计 API** · **e-Stat** | `fetch` + 自己解 CSV/JSON/HTML |
 | **`fflate`**(已有) | NY Fed HLW · JPX JGB VIX · **BOJ 产出缺口** | `.xlsx` = zip+XML,解 zip 后正则取(公共解包在 `fetchers/xlsx.ts`) |
 | **SheetJS**(⚠️ 未加) | — | BIFF8 `.xls`(OLE)。**npm 上的 `xlsx@0.18.5` 有 2 个 high CVE**,必须走 `bun add "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"` |
 | **`word-extractor`**(⚠️ 未加) | — | OLE Word `.doc`。SheetJS 读不了(`Cannot find Workbook stream`) |
@@ -108,6 +110,7 @@
   (~30天的 BTC 约 34 个),分批并发即可,不是负担。
 - **IV 是百分数**(`mark_iv: 35.12` = 35.12%),÷100 归一化,与流水线一致。
 - **期权价格是币本位**(如 `0.018` BTC,不是美元),归档原样保留,用时注意单位。
+- **日线是 08:00 UTC 切的**(交割时刻;12h 线也是 08/20 点对齐),「D 日收盘」= D+1 08:00 的价,与 Yahoo / Glassnode / BRK 的 UTC 0 点口径最多差 6%。**所以 BTC 现货日 K 不用 Deribit**,全段走 Bitstamp(现货、原生 UTC 0 点、2012 起零缺口;见 `jobs/btcPrice`)。DVOL 日线本来就是 UTC 0 点,不受影响。
 - **现货价**走 `get_index_price?index_name=btc_usd`(ticker 里的 `underlying_price` 是该到期日远期)。
 - **DVOL**(加密版 VIX,带历史):`get_volatility_index_data?currency=BTC&...&resolution=43200`,
   返回 OHLC。目前没接,要做加密波动率历史曲线时用它(对标 SKEW/VX 那种有历史的源)。

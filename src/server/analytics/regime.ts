@@ -155,6 +155,14 @@ export function sumAligned(series: Point[][]): Point[] {
   return subtractAligned([head, ...rest.map((s) => scale(s, -1))]);
 }
 
+/** n 点滚动均值(按点数不按日历天,输入需逐日连续)。前 n−1 点窗口不足,不输出。 */
+export function rollingMean(points: Point[], n: number): Point[] {
+  return points.slice(n - 1).map((p, i) => ({
+    date: p.date,
+    value: points.slice(i, i + n).reduce((s, x) => s + x.value, 0) / n,
+  }));
+}
+
 /**
  * 季节性 z-score:每个点对照**往年同期**的分布,输出 (今值 − 同期均值) / 同期标准差。
  *
