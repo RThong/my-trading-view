@@ -122,10 +122,11 @@ export function sumAtAnchorDates(anchor: Point[], daily: Point[]): Point[] {
  * 而同周的 TGA 跳变要等周三才进来 —— 正是周三口径要消除的腿时点错配。
  * 故 WALCL−TGA 按日期 inner join(两腿同出自 H.4.1),RRP 取 ≤ 周三的最近值(周三逢假日也不丢那周)。
  *
- * 单位:WALCL/WDTGAL 百万美元,RRPONTSYD 十亿美元 —— RRP 腿 ×1000 对齐,否则被缩小 1000 倍。
+ * 单位:WALCL/WDTGAL 百万美元,RRPONTSYD 十亿美元 —— 输出统一成**十亿美元**(与逆回购同格读数可直接比),
+ * 百万美元那两腿 ÷1000;别把 RRP 腿当百万美元直接相减,会被缩小 1000 倍。
  */
 export function netLiquidityWeekly(walcl: Point[], tga: Point[], rrpBillions: Point[]): Point[] {
-  return sumAtAnchorDates(subtractAt(walcl, tga), scale(rrpBillions, -1000));
+  return sumAtAnchorDates(scale(subtractAt(walcl, tga), 0.001), scale(rrpBillions, -1));
 }
 
 export function subtractAligned(series: Point[][]): Point[] {

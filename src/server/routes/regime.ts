@@ -22,6 +22,7 @@ import {
   subtractAligned,
   subtractAt,
   netLiquidityWeekly,
+  scale,
   divideAligned,
   yoyPct,
   sumAtAnchorDates,
@@ -391,7 +392,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     // TGA 取**周三时点** WDTGAL,与 WALCL(周三时点)同口径。别换回 WTREGEN:那是含周末的周平均,
     // 相减会把缴税日这类单日抽水摊平并滞后一周(实测 2026-09-09→16 准备金 −115B,用 WTREGEN 算反而 +12B)。
     wdtgal: fredSeries('WDTGAL'),
-    // 准备金余额,周三时点(百万美元,周频)。不用周平均 WRESBAL,理由同上。
+    // 准备金余额,周三时点(源为百万美元,对外 ÷1000 成十亿美元,见下方 put)。不用周平均 WRESBAL,理由同上。
     reserves: fredSeries('WRBWFRBL'),
     rrp: fredSeries('RRPONTSYD'),
     rpo: fredSeries('RPONTSYD'),
@@ -597,7 +598,6 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     fng: 'fng',
     vix6m: 'vix6m',
     reverseRepo: 'rrp',
-    reserves: 'reserves',
     repoUsage: 'rpo',
     wages: 'wages',
     stickyCpi: 'stickyCpi',
@@ -736,6 +736,8 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     'netLiquidity',
     raw.walcl && raw.wdtgal && raw.rrp ? netLiquidityWeekly(raw.walcl, raw.wdtgal, raw.rrp) : undefined,
   );
+  // 对外统一十亿美元:百万美元的七位数在价格轴上读不出来,且与逆回购同单位才能直接比。
+  put('reserves', raw.reserves && scale(raw.reserves, 0.001));
   put('repoStress', raw.iorb && raw.sofr ? subtractAligned([raw.iorb, raw.sofr]) : undefined);
   // RXM(Cboe 风险逆转指数:买 25Δ call / 卖 25Δ put 滚动策略)/ SPX:该策略相对 SPX 的累计表现比。
   put('rxmSpx', raw.rxm && raw.spx ? divideAligned(raw.rxm, raw.spx) : undefined);

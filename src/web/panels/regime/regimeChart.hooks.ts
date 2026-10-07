@@ -272,7 +272,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
       {
         key: 'netLiquidity',
         label: '净流动性',
-        title: '净流动性 (WALCL−TGA−RRP,百万美元)',
+        title: '净流动性 (WALCL−TGA−RRP,十亿美元)',
         color: '#22c55e',
         desc: [
           '定义:净流动性(粗略代理)= 总资产 WALCL − 财政部账户 TGA − 逆回购 RRP,周三时点,周频。',
@@ -290,7 +290,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
       {
         key: 'reserves',
         label: '准备金',
-        title: '准备金 (WRBWFRBL 周三时点,百万美元)',
+        title: '准备金 (WRBWFRBL 周三时点,十亿美元)',
         color: '#3b82f6',
         desc: [
           '定义:银行存在美联储的准备金余额,周三时点,周频(H.4.1 周四发)。',

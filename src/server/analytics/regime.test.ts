@@ -160,11 +160,12 @@ test('netLiquidityWeekly:只出周三点,季末 RRP 单日尖刺不进图,周三
     { date: '2026-12-24', value: 0.03 },
   ];
 
-  expect(netLiquidityWeekly(walcl, tga, rrp)).toEqual([
-    { date: '2026-09-23', value: 7000 - 800 - 10 },
-    { date: '2026-09-30', value: 7000 - 900 - 200 },
-    { date: '2026-12-25', value: 7000 - 900 - 30 },
-  ]);
+  // 输出十亿美元:百万美元两腿 ÷1000,RRP 原样
+  const out = netLiquidityWeekly(walcl, tga, rrp);
+  expect(out.map((p) => p.date)).toEqual(['2026-09-23', '2026-09-30', '2026-12-25']);
+  [6.2 - 0.01, 6.1 - 0.2, 6.1 - 0.03].forEach((v, i) => {
+    expect(out[i].value).toBeCloseTo(v, 9);
+  });
 });
 
 test('sumAtAnchorDates:只在锚点日出点,日频腿前向填充', () => {

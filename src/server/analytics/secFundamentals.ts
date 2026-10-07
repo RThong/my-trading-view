@@ -695,7 +695,7 @@ function yoyByQuarter(quarters: QuarterPoint[]): QuarterPoint[] {
  */
 const dropSuspectZero = (rows: SecFundamentalRow[]): SecFundamentalRow[] => rows.filter((r) => r.value !== 0);
 
-/** 单季行 → 三条 TTM 派生量。毛利率单位百分点,金额单位百万美元(与 netLiquidity 等现有序列一致)。 */
+/** 单季行 → 三条 TTM 派生量。毛利率单位百分点,金额单位百万美元。 */
 export function deriveSeries(rows: SecFundamentalRow[]): DerivedSeries {
   const clean = dropSuspectZero(rows);
 
