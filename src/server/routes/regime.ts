@@ -219,7 +219,9 @@ export function readDbBacked(
 
   // QQQ 现货:波动率与情绪两个视角的价格参照 —— 那些指标只有对着价格才读得出「背离还是同步」。
   // 同 DXY 的处理:close 进 series 管存在性,OHLC 进 ohlc 画蜡烛。
-  const qqqBars = getPriceBars(db, 'QQQ');
+  // 截到 HISTORY_START_DATE:price_eod 的 ETF 拉到了上市日(给 K 线均线收敛用),这两个视角的其它序列
+  // 多从 2018 起,不截会把整张图的时间轴拉回 1999。
+  const qqqBars = getPriceBars(db, 'QQQ').filter((b) => b.date >= HISTORY_START_DATE);
   put(
     'qqq',
     qqqBars.map((b) => ({ date: b.date, value: b.close })),

@@ -8,6 +8,13 @@ export const DB_PATH = resolve(PROJECT_ROOT, 'data', 'mtv.db');
 export const HISTORY_START_DATE = '2018-01-01';
 
 /**
+ * ETF 现货(price_eod)的起始日:拉到上市日(SPY 1993,早于它的日期 Yahoo 自然不回)。
+ * 单独于 HISTORY_START_DATE:K 线长周期均线要够长的历史才收敛 —— 周线 EMA365 只从 2018 起算,
+ * 2026-09 比全历史低 8.9(498.5 vs 507.4)。只 Yahoo 一次请求,数据量可忽略。
+ */
+export const PRICE_HISTORY_START_DATE = '1993-01-01';
+
+/**
  * 季节 z 的基准期年数。**必须单一真源** —— 它同时决定两件事:
  *  · `analytics/seasonalZ` 往前取几年的同期样本;
  *  · `fetchers/eia` 要多拉多少周(展示起点再往前垫这么多年)。

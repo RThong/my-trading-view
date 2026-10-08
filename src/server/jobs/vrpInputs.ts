@@ -9,8 +9,8 @@
  *   VRP 的 RV 腿读 price_eod 的 close;基准对应 VIX↔SPY、VXN↔QQQ、GVZ↔GLD、OVX↔USO、DVOL↔BTC
  *   (BTC 的 price_eod 由 cryptoDaily 填,本 job 仍只负责读时无关的隐含腿/ETF 现货)。
  *
- * `updateVrpInputs` 除 ETF 现货外增量更新(按各序列已存最新日期续抓),库空时自动从 HISTORY_START_DATE
- * / DVOL 上线日全量回填。upsert 幂等,可重复跑。
+ * `updateVrpInputs` 除 ETF 现货外增量更新(按各序列已存最新日期续抓),库空时 CBOE 取源头全历史、
+ * DVOL 从上线日回填。upsert 幂等,可重复跑。
  *
  * 直接运行 = 立即更新一次:bun run src/server/jobs/vrpInputs.ts
  */
@@ -21,7 +21,7 @@ import { createYahooFetcher } from '../fetchers/yahoo';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 import { fetchDvolHistory } from '../fetchers/deribitDvol';
 import type { Bar } from '../fetchers/moomooHistoryKL';
-import { HISTORY_START_DATE } from '../config';
+import { PRICE_HISTORY_START_DATE } from '../config';
 import { lastClosedTradingDate } from './tradingCalendar';
 import { cboeIvLegs, priceLegUnderlyings } from '../../shared/marketCatalog';
 
@@ -129,13 +129,13 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
 
   // ── 标的现货 OHLC → price_eod ──
   // Yahoo close(唯一源),**每轮全量重拉**:Yahoo 的历史会随新拆股整段改写,增量续抓会把两套基准拼进库
-  // (前复权时代的 moomoo 就这么坏过,见 fetchers/moomooHistoryKL)。一次 chart 请求即 2018 起全段,代价可忽略。
+  // (前复权时代的 moomoo 就这么坏过,见 fetchers/moomooHistoryKL)。一次 chart 请求即上市日起全段(PRICE_HISTORY_START_DATE),代价可忽略。
   // 不设降级:moomoo 两种口径都接不上(见 fetchers/moomooHistoryKL 顶部);失败只记 failures,库里保留上一轮的整段,下轮自愈。
   // 滤掉未收盘的当天:盘中手动跑时那根是半截价,不该落库。
   const lastClosed = lastClosedTradingDate(); // 整批同一截止日
   for (const u of priceLegUnderlyings()) {
     await run(u, async () => {
-      const bars = (await yahooBars(u, new Date(HISTORY_START_DATE))).filter((b) => b.date <= lastClosed);
+      const bars = (await yahooBars(u, new Date(PRICE_HISTORY_START_DATE))).filter((b) => b.date <= lastClosed);
       if (!bars.length) throw new Error('Yahoo 返回空序列');
       writePrice(u, bars, 'yahoo');
     });
