@@ -9,8 +9,10 @@ import { macd, rsi } from '../../lib/indicators';
 import { usePaneChart } from './paneChart.hooks';
 import type { Spec } from './paneChart.types';
 
-export type OscId = 'macd' | 'rsi';
 type OscDef = {
+  /** 「指标」下拉里的选项名。 */
+  label: string;
+  /** 副图左上角标题。 */
   title: string;
   /** 图例项:key 对应 build 产出的 spec。 */
   legend: { key: string; label: string; color: string }[];
@@ -20,9 +22,11 @@ type OscDef = {
 const UP = '#22c55e99';
 const DOWN = '#ef444499';
 
+// 副图指标的唯一登记处:加一个副图 = 这里一条记录(下拉选项、勾选、绘制都由它派生)。
 // 配色照 moomoo:DIF 橙 / DEA 蓝;RSI 6 橙 / 12 蓝 / 24 紫。
-export const OSC_DEFS: Record<OscId, OscDef> = {
+const OSC_DEFS = {
   macd: {
+    label: 'MACD 12,26,9',
     title: 'MACD(12,26,9)',
     legend: [
       { key: 'dif', label: 'DIF', color: '#d89050' },
@@ -54,6 +58,7 @@ export const OSC_DEFS: Record<OscId, OscDef> = {
     },
   },
   rsi: {
+    label: 'RSI 6/12/24',
     title: 'RSI',
     legend: [
       { key: 'rsi6', label: 'RSI6', color: '#d89050' },
@@ -86,7 +91,12 @@ export const OSC_DEFS: Record<OscId, OscDef> = {
           : {}),
       })),
   },
-};
+} satisfies Record<string, OscDef>;
+
+export type OscId = keyof typeof OSC_DEFS;
+export const OSC_IDS = Object.keys(OSC_DEFS) as OscId[];
+/** 下拉选项(只占勾选位,不产叠加线,故 series 为空)。 */
+export const OSC_OPTIONS = OSC_IDS.map((id) => ({ id, label: OSC_DEFS[id].label, series: [] }));
 
 /** 一张副图:建图、喂数据、跟随主图的可视范围与十字线、右轴与主图等宽;返回图例读数。 */
 export function useOscillatorChart(

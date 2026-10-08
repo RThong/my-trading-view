@@ -4,15 +4,9 @@ import { COLORS, buildSpecs, paneConfig, toBars, useAssetData } from './assetCha
 import { aggregateBars } from '../../lib/chart';
 import { usePaneChartStack } from '../chart/paneChart.hooks';
 import { PaneChartView } from '../chart/PaneChartView';
-import {
-  INDICATOR_OPTIONS,
-  OSCILLATORS,
-  computeIndicatorLines,
-  useIndicatorSelection,
-  withIndicators,
-} from '../chart/priceIndicators';
+import { INDICATORS, computeIndicatorLines, useIndicatorSelection, withIndicators } from '../chart/priceIndicators';
 import { OscillatorPanel } from '../chart/OscillatorPanel';
-import type { OscId } from '../chart/oscillator.hooks';
+import { OSC_IDS, OSC_OPTIONS } from '../chart/oscillator.hooks';
 
 // 一个资产的指标放进同一个 chart 的多个 pane(共享时间轴),顶部恒为现货蜡烛:
 //   pane0 现货(OHLC)· pane1 25Δ call/put IV · pane2 skew · [pane3 隐含vs已实现RV · pane4 VRP]
@@ -69,7 +63,7 @@ export function AssetChart({
   // 副图(MACD / RSI)只在只展开现货格时出现:否则主图已被多格瓜分,再压两张副图读不了。
   // 勾选状态保留,展开别的格时只是暂不显示,收回去自动恢复。
   const onlyPrice = paneDefs.every((p) => p.key === 'price' || collapsed.has(p.key));
-  const oscIds = OSCILLATORS.map((o) => o.id as OscId).filter((id) => onlyPrice && indicators.ids.includes(id));
+  const oscIds = OSC_IDS.filter((id) => onlyPrice && indicators.ids.includes(id));
   const activeIds = [...indicators.active.map((d) => d.id), ...oscIds];
 
   return (
@@ -97,10 +91,10 @@ export function AssetChart({
           selection={selection}
           deleteSelected={deleteSelected}
           indicators={{
-            options: INDICATOR_OPTIONS,
+            options: [...INDICATORS, ...OSC_OPTIONS],
             active: activeIds,
             toggle: indicators.toggle,
-            disabled: onlyPrice ? undefined : { ids: OSCILLATORS.map((o) => o.id), hint: '收起其它格、只看现货时可用' },
+            disabled: onlyPrice ? undefined : { ids: OSC_IDS, hint: '收起其它格、只看现货时可用' },
           }}
         />
       </div>
