@@ -15,8 +15,10 @@ export type LineSpec = {
   refLines?: { price: number; title: string; color?: string }[];
   /** 阶梯线。低频序列(季频 r*)专用:两次发布之间值就是不变的,平滑折线是在伪造发布间的信息。 */
   step?: boolean;
-  /** 叠在蜡烛上的指标线(EMA / 布林带):细线、不画最新价水平线 —— 七八条水平线会把蜡烛盖住。 */
+  /** 叠在蜡烛上的指标线(EMA / 布林带):细线、不画最新价水平线、不挂右轴最新值标签 —— 十来条会把蜡烛和轴盖满,读数看悬停图例。 */
   overlay?: boolean;
+  /** 与另一条线(key)之间填色,画在蜡烛下层(布林带通道底色)。两条线须同一时间轴,配不上的时间点跳过。 */
+  fillTo?: { key: string; color: string };
   /**
    * 价格轴的**上限框** `[lo, hi]`:自动缩放出来的范围与它求交(见 `lib/chart` 的 `clampPriceRange`)。
    * 只影响可视轴范围 —— 不改数据、不改 hover 读数、不改导出。

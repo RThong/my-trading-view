@@ -20,6 +20,7 @@ import {
 } from '../../lib/chart';
 import type { PaneDef, Spec, LegendCell, AnySeries } from './paneChart.types';
 import { useTrendlines } from './trendlines.hooks';
+import { BandFillPrimitive } from './bandFill';
 
 /**
  * 蜡烛价格轴切对数(PriceScaleMode.Logarithmic = 1,不引枚举:这层已经在用字面量配色/配轴了)。
@@ -83,9 +84,10 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
     LineSeries,
     {
       color: spec.color,
-      title: spec.title,
+      // 叠加线不给 title:lightweight-charts 会把 title 单独画成右轴标签(关了 lastValueVisible 也照画);图例读 seriesName 不受影响。
+      title: spec.overlay ? '' : spec.title,
       lineWidth: spec.overlay ? 1 : 2,
-      ...(spec.overlay ? { priceLineVisible: false } : {}),
+      ...(spec.overlay ? { priceLineVisible: false, lastValueVisible: false } : {}),
       // 阶梯线:低频序列(季频)不该在两次发布之间画出斜坡,那是凭空造出来的中间值。
       ...(spec.step ? { lineType: LineType.WithSteps } : {}),
     },
@@ -144,6 +146,7 @@ export function usePaneChart(
   const seriesRef = useRef<Map<string, AnySeries>>(new Map());
   const [seriesVersion, setSeriesVersion] = useState(0); // series 建/删后自增,供画线 hook 感知 series 就绪
   const spanRef = useRef(''); // 上次 fitContent 时的时间轴签名
+  const fillRef = useRef<Map<string, BandFillPrimitive>>(new Map()); // 线间填色图元,按挂载的 series key
 
   // 建图 + 加 pane。paneCount 每实例固定,等价于挂载建一次、卸载销毁。
   useEffect(() => {
@@ -151,6 +154,7 @@ export function usePaneChart(
     const chart = createChart(containerRef.current, CHART_OPTIONS);
     chartRef.current = chart;
     const seriesMap = seriesRef.current; // 同一 Map(useRef 只建一次),捕获供 cleanup 用
+    const fillMap = fillRef.current;
     for (let i = 1; i < paneCount; i++) chart.addPane(); // pane 0 默认已存在
     chart.panes().forEach((p) => {
       p.setStretchFactor(1);
@@ -158,6 +162,7 @@ export function usePaneChart(
     return () => {
       chart.remove();
       seriesMap.clear();
+      fillMap.clear(); // 图元随 chart.remove() 一起销毁
       chartRef.current = null;
       spanRef.current = ''; // 重建后的新图要重新 fit
     };
@@ -174,6 +179,7 @@ export function usePaneChart(
       if (!keysNow.has(k)) {
         chart.removeSeries(s);
         seriesRef.current.delete(k);
+        fillRef.current.delete(k); // 挂在它身上的填色图元随 series 一起没了
       }
     }
 
@@ -189,6 +195,27 @@ export function usePaneChart(
       }
       s.setData(spec.data as Parameters<AnySeries['setData']>[0]);
       if (spec.kind === 'candle' && needsLogScale(spec.data)) applyLogScale(s);
+    }
+
+    // 线间填色:挂在声明 fillTo 的那条线上,按时间与对端线配对。
+    const byKey = new Map(specs.map((sp) => [sp.key, sp]));
+    for (const spec of specs) {
+      if (spec.kind !== 'line' || !spec.fillTo) continue;
+      const other = byKey.get(spec.fillTo.key);
+      const s = seriesRef.current.get(spec.key);
+      if (other?.kind !== 'line' || !s) continue;
+      let prim = fillRef.current.get(spec.key);
+      if (!prim) {
+        prim = new BandFillPrimitive();
+        s.attachPrimitive(prim);
+        fillRef.current.set(spec.key, prim);
+      }
+      const lower = new Map(other.data.map((p) => [p.time, p.value]));
+      const points = spec.data.flatMap((p) => {
+        const l = lower.get(p.time);
+        return l === undefined ? [] : [{ time: p.time, upper: p.value, lower: l }];
+      });
+      prim.setData(points, spec.fillTo.color);
     }
 
     // 只在时间轴真变了(换周期 / 新数据到)才 fitContent;勾一条叠加指标不该把用户缩放好的视野弹回全景。

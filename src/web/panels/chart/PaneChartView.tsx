@@ -27,8 +27,12 @@ type Props = {
   toggleDrawing?: () => void;
   selection?: { x: number; y: number } | null; // 选中线时浮动操作条的位置(容器相对像素)
   deleteSelected?: () => void;
-  /** K 线叠加指标多选(EMA / 布林带);不传即不显示「指标」按钮。 */
-  indicators?: { options: { id: string; label: string }[]; active: string[]; toggle: (id: string) => void };
+  /** K 线叠加指标多选(EMA / 布林带);不传即不显示「指标」按钮。options.series = 该指标产出的线(图例只显示数值)。 */
+  indicators?: {
+    options: { id: string; label: string; series: { key: string }[] }[];
+    active: string[];
+    toggle: (id: string) => void;
+  };
 };
 
 export function PaneChartView({
@@ -56,6 +60,9 @@ export function PaneChartView({
   deleteSelected,
   indicators,
 }: Props) {
+  // 指标线的图例只给数值:均线的单日涨跌没有信息量,十来行涨跌幅只会把读数淹掉。
+  const valueOnly = new Set(indicators?.options.flatMap((o) => o.series.map((s) => s.key)) ?? []);
+
   return (
     <div className="relative flex h-full w-full flex-col">
       {/* 工具条按固定顺序排列(便于查找);↑↓ 只改 chart 里 pane 的显示位置,不改本行顺序。 */}
@@ -177,7 +184,7 @@ export function PaneChartView({
                   const dColor =
                     c.delta == null ? undefined : c.delta > 0 ? '#22c55e' : c.delta < 0 ? '#ef4444' : undefined;
                   const dTxt =
-                    c.delta == null
+                    c.delta == null || valueOnly.has(sk)
                       ? null
                       : `${c.delta >= 0 ? '+' : ''}${c.delta.toFixed(2)}${c.pct == null ? '' : ` (${c.pct >= 0 ? '+' : ''}${c.pct.toFixed(2)}%)`}`;
                   // O/H/L/C 字母保持中性,只有数字按涨跌上色(对齐 TradingView);线的值保持 series 原色。

@@ -9,23 +9,23 @@ type IndicatorDef = {
   id: string;
   label: string;
   /** 产出的线(key 全局唯一,进图例/折叠);compute 结果与之按下标一一对应。 */
-  series: { key: string; title: string; color: string }[];
+  series: { key: string; title: string; color: string; fillTo?: { key: string; color: string } }[];
   compute: (bars: Bar[]) => LinePoint[][];
 };
 
-// 周期与配色照用户常用行情 App(moomoo):5 橙、20 蓝、50 红、144 粉、169 紫、200 黄、365 绿;
-// 120 是本面板自有的一条,那边没有对应色,取中性灰免得和其它线撞色。
+// 周期与配色照用户常用行情 App(moomoo):5 橙、20 蓝、50 红、144 粉、169 紫、200 黄、365 绿。
 const EMA_PERIODS: [number, string][] = [
   [5, '#d89050'],
   [20, '#3a72ce'],
   [50, '#bd445b'],
-  [120, '#a1a1aa'],
   [144, '#d77084'],
   [169, '#6a37a7'],
   [200, '#e9c444'],
   [365, '#2cc290'],
 ];
-const BB_COLOR = '#71717a';
+const BB_COLOR = '#a1a1aa'; // 2σ 标准带
+const BB3_COLOR = '#71717a'; // 3σ 外层(同 moomoo BOLL(20,2,1,3) 的 UPPER3/LOWER3),压暗一档、不填色
+const BB_FILL = 'rgba(96, 165, 250, 0.1)'; // 通道底色:淡蓝,压在蜡烛下层
 
 export const INDICATORS: IndicatorDef[] = [
   // 一组均线是一个选项:开了就整组一起出。
@@ -35,17 +35,22 @@ export const INDICATORS: IndicatorDef[] = [
     series: EMA_PERIODS.map(([n, color]) => ({ key: `ema${n}`, title: `EMA${n}`, color })),
     compute: (bars) => EMA_PERIODS.map(([n]) => ema(bars, n)),
   },
+  // 只画上下轨:中轨 = SMA20,与 EMA20 几乎重合(差 ~0.3%),和 EMA 组同开时是重复的一条线。
+  // 两层:2σ(标准布林带,填底色)+ 3σ 外层;顺序从上到下,图例同序。
   {
     id: 'bb',
-    label: '布林带 20,2',
+    label: '布林带 20 (2σ/3σ)',
     series: [
-      { key: 'bbUpper', title: 'BB 上', color: BB_COLOR },
-      { key: 'bbMid', title: 'BB 中', color: BB_COLOR },
-      { key: 'bbLower', title: 'BB 下', color: BB_COLOR },
+      { key: 'bbUpper3', title: 'BB 上 3σ', color: BB3_COLOR },
+      { key: 'bbUpper', title: 'BB 上 2σ', color: BB_COLOR, fillTo: { key: 'bbLower', color: BB_FILL } },
+      { key: 'bbLower', title: 'BB 下 2σ', color: BB_COLOR },
+      { key: 'bbLower3', title: 'BB 下 3σ', color: BB3_COLOR },
     ],
     compute: (bars) => {
-      const rows = bollinger(bars, 20, 2);
-      return (['upper', 'mid', 'lower'] as const).map((f) => rows.map((r) => ({ time: r.time, value: r[f] })));
+      // k=1 时 upper − mid 就是 σ,各层按倍数推,一次滚动窗口算完。
+      const rows = bollinger(bars, 20, 1);
+      const band = (k: number) => rows.map((r) => ({ time: r.time, value: r.mid + k * (r.upper - r.mid) }));
+      return [band(3), band(2), band(-2), band(-3)];
     },
   },
 ];
@@ -80,7 +85,7 @@ export function useIndicatorSelection(storageKey: string) {
   return { active, toggle };
 }
 
-export type IndicatorLine = { key: string; title: string; color: string; data: LinePoint[] };
+export type IndicatorLine = IndicatorDef['series'][number] & { data: LinePoint[] };
 
 /** 算选中指标的线(重活:8 条 EMA + 布林带滚动窗口)。bars = 已按周期聚合的蜡烛,周线 EMA = 周收盘的 EMA。 */
 export function computeIndicatorLines(active: IndicatorDef[], bars: Bar[]): IndicatorLine[] {
