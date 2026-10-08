@@ -1,62 +1,11 @@
 /**
- * moomoo 历史日线收盘(Qot_RequestHistoryKL)。用作 VRP 的 RV 腿主源,
- * 比 Yahoo 准(交易所级、正确处理公司行动)。前复权(rehab=1)保证拆股后序列连续。
- * 仅 ETF/个股可取——moomoo 的美股指数历史权限要单独开通,未开通时 .SPX/.NDX 取不到,故 RV 腿统一用 ETF。
- * ⚠️ 历史 K 线有配额(Qot_RequestHistoryKLQuota);首次多标的全量回填会占额度。
+ * moomoo 行情侧的小工具:US 交易日历(fetchUsTradingDates)+ 日线 OHLC 类型 Bar(全站单一真源)。
+ * ⚠️ ETF 现货日线**不走 moomoo**(主源且唯一源 Yahoo close,见 jobs/vrpInputs),试过的坑:
+ *   - 前复权(rehab=1)每次除息整段改写历史,增量入库拼出两套基准(2026-09 实测 SPY 06-22 前后差 0.25%,09-16 单日毛刺);
+ *   - 不复权(rehab=0)连拆股都不调(USO 2020-04-29 合股:2.13 → 18.00),不能回填;
+ *   - 高 / 低价偶含场外离谱成交(QQQ 2019-12-03 低 193.78,实际 ~199.2)。
  */
-import { QOT_MARKET_US } from './moomooClient';
-
-const KLTYPE_DAY = 2;
-const REHAB_FORWARD = 1;
-const MAX_KL_PER_REQ = 1000;
-const MAX_PAGES = 40; // 40×1000 远超 ~2200 根/标的的需要;纯属死循环兜底
-
 export type Bar = { date: string; open: number | null; high: number | null; low: number | null; close: number };
-
-/** 取某 ETF 自 `since` 起的日线 OHLC(前复权),按 nextReqKey 翻页,升序返回。 */
-export async function fetchDailyBars(ws: any, code: string, since: Date): Promise<Bar[]> {
-  const begin = since.toISOString().slice(0, 10);
-  const end = new Date().toISOString().slice(0, 10);
-  const byDate = new Map<string, Bar>();
-  let nextReqKey: unknown;
-
-  // 终止靠「这一页不满 MAX_KL_PER_REQ = 最后一页」,而不是判 nextReqKey:
-  // moomoo 末页返回的是空 bytes(JS 里 truthy),判 != null 会死循环。MAX_PAGES 再兜一层底。
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const res = await ws.RequestHistoryKL({
-      c2s: {
-        rehabType: REHAB_FORWARD,
-        klType: KLTYPE_DAY,
-        security: { market: QOT_MARKET_US, code },
-        beginTime: begin,
-        endTime: end,
-        maxAckKLNum: MAX_KL_PER_REQ,
-        ...(nextReqKey ? { nextReqKey } : {}),
-      },
-    });
-    if (res?.retType !== 0) {
-      throw new Error(`RequestHistoryKL ${code} retType=${res?.retType} ${res?.retMsg ?? ''}`);
-    }
-    const kl = res?.s2c?.klList ?? [];
-    for (const k of kl) {
-      const date = String(k.time ?? '').slice(0, 10); // "YYYY-MM-DD 00:00:00" → 日期
-      if (/^\d{4}-\d{2}-\d{2}$/.test(date) && typeof k.closePrice === 'number') {
-        const num = (v: unknown) => (typeof v === 'number' ? v : null);
-        byDate.set(date, {
-          date,
-          open: num(k.openPrice),
-          high: num(k.highPrice),
-          low: num(k.lowPrice),
-          close: k.closePrice,
-        });
-      }
-    }
-    nextReqKey = res?.s2c?.nextReqKey;
-    if (kl.length < MAX_KL_PER_REQ) break; // 不满一页(含空页)即最后一页
-  }
-
-  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
-}
 
 const TRADE_DATE_MARKET_US = 2; // 注意:TradeDateMarket 枚举(US=2),不是 QotMarket(US=11)
 

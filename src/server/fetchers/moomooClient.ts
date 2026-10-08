@@ -1,5 +1,5 @@
 /**
- * moomoo OpenD WebSocket 连接的公共部分(被 moomooOptions / moomooHistoryKL 复用)。
+ * moomoo OpenD WebSocket 连接的公共部分(被 moomooOptions 复用)。
  * 退出逻辑有讲究:stop() 只注销推送回调,底层 socket 和它的重连定时器挂在 ws.websock
  * 上,必须 close() 一起关掉,否则句柄会让事件循环一直存活、CLI 永远退不出去。
  */

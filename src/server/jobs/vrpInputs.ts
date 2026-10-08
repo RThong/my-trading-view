@@ -1,15 +1,15 @@
 /**
  * 更新 VRP 输入 + 标的现货到库:
  *   隐含腿 → market_series(close):VIX/VXN/GVZ/OVX(CBOE)+ DVOL(Deribit)
- *   标的现货 → price_eod(OHLC):SPY/QQQ/GLD/USO/TLT + VIX
- *     - ETF(SPY/QQQ/GLD/USO/TLT):moomoo 历史 K 线为主源(准、前复权),Yahoo 降级
+ *   标的现货 → price_eod(OHLC):SPY/QQQ/GLD/USO/TLT/NOBL + VIX
+ *     - ETF(SPY/QQQ/GLD/USO/TLT/NOBL):Yahoo close(唯一源)、每轮全量重拉
+ *       口径 = 只调拆股、不调分红(TradingView 默认 / IBKR TRADES / moomoo App 显示同一个数)
  *     - VIX:CBOE(它既是 SPY 的 IV 腿,又是 .VIX tab 的现货,故两表都写)
  *     - BTC 现货:已移出本 job → cryptoDaily 的 btc_price 组(7 天跑,含周末)。
  *   VRP 的 RV 腿读 price_eod 的 close;基准对应 VIX↔SPY、VXN↔QQQ、GVZ↔GLD、OVX↔USO、DVOL↔BTC
  *   (BTC 的 price_eod 由 cryptoDaily 填,本 job 仍只负责读时无关的隐含腿/ETF 现货)。
- *   moomoo 主源需 OpenD;没起时 ETF 腿整体回退 Yahoo,管线仍跑通。
  *
- * `updateVrpInputs` 增量更新(按各序列已存最新日期续抓),库空时自动从 HISTORY_START_DATE
+ * `updateVrpInputs` 除 ETF 现货外增量更新(按各序列已存最新日期续抓),库空时自动从 HISTORY_START_DATE
  * / DVOL 上线日全量回填。upsert 幂等,可重复跑。
  *
  * 直接运行 = 立即更新一次:bun run src/server/jobs/vrpInputs.ts
@@ -20,9 +20,9 @@ import { insertMarketSeries, getLatestMarketDate, insertPriceEod, getLatestPrice
 import { createYahooFetcher } from '../fetchers/yahoo';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 import { fetchDvolHistory } from '../fetchers/deribitDvol';
-import { connect, disconnect, envConfig } from '../fetchers/moomooClient';
-import { fetchDailyBars, type Bar } from '../fetchers/moomooHistoryKL';
+import type { Bar } from '../fetchers/moomooHistoryKL';
 import { HISTORY_START_DATE } from '../config';
+import { lastClosedTradingDate } from './tradingCalendar';
 import { cboeIvLegs, priceLegUnderlyings } from '../../shared/marketCatalog';
 
 const DVOL_START = '2021-01-01'; // DVOL(BTC)上线约 2021 年
@@ -65,10 +65,6 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
       low: r.low,
       close: r.close,
     }));
-  const sincePrice = (u: string): Date => {
-    const latest = getLatestPriceDate(db, u);
-    return latest ? new Date(latest + 'T00:00:00Z') : new Date(HISTORY_START_DATE);
-  };
   const writePrice = (u: string, bars: Bar[], source: string) => {
     insertPriceEod(
       db,
@@ -84,17 +80,6 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
     );
     total += bars.length;
   };
-  // 标的现货:主源(moomoo/deribit)失败 → 降级 Yahoo,各自标 source。
-  const priceLeg = (u: string, primary: (since: Date) => Promise<Bar[]>, primarySrc: string, fbSym: string) =>
-    run(u, async () => {
-      const since = sincePrice(u);
-      try {
-        writePrice(u, await primary(since), primarySrc);
-      } catch (e) {
-        console.warn(`[vrpInputs] ${u} 主源失败,降级 Yahoo: ${(e as Error).message}`);
-        writePrice(u, await yahooBars(fbSym, since), 'yahoo');
-      }
-    });
 
   // ── 隐含腿 → market_series(CBOE:VXN/GVZ/OVX;VIX 走下方 VX 链路双写,DVOL 走 Deribit)──
   for (const sym of cboeIvLegs()) {
@@ -143,26 +128,17 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
   });
 
   // ── 标的现货 OHLC → price_eod ──
-  let mooWs: any = null;
-  try {
-    mooWs = await connect(envConfig());
-  } catch {
-    /* OpenD 不可用,ETF 腿整体回退 Yahoo */
-  }
-  try {
-    for (const u of priceLegUnderlyings()) {
-      await priceLeg(
-        u,
-        (since) => {
-          if (!mooWs) throw new Error('OpenD unavailable');
-          return fetchDailyBars(mooWs, u, since);
-        },
-        'moomoo',
-        u,
-      );
-    }
-  } finally {
-    if (mooWs) disconnect(mooWs);
+  // Yahoo close(唯一源),**每轮全量重拉**:Yahoo 的历史会随新拆股整段改写,增量续抓会把两套基准拼进库
+  // (前复权时代的 moomoo 就这么坏过,见 fetchers/moomooHistoryKL)。一次 chart 请求即 2018 起全段,代价可忽略。
+  // 不设降级:moomoo 两种口径都接不上(见 fetchers/moomooHistoryKL 顶部);失败只记 failures,库里保留上一轮的整段,下轮自愈。
+  // 滤掉未收盘的当天:盘中手动跑时那根是半截价,不该落库。
+  const lastClosed = lastClosedTradingDate(); // 整批同一截止日
+  for (const u of priceLegUnderlyings()) {
+    await run(u, async () => {
+      const bars = (await yahooBars(u, new Date(HISTORY_START_DATE))).filter((b) => b.date <= lastClosed);
+      if (!bars.length) throw new Error('Yahoo 返回空序列');
+      writePrice(u, bars, 'yahoo');
+    });
   }
 
   return { total, succeeded, failures };

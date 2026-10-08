@@ -90,8 +90,8 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     );
   }
 
-  // vrp_inputs 分组:增量更新各 VRP 配方的隐含腿与 RV 腿
-  // (隐含 VIX/VXN/GVZ/OVX/DVOL,RV 现货 SPX/NDX/GLD/USO/BTC)。
+  // vrp_inputs 分组:各 VRP 配方的隐含腿(VIX/VXN/GVZ/OVX/DVOL,增量)与 ETF 现货 RV 腿
+  // (SPY/QQQ/GLD/USO/TLT/NOBL,Yahoo 每轮全量重拉;BTC 现货在 crypto job)。
   // 每源独立容错:全成功 → success,部分源失败 → partial,全失败 → failed。
   if (opts.vrpInputsUpdater) {
     await withJobRun(opts.db, 'vrp_inputs', async () => {

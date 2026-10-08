@@ -18,7 +18,7 @@
 | **e-Stat(总务省统计)** | CPI「生鮮食品及びエネルギーを除く総合」(新核心核心)前年同月比 `jpCoreCoreCpiYoy`(日银判断口径) | **月频**(次月下旬发) | 零(**要免费 appId**,`ESTAT_APP_ID`;没配 → 该序列归 unavailable、不挡缓存,同 EIA) | JSON `api.e-stat.go.jp/rest/3.0/app/json/getStatsData`,`statsDataId=0004052037`(**2025 年基准**)· `cdCat01=0178` · `cdArea=00000`(全国)· `cdTab=3`(前年同月比,现成同比列、不自算)。⚠️ **别用 2020 年基准 `0003427113`**:两张表 2026-09 都还在更新,但 2026 年起同比差 0.1pp,官方头条已切 2025 基准;⚠️ 时间码 `YYYY00MMMM`(月份写两遍),年值 `YYYY000000` 要滤掉;缺值 `***`;返回倒序。表 id / 分类码用 `getStatsList`(`statsCode=00200573`)/ `getMetaInfo` 实测 | 同比列 2016 起;读时现拉、不落库 |
 | **Nakajima(中島上智)** | JGB 10Y 期限溢价 + 预期短端(`jpTp10Nakajima` / `jpExpShort10Nakajima`,日频 1995 起)、自然利率 r\* 10Y 及 95% 区间(季频) | 日 + 季;**但发布 2-4 个月不规律** | 零 | GitHub raw CSV `raw.githubusercontent.com/jouchinakajima/program/main/{yield_D,rstar}.csv`。⚠️ `rstar.csv` 表头在**第 2 行**(第 1 行是 `Data as of ...` 元数据),`YYYYQ` 是 **5 位**(`20262`=2026Q2);⚠️ 判停更看 **commit 时间**不看数据末点(>150 天无 commit 才算;门槛取两文件历史最大间隔 —— `yield_D.csv` 111d / `rstar.csv` 114d —— 再留余量),两者在图上长得一样 | 1995 起全历史;✅ `期限溢价+预期短端 = MOF 名义 10Y`,**7724 个重叠日残差全 0**;⚠️ **单模型无对照**,不同于美债 KW+ACM 双模型 |
 | **Bitstamp** | BTC 现货日 K(`price_eod` 的 `BTC`,全站所有 BTC K 线 / 夏普 / VRP 的 RV 腿共用) | 日频(含周末) | 零 | 公开 REST `bitstamp.net/api/v2/ohlc/btcusd/?step=86400&limit=1000&start=`(免 key,单次 ≤1000 根)。现货、原生 UTC 0 点切日。⚠️ 早年零成交日回 0 价,要滤掉;分页回空会留 ~1000 天的洞 → 整次抛、降级 Yahoo。⚠️ 别换回 Deribit 日线(08:00 UTC 切,见 Deribit 踩坑) | 2011-08 起全历史,2012 起实测零缺口 |
-| **Yahoo** | 股票 EOD + **DXY(`DX-Y.NYB` 真 ICE 美元指数)/ MOVE(`^MOVE`)/ 油品期货(`CL=F`/`BZ=F`/`HO=F`/`RB=F`)/ USD/JPY** | 日频 | `yahoo-finance2` | `yahoo-finance2` **v4** npm(class API `new YahooFinance()`) | 可回填多年 |
+| **Yahoo** | **ETF 现货 `price_eod`(SPY/QQQ/GLD/USO/TLT/NOBL,`close` = 只调拆股不调分红)** + 股票 EOD + **DXY(`DX-Y.NYB` 真 ICE 美元指数)/ MOVE(`^MOVE`)/ 油品期货(`CL=F`/`BZ=F`/`HO=F`/`RB=F`)/ USD/JPY** | 日频 | `yahoo-finance2` | `yahoo-finance2` **v4** npm(class API `new YahooFinance()`) | 可回填多年 |
 | **其它** | Eris(SOFR OIS 曲线)/ MOF+JPX(JGB 收益率/JGB VIX)/ CFTC(日元净持仓 Legacy / VIX 净持仓 TFF)/ Shiller(CAPE) | 混:Eris 日 / MOF 日 / JPX 日 / **CFTC 周** / Shiller 月 | 零;**JPX JGB VIX 用 `fflate`** | 各自 adapter(见 `fetchers/`)| 多为全历史 |
 | **EIA** | 周度石油报告:炼厂开工率 / 加工量 + 馏分油产量(→ 收率、同比)/ 馏分油+汽油库存 / 馏分油出口(→ 季节 z)· **零售柴油/汽油泵价**(→ 与批发期货减出零售加价) | **周频**(实物六条周三 10:30 ET 发、截止上周五,滞后 ~5 天;**零售两条周一发**,两批右端日期不齐是常态) | 零(要 key) | JSON `api.eia.gov/v2/seriesid/PET.{ID}.W`(要 key)⚠️ 裸 ID 404,必须带 `PET.` 前缀 + `.W` 后缀;`start`/`end`/`data[]` **全被忽略**,唯一生效的裁剪参数是 `length`;返回**倒序** | 1982 起全历史;**已发布值下周会被修订**(每次拉全量,故不落库) |
 | **ISM(经 PR Newswire)** | 制造业 / 服务业 PMI 头条 + 各自 Prices 分项(`ismMfg` / `ismSvc` / `ismMfgPrices` / `ismSvcPrices`) | **月频**(制造业第 1 个工作日、服务业第 3 个工作日,10:00 ET) | 零 | newsroom 列表页 `prnewswire.com/news/institute-for-supply-management/?page=N&pagesize=M` 按 slug 认月报 → 单篇解析「AT A GLANCE」表(**按行首标签取行,不按行号**)。⚠️ 三代版式都实测过:报告月可能在表头第二行(2021~2023)、年份可能被拆进两个 span 成「202 1」(2020-10~2022-02)、2020 年前服务业叫 NMI;⚠️ 服务业表右半边是制造业对照列,只取前两格 | **落库**(daily `ism` 分组增量;`bun run src/server/jobs/ismSnapshot.ts --backfill` 回填,已回填 2018-01 起)。⚠️ 回填 = 每月「最后一次被发布的读数」拼接:次月那篇带回的上月值会覆盖(1 月季节因子重估由此带回一个月),更早月份不改 —— 非官方修订后全序列。**停更防护**:每轮写完查两个扇区各自最新报告月,落后当前月 >2 个月 → `ism` 记 failed(状态灯红,悬停见原因);只看列表页认不认得出月报挡不住单扇区改名(旧名月报会在第一页挂一年) |
@@ -122,6 +122,13 @@
 - **Yahoo(股票 EOD + DXY/MOVE/油品期货/USD-JPY)**:用 `yahoo-finance2` **v4**(class API `new YahooFinance()`;
   v4 相对 v3 只把最低 Node 提到 22,**API 无变化**)。周末它会返回标着周六/日的快照——用
   `lastClosedTradingDate()` 归到正确的周五,否则 X 轴混入周末。
+- **ETF 现货口径(`price_eod`,蜡烛 / EMA / RV 腿 / 攻防比值共用)**:Yahoo `close` = **只调拆股、不调分红**,
+  与 TradingView 默认、IBKR `TRADES`、moomoo App 显示同一个数(2026-10 对账 SPY 2026-03-30 OHLC 逐位一致,
+  EMA5/20/50 误差 0.000)。**每轮全量重拉**(一次请求即 2018 起全段):Yahoo 历史会随新拆股整段改写,
+  增量续抓会拼出两套基准。**不设降级源**(Yahoo 挂了就记失败、库里保留上一轮整段)。⚠️ 别接回 moomoo 历史 K 线:
+  前复权每次除息整段改写历史,增量入库拼出过 06-22 前后差 0.25% + 09-16 单日毛刺;不复权又连拆股都不调
+  (USO 2020-04-29 合股 2.13→18.00),不能回填;且其高 / 低偶含场外离谱成交(QQQ 2019-12-03 低 193.78)。
+  要分红复权的(回测)走 `fetchAdjDailyBars`(`adjclose`),不读 `price_eod`。
 - **MOVE(ICE BofA 债市波动率,走 Yahoo `^MOVE`)**:带 caret,无 caret 的 `MOVE` 是 Movado 股票。
   MOVE 是 ICE 授权指数,FRED / stooq 都没有,GitHub 上的仓库不是用 yfinance 就是 Bloomberg,**没有第二个免费源**。
   坑:Yahoo 的日线 `quotes[].close` 会**整段返回 null**(2026-07-20 起,已用 CNBC 与 TradingView 核对确认值仍在更新),

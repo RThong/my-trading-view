@@ -15,7 +15,7 @@
 #     实测踩过(2026-08-04):这里曾 `exit 1`,OpenD 连崩三天 → MOVE / AI CDS / eris /
 #     VX 也停了三天,而 MOVE 是快照型、漏一天永久缺一格。
 #     ⚠ 期权组照旧会失败(快照型,当天不记就永久丢),本脚本救不了。
-#       VRP 输入不失败:ETF 现货腿整体降级 Yahoo 后仍记 success(见 vrpInputs.ts)。
+#       VRP 输入不受影响:ETF 现货只走 Yahoo、不连 OpenD(见 vrpInputs.ts)。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -32,7 +32,7 @@ mkdir -p "$LOG_DIR"
 
 port_open() { nc -z "$HOST" "$PORT" 2>/dev/null; }
 # 端口开 ≠ 能取行情:trd 登录成功但 qot 会话可能悬空(memory opend-qot-session-drop),
-# 老逻辑只探端口 + 固定 sleep 预热就跑,遇悬空会全标的静默降级 Yahoo。探真状态。
+# 老逻辑只探端口 + 固定 sleep 预热就跑,遇悬空会让期权全标的静默失败。探真状态。
 qot_ready() { bun run src/server/fetchers/moomooClient.ts >/dev/null 2>&1; }
 
 # OPEND_PID:本轮由脚本亲自拉起的 OpenD 的 PID(用于启动期存活检测)。
@@ -97,11 +97,11 @@ elif [[ -n "${OPEND_CMD:-}" ]]; then
   # 起不来只告警,**不 exit** ——否则一个 daemon 起不来会连带停掉压根不需要 OpenD 的那几组
   # (MOVE / AI CDS / eris / VX 期限结构)。实测踩过(2026-08-04):OpenD 连崩三天,
   # 这几组也跟着停了三天,而 MOVE 是快照型、漏一天永久缺一格(真丢了两天)。
-  # ⚠ 期权组照旧会失败 —— 本改动救不了它(VRP 输入不失败,ETF 腿降级 Yahoo)。
+  # ⚠ 期权组照旧会失败 —— 本改动救不了它(VRP 输入不依赖 OpenD,ETF 现货只走 Yahoo)。
   # 与下面「没配 OPEND_CMD」那条路对齐。
-  launch_opend || echo "警告:OpenD 起不来,期权组会失败,VRP 降级 Yahoo(其余组照跑)。" >&2
+  launch_opend || echo "警告:OpenD 起不来,期权组会失败(其余组照跑)。" >&2
 else
-  echo "警告:OpenD 未运行且未配置 OPEND_CMD,期权组会失败,VRP 降级 Yahoo(其余组照跑)。" >&2
+  echo "警告:OpenD 未运行且未配置 OPEND_CMD,期权组会失败(其余组照跑)。" >&2
 fi
 
 # qot 就绪门:端口开着才探(没 OpenD 的场景直接跳过,让非行情组照跑)。
@@ -112,7 +112,7 @@ if port_open; then
   elif (( rc == 2 )); then
     # OpenD 中途自退(事故形态:先开端口、约 30s 后退)。**只告警不 exit** —— 同 A1:
     # 期权组自己会记 failed,不该连坐掉 MOVE / AI CDS / eris / VX 期限结构 那几组。
-    echo "警告:OpenD 进程已退出(见 $LOG_DIR/opend.log),期权组会失败,VRP 降级 Yahoo(其余组照跑)。" >&2
+    echo "警告:OpenD 进程已退出(见 $LOG_DIR/opend.log),期权组会失败(其余组照跑)。" >&2
   elif [[ -z "$OPEND_PID" && -n "${OPEND_CMD:-}" ]]; then
     # 预先在跑的 OpenD 行情会话悬空(反复发作的老坑):受控重启一次自愈。
     # 只对"预先存在"的做 —— 本轮刚亲手拉起就不就绪,多半是账号/网络问题,再重启无益、徒增 crashpad。
@@ -123,15 +123,15 @@ if port_open; then
       if (( rc == 0 )); then
         echo "重启后 qot 会话就绪。"
       elif (( rc == 2 )); then
-        echo "警告:重启后 OpenD 又退出(见 $LOG_DIR/opend.log),期权组会失败,VRP 降级 Yahoo(其余组照跑)。" >&2
+        echo "警告:重启后 OpenD 又退出(见 $LOG_DIR/opend.log),期权组会失败(其余组照跑)。" >&2
       else
-        echo "警告:重启后 qot ${QOT_READY_TIMEOUT}s 仍未就绪,期权组会失败,VRP 降级 Yahoo。" >&2
+        echo "警告:重启后 qot ${QOT_READY_TIMEOUT}s 仍未就绪,期权组会失败。" >&2
       fi
     else
-      echo "警告:自愈重启未完成(见上),期权组会失败,VRP 降级 Yahoo。" >&2
+      echo "警告:自愈重启未完成(见上),期权组会失败。" >&2
     fi
   else
-    echo "警告:qot 会话 ${QOT_READY_TIMEOUT}s 未就绪(行情会话悬空),期权组会失败,VRP 降级 Yahoo。重启 OpenD 可修。" >&2
+    echo "警告:qot 会话 ${QOT_READY_TIMEOUT}s 未就绪(行情会话悬空),期权组会失败,重启 OpenD 可修。" >&2
   fi
 fi
 

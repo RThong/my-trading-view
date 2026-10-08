@@ -68,7 +68,7 @@ export const vrpRecipes = (): Record<string, VrpRecipe> =>
 export const ivIndexByUnderlying = (): Record<string, string> =>
   Object.fromEntries(MARKET_CATALOG.filter((a) => a.vrp).map((a) => [a.underlying, a.vrp!.ivIndex]));
 
-/** 走 OpenD/Yahoo 抓现货价的标的:非指数、非 deribit(BTC 价由 crypto job 单独抓)。 */
+/** 走 Yahoo 抓现货价的标的:非指数、非 deribit(BTC 价由 crypto job 单独抓)。 */
 export const priceLegUnderlyings = (): string[] =>
   MARKET_CATALOG.filter((a) => !a.index && a.optionSource !== 'deribit').map((a) => a.underlying);
 
