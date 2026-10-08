@@ -14,7 +14,7 @@ export function changeStats(cur: number, prev: number | undefined): { delta: num
 }
 
 /** 把 lightweight-charts 的 Time(BusinessDay 对象 / 字符串 / 时间戳)统一格式化成 YYYY-MM-DD。 */
-function fmtDate(time: unknown): string {
+export function fmtDate(time: unknown): string {
   if (typeof time === 'string') return time; // 已是 'YYYY-MM-DD'
   if (time && typeof time === 'object' && 'year' in time) {
     const t = time as { year: number; month: number; day: number };

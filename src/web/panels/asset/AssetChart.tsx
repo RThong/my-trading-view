@@ -4,7 +4,15 @@ import { COLORS, buildSpecs, paneConfig, toBars, useAssetData } from './assetCha
 import { aggregateBars } from '../../lib/chart';
 import { usePaneChartStack } from '../chart/paneChart.hooks';
 import { PaneChartView } from '../chart/PaneChartView';
-import { INDICATORS, computeIndicatorLines, useIndicatorSelection, withIndicators } from '../chart/priceIndicators';
+import {
+  INDICATOR_OPTIONS,
+  OSCILLATORS,
+  computeIndicatorLines,
+  useIndicatorSelection,
+  withIndicators,
+} from '../chart/priceIndicators';
+import { OscillatorPanel } from '../chart/OscillatorPanel';
+import type { OscId } from '../chart/oscillator.hooks';
 
 // 一个资产的指标放进同一个 chart 的多个 pane(共享时间轴),顶部恒为现货蜡烛:
 //   pane0 现货(OHLC)· pane1 25Δ call/put IV · pane2 skew · [pane3 隐含vs已实现RV · pane4 VRP]
@@ -32,10 +40,8 @@ export function AssetChart({
   const indicators = useIndicatorSelection(storageKey);
   // 叠加指标挂在现货蜡烛上,并把线并进现货 pane 的图例 / 折叠。
   // 计算缓存住:十字线每动一下组件都重渲染,长历史上每次重算 8 条 EMA + 布林带是白耗。
-  const lines = useMemo(
-    () => computeIndicatorLines(indicators.active, aggregateBars(toBars(price), interval)),
-    [indicators.active, price, interval],
-  );
+  const bars = useMemo(() => aggregateBars(toBars(price), interval), [price, interval]);
+  const lines = useMemo(() => computeIndicatorLines(indicators.active, bars), [indicators.active, bars]);
   const { paneDefs, specs, seriesName, colors } = withIndicators(
     indicators.active,
     lines,
@@ -45,32 +51,60 @@ export function AssetChart({
     base.seriesName,
     COLORS,
   );
-  const { order, collapsed, move, toggle, cells, hovering, tops, drawing, toggleDrawing, selection, deleteSelected } =
-    usePaneChartStack(containerRef, paneDefs, paneCount, specs, { storageKey });
+  const {
+    order,
+    collapsed,
+    move,
+    toggle,
+    cells,
+    hovering,
+    tops,
+    drawing,
+    toggleDrawing,
+    selection,
+    deleteSelected,
+    chartRef,
+  } = usePaneChartStack(containerRef, paneDefs, paneCount, specs, { storageKey });
+
+  // 副图(MACD / RSI)只在只展开现货格时出现:否则主图已被多格瓜分,再压两张副图读不了。
+  // 勾选状态保留,展开别的格时只是暂不显示,收回去自动恢复。
+  const onlyPrice = paneDefs.every((p) => p.key === 'price' || collapsed.has(p.key));
+  const oscIds = OSCILLATORS.map((o) => o.id as OscId).filter((id) => onlyPrice && indicators.ids.includes(id));
+  const activeIds = [...indicators.active.map((d) => d.id), ...oscIds];
 
   return (
-    <PaneChartView
-      containerRef={containerRef}
-      paneDefs={paneDefs}
-      paneCount={paneCount}
-      order={order}
-      collapsed={collapsed}
-      move={move}
-      toggle={toggle}
-      cells={cells}
-      hovering={hovering}
-      tops={tops}
-      seriesName={seriesName}
-      colors={colors}
-      isLoading={isLoading}
-      error={error}
-      errorLabel={label}
-      desc={desc}
-      drawing={drawing}
-      toggleDrawing={toggleDrawing}
-      selection={selection}
-      deleteSelected={deleteSelected}
-      indicators={{ options: INDICATORS, active: indicators.active.map((d) => d.id), toggle: indicators.toggle }}
-    />
+    <div className="flex h-full w-full flex-col">
+      <div className="min-h-0 flex-1">
+        <PaneChartView
+          containerRef={containerRef}
+          paneDefs={paneDefs}
+          paneCount={paneCount}
+          order={order}
+          collapsed={collapsed}
+          move={move}
+          toggle={toggle}
+          cells={cells}
+          hovering={hovering}
+          tops={tops}
+          seriesName={seriesName}
+          colors={colors}
+          isLoading={isLoading}
+          error={error}
+          errorLabel={label}
+          desc={desc}
+          drawing={drawing}
+          toggleDrawing={toggleDrawing}
+          selection={selection}
+          deleteSelected={deleteSelected}
+          indicators={{
+            options: INDICATOR_OPTIONS,
+            active: activeIds,
+            toggle: indicators.toggle,
+            disabled: onlyPrice ? undefined : { ids: OSCILLATORS.map((o) => o.id), hint: '收起其它格、只看现货时可用' },
+          }}
+        />
+      </div>
+      {oscIds.length > 0 && <OscillatorPanel ids={oscIds} bars={bars} mainChartRef={chartRef} />}
+    </div>
   );
 }

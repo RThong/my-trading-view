@@ -32,6 +32,8 @@ type Props = {
     options: { id: string; label: string; series: { key: string }[] }[];
     active: string[];
     toggle: (id: string) => void;
+    /** 暂不可用的选项:置灰、显示为未勾(勾选状态由调用方保留),悬停给 hint。 */
+    disabled?: { ids: string[]; hint: string };
   };
 };
 
@@ -123,19 +125,26 @@ export function PaneChartView({
                   sideOffset={4}
                   className="z-50 flex flex-col gap-0.5 rounded-md border border-neutral-700 bg-neutral-900 p-1.5 text-xs text-neutral-200 shadow-md outline-none"
                 >
-                  {indicators.options.map((o) => (
-                    <label
-                      key={o.id}
-                      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-neutral-800"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={indicators.active.includes(o.id)}
-                        onChange={() => indicators.toggle(o.id)}
-                      />
-                      {o.label}
-                    </label>
-                  ))}
+                  {indicators.options.map((o) => {
+                    const off = indicators.disabled?.ids.includes(o.id) ?? false;
+                    return (
+                      <label
+                        key={o.id}
+                        title={off ? indicators.disabled?.hint : undefined}
+                        className={`flex items-center gap-2 rounded px-2 py-1 ${
+                          off ? 'cursor-not-allowed text-neutral-600' : 'cursor-pointer hover:bg-neutral-800'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          disabled={off}
+                          checked={!off && indicators.active.includes(o.id)}
+                          onChange={() => indicators.toggle(o.id)}
+                        />
+                        {o.label}
+                      </label>
+                    );
+                  })}
                 </Popover.Content>
               </Popover.Portal>
             </Popover.Root>

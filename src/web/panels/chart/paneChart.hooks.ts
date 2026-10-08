@@ -384,5 +384,18 @@ export function usePaneChartStack(
     enabled: drawable != null,
     seriesVersion,
   });
-  return { order, collapsed, move, toggle, cells, hovering, tops, drawing, toggleDrawing, selection, deleteSelected };
+  return {
+    order,
+    collapsed,
+    move,
+    toggle,
+    cells,
+    hovering,
+    tops,
+    drawing,
+    toggleDrawing,
+    selection,
+    deleteSelected,
+    chartRef, // 供主图外的同步方(如下方副图)订阅可视范围 / 十字线
+  };
 }

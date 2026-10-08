@@ -55,6 +55,13 @@ export const INDICATORS: IndicatorDef[] = [
   },
 ];
 
+/** 副图指标:不叠蜡烛,另起小图画在主图下方(见 OscillatorPanel);在这里只占一个勾选位。 */
+export const OSCILLATORS = [
+  { id: 'macd', label: 'MACD 12,26,9', series: [] },
+  { id: 'rsi', label: 'RSI 6/12/24', series: [] },
+];
+export const INDICATOR_OPTIONS = [...INDICATORS, ...OSCILLATORS];
+
 const storageKeyOf = (key: string) => `indicators:${key}`;
 
 function loadIds(key: string): string[] {
@@ -82,7 +89,7 @@ export function useIndicatorSelection(storageKey: string) {
 
   // 引用随 ids 稳定:调用方拿它当 useMemo 依赖缓存指标计算,不必自己再包一层。
   const active = useMemo(() => INDICATORS.filter((d) => ids.includes(d.id)), [ids]);
-  return { active, toggle };
+  return { active, ids, toggle };
 }
 
 export type IndicatorLine = IndicatorDef['series'][number] & { data: LinePoint[] };
