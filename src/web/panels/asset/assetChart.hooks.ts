@@ -83,7 +83,7 @@ export function paneConfig(vrpUnderlying?: string) {
 const toLine = (rows: Array<Record<string, unknown>>, key: string): LinePoint[] =>
   rows.map((r) => ({ time: r.date as string, value: r[key] as number }));
 // OHLC 缺失(个别源)时退化成 close 的一字蜡烛,避免 setData 报错。
-const toBars = (rows: PriceBar[]): Bar[] =>
+export const toBars = (rows: PriceBar[]): Bar[] =>
   rows.map((r) => ({
     time: r.date,
     open: r.open ?? r.close,

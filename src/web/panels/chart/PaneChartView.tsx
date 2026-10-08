@@ -1,3 +1,4 @@
+import * as Popover from '@radix-ui/react-popover';
 import type { LegendCell, PaneDef } from './paneChart.types';
 import { InfoTip } from '../../components/InfoTip';
 
@@ -26,6 +27,8 @@ type Props = {
   toggleDrawing?: () => void;
   selection?: { x: number; y: number } | null; // 选中线时浮动操作条的位置(容器相对像素)
   deleteSelected?: () => void;
+  /** K 线叠加指标多选(EMA / 布林带);不传即不显示「指标」按钮。 */
+  indicators?: { options: { id: string; label: string }[]; active: string[]; toggle: (id: string) => void };
 };
 
 export function PaneChartView({
@@ -51,6 +54,7 @@ export function PaneChartView({
   toggleDrawing,
   selection,
   deleteSelected,
+  indicators,
 }: Props) {
   return (
     <div className="relative flex h-full w-full flex-col">
@@ -84,17 +88,51 @@ export function PaneChartView({
           );
         })}
       </div>
-      {toggleDrawing && (
+      {(toggleDrawing || indicators) && (
         <div className="mb-2 flex items-center gap-1.5 text-xs">
-          <button
-            onClick={toggleDrawing}
-            className={`rounded border px-2 py-0.5 ${
-              drawing ? 'border-yellow-500 text-yellow-400' : 'border-neutral-700 text-neutral-300'
-            }`}
-            title="画趋势线:开启后点两点成线(有预览跟手)。关闭后:点线选中→按 Delete 删除,或点端点抓起→移动→再点放下调整。"
-          >
-            ✏ 画线{drawing ? '中' : ''}
-          </button>
+          {toggleDrawing && (
+            <button
+              onClick={toggleDrawing}
+              className={`rounded border px-2 py-0.5 ${
+                drawing ? 'border-yellow-500 text-yellow-400' : 'border-neutral-700 text-neutral-300'
+              }`}
+              title="画趋势线:开启后点两点成线(有预览跟手)。关闭后:点线选中→按 Delete 删除,或点端点抓起→移动→再点放下调整。"
+            >
+              ✏ 画线{drawing ? '中' : ''}
+            </button>
+          )}
+          {indicators && (
+            <Popover.Root>
+              <Popover.Trigger
+                className={`rounded border px-2 py-0.5 ${
+                  indicators.active.length ? 'border-sky-600 text-sky-300' : 'border-neutral-700 text-neutral-300'
+                }`}
+              >
+                指标{indicators.active.length ? ` (${indicators.active.length})` : ''} ▾
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  align="start"
+                  sideOffset={4}
+                  className="z-50 flex flex-col gap-0.5 rounded-md border border-neutral-700 bg-neutral-900 p-1.5 text-xs text-neutral-200 shadow-md outline-none"
+                >
+                  {indicators.options.map((o) => (
+                    <label
+                      key={o.id}
+                      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-neutral-800"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={indicators.active.includes(o.id)}
+                        onChange={() => indicators.toggle(o.id)}
+                      />
+                      {o.label}
+                    </label>
+                  ))}
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+          )}
         </div>
       )}
       <div className="relative min-h-0 flex-1">

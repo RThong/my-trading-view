@@ -84,7 +84,8 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
     {
       color: spec.color,
       title: spec.title,
-      lineWidth: 2,
+      lineWidth: spec.overlay ? 1 : 2,
+      ...(spec.overlay ? { priceLineVisible: false } : {}),
       // 阶梯线:低频序列(季频)不该在两次发布之间画出斜坡,那是凭空造出来的中间值。
       ...(spec.step ? { lineType: LineType.WithSteps } : {}),
     },
@@ -123,6 +124,15 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
   return s;
 }
 
+/** 时间轴签名:逐条非叠加 series 的 key + 首尾时间 + 点数。叠加指标线(overlay)不计入 ——
+ *  它们由蜡烛派生、增删不该把视野弹回全景;任何一条底层序列的数据变了(换周期 / 新数据到)签名就变。 */
+function timeSpan(specs: Spec[]): string {
+  return specs
+    .filter((s) => !(s.kind === 'line' && s.overlay))
+    .map((s) => `${s.key}:${s.data[0]?.time ?? ''}:${s.data[s.data.length - 1]?.time ?? ''}:${s.data.length}`)
+    .join('|');
+}
+
 // ── 图表引擎维度:持有 chart + series 句柄,负责建图与 series 同步 ──────────────
 export function usePaneChart(
   containerRef: React.RefObject<HTMLDivElement | null>,
@@ -133,6 +143,7 @@ export function usePaneChart(
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<Map<string, AnySeries>>(new Map());
   const [seriesVersion, setSeriesVersion] = useState(0); // series 建/删后自增,供画线 hook 感知 series 就绪
+  const spanRef = useRef(''); // 上次 fitContent 时的时间轴签名
 
   // 建图 + 加 pane。paneCount 每实例固定,等价于挂载建一次、卸载销毁。
   useEffect(() => {
@@ -148,6 +159,7 @@ export function usePaneChart(
       chart.remove();
       seriesMap.clear();
       chartRef.current = null;
+      spanRef.current = ''; // 重建后的新图要重新 fit
     };
   }, [containerRef, paneCount]);
 
@@ -171,12 +183,20 @@ export function usePaneChart(
       if (!s) {
         s = addSeries(chart, spec);
         seriesRef.current.set(spec.key, s);
+      } else if (spec.kind === 'line') {
+        // 复用的 series 不会重读 spec 颜色;同 key 换了配色(如改均线周期)要显式同步,否则线色与图例对不上。
+        s.applyOptions({ color: spec.color });
       }
       s.setData(spec.data as Parameters<AnySeries['setData']>[0]);
       if (spec.kind === 'candle' && needsLogScale(spec.data)) applyLogScale(s);
     }
 
-    chart.timeScale().fitContent();
+    // 只在时间轴真变了(换周期 / 新数据到)才 fitContent;勾一条叠加指标不该把用户缩放好的视野弹回全景。
+    const span = timeSpan(specs);
+    if (span !== spanRef.current) {
+      spanRef.current = span;
+      chart.timeScale().fitContent();
+    }
     setSeriesVersion((v) => v + 1); // series 已就绪/变更,通知依赖方(趋势线挂载)
   }, [specs]);
 

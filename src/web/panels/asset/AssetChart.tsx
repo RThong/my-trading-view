@@ -1,8 +1,10 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import type { Interval } from '../../hooks/interval';
-import { COLORS, buildSpecs, paneConfig, useAssetData } from './assetChart.hooks';
+import { COLORS, buildSpecs, paneConfig, toBars, useAssetData } from './assetChart.hooks';
+import { aggregateBars } from '../../lib/chart';
 import { usePaneChartStack } from '../chart/paneChart.hooks';
 import { PaneChartView } from '../chart/PaneChartView';
+import { INDICATORS, computeIndicatorLines, useIndicatorSelection, withIndicators } from '../chart/priceIndicators';
 
 // 一个资产的指标放进同一个 chart 的多个 pane(共享时间轴),顶部恒为现货蜡烛:
 //   pane0 现货(OHLC)· pane1 25Δ call/put IV · pane2 skew · [pane3 隐含vs已实现RV · pane4 VRP]
@@ -21,13 +23,30 @@ export function AssetChart({
 }) {
   const label = underlying.replace(/^\./, '');
   // 每渲染直接算(paneConfig 是查表,便宜);paneDefs 的引用稳定由 usePaneLayout 内部 useStable 负责,无需在此 memo。
-  const { seriesName, paneDefs, paneCount, desc } = paneConfig(vrpUnderlying);
+  const base = paneConfig(vrpUnderlying);
+  const { paneCount, desc } = base;
   const containerRef = useRef<HTMLDivElement>(null);
+  const storageKey = `asset:${underlying}`;
 
   const { opt, vrp, price, error, isLoading } = useAssetData(underlying, vrpUnderlying);
-  const specs = buildSpecs(opt, vrp, price, interval, vrpUnderlying, paneDefs, seriesName);
+  const indicators = useIndicatorSelection(storageKey);
+  // 叠加指标挂在现货蜡烛上,并把线并进现货 pane 的图例 / 折叠。
+  // 计算缓存住:十字线每动一下组件都重渲染,长历史上每次重算 8 条 EMA + 布林带是白耗。
+  const lines = useMemo(
+    () => computeIndicatorLines(indicators.active, aggregateBars(toBars(price), interval)),
+    [indicators.active, price, interval],
+  );
+  const { paneDefs, specs, seriesName, colors } = withIndicators(
+    indicators.active,
+    lines,
+    'price',
+    base.paneDefs,
+    buildSpecs(opt, vrp, price, interval, vrpUnderlying, base.paneDefs, base.seriesName),
+    base.seriesName,
+    COLORS,
+  );
   const { order, collapsed, move, toggle, cells, hovering, tops, drawing, toggleDrawing, selection, deleteSelected } =
-    usePaneChartStack(containerRef, paneDefs, paneCount, specs, { storageKey: `asset:${underlying}` });
+    usePaneChartStack(containerRef, paneDefs, paneCount, specs, { storageKey });
 
   return (
     <PaneChartView
@@ -42,7 +61,7 @@ export function AssetChart({
       hovering={hovering}
       tops={tops}
       seriesName={seriesName}
-      colors={COLORS}
+      colors={colors}
       isLoading={isLoading}
       error={error}
       errorLabel={label}
@@ -51,6 +70,7 @@ export function AssetChart({
       toggleDrawing={toggleDrawing}
       selection={selection}
       deleteSelected={deleteSelected}
+      indicators={{ options: INDICATORS, active: indicators.active.map((d) => d.id), toggle: indicators.toggle }}
     />
   );
 }
