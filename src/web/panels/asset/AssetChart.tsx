@@ -57,6 +57,7 @@ export function AssetChart({
     toggleDrawing,
     selection,
     deleteSelected,
+    solo,
     chartRef,
   } = usePaneChartStack(containerRef, paneDefs, paneCount, specs, { storageKey });
 
@@ -90,11 +91,12 @@ export function AssetChart({
           toggleDrawing={toggleDrawing}
           selection={selection}
           deleteSelected={deleteSelected}
+          solo={{ label: '只看现货', active: onlyPrice, onClick: () => solo('price') }}
           indicators={{
             options: [...INDICATORS, ...OSC_OPTIONS],
             active: activeIds,
             toggle: indicators.toggle,
-            disabled: onlyPrice ? undefined : { ids: OSC_IDS, hint: '收起其它格、只看现货时可用' },
+            disabled: onlyPrice ? undefined : { ids: OSC_IDS, hint: '点「只看现货」后可用' },
           }}
         />
       </div>

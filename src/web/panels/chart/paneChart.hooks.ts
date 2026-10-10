@@ -287,7 +287,22 @@ export function usePaneLayout(
     });
   };
 
-  return { order, collapsed, move, toggle };
+  // 单独看某一格(收起其余);再按一次按进入前的折叠状态恢复。
+  // 进入前的状态只在点击时读写、渲染不读 → 放 ref。「是否在单独看」由 collapsed 派生,
+  // 手动展开任一格就自然退出,不会出现按钮状态与实际布局不符。
+  const beforeSoloRef = useRef<Set<string> | null>(null);
+  const solo = (key: string) => {
+    const isSolo = paneDefs.every((d) => d.key === key || collapsed.has(d.key));
+    if (isSolo) {
+      setCollapsed(beforeSoloRef.current ?? new Set());
+      beforeSoloRef.current = null;
+    } else {
+      beforeSoloRef.current = collapsed;
+      setCollapsed(new Set(paneDefs.map((d) => d.key).filter((k) => k !== key)));
+    }
+  };
+
+  return { order, collapsed, move, toggle, solo };
 }
 
 // ── 图例维度:crosshair 取值 + 各 pane 顶部偏移(定位图例)──────────────────────
@@ -372,7 +387,7 @@ export function usePaneChartStack(
   drawable?: { storageKey: string },
 ) {
   const { chartRef, seriesRef, seriesVersion } = usePaneChart(containerRef, paneCount, specs);
-  const { order, collapsed, move, toggle } = usePaneLayout(paneDefs, paneCount, chartRef, seriesRef);
+  const { order, collapsed, move, toggle, solo } = usePaneLayout(paneDefs, paneCount, chartRef, seriesRef);
   const { cells, hovering, tops } = useCrosshairLegend(chartRef, seriesRef, containerRef, order, collapsed);
   const { drawing, toggleDrawing, selection, deleteSelected } = useTrendlines({
     chartRef,
@@ -396,6 +411,7 @@ export function usePaneChartStack(
     toggleDrawing,
     selection,
     deleteSelected,
+    solo,
     chartRef, // 供主图外的同步方(如下方副图)订阅可视范围 / 十字线
   };
 }

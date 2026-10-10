@@ -35,6 +35,8 @@ type Props = {
     /** 暂不可用的选项:置灰、显示为未勾(勾选状态由调用方保留),悬停给 hint。 */
     disabled?: { ids: string[]; hint: string };
   };
+  /** 工具条上的「单独看某格」切换钮;不传即不显示。 */
+  solo?: { label: string; active: boolean; onClick: () => void };
 };
 
 export function PaneChartView({
@@ -61,6 +63,7 @@ export function PaneChartView({
   selection,
   deleteSelected,
   indicators,
+  solo,
 }: Props) {
   // 指标线的图例只给数值:均线的单日涨跌没有信息量,十来行涨跌幅只会把读数淹掉。
   const valueOnly = new Set(indicators?.options.flatMap((o) => o.series.map((s) => s.key)) ?? []);
@@ -97,8 +100,19 @@ export function PaneChartView({
           );
         })}
       </div>
-      {(toggleDrawing || indicators) && (
+      {(toggleDrawing || indicators || solo) && (
         <div className="mb-2 flex items-center gap-1.5 text-xs">
+          {solo && (
+            <button
+              onClick={solo.onClick}
+              className={`rounded border px-2 py-0.5 ${
+                solo.active ? 'border-sky-600 text-sky-300' : 'border-neutral-700 text-neutral-300'
+              }`}
+              title={solo.active ? '再点一下恢复之前的布局' : '收起其它格,只看这一格'}
+            >
+              {solo.label}
+            </button>
+          )}
           {toggleDrawing && (
             <button
               onClick={toggleDrawing}
