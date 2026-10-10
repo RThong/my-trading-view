@@ -6,6 +6,8 @@ A personal, local-only markets dashboard, organized as **vertical perspectives**
 - **期权 (Options)** — daily 25Δ IV + skew snapshot of SPY / QQQ / VIX / TLT / GLD / USO
   (via moomoo OpenD) and BTC (via Deribit), stored in SQLite. Underlyings with a free
   volatility index (SPY/QQQ/GLD/USO/BTC) also get implied-vs-realized + VRP panes.
+  The spot candle pane carries TradingView-style overlays (EMA ribbon, Bollinger 2σ/3σ) and,
+  in a one-click *spot-only* mode, MACD / RSI sub-charts — see [Spot chart tools](#spot-chart-tools).
 - **Regime perspectives** — macro/market *regime* indicators pulled on demand from
   FRED / CBOE / CNN / Yahoo / Eris / MOF+JPX / CFTC / Shiller / ICE / Computable: **信用 · 流动性 · 情绪 ·
   宏观 · 能源 · 利率 · 日本 · 信用曲线 · AI · 通胀 · 估值**, plus a **特色指标 → 攻防** tab
@@ -23,12 +25,12 @@ well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local pag
 - **Frontend:** React 19 + Vite + Tailwind CSS v4 + [Lightweight Charts](https://github.com/tradingview/lightweight-charts) v5
 - **Tooling:** [Biome](https://biomejs.dev) for lint + format (Rust, no `typescript` dep → works with TS7, which typescript-eslint doesn't). `react-hooks/exhaustive-deps` is an **error**.
 - **Data sources:**
-  - moomoo OpenD (local WebSocket) — stock/ETF/index options
-  - [Deribit](https://docs.deribit.com) public REST — crypto options + BTC spot + DVOL
+  - moomoo OpenD (local WebSocket) — stock/ETF/index options (options only; spot prices come from Yahoo)
+  - [Deribit](https://docs.deribit.com) public REST — crypto options + DVOL
   - CBOE public CSV — VIX/VXN/GVZ/OVX, COR1M/VIXEQ, VX1/VX3 futures, RXM (Risk Reversal) + SPX
   - [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) — rates/TIPS · credit spread · net liquidity · repo · inflation (BEI · 5y5y forward · sticky CPI · wages) · Kim-Wright term premium (needs a free API key)
   - NY Fed — HLW natural rate r\* (`current estimates` xlsx, quarterly) · ACM 10Y term premium (monthly CSV, the independent cross-check on Kim-Wright); no key
-  - Yahoo (`yahoo-finance2` v4) — DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY · stock EOD fallback
+  - Yahoo (`yahoo-finance2` v4) — **ETF spot OHLC** (SPY/QQQ/GLD/USO/TLT/NOBL: split-adjusted, *not* dividend-adjusted — the same number TradingView shows by default; full history back to each fund's listing, re-fetched in full every run so a future split can't leave two adjustment bases stitched together) · DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY
   - Eris — SOFR OIS par curve · MOF + JPX — JGB yields / JGB VIX · CFTC — JPY net positioning · Shiller — CAPE · CNN — Fear & Greed
   - [BOJ](https://www.boj.or.jp/research/research_data/gap/) — output gap + potential growth with its four contributions (official xlsx = zip+XML, quarterly, no key)
   - [Nakajima](https://github.com/jouchinakajima/program) (BOJ researcher, **personal model estimates, not a BOJ release**) — JGB 10Y term premium + expected short rate (daily, **nominal**; the two sum exactly to the MOF 10Y) and natural rate r\* with a 95% band (quarterly, **real** — never plot it against the nominal pair). Ships irregularly every 2-4 months; judge staleness by commit date, not by the data's last point
@@ -38,7 +40,7 @@ well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local pag
   - [TWSE OpenAPI](https://openapi.twse.com.tw) — TSMC monthly revenue, official & key-free, out ~T+10; **the fastest read in the whole AI chain**, a month+ ahead of any quarterly filing (amounts in TWD thousands, dates in ROC calendar)
   - [DART](https://opendart.fss.or.kr) (Korea FSS) — the *only* source for SK Hynix's four line items: its SEC side has no financial XBRL, and its 6-K only carries revenue / operating profit, so gross margin and FCF can't be derived from either; needs `DART_API_KEY`
   - [Computable GPU Index](https://api.getcomputable.com) ([collector + method, Apache-2.0](https://github.com/getcomputable/gpu-index)) — H100/H200/B200/B300 cloud rental price indices, key-free public REST. **List-price aggregate, not transaction prices**; rolling window of only a few weeks, and CoreWeave sits in three of the panels (so not independent of CRWV). The method is re-minted every few weeks (panel seats, vote smoothing); each print carries its `methodology_id`. CC BY-NC 4.0
-  - [Bitstamp](https://www.bitstamp.net/api) public REST — BTC daily OHLC before 2018-08, the only free source reaching back to 2011 (Deribit's perp starts 2018-08, Yahoo's BTC-USD only 2014-09)
+  - [Bitstamp](https://www.bitstamp.net/api) public REST — BTC spot daily OHLC (spot, native UTC midnight cut, gap-free from 2012; Deribit's daily bars cut at 08:00 UTC and Yahoo's BTC-USD only starts 2014-09)
   - [US Treasury](https://home.treasury.gov/interest-rates-data-csv-archive) daily par yield CSV — the par curve FRED doesn't publish as one series
 - **Scheduling:** macOS `launchd`, three agents — **daily** (options · VRP inputs · VX term structure · Eris OIS · ICE CDS · MOVE), **crypto** (Deribit options · BTC spot · Computable GPU Index), and **SEC** (quarterly fundamentals). Each group records into `job_run`; a run whose required groups are already green for the day is skipped, so a single failing optional source can't make every trigger point re-run the whole job.
 
@@ -79,7 +81,7 @@ Open <http://localhost:5173>. Ctrl-C kills both. For separate logs: `bun run dev
 ## Collect data
 
 ```bash
-bun run job:daily               # options (moomoo) + VRP inputs + VX1/VX3 term + Eris SOFR OIS + ICE CDS + trading calendar
+bun run job:daily               # options (moomoo) + VRP inputs & ETF spot (Yahoo) + VX1/VX3 term + Eris SOFR OIS + ICE CDS + trading calendar
 bun run job:crypto              # BTC options + spot (Deribit) — separate, no OpenD needed
 bun run job:sec                 # SEC XBRL fundamentals — quarterly data, weekly cadence; add --force or TICKER... to override
 ```
@@ -122,9 +124,10 @@ src/
     ├── perspectives.tsx     tab registry — each tab carries its own render() (asset/regime/curve/history factories)
     ├── components/          Header · TabBar · StatusLight · InfoTip · DatePickerWithPresets
     ├── hooks/               interval · useStable · usePerspectiveNavigation
-    ├── lib/                 chart · palette · zigzag
+    ├── lib/                 chart · palette · zigzag · indicators (EMA / Bollinger / MACD / RSI, pure + tested)
     └── panels/
-        ├── chart/           shared multi-pane infra (paneChart.hooks/types + PaneChartView) — data-source-agnostic
+        ├── chart/           shared multi-pane infra (paneChart.hooks/types + PaneChartView) — data-source-agnostic;
+        │                    plus overlay-indicator registry, band-fill primitive, MACD/RSI sub-charts
         ├── asset/           options: AssetChart + hooks (25Δ + optional VRP)
         ├── regime/          regime: RegimeChart + REGIME_DIMS (self-contained PaneSpec[] → specs)
         ├── attackDefense/   NOBL/QQQ ratio + ZigZag offense/defense regimes
@@ -149,6 +152,27 @@ IV + skew, plus implied-vs-realized + VRP where a free vol index exists:
 | GLD | `GLD`  | moomoo OpenD | GVZ / GLD |
 | USO | `USO`  | moomoo OpenD | OVX / USO |
 | BTC | `BTC`  | Deribit | DVOL / BTC |
+
+### Spot chart tools
+
+The spot candle pane on every options tab has a small toolbar:
+
+- **指标 (Indicators)** — a multi-select of overlays drawn on the candles: an EMA ribbon
+  (5/20/50/144/169/200/365) and Bollinger bands (20, at 2σ and 3σ, with the 2σ channel shaded).
+  Overlays are thin, carry no right-axis labels, and show values only in the hover legend.
+  Each indicator is one entry in a registry (`priceIndicators.ts`), so adding one is a
+  pure function plus a row.
+- **只看现货 (Spot only)** — collapses every other pane in one click and restores the previous
+  layout on the second click. In this mode **MACD (12,26,9)** and **RSI (6/12/24)** become
+  available as separate sub-charts pinned under the main chart; they follow its zoom/scroll
+  and crosshair, with right axes width-matched so bars line up exactly.
+- **画线 (Draw)** — persistent trend lines per pane.
+
+Formulas follow TradingView / moomoo conventions (EMA seeded with an SMA, Bollinger on the
+population σ, Wilder-smoothed RSI, MACD histogram ×2 as moomoo shows it) and were checked
+digit-for-digit against moomoo for a sample day. Long EMAs use the full listing-date history,
+so they are the converged values — moomoo's app only seeds from the ~460 bars it has loaded,
+so its EMA144+ readings drift with how far you have scrolled.
 
 **Regime perspectives** — indicator panes (`/api/regime`, fetch-on-demand + cached) and
 curve/history panels (`/api/yield-curve`). Each perspective is one rail entry; some carry
