@@ -165,6 +165,9 @@ export function useTenorChart(
           priceLineVisible: false,
         });
         seriesRef.current.set(spec.tenor, s);
+      } else {
+        // 颜色按当前显示的线依次分配,勾 / 取消别的期限会让这条换色 → 复用的线也要同步颜色。
+        s.applyOptions({ color: spec.color });
       }
       s.setData(spec.data);
     }

@@ -1,15 +1,7 @@
-// 收益曲线族多线图的共享系列配色:确定性生成、相邻必不同色区、无 Math.random。
-// 为什么手写生成而非硬编码数组:要长度≥期限数(24)且相邻不同色区,又要"不僵硬"的 jitter。
-
-// 8 个暗底下清晰的基准色相(HSL 的 H,度),排序让相邻两个在色相环上尽量远。
-const ZONE_HUES = [220, 30, 145, 320, 190, 52, 0, 275]; // 蓝 橙 绿 品红 青 黄 红 紫
-
-// 整数 → [0,1) 的确定性散列(Math.imul + 位运算,ToInt32 语义跨引擎一致;非随机)。
-function hash01(n: number): number {
-  let h = Math.imul(n + 1, 2654435761);
-  h ^= h >>> 15;
-  return (h >>> 0) / 4294967296;
-}
+// 多线图的共享系列配色:同一 tab 里所有线按下标依次取色,两两都要分得开。
+// 前 8 档是验证过的类别色;之后从候选网格里贪心补色(每次挑离已选各色最远的),确定性、无 Math.random。
+// 不再用「按 8 个色区轮转 + 轮次错开明度」生成:那套和前 8 档不是同一个色相序,会撞回去
+// (实测 #7≈#17 色差 11、#0≈#24 色差 19,OIS 差值线与 1D 期限线肉眼同色)。
 
 // HSL→#rrggbb。h∈[0,360) s,l∈[0,100]。紧凑实现(无依赖)。
 export function hslToHex(h: number, s: number, l: number): string {
@@ -26,17 +18,6 @@ export function hslToHex(h: number, s: number, l: number): string {
   return `#${f(0)}${f(8)}${f(4)}`;
 }
 
-// 第 i 个系列:色区按 i%8 轮换(相邻必不同区);区内色相±12° jitter、
-// 明度按"第几轮(i/8)"错开(同色区不同轮也分得开)、饱和度小幅变化。全确定性。
-export function buildSeriesColors(n: number): string[] {
-  return Array.from({ length: n }, (_, i) => {
-    const hue = ZONE_HUES[i % ZONE_HUES.length] + (hash01(i) * 24 - 12); // ±12°
-    const light = [60, 72, 50][Math.floor(i / ZONE_HUES.length) % 3]; // 轮次错开明度
-    const sat = 68 + hash01(i * 7) * 20; // 68–88%
-    return hslToHex((hue + 360) % 360, sat, light);
-  });
-}
-
 // dataviz skill 验证过的 8 色定序类别配色(dark surface,顺序即相邻 CVD 最优)。
 // validate_palette.js 对底 #0a0a0a 全 PASS(亮度/彩度/对比);相邻 CVD 最差 10.3 在 floor 带,
 // 靠面板已有的图例 + 右侧数值直标做二级编码(合规)。隔档选(如 BEI 5Y/10Y/30Y=slot 0/2/4=蓝/黄/紫)也拉得开。
@@ -51,6 +32,35 @@ export const CATEGORICAL_DARK = [
   '#d95926',
 ];
 
-// 前 8 档用验证配色(覆盖各曲线默认选择);OIS 深档(≥8,少被同时选)沿用 HSL 生成。
-// 32 = OIS 24 个期限 + 余量(按下标生成,加长不改前面的色;差值线另用中性色,不占这里)。
-export const SERIES_COLORS = [...CATEGORICAL_DARK, ...buildSeriesColors(32).slice(CATEGORICAL_DARK.length)];
+// 候选色网格:色相每 10°、三档明度,饱和度固定 65(与前 8 档柔和度相当,不显荧光);暗底(#0a0a0a)上都够亮。
+const CANDIDATES = [48, 62, 76].flatMap((l) => Array.from({ length: 36 }, (_, i) => hslToHex(i * 10, 65, l)));
+
+const rgb = (hex: string) => [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+
+/** 近似感知色差(redmean 加权 RGB):比纯 RGB 欧氏距离更贴近人眼,够判「两色分不分得开」。 */
+export function colorDistance(a: string, b: string): number {
+  const [r1, g1, b1] = rgb(a);
+  const [r2, g2, b2] = rgb(b);
+  const rm = (r1 + r2) / 2;
+  return Math.sqrt((2 + rm / 256) * (r1 - r2) ** 2 + 4 * (g1 - g2) ** 2 + (2 + (255 - rm) / 256) * (b1 - b2) ** 2);
+}
+
+/** 从 seed 出发补到 n 色:每次从候选里挑「与已选各色的最小色差最大」的一个。确定性,加长不改前面的色。 */
+export function extendDistinct(seed: string[], n: number): string[] {
+  const out = [...seed];
+  // 每步依赖已选集合,命令式更直白。
+  while (out.length < n) {
+    const best = CANDIDATES.filter((c) => !out.includes(c)).reduce(
+      (acc, c) => {
+        const d = Math.min(...out.map((o) => colorDistance(c, o)));
+        return d > acc.d ? { c, d } : acc;
+      },
+      { c: '', d: -1 },
+    );
+    out.push(best.c);
+  }
+  return out;
+}
+
+// 32 = OIS 24 个期限 + 差值线等余量(按下标取色,加长不改前面的色)。
+export const SERIES_COLORS = extendDistinct(CATEGORICAL_DARK, 32);

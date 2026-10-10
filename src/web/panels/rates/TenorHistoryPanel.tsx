@@ -19,8 +19,6 @@ import { aggregate } from '../../lib/chart';
 import { InfoTip } from '../../components/InfoTip';
 import type { Interval } from '../../hooks/interval';
 
-const SPREAD_COLOR = '#d4d4d8'; // 差值线:中性浅灰
-
 // 视图说明(按 source):同一曲线换时间横轴看各期限走势 + 利差。
 const VIEW_DESC: Record<string, { title: string; desc: string }> = {
   treasury: {
@@ -169,21 +167,25 @@ export function TenorHistoryPanel({
     setSeeded(true);
   }
 
-  // 期限固定配色:按 tenors 序号取色(勾/取消不改色)。
-  const colorOf = (tenor: string) => SERIES_COLORS[data.tenors.indexOf(tenor) % SERIES_COLORS.length];
+  // 配色按「当前显示的线」依次取:勾选的期限(按期限序)在前、展开的差值线在后,从区分色表第 0 号起。
+  // 同屏一般 ≤ 8 条,用的全是验证过的类别色,任意组合两两分得开。不按期限固定取色:OIS 24 档里
+  // 同时勾中的几条一旦落在表里相近的位置就撞色(暗底细线真能分开的颜色只有十来种)。
+  // 代价:勾 / 取消一条时,排在它后面的线会换色。
+  const shownTenors = data.tenors.filter((t) => selected.has(t));
+  const colorAt = (i: number) => SERIES_COLORS[i % SERIES_COLORS.length];
 
-  const specs: TenorSpec[] = data.tenors
-    .filter((t) => selected.has(t))
-    .map((t) => ({ tenor: t, color: colorOf(t), data: tenorSeriesData(data.series[t], interval) }));
+  const specs: TenorSpec[] = shownTenors.map((t, i) => ({
+    tenor: t,
+    color: colorAt(i),
+    data: tenorSeriesData(data.series[t], interval),
+  }));
 
   // 收起的不传:hook 会摘掉那个 pane,高度让给其余格。
-  // 差值线一律中性色:它与期限线是两类东西,且每条独占一格、彼此不会撞色。
-  // 不再「排在期限之后取色」—— 生成色按 8 色区轮转,OIS 24 档之后那一色与 1D 的蓝几乎一样。
   const spreads: SpreadSpec[] = spreadDefs
     .filter((d) => !hiddenSpreads.has(d.label))
-    .map((d) => ({
+    .map((d, j) => ({
       label: d.label,
-      color: SPREAD_COLOR,
+      color: colorAt(shownTenors.length + j),
       data: aggregate(
         spreadSeries(data.series[d.long], data.series[d.short]).map((p) => ({ time: p.date, value: p.value })),
         interval,
@@ -247,7 +249,10 @@ export function TenorHistoryPanel({
               onClick={() => toggle(t)}
               className={`flex items-center gap-1 rounded border px-2 py-0.5 text-xs ${on ? 'border-neutral-500 text-neutral-200' : 'border-neutral-800 text-neutral-600'}`}
             >
-              <span className="inline-block h-2 w-2 rounded-full" style={{ background: on ? colorOf(t) : '#3f3f46' }} />
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{ background: on ? colorAt(shownTenors.indexOf(t)) : '#3f3f46' }}
+              />
               {t}
             </button>
           );

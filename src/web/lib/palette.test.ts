@@ -1,33 +1,35 @@
 import { describe, expect, it } from 'bun:test';
-import { buildSeriesColors, SERIES_COLORS, CATEGORICAL_DARK, hslToHex } from './palette';
+import { extendDistinct, colorDistance, SERIES_COLORS, CATEGORICAL_DARK, hslToHex } from './palette';
 
 describe('hslToHex', () => {
   it('纯红 (0,100,50) → #ff0000', () => expect(hslToHex(0, 100, 50)).toBe('#ff0000'));
   it('纯绿 (120,100,50) → #00ff00', () => expect(hslToHex(120, 100, 50)).toBe('#00ff00'));
 });
 
-describe('buildSeriesColors', () => {
-  it('确定性:连调两次完全一致(= 刷新不变色的保证)', () => expect(buildSeriesColors(24)).toEqual(buildSeriesColors(24)));
-
-  it('长度 = n,每项是合法 hex', () => {
-    const c = buildSeriesColors(24);
-    expect(c.length).toBe(24);
-    for (const x of c) expect(x).toMatch(/^#[0-9a-f]{6}$/);
-  });
-
-  it('相邻项互不相等(相邻不同色区 → 相邻期限可分辨)', () => {
-    const c = buildSeriesColors(24);
-    for (let i = 1; i < c.length; i++) expect(c[i]).not.toBe(c[i - 1]);
+describe('extendDistinct', () => {
+  it('确定性 + 保留 seed + 加长不改前面的色(= 刷新、扩表都不变色)', () => {
+    const a = extendDistinct(CATEGORICAL_DARK, 24);
+    expect(a).toEqual(extendDistinct(CATEGORICAL_DARK, 24));
+    expect(a.slice(0, 8)).toEqual(CATEGORICAL_DARK);
+    expect(extendDistinct(CATEGORICAL_DARK, 32).slice(0, 24)).toEqual(a);
   });
 });
 
 describe('SERIES_COLORS', () => {
-  it('前 8 档 = dataviz 验证类别配色,其余生成填满 32', () => {
+  it('前 8 档 = dataviz 验证类别配色,共 32 档,全为合法 hex 且互不相同', () => {
     expect(SERIES_COLORS.length).toBe(32);
     expect(SERIES_COLORS.slice(0, 8)).toEqual(CATEGORICAL_DARK);
-  });
-  it('全部合法 hex 且相邻互不相等', () => {
     for (const x of SERIES_COLORS) expect(x).toMatch(/^#[0-9a-f]{6}$/);
-    for (let i = 1; i < SERIES_COLORS.length; i++) expect(SERIES_COLORS[i]).not.toBe(SERIES_COLORS[i - 1]);
+    expect(new Set(SERIES_COLORS).size).toBe(32);
+  });
+
+  // 一个 tab 最多 OIS 24 期限 + 差值线同屏,任意两条都得肉眼分得开。旧生成器 #7≈#17 只有 11、#0≈#24 只有 19。
+  it('补出的颜色与表内任一色的色差都 ≥ 75', () => {
+    const worst = Math.min(
+      ...SERIES_COLORS.slice(8).flatMap((c, i) =>
+        SERIES_COLORS.filter((_, j) => j !== i + 8).map((o) => colorDistance(c, o)),
+      ),
+    );
+    expect(worst).toBeGreaterThanOrEqual(75);
   });
 });
