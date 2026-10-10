@@ -52,5 +52,5 @@ export const CATEGORICAL_DARK = [
 ];
 
 // 前 8 档用验证配色(覆盖各曲线默认选择);OIS 深档(≥8,少被同时选)沿用 HSL 生成。
-// 32 = OIS 24 个期限 + 差值线排在期限之后的余量(按下标生成,加长不改前面的色)。
+// 32 = OIS 24 个期限 + 余量(按下标生成,加长不改前面的色;差值线另用中性色,不占这里)。
 export const SERIES_COLORS = [...CATEGORICAL_DARK, ...buildSeriesColors(32).slice(CATEGORICAL_DARK.length)];

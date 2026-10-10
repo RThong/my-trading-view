@@ -126,12 +126,14 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
   return s;
 }
 
-/** 时间轴签名:逐条非叠加 series 的 key + 首尾时间 + 点数。叠加指标线(overlay)不计入 ——
- *  它们由蜡烛派生、增删不该把视野弹回全景;任何一条底层序列的数据变了(换周期 / 新数据到)签名就变。 */
+/** 时间轴签名:逐条非叠加 series 的 key + 完整日期序列。叠加指标线(overlay)不计入 ——
+ *  它们由蜡烛派生、增删不该把视野弹回全景;任一底层序列的时间点变了(换周期 / 新数据到)签名就变。
+ *  只看日期不看数值:fitContent 只管横轴,数值修订交给价格轴自适应,不该弹回全景。
+ *  只在 specs 变化时算(sync effect 内),不是每帧。 */
 function timeSpan(specs: Spec[]): string {
   return specs
     .filter((s) => !(s.kind === 'line' && s.overlay))
-    .map((s) => `${s.key}:${s.data[0]?.time ?? ''}:${s.data[s.data.length - 1]?.time ?? ''}:${s.data.length}`)
+    .map((s) => `${s.key}:${s.data.map((p) => p.time).join(',')}`)
     .join('|');
 }
 

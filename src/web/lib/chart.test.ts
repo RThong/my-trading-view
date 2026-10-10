@@ -36,9 +36,9 @@ describe('needsLogScale', () => {
     expect(needsLogScale(bars([4, 60000], [5, 124785]))).toBe(true); // BTC:29500 倍
   });
 
-  test('本站其余标的最宽只有 9 倍 → 线性', () => {
-    expect(needsLogScale(bars([17, 140], [20, 153]))).toBe(false); // USO
-    expect(needsLogScale(bars([136, 700], [140, 745]))).toBe(false); // QQQ
+  test('本站其余标的(上市日起)最宽 56.5 倍 → 线性', () => {
+    expect(needsLogScale(bars([16.88, 953.36], [17, 953.36]))).toBe(false); // USO 56.5 倍
+    expect(needsLogScale(bars([19.76, 762.86], [20, 762.86]))).toBe(false); // QQQ 38.6 倍
   });
 
   // 脏数据:非正的 low 进了 Math.min 会让比值变 0 或负,判据失效。

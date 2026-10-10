@@ -9,7 +9,7 @@
  *   VRP 的 RV 腿读 price_eod 的 close;基准对应 VIX↔SPY、VXN↔QQQ、GVZ↔GLD、OVX↔USO、DVOL↔BTC
  *   (BTC 的 price_eod 由 cryptoDaily 填,本 job 仍只负责读时无关的隐含腿/ETF 现货)。
  *
- * `updateVrpInputs` 除 ETF 现货外增量更新(按各序列已存最新日期续抓),库空时 CBOE 取源头全历史、
+ * `updateVrpInputs` 除 ETF 现货外增量更新(按各序列已存最新日期续抓),库空时 CBOE 从 HISTORY_START_DATE、
  * DVOL 从上线日回填。upsert 幂等,可重复跑。
  *
  * 直接运行 = 立即更新一次:bun run src/server/jobs/vrpInputs.ts

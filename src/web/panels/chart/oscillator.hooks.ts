@@ -98,10 +98,14 @@ export const OSC_IDS = Object.keys(OSC_DEFS) as OscId[];
 /** 下拉选项(只占勾选位,不产叠加线,故 series 为空)。 */
 export const OSC_OPTIONS = OSC_IDS.map((id) => ({ id, label: OSC_DEFS[id].label, series: [] }));
 
-/** 一张副图:建图、喂数据、跟随主图的可视范围与十字线、右轴与主图等宽;返回图例读数。 */
+/** 同一副图区里所有副图共享的右轴宽度状态(只增不减)+ 已挂载的副图;渲染不读,由 OscillatorPanel 用 ref 持有。 */
+export type AxisSync = { width: number; charts: Set<IChartApi> };
+
+/** 一张副图:建图、喂数据、跟随主图的可视范围与十字线、右轴与主图及其它副图等宽;返回图例读数。 */
 export function useOscillatorChart(
   containerRef: React.RefObject<HTMLDivElement | null>,
   mainChartRef: React.RefObject<IChartApi | null>,
+  axisSync: React.RefObject<AxisSync>,
   bars: Bar[],
   id: OscId,
   showTimeAxis: boolean,
@@ -156,12 +160,13 @@ export function useOscillatorChart(
     const main = mainChartRef.current;
     const osc = chartRef.current;
     if (!main || !osc) return;
-    const anchorKey = specs[specs.length - 1]?.key; // 竖线挂在一条线 series 上(取其该日值当横线位置)
     const onMain = (p: MouseEventParams<Time>) => {
       const t = p.time == null ? null : fmtDate(p.time);
       setHoverTime(t);
-      const s = anchorKey ? seriesRef.current.get(anchorKey) : undefined;
-      const v = t && anchorKey ? valueAt.get(anchorKey)?.get(t) : undefined;
+      // 竖线要挂在一条该日有值的 series 上(取其值当横线位置);各线预热长度不同,逐条找第一条有值的。
+      const key = t ? specs.find((sp) => valueAt.get(sp.key)?.get(t) !== undefined)?.key : undefined;
+      const s = key ? seriesRef.current.get(key) : undefined;
+      const v = t && key ? valueAt.get(key)?.get(t) : undefined;
       if (t && s && v !== undefined) osc.setCrosshairPosition(v, t as Time, s);
       else osc.clearCrosshairPosition();
     };
@@ -176,20 +181,39 @@ export function useOscillatorChart(
     };
   }, [mainChartRef, chartRef, seriesRef, specs, valueAt]);
 
-  // 右轴与主图等宽:绘图区同宽,同一逻辑范围下 K 线才能上下逐根对齐。主图的复原由 OscillatorPanel 卸载时负责。
+  // 登记到副图区,供等宽同步遍历;卸下即注销。
+  useEffect(() => {
+    const osc = chartRef.current;
+    const sync = axisSync.current;
+    if (!osc) return;
+    sync.charts.add(osc);
+    return () => {
+      sync.charts.delete(osc);
+    };
+  }, [chartRef, axisSync]);
+
+  // 右轴等宽:主图与所有副图取同一宽度,绘图区同宽,同一逻辑范围下 K 线才能上下逐根对齐。
+  // 宽度只增不减:几张副图同一帧先后算、width() 还没重排时,也不会把别人刚抬上去的值压回去。
+  // 主图的复原由 OscillatorPanel 卸载时负责。
   useEffect(() => {
     const main = mainChartRef.current;
-    const osc = chartRef.current;
-    if (!main || !osc || seriesVersion === 0) return;
+    const sync = axisSync.current;
+    if (!main || seriesVersion === 0) return;
     const raf = requestAnimationFrame(() => {
-      const w = Math.max(main.priceScale('right').width(), osc.priceScale('right').width());
-      osc.priceScale('right').applyOptions({ minimumWidth: w });
+      sync.width = Math.max(
+        sync.width,
+        main.priceScale('right').width(),
+        ...[...sync.charts].map((c) => c.priceScale('right').width()),
+      );
       main.panes().forEach((_, i) => {
-        main.priceScale('right', i).applyOptions({ minimumWidth: w });
+        main.priceScale('right', i).applyOptions({ minimumWidth: sync.width });
+      });
+      sync.charts.forEach((c) => {
+        c.priceScale('right').applyOptions({ minimumWidth: sync.width });
       });
     });
     return () => cancelAnimationFrame(raf);
-  }, [mainChartRef, chartRef, seriesVersion]);
+  }, [mainChartRef, axisSync, seriesVersion]);
 
   // 图例:悬停那天的值,不悬停给最新值。
   const lastTime = specs[0]?.data[specs[0].data.length - 1]?.time ?? null;

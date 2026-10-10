@@ -4,7 +4,7 @@ import { optionUnderlyings } from '../shared/marketCatalog';
 export const PROJECT_ROOT = resolve(import.meta.dirname, '..', '..');
 export const DB_PATH = resolve(PROJECT_ROOT, 'data', 'mtv.db');
 
-/** 保留的最早交易日。所有回填和过滤逻辑都以此为准(更早的数据意义不大)。 */
+/** 保留的最早交易日。回填和过滤逻辑默认以此为准(更早的数据意义不大);例外:ETF 现货见 PRICE_HISTORY_START_DATE。 */
 export const HISTORY_START_DATE = '2018-01-01';
 
 /**

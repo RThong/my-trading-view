@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import useSWR from 'swr';
 import { useYieldCurve } from './yieldCurve.hooks';
 import { SERIES_COLORS } from '../../lib/palette';
+
 import {
   tenorSeriesData,
   pickDefaultTenors,
@@ -17,6 +18,8 @@ import { spreadSeries } from './rateSpread.hooks';
 import { aggregate } from '../../lib/chart';
 import { InfoTip } from '../../components/InfoTip';
 import type { Interval } from '../../hooks/interval';
+
+const SPREAD_COLOR = '#d4d4d8'; // 差值线:中性浅灰
 
 // 视图说明(按 source):同一曲线换时间横轴看各期限走势 + 利差。
 const VIEW_DESC: Record<string, { title: string; desc: string }> = {
@@ -174,13 +177,13 @@ export function TenorHistoryPanel({
     .map((t) => ({ tenor: t, color: colorOf(t), data: tenorSeriesData(data.series[t], interval) }));
 
   // 收起的不传:hook 会摘掉那个 pane,高度让给其余格。
-  // 差值线取色排在全部期限之后:同一 tab 里不与任何期限线撞色;按定义序号取,收起别的格不变色。
+  // 差值线一律中性色:它与期限线是两类东西,且每条独占一格、彼此不会撞色。
+  // 不再「排在期限之后取色」—— 生成色按 8 色区轮转,OIS 24 档之后那一色与 1D 的蓝几乎一样。
   const spreads: SpreadSpec[] = spreadDefs
-    .map((d, i) => ({ d, color: SERIES_COLORS[(data.tenors.length + i) % SERIES_COLORS.length] }))
-    .filter(({ d }) => !hiddenSpreads.has(d.label))
-    .map(({ d, color }) => ({
+    .filter((d) => !hiddenSpreads.has(d.label))
+    .map((d) => ({
       label: d.label,
-      color,
+      color: SPREAD_COLOR,
       data: aggregate(
         spreadSeries(data.series[d.long], data.series[d.short]).map((p) => ({ time: p.date, value: p.value })),
         interval,

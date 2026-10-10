@@ -126,6 +126,9 @@ export function useTenorChart(
   useEffect(() => {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, CHART_OPTIONS);
+    // 期限格(pane 0)不许被自动删:期限全取消时库会摘掉空 pane,差值格顶到 0 号 →
+    // 之后按定义序 moveTo 越界崩,再勾回期限也会被 addSeries 默认塞进差值格。
+    chart.panes()[0].setPreserveEmptyPane(true);
     chartRef.current = chart;
     // 同一 Map(useRef 只建一次),捕获供 cleanup 用
     const seriesMap = seriesRef.current;
@@ -139,24 +142,6 @@ export function useTenorChart(
       spotPaneRef.current = null;
     };
   }, [containerRef]);
-
-  // 现货 pane(同样 1 的高度比)。与差值 pane 各自独立:两者显隐互不影响,下标各自从句柄取。
-  useEffect(() => {
-    const chart = chartRef.current;
-    if (!chart || !showSpot) return;
-
-    const pane = chart.addPane();
-    spotPaneRef.current = pane;
-    pane.setStretchFactor(1);
-
-    return () => {
-      const alive = chartRef.current;
-      // 只 removeSeries:空 pane 由库自动摘掉(见差值格同步处的说明)。
-      if (alive && spotRef.current) alive.removeSeries(spotRef.current);
-      spotRef.current = null;
-      spotPaneRef.current = null;
-    };
-  }, [showSpot]);
 
   // 期限线(pane 0)同步。fitContent 留在这里:期限勾选 / interval 变化才重取视窗。
   useEffect(() => {
@@ -231,22 +216,42 @@ export function useTenorChart(
         live.set(spec.label, series);
         added = true;
       }
-      // 颜色随期限数而定,期限数据到位前后会变 → 每次同步,不只建线时设。
+      // 复用的线不会重读 spec 颜色:颜色由调用方决定(现为中性常量),仍每次同步,改色不必重建。
       series.applyOptions({ color: spec.color });
       series.setData(spec.data);
     }
 
     // addPane 总是追加到末尾:收起再展开会排到别的格(甚至现货)后面。按定义序归位到 1..n,现货自然落在最后。
+    // 已在位的不调 moveTo:新建的 pane 控件要等下一帧才同步,对它调 moveTo 会撞库里的下标断言。
     spreads.forEach((spec, i) => {
-      live
-        .get(spec.label)
-        ?.getPane()
-        .moveTo(i + 1);
+      const pane = live.get(spec.label)?.getPane();
+      if (pane && pane.paneIndex() !== i + 1) pane.moveTo(i + 1);
     });
 
     // 主图 2、每格差值 1 的高度比。只在新建过格时设:每次数据同步都设会把用户拖过的分隔条弹回去。
     if (added) chart.panes()[0].setStretchFactor(2);
   }, [spreads]);
+
+  // 现货 pane(同样 1 的高度比)。与差值 pane 各自独立:两者显隐互不影响,下标各自从句柄取。
+  // **必须声明在差值 effect 之后**:同一次提交里先建差值格、后建现货格,差值格天然落在 1..n,首帧不用 moveTo。
+  // 反过来(现货已在 SWR 缓存里、首帧就到)差值格得往前挪,而 addPane 后 pane 控件要等下一帧才同步,
+  // moveTo 的下标断言会失败 → 整页崩(实测:先看 BTC 期权 tab 再进期限走势)。
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !showSpot) return;
+
+    const pane = chart.addPane();
+    spotPaneRef.current = pane;
+    pane.setStretchFactor(1);
+
+    return () => {
+      const alive = chartRef.current;
+      // 只 removeSeries:空 pane 由库自动摘掉(见差值格同步处的说明)。
+      if (alive && spotRef.current) alive.removeSeries(spotRef.current);
+      spotRef.current = null;
+      spotPaneRef.current = null;
+    };
+  }, [showSpot]);
 
   // 现货蜡烛同步。
   useEffect(() => {

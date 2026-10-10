@@ -69,7 +69,9 @@ const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidat
 export function useAttackDefenseData() {
   const qq = useSWR<PriceBar[]>('/api/price/QQQ', getJson, SWR_OPTS);
   const nb = useSWR<PriceBar[]>('/api/price/NOBL', getJson, SWR_OPTS);
-  const qqq = qq.data ?? [];
+  // QQQ 截到 NOBL 上市日:现货拉到了上市日(QQQ 1999、NOBL 2013),不截的话比值格前 14 年只有蜡烛没有比值。
+  const nobleStart = nb.data?.[0]?.date;
+  const qqq = (qq.data ?? []).filter((b) => !nobleStart || b.date >= nobleStart);
   const ratio = ratioSeries(nb.data ?? [], qqq);
   return {
     qqq,

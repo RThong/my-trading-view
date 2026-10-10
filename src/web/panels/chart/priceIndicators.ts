@@ -87,9 +87,13 @@ export function useIndicatorSelection(storageKey: string) {
 
 export type IndicatorLine = IndicatorDef['series'][number] & { data: LinePoint[] };
 
-/** 算选中指标的线(重活:8 条 EMA + 布林带滚动窗口)。bars = 已按周期聚合的蜡烛,周线 EMA = 周收盘的 EMA。 */
+/** 算选中指标的线(重活:整组 EMA + 布林带滚动窗口)。bars = 已按周期聚合的蜡烛,周线 EMA = 周收盘的 EMA。 */
 export function computeIndicatorLines(active: IndicatorDef[], bars: Bar[]): IndicatorLine[] {
-  return active.flatMap((d) => d.compute(bars).map((data, i) => ({ ...d.series[i], data })));
+  // 叠加线都是价格:非正值没有意义(布林下轨在暴涨暴跌段会算出负价,BTC 2013 年 3σ 日线 21 个点),滤掉。
+  // 不滤的话会进价格轴自动缩放:对数轴(BTC)被镜像拉到负区间、K 线压扁,线性轴(VIX / USO)伸到 0 以下。
+  return active.flatMap((d) =>
+    d.compute(bars).map((data, i) => ({ ...d.series[i], data: data.filter((p) => p.value > 0) })),
+  );
 }
 
 /**

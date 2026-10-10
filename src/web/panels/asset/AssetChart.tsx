@@ -33,7 +33,7 @@ export function AssetChart({
   const { opt, vrp, price, error, isLoading } = useAssetData(underlying, vrpUnderlying);
   const indicators = useIndicatorSelection(storageKey);
   // 叠加指标挂在现货蜡烛上,并把线并进现货 pane 的图例 / 折叠。
-  // 计算缓存住:十字线每动一下组件都重渲染,长历史上每次重算 8 条 EMA + 布林带是白耗。
+  // 计算缓存住:十字线每动一下组件都重渲染,长历史上每次重算整组 EMA + 布林带是白耗。
   const bars = useMemo(() => aggregateBars(toBars(price), interval), [price, interval]);
   const lines = useMemo(() => computeIndicatorLines(indicators.active, bars), [indicators.active, bars]);
   const { paneDefs, specs, seriesName, colors } = withIndicators(
@@ -41,7 +41,7 @@ export function AssetChart({
     lines,
     'price',
     base.paneDefs,
-    buildSpecs(opt, vrp, price, interval, vrpUnderlying, base.paneDefs, base.seriesName),
+    buildSpecs(opt, vrp, bars, interval, vrpUnderlying, base.paneDefs, base.seriesName),
     base.seriesName,
     COLORS,
   );

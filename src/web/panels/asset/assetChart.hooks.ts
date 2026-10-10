@@ -3,7 +3,7 @@
 // 切 tab 不卸载),所以这里所有 effect 都是「挂载建/卸载销」,不再按标的 reset。
 import useSWR from 'swr';
 import type { Interval } from '../../hooks/interval';
-import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../lib/chart';
+import { aggregate, type LinePoint, type Bar } from '../../lib/chart';
 import { ivIndexByUnderlying } from '../../../shared/marketCatalog';
 import type { PaneDef, Spec, LineSpec } from '../chart/paneChart.types';
 
@@ -96,7 +96,7 @@ export const toBars = (rows: PriceBar[]): Bar[] =>
 export function buildSpecs(
   opt: OptRow[],
   vrp: VrpRow[],
-  price: PriceBar[],
+  bars: Bar[], // 已按 interval 聚合的现货蜡烛(调用方缓存,十字线重渲染时不重算)
   interval: Interval,
   vrpUnderlying: string | undefined,
   paneDefs: PaneDef[],
@@ -117,7 +117,7 @@ export function buildSpecs(
       pane: paneOf('price'),
       kind: 'candle',
       title: seriesName.price,
-      data: aggregateBars(toBars(price), interval),
+      data: bars,
     },
     line('call', opt, 'callIv', COLORS.call),
     line('put', opt, 'putIv', COLORS.put),
