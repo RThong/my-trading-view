@@ -30,7 +30,7 @@ well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local pag
   - CBOE public CSV — VIX/VXN/GVZ/OVX, COR1M/VIXEQ, VX1/VX3 futures, RXM (Risk Reversal) + SPX
   - [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) — rates/TIPS · credit spread · net liquidity · repo · inflation (BEI · 5y5y forward · sticky CPI · wages) · Kim-Wright term premium (needs a free API key)
   - NY Fed — HLW natural rate r\* (`current estimates` xlsx, quarterly) · ACM 10Y term premium (monthly CSV, the independent cross-check on Kim-Wright); no key
-  - Yahoo (`yahoo-finance2` v4) — **ETF spot OHLC** (SPY/QQQ/GLD/USO/TLT/NOBL: split-adjusted, *not* dividend-adjusted — the same number TradingView shows by default; full history back to each fund's listing, re-fetched in full every run so a future split can't leave two adjustment bases stitched together) · DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY
+  - Yahoo (`yahoo-finance2` v4) — **ETF spot OHLC** (SPY/QQQ/GLD/USO/TLT/NOBL: split-adjusted, *not* dividend-adjusted — the same number TradingView shows by default; full history back to each fund's listing, re-fetched in full every run so a future split can't leave two adjustment bases stitched together) · DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY · S&P 500 and its equal-weight index (`^GSPC` / `^SPXEW`, the concentration ratio)
   - Eris — SOFR OIS par curve · MOF + JPX — JGB yields / JGB VIX · CFTC — JPY net positioning · Shiller — CAPE · CNN — Fear & Greed
   - [BOJ](https://www.boj.or.jp/research/research_data/gap/) — output gap + potential growth with its four contributions (official xlsx = zip+XML, quarterly, no key)
   - [Nakajima](https://github.com/jouchinakajima/program) (BOJ researcher, **personal model estimates, not a BOJ release**) — JGB 10Y term premium + expected short rate (daily, **nominal**; the two sum exactly to the MOF 10Y) and natural rate r\* with a 95% band (quarterly, **real** — never plot it against the nominal pair). Ships irregularly every 2-4 months; judge staleness by commit date, not by the data's last point
@@ -191,7 +191,7 @@ several horizontal tabs:
 | AI | 算力价格 (H100/H200/B200/B300 GPU 租赁价指数) · 买方合计 (AI 链 capex/FCF 判据线) · AI CDS (AI 巨头 + Oracle 单名 CDS，价近似 spread bp) · 产业链 (15 家公司财务明细) | Computable / ICE / SEC / TWSE |
 | 通胀 Inflation | 通胀预期 (BEI) · 通胀走势 · 通胀来源 (RBOB YoY 等) | FRED / Yahoo |
 | 估值 Valuation | Shiller CAPE regime | Shiller |
-| 特色指标 Featured | 攻防 — NOBL/QQQ offense-defense via ZigZag | Yahoo |
+| 特色指标 Featured | 攻防 — NOBL/QQQ offense-defense via ZigZag · 集中度 — S&P 500 ÷ S&P 500 Equal Weight (`^GSPC` / `^SPXEW`, realized cap concentration; read direction, not level — structural uptrend since 2023) paired with VIXEQ − VIX (implied concentration / dispersion, with percentile bands) | Yahoo / CBOE |
 
 Series with a trailing distribution carry P5/P95 bands + a current-percentile badge, and
 shade extreme periods red (risk end) / green (opportunity end) per each series' direction.

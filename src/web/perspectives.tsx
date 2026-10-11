@@ -178,6 +178,9 @@ export const PERSPECTIVES: Perspective[] = [
   {
     id: 'featured',
     label: '特色指标',
-    tabs: [{ id: 'attack_defense', label: '攻防', render: () => <AttackDefensePanel /> }],
+    tabs: [
+      { id: 'attack_defense', label: '攻防', render: () => <AttackDefensePanel /> },
+      regimeTab('concentration', '集中度', 'concentration'),
+    ],
   },
 ];

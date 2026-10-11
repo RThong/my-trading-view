@@ -446,6 +446,14 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const usdBarsP = createYahooFetcher()
     .fetchDailyBars('DX-Y.NYB', new Date(0))
     .catch(() => null);
+  // 市值集中度:标普 500 与标普 500 等权两个**价格指数**(都不含分红、不扣费,口径一致;比 SPY/RSP 干净)。
+  // 等权指数 2006-12 起。live 不落库。
+  const spxCapP = createYahooFetcher()
+    .fetchDailyBars('^GSPC', new Date('2006-12-01'))
+    .catch(() => null);
+  const spxEqwP = createYahooFetcher()
+    .fetchDailyBars('^SPXEW', new Date('2006-12-01'))
+    .catch(() => null);
   // 日元 carry:USD/JPY(全历史)、JGB 2Y(美日利差的日腿)、CFTC 净持仓。均 catch→null。
   const usdjpyBarsP = createYahooFetcher()
     .fetchDailyBars('JPY=X', new Date(0))
@@ -553,6 +561,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     if (s.status === 'fulfilled') raw[names[i]] = s.value;
   });
   const usdBars = await usdBarsP;
+  const [spxCap, spxEqw] = await Promise.all([spxCapP, spxEqwP]);
   const [usdjpyBars, jgbCurve, cftcJpy, vixCot, jgbVix, cape, ust, rstar, acm, bojGap, nakajima] = await Promise.all([
     usdjpyBarsP,
     jgbCurveP,
@@ -614,6 +623,17 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // Object.entries 会把 key 拓宽回 string,这里断言回来 —— 真正的校验发生在上面的对象字面量。
   for (const [out, s] of Object.entries(direct) as [RegimeSeries, keyof typeof src][]) put(out, raw[s!]);
 
+  // 市值 / 等权比值:两腿按日期内连接(同一指数公司、同一交易日历,缺日就跳过,不前向填充)。任一腿缺 → unavailable。
+  const eqwAt = new Map((spxEqw ?? []).map((b) => [b.tradeDate, b.close]));
+  put(
+    'spxEqw',
+    (spxCap ?? []).flatMap((b) => {
+      const e = eqwAt.get(b.tradeDate);
+      return e ? [{ date: b.tradeDate, value: b.close / e }] : [];
+    }),
+  );
+  // 隐含集中度:VIXEQ − VIX。同期相减用 subtractAt(内连接),缺日跳过不配对;任一腿缺 → 空 → unavailable。
+  put('vixeqVix', subtractAt(raw.vixeq ?? [], raw.vixSpot ?? []));
   // DXY:close 进 series(unavailable/存在性),OHLC 进 ohlc(蜡烛)。缺 → 归 unavailable。
   put('usd', usdBars?.length ? usdBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
   // 日元 carry 三序列

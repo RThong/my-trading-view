@@ -114,6 +114,10 @@ export const REGIME_SERIES = [
   // 三菱 UFJ(东证 8306,Yahoo 8306.T)蜡烛,「银行」那格的现货参照。
   'mufg',
   'cape',
+  // 标普 500 ÷ 标普 500 等权(^GSPC / ^SPXEW,Yahoo 现拉):已实现的市值集中度,「特色指标 · 集中度」。
+  'spxEqw',
+  // VIXEQ − VIX(两腿都是 CBOE 现拉,同源同历):期权隐含的集中度 / 离散度,与 spxEqw 并排在「集中度」。
+  'vixeqVix',
   'rxmSpx',
   'vixSpotTerm',
   'brentWti',
