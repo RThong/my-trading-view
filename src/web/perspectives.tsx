@@ -59,7 +59,16 @@ export const PERSPECTIVES: Perspective[] = [
       assetTab(a.tab!.id, a.tab!.label, a.underlying, a.vrp ? a.underlying : undefined),
     ),
   },
-  regimePersp('credit', '信用'),
+  {
+    // 信用三 tab:利差走势(日频时间序列)+ 评级利差 / 期限结构(两条截面曲线,AI CDS 在「AI」视角)。
+    id: 'credit',
+    label: '信用',
+    tabs: [
+      regimeTab('credit', '利差走势', 'credit'),
+      curveTab('credit_rating', '评级利差', 'credit_rating'),
+      curveTab('credit_term', '期限结构', 'credit_term'),
+    ],
+  },
   regimePersp('liquidity', '流动性'),
   {
     id: 'sentiment',
@@ -144,12 +153,6 @@ export const PERSPECTIVES: Perspective[] = [
       // 长端分解(中島上智模型)。对称利率视角同名那格,但只有一套模型 —— 读法差异写在两格 desc 里。
       regimeTab('jp_term_premium', '长端分解', 'jpTermPremium'),
     ],
-  },
-  {
-    id: 'creditCurve',
-    label: '信用曲线',
-    // AI CDS 挪去了「AI」视角(聚合 AI 相关指标,不留在这里跟评级利差/期限结构混放)。
-    tabs: [curveTab('credit_rating', '评级利差', 'credit_rating'), curveTab('credit_term', '期限结构', 'credit_term')],
   },
   {
     id: 'inflation',
