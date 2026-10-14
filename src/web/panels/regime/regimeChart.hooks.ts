@@ -23,6 +23,7 @@ import {
   type ChainSource,
   type FundKind,
   type FundTrim,
+  type SecFiled,
   type SecLag,
 } from '../../../shared/aiChain';
 
@@ -117,6 +118,8 @@ export type RegimeData = {
   ohlc?: Record<string, Bar[]>;
   secLag?: SecLag[];
   secTrim?: FundTrim[];
+  /** 每家最新一期的期末与申报日(ticker → …),见 storage/repository 的 getSecLatestFiled。 */
+  secFiled?: Record<string, SecFiled>;
 };
 
 const NO_DATA: RegimeData = { series: {}, unavailable: [] }; // 稳定空引用,避免 render 抖动
@@ -1815,7 +1818,11 @@ const COMPANY_NOTES: Record<string, string> = {
     '(实测 2026Q1/Q2 的新闻稿全文无 booking 字样,只剩一句「order intake remained extremely strong」)。' +
     '所以这里能看到的全是**已发生**的,看不到未兑现的需求。\n' +
     '⚠️ 单季 FCF 摆动极大(实测 2026Q1 −2,588 → Q2 +1,404 百万欧元),那是**营运资本节奏**' +
-    '(为 2027 扩产备料吃现金),不是 §6.14 那种「capex 吃穿现金流」—— 形状像,成因完全不同。',
+    '(为 2027 扩产备料吃现金),不是 §6.14 那种「capex 吃穿现金流」—— 形状像,成因完全不同。\n' +
+    '⚠️ 单季 FCF 的**正向尖峰是客户预付款**,不是盈利跳升:实测 2026Q3 OCF 11,797.6 > 当季营收 11,662,' +
+    '同期非流动合同负债(Contract liabilities)3,570.3 → 9,300.6,一季多收约 57 亿欧元定金;' +
+    '2025Q4 那根(OCF 11,410.3)同理。读法:尖峰 = 客户抢机台的需求信号;定金交货时冲回,' +
+    '之后几季 FCF 会被压低。盈利看毛利率那格。',
   INTC:
     '⚠️ **不是判据成员**(名单文案里不列它,合计线也不收它),放这里是当**供给侧的反向读数**。\n' +
     '· 符号和 NVDA/MU 相反:那两家「毛利率见顶回落 = 供给追上需求」;INTC 是' +
@@ -2421,6 +2428,15 @@ export function secLagNote(data: RegimeData, dim: RegimeDim): string | undefined
 
   const one = (l: SecLag) => `${l.ticker} 截至 ${l.latestPeriodEnd ?? '无数据'}(${l.remoteFiled} 已申报,SEC 未提供)`;
   return `⚠️ 数据滞后:${mine.map(one).join(';')}`;
+}
+
+/**
+ * 单家公司 tab 的「最新一期 + 申报日」(工具条末尾那行)。季频线看不出末端是不是刚发的那季。
+ * 合计 tab 不标(多家拼的,dim 不是 ticker,查不到)。
+ */
+export function secFiledNote(data: RegimeData, dim: RegimeDim): string | undefined {
+  const f = dim.startsWith('fundamentals:') ? data.secFiled?.[dim.slice('fundamentals:'.length)] : undefined;
+  return f && `截至 ${f.periodEnd} · ${f.filed} 申报`;
 }
 
 /**

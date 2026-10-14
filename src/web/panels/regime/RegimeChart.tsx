@@ -7,6 +7,7 @@ import {
   regimePercentiles,
   derivePaneMeta,
   dimPanes,
+  secFiledNote,
   secLagNote,
   secTrimNote,
   type RegimeDim,
@@ -60,6 +61,7 @@ export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Inter
       isLoading={isLoading}
       error={error}
       note={note}
+      toolbarNote={secFiledNote(data, dim)}
       badges={badges}
       desc={desc}
       drawing={drawing}

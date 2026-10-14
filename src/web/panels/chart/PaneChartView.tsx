@@ -21,6 +21,7 @@ type Props = {
   error?: Error;
   errorLabel?: string; // error 前缀(期权用标的名);宏观省略
   note?: string; // 右上角提示(宏观用来标"某序列暂不可用")
+  toolbarNote?: string; // 工具条末尾的灰字(基本面用来标最新一期的申报日)
   badges?: Record<string, string>; // paneKey → 常显徽标(情绪用当前分位 Pxx)
   desc?: Record<string, string>; // paneKey → 指标说明(工具条 ⓘ hover 显示)
   drawing?: boolean;
@@ -56,6 +57,7 @@ export function PaneChartView({
   error,
   errorLabel,
   note,
+  toolbarNote,
   badges,
   desc,
   drawing,
@@ -99,6 +101,7 @@ export function PaneChartView({
             </div>
           );
         })}
+        {toolbarNote && <span className="self-center px-1 text-xs text-neutral-400">{toolbarNote}</span>}
       </div>
       {(toggleDrawing || indicators || solo) && (
         <div className="mb-2 flex items-center gap-1.5 text-xs">

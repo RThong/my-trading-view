@@ -40,7 +40,7 @@ import type { RegimeSeries, FundSeries, SeriesKey } from '../../shared/regimeSer
 import { nearMinusFar } from '../analytics/termStructure';
 import { rollingSharpe } from '../analytics/sharpe';
 import { openDb } from '../storage/db';
-import { getMarketSeries, getPriceBars, getSecLag } from '../storage/repository';
+import { getMarketSeries, getPriceBars, getSecLatestFiled, getSecLag } from '../storage/repository';
 import { HISTORY_START_DATE, SEASONAL_BASELINE_YEARS } from '../config';
 import {
   BUYER_FCF_SERIES,
@@ -59,6 +59,7 @@ import {
   trimsGaps,
   type FundKind,
   type FundTrim,
+  type SecFiled,
   type SecLag,
 } from '../../shared/aiChain';
 
@@ -82,6 +83,7 @@ type RegimeBody = {
   ohlc?: Record<string, OhlcBar[]>;
   secLag?: SecLag[];
   secTrim?: FundTrim[];
+  secFiled?: Record<string, SecFiled>;
 };
 
 // 内存 TTL 缓存:现拉全部外部源约 1.3s,重复打开走缓存瞬时返回。
@@ -374,6 +376,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
         ],
         secLag: sec.lag,
         secTrim: sec.trims,
+        secFiled: getSecLatestFiled(db),
       });
     } finally {
       db.close();
@@ -588,6 +591,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const unavailable: string[] = [];
   let secLag: SecLag[] = [];
   let secTrim: FundTrim[] = [];
+  let secFiled: Record<string, SecFiled> = {};
 
   // 有值 → 落对外序列;否则记入 unavailable。收敛 5 处「存在性分支」,读时一目了然。
   // ⚠️ 判的是 **length 不是真值**:`[]` 在 JS 里是真的,而「源返回 200 但内容为空」
@@ -832,11 +836,12 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     unavailable.push(...sec.unavailable);
     secLag = sec.lag;
     secTrim = sec.trims;
+    secFiled = getSecLatestFiled(db);
   } finally {
     db.close();
   }
 
-  const body: RegimeBody = { series, unavailable, ohlc, secLag, secTrim };
+  const body: RegimeBody = { series, unavailable, ohlc, secLag, secTrim, secFiled };
   // 只缓存全成功(降级响应不缓存,下次重试)。例外:SEC 那几条是季频、GPU 那几条(gpu 前缀)
   // 是新接的 experimental 源(B300 允许缺、库还没跑过 job 时四条都缺)—— 两者都靠独立 job 逐日/逐季攒,
   // 从没跑过 job 的库里必然缺——不能让这类常态把整条路由的缓存永久关掉。

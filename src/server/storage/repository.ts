@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import type { JobStatus } from '../../shared/types';
-import type { SecLag } from '../../shared/aiChain';
+import type { SecFiled, SecLag } from '../../shared/aiChain';
 
 // bun:sqlite 的具名参数值域(标量,非递归),与其 SQLQueryBindings 的 Record 分支一致。
 type NamedParams = Record<string, string | bigint | NodeJS.TypedArray | number | boolean | null>;
@@ -434,6 +434,22 @@ export function getSecLag(db: Database): SecLag[] {
     localFiled: r.local_filed || null, // COALESCE 的 '' 还原成「一行都没有」
     latestPeriodEnd: r.latest_period_end,
   }));
+}
+
+/**
+ * 每家**最新一期**的期末与申报日,给面板标「这是哪天发的那季」。
+ * 申报日取该期 MAX(filed):同一期各科目可能分两次到(TSM 财报稿先、合并报表后),以最后到的那次为准。
+ */
+export function getSecLatestFiled(db: Database): Record<string, SecFiled> {
+  const rows = db
+    .query(`
+    SELECT ticker, period_end, MAX(filed) AS filed FROM sec_fundamentals f
+    WHERE period_end = (SELECT MAX(period_end) FROM sec_fundamentals WHERE ticker = f.ticker)
+    GROUP BY ticker
+  `)
+    .all() as Array<{ ticker: string; period_end: string; filed: string }>;
+
+  return Object.fromEntries(rows.map((r) => [r.ticker, { periodEnd: r.period_end, filed: r.filed }]));
 }
 
 export function getJobHealth(db: Database): JobStatus[] {

@@ -618,6 +618,9 @@ export type SecLag = {
   latestPeriodEnd: string | null; // 我们已有的最新期末,用来在文案里说清「截至哪一期」
 };
 
+/** 一家公司库里最新一期的期末与申报日(见 storage/repository 的 getSecLatestFiled)。 */
+export type SecFiled = { periodEnd: string; filed: string };
+
 /**
  * 面板/路由之间传数据用的键。前缀 `fund:` 表示「基本面序列」,**与来源无关** ——
  * 早先叫 `sec:`,加了 TWSE 源之后那个前缀就成了谎(`sec:TSM:revM` 的数据来自台湾证交所)。

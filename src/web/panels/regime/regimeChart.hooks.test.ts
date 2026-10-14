@@ -6,6 +6,7 @@ import {
   REGIME_DIMS,
   regimePercentiles,
   type RegimeDim,
+  secFiledNote,
   secLagNote,
   secTrimNote,
   type RegimeData,
@@ -568,4 +569,17 @@ test('clampVisibleTo:有 overlay 的格子,主线与叠加线必须都夹', () =
     [-15, 15],
     [-15, 15],
   ]);
+});
+
+test('secFiledNote:单家 tab 标最新一期与申报日;没数据、合计与非基本面不标', () => {
+  const data: RegimeData = {
+    series: {},
+    unavailable: [],
+    secFiled: { ASML: { periodEnd: '2026-09-27', filed: '2026-10-14' } },
+  };
+
+  expect(secFiledNote(data, 'fundamentals:ASML')).toBe('截至 2026-09-27 · 2026-10-14 申报');
+  expect(secFiledNote(data, 'fundamentals:MU')).toBeUndefined();
+  expect(secFiledNote(data, 'fundamentals:buyer')).toBeUndefined();
+  expect(secFiledNote(data, 'liquidity')).toBeUndefined();
 });
