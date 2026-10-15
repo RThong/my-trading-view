@@ -2,7 +2,7 @@
 // 每个指标是表里一行,彼此解耦;只做叠加在蜡烛上的(不新开 pane,pane 数每实例固定)。
 import { useMemo, useState } from 'react';
 import { ema, bollinger } from '../../lib/indicators';
-import type { Bar, LinePoint } from '../../lib/chart';
+import { needsLogScale, type Bar, type LinePoint } from '../../lib/chart';
 import type { PaneDef, Spec } from './paneChart.types';
 
 type IndicatorDef = {
@@ -47,9 +47,13 @@ export const INDICATORS: IndicatorDef[] = [
       { key: 'bbLower3', title: 'BB 下 3σ', color: BB3_COLOR },
     ],
     compute: (bars) => {
+      // 对数轴(BTC)在 ln(价) 上算,带宽按比例、轴上对称:算术口径在抛物线行情里下轨贴 0 / 变负
+      // (BTC 周线 3σ 有 90 周 ≤0),对数轴上就是插到底的尖刺 + 负值滤掉后被直线连过去。代价:BTC 读数不再对齐 moomoo。
+      const log = needsLogScale(bars);
+      const rows = bollinger(log ? bars.map((b) => ({ ...b, close: Math.log(b.close) })) : bars, 20, 1);
+      const toPrice = log ? Math.exp : (v: number) => v;
       // k=1 时 upper − mid 就是 σ,各层按倍数推,一次滚动窗口算完。
-      const rows = bollinger(bars, 20, 1);
-      const band = (k: number) => rows.map((r) => ({ time: r.time, value: r.mid + k * (r.upper - r.mid) }));
+      const band = (k: number) => rows.map((r) => ({ time: r.time, value: toPrice(r.mid + k * (r.upper - r.mid)) }));
       return [band(3), band(2), band(-2), band(-3)];
     },
   },
@@ -70,8 +74,7 @@ function loadIds(key: string): string[] {
 export function useIndicatorSelection(storageKey: string) {
   const [ids, setIds] = useState<string[]>(() => loadIds(storageKey));
 
-  const toggle = (id: string) => {
-    const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+  const select = (next: string[]) => {
     setIds(next);
     try {
       localStorage.setItem(storageKeyOf(storageKey), JSON.stringify(next));
@@ -79,17 +82,18 @@ export function useIndicatorSelection(storageKey: string) {
       /* 落盘失败不阻断交互 */
     }
   };
+  const toggle = (id: string) => select(ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]);
 
   // 引用随 ids 稳定:调用方拿它当 useMemo 依赖缓存指标计算,不必自己再包一层。
   const active = useMemo(() => INDICATORS.filter((d) => ids.includes(d.id)), [ids]);
-  return { active, ids, toggle };
+  return { active, ids, toggle, select };
 }
 
 export type IndicatorLine = IndicatorDef['series'][number] & { data: LinePoint[] };
 
 /** 算选中指标的线(重活:整组 EMA + 布林带滚动窗口)。bars = 已按周期聚合的蜡烛,周线 EMA = 周收盘的 EMA。 */
 export function computeIndicatorLines(active: IndicatorDef[], bars: Bar[]): IndicatorLine[] {
-  // 叠加线都是价格:非正值没有意义(布林下轨在暴涨暴跌段会算出负价,BTC 2013 年 3σ 日线 21 个点),滤掉。
+  // 叠加线都是价格:非正值没有意义(线性轴上布林下轨在暴涨暴跌段会算出负价;对数轴已改 ln 口径不会负),滤掉。
   // 不滤的话会进价格轴自动缩放:对数轴(BTC)被镜像拉到负区间、K 线压扁,线性轴(VIX / USO)伸到 0 以下。
   return active.flatMap((d) =>
     d.compute(bars).map((data, i) => ({ ...d.series[i], data: data.filter((p) => p.value > 0) })),

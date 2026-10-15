@@ -8,6 +8,8 @@ import { INDICATORS, computeIndicatorLines, useIndicatorSelection, withIndicator
 import { OscillatorPanel } from '../chart/OscillatorPanel';
 import { OSC_IDS, OSC_OPTIONS } from '../chart/oscillator.hooks';
 
+const ALL_INDICATOR_IDS = [...INDICATORS.map((d) => d.id), ...OSC_IDS];
+
 // 一个资产的指标放进同一个 chart 的多个 pane(共享时间轴),顶部恒为现货蜡烛:
 //   pane0 现货(OHLC)· pane1 25Δ call/put IV · pane2 skew · [pane3 隐含vs已实现RV · pane4 VRP]
 // 后两个 pane 仅有免费波动率指数的标的有(SPY/QQQ/GLD/USO/BTC,vrpUnderlying 给定时);
@@ -66,6 +68,11 @@ export function AssetChart({
   const onlyPrice = paneDefs.every((p) => p.key === 'price' || collapsed.has(p.key));
   const oscIds = OSC_IDS.filter((id) => onlyPrice && indicators.ids.includes(id));
   const activeIds = [...indicators.active.map((d) => d.id), ...oscIds];
+  // 进入只看现货时指标全开(之后单独关掉的照常记住,直到下次再进入);退出时不动勾选。
+  const enterOrExitSolo = () => {
+    if (!onlyPrice) indicators.select(ALL_INDICATOR_IDS);
+    solo('price');
+  };
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -91,7 +98,7 @@ export function AssetChart({
           toggleDrawing={toggleDrawing}
           selection={selection}
           deleteSelected={deleteSelected}
-          solo={{ label: '只看现货', active: onlyPrice, onClick: () => solo('price') }}
+          solo={{ label: '只看现货', active: onlyPrice, onClick: enterOrExitSolo }}
           indicators={{
             options: [...INDICATORS, ...OSC_OPTIONS],
             active: activeIds,
