@@ -9,11 +9,21 @@ type IndicatorDef = {
   id: string;
   label: string;
   /** 产出的线(key 全局唯一,进图例/折叠);compute 结果与之按下标一一对应。 */
-  series: { key: string; title: string; color: string; fillTo?: { key: string; color: string } }[];
+  series: {
+    key: string;
+    title: string;
+    color: string;
+    fillTo?: { key: string; color: string };
+    /** 只在 7×24 资产(BTC)的日线上画。 */
+    allWeekDailyOnly?: boolean;
+  }[];
   compute: (bars: Bar[]) => LinePoint[][];
 };
 
 // 周期与配色照用户常用行情 App(moomoo):5 橙、20 蓝、50 红、144 粉、169 紫、200 黄、365 绿。
+// 365 是「一年 = 365 根」的年线,只对 7×24 交易的 BTC 日线成立:美股一年 ~252 根,365 根 ≈ 1.45 年、没人看;
+// 周线下 365 周 ≈ 7 年,对谁都没意义。故其余场合不画(computeIndicatorLines 按 allWeekDaily 滤)。
+const YEAR_EMA = 365;
 const EMA_PERIODS: [number, string][] = [
   [5, '#d89050'],
   [20, '#3a72ce'],
@@ -21,7 +31,7 @@ const EMA_PERIODS: [number, string][] = [
   [144, '#d77084'],
   [169, '#6a37a7'],
   [200, '#e9c444'],
-  [365, '#2cc290'],
+  [YEAR_EMA, '#2cc290'],
 ];
 const BB_COLOR = '#a1a1aa'; // 2σ 标准带
 const BB3_COLOR = '#71717a'; // 3σ 外层(同 moomoo BOLL(20,2,1,3) 的 UPPER3/LOWER3),压暗一档、不填色
@@ -32,7 +42,12 @@ export const INDICATORS: IndicatorDef[] = [
   {
     id: 'ema',
     label: `EMA ${EMA_PERIODS.map(([n]) => n).join('/')}`,
-    series: EMA_PERIODS.map(([n, color]) => ({ key: `ema${n}`, title: `EMA${n}`, color })),
+    series: EMA_PERIODS.map(([n, color]) => ({
+      key: `ema${n}`,
+      title: `EMA${n}`,
+      color,
+      allWeekDailyOnly: n === YEAR_EMA,
+    })),
     compute: (bars) => EMA_PERIODS.map(([n]) => ema(bars, n)),
   },
   // 只画上下轨:中轨 = SMA20,与 EMA20 几乎重合(差 ~0.3%),和 EMA 组同开时是重复的一条线。
@@ -91,22 +106,27 @@ export function useIndicatorSelection(storageKey: string) {
 
 export type IndicatorLine = IndicatorDef['series'][number] & { data: LinePoint[] };
 
-/** 算选中指标的线(重活:整组 EMA + 布林带滚动窗口)。bars = 已按周期聚合的蜡烛,周线 EMA = 周收盘的 EMA。 */
-export function computeIndicatorLines(active: IndicatorDef[], bars: Bar[]): IndicatorLine[] {
+/**
+ * 算选中指标的线(重活:整组 EMA + 布林带滚动窗口)。bars = 已按周期聚合的蜡烛,周线 EMA = 周收盘的 EMA。
+ * allWeekDaily = 7×24 资产的日线(决定画不画 EMA365)。
+ */
+export function computeIndicatorLines(active: IndicatorDef[], bars: Bar[], allWeekDaily: boolean): IndicatorLine[] {
   // 叠加线都是价格:非正值没有意义(线性轴上布林下轨在暴涨暴跌段会算出负价;对数轴已改 ln 口径不会负),滤掉。
   // 不滤的话会进价格轴自动缩放:对数轴(BTC)被镜像拉到负区间、K 线压扁,线性轴(VIX / USO)伸到 0 以下。
   return active.flatMap((d) =>
-    d.compute(bars).map((data, i) => ({ ...d.series[i], data: data.filter((p) => p.value > 0) })),
+    d
+      .compute(bars)
+      .map((data, i) => ({ ...d.series[i], data: data.filter((p) => p.value > 0) }))
+      .filter((l) => allWeekDaily || !l.allWeekDailyOnly),
   );
 }
 
 /**
  * 把选中指标挂到蜡烛(candleKey)所在 pane:paneDefs 该 pane 追加 series(图例 / 折叠才认得),
- * specs 追加线(lines 由 computeIndicatorLines 预先算好,便于调用方缓存)。
+ * specs 追加线(lines 由 computeIndicatorLines 预先算好,便于调用方缓存;图例也按 lines 出,被滤掉的线不进图例)。
  * 没有蜡烛 spec 时只挂图例,不出线。
  */
 export function withIndicators(
-  active: IndicatorDef[],
   lines: IndicatorLine[],
   candleKey: string,
   paneDefs: PaneDef[],
@@ -114,7 +134,6 @@ export function withIndicators(
   seriesName: Record<string, string>,
   colors: Record<string, string>,
 ) {
-  const series = active.flatMap((d) => d.series);
   const candle = specs.find((s) => s.kind === 'candle' && s.key === candleKey);
   const lineSpecs: Spec[] = candle
     ? lines.map((l) => ({ ...l, pane: candle.pane, kind: 'line' as const, overlay: true }))
@@ -122,10 +141,10 @@ export function withIndicators(
 
   return {
     paneDefs: paneDefs.map((p) =>
-      p.series.includes(candleKey) ? { ...p, series: [...p.series, ...series.map((s) => s.key)] } : p,
+      p.series.includes(candleKey) ? { ...p, series: [...p.series, ...lines.map((l) => l.key)] } : p,
     ),
     specs: [...specs, ...lineSpecs],
-    seriesName: { ...seriesName, ...Object.fromEntries(series.map((s) => [s.key, s.title])) },
-    colors: { ...colors, ...Object.fromEntries(series.map((s) => [s.key, s.color])) },
+    seriesName: { ...seriesName, ...Object.fromEntries(lines.map((l) => [l.key, l.title])) },
+    colors: { ...colors, ...Object.fromEntries(lines.map((l) => [l.key, l.color])) },
   };
 }

@@ -37,9 +37,12 @@ export function AssetChart({
   // 叠加指标挂在现货蜡烛上,并把线并进现货 pane 的图例 / 折叠。
   // 计算缓存住:十字线每动一下组件都重渲染,长历史上每次重算整组 EMA + 布林带是白耗。
   const bars = useMemo(() => aggregateBars(toBars(price), interval), [price, interval]);
-  const lines = useMemo(() => computeIndicatorLines(indicators.active, bars), [indicators.active, bars]);
+  // 日线里有周末 = 7×24 资产(BTC);美股的周末快照入库前已归到周五,不会误判。
+  const lines = useMemo(() => {
+    const allWeekDaily = interval === '1D' && bars.some((b) => new Date(b.time).getUTCDay() % 6 === 0);
+    return computeIndicatorLines(indicators.active, bars, allWeekDaily);
+  }, [indicators.active, bars, interval]);
   const { paneDefs, specs, seriesName, colors } = withIndicators(
-    indicators.active,
     lines,
     'price',
     base.paneDefs,
