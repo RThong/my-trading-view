@@ -11,9 +11,10 @@ type IceRow = { clearingDate: string; name: string; instrumentName: string; eodP
 export type CdsPoint = { ticker: string; price: number };
 export type CdsSnapshot = { date: string; points: CdsPoint[] };
 
-const TICKERS = new Set(AI_CDS.map((c) => c.ticker));
+// 名单内 ticker → 要取的票息档(字符串,对齐 instrumentName 第 5 段)。不在 Map = 名单外。
+const COUPON = new Map(AI_CDS.map((c) => [c.ticker, String(c.coupon ?? 100)]));
 
-// 每名取标准 5Y 基准合约:SNRFOR + USD + 100bp 票息。同名若多档到期,取最长到期
+// 每名取标准 5Y 基准合约:SNRFOR + USD + 该名配置的票息档(默认 100bp,高收益名 500bp)。同名若多档到期,取最长到期
 // (= on-the-run 5Y,短档是历史残留)。maturity 为 YYYY-MM-DD,字典序即时间序。
 export function parseIceCds(rows: IceRow[]): CdsSnapshot {
   let date = '';
@@ -21,7 +22,7 @@ export function parseIceCds(rows: IceRow[]): CdsSnapshot {
 
   for (const r of rows) {
     const [ticker, tier, ccy, , coupon, maturity] = r.instrumentName.split('.');
-    if (!TICKERS.has(ticker) || tier !== 'SNRFOR' || ccy !== 'USD' || coupon !== '100') continue;
+    if (!COUPON.has(ticker) || coupon !== COUPON.get(ticker) || tier !== 'SNRFOR' || ccy !== 'USD') continue;
 
     // price<=0 一并挡:Number(null)/Number('') 都得 0,缺价的行会伪装成有效价(→ 约 2228bp 假数据)。
     const price = Number(r.eodPrice);

@@ -29,6 +29,13 @@ const SAMPLE = [
     instrumentName: 'DELLN.SNRFOR.USD.XR14.100.2031-06-20',
     eodPrice: '101.3174',
   },
+  // 高收益名只挂 500bp 档:按名单配置取 500(不被默认 100 档规则滤掉)
+  {
+    clearingDate: '2026-07-24',
+    name: 'COREWEAVE INC',
+    instrumentName: 'COREWEI.SNRFOR.USD.XR14.500.2031-12-20',
+    eodPrice: '83.0764',
+  },
   // 干扰:EUR 货币 → 不取
   {
     clearingDate: '2026-07-24',
@@ -72,9 +79,9 @@ describe('parseIceCds', () => {
 
   it('缺价(空串→0)滤掉,不伪装成有效价', () => expect(snap.points.find((p) => p.ticker === 'NVIDIA')).toBeUndefined());
 
-  it('只留名单内 + SNRFOR + USD + 100bp 票息', () => {
+  it('只留名单内 + SNRFOR + USD + 该名配置的票息档', () => {
     const tickers = snap.points.map((p) => p.ticker).sort();
-    expect(tickers).toEqual(['APLINC', 'DELLN', 'MSFT', 'ORCLE']); // ABBVINC/AAUK 被滤掉
+    expect(tickers).toEqual(['APLINC', 'COREWEI', 'DELLN', 'MSFT', 'ORCLE']); // ABBVINC/AAUK 被滤掉
   });
 
   it('同名多到期取最长(on-the-run 5Y)', () => {
@@ -86,11 +93,19 @@ describe('parseIceCds', () => {
   });
 });
 
-// 换算锚点:对齐市场公开报道(Oracle ~200bp 史上最阔,Apple ~30-40bp 铁底)。
+// 换算锚点:平价 = 票息;其余对齐同日市场公开报价(模型自身约 ±10~15bp,见 rateCurves 注释)。
 describe('cdsPriceToSpreadBp', () => {
-  it('平价 100 → 票息 100bp', () => expect(cdsPriceToSpreadBp(100)).toBeCloseTo(100, 6));
-  it('Oracle 95.26 → ~201bp(校准到市场值)', () => expect(cdsPriceToSpreadBp(95.2609)).toBeCloseTo(201, 0));
-  it('Apple 102.89 → ~38bp(校准到市场值)', () => expect(cdsPriceToSpreadBp(102.8879)).toBeCloseTo(39, 0));
+  it('平价 100 → 票息 100bp', () => expect(cdsPriceToSpreadBp(100)).toBeCloseTo(100, 3));
+  it('500bp 档平价 → 500bp', () => expect(cdsPriceToSpreadBp(100, 500)).toBeCloseTo(500, 3));
+  it('Oracle 95.26 → ~214bp(报价 ~200bp)', () => expect(cdsPriceToSpreadBp(95.2609)).toBeCloseTo(214, 0));
+  it('Apple 102.89 → ~35bp(报价 ~39bp)', () => expect(cdsPriceToSpreadBp(102.8879)).toBeCloseTo(35, 0));
+  // 2026-10-15 ICE 结算价 83.0764;同日报道收盘 ~1038bp(盘中峰值 1194.5)
+  it('CoreWeave 83.08 → ~1053bp', () => expect(cdsPriceToSpreadBp(83.0764, 500)).toBeCloseTo(1053, 0));
+  // annuity 4.7 线性近似在这里只有 ~1138:风险久期随违约强度缩短,困境区必须非线性
+  it('困境区不被压低:价 70 → >1700bp', () => expect(cdsPriceToSpreadBp(70, 500)).toBeGreaterThan(1700));
+  it('深困境区不被上界截断:价 42 → ~21960bp', () => expect(cdsPriceToSpreadBp(42, 500)).toBeCloseTo(21960, -1));
+  it('价 ≤ 回收价 40 → 无解 NaN', () => expect(cdsPriceToSpreadBp(40, 500)).toBeNaN());
+  it('价高于 s=0 理论价(负 spread)→ 无解 NaN', () => expect(cdsPriceToSpreadBp(105)).toBeNaN());
 });
 
 describe('missingCoreCds', () => {

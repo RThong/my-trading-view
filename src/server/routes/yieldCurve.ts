@@ -54,15 +54,24 @@ async function buildTreasury(): Promise<CurveBody> {
 }
 
 // 从 market_series 读一组 (label→symbol),按 xform 转值;缺行的 label 进 unavailable。
-function buildFromDb(pairs: { label: string; symbol: string }[], xform: (v: number) => number): CurveBody {
+// xform 逐名给(缺省恒等):如 CDS 各名票息不同。
+function buildFromDb(pairs: { label: string; symbol: string; xform?: (v: number) => number }[]): CurveBody {
   const db = openDb();
   try {
     // 一次查库,再声明式拆成 series(有数据)/ unavailable(缺数据)两组。
-    const fetched = pairs.map((p) => ({ label: p.label, rows: getMarketSeries(db, p.symbol) }));
+    const fetched = pairs.map((p) => ({
+      label: p.label,
+      xform: p.xform ?? ((v: number) => v),
+      rows: getMarketSeries(db, p.symbol),
+    }));
     const series = Object.fromEntries(
       fetched
         .filter((f) => f.rows.length)
-        .map((f) => [f.label, f.rows.map((r) => ({ date: r.date, value: xform(r.value) }))]),
+        .map((f) => [
+          f.label,
+          // xform 无解(NaN,如 CDS 价 ≤ 回收价)的点丢掉,不吐 null 给前端
+          f.rows.map((r) => ({ date: r.date, value: f.xform(r.value) })).filter((p) => Number.isFinite(p.value)),
+        ]),
     );
     const unavailable = fetched.filter((f) => !f.rows.length).map((f) => f.label);
     return { tenors: pairs.map((p) => p.label), series, unavailable };
@@ -95,18 +104,18 @@ const buildJgb = async (): Promise<CurveBody> => {
 };
 
 // Eris 的 FairCoupon 已是百分点 → 恒等 xform。
-const buildOis = (): CurveBody =>
-  buildFromDb(
-    ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })),
-    (v) => v,
-  );
+const buildOis = (): CurveBody => buildFromDb(ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })));
 
-// AI 巨头 + 甲骨文单名 CDS:读库原始价,xform 成约定 spread(bp)。"tenor" 复用为公司名。
+// AI 巨头 + 甲骨文 + CoreWeave 单名 CDS:读库原始价,xform 成约定 spread(bp)。"tenor" 复用为公司名。
 // 非真曲线(公司无序),但复用 CurveBody 走 TenorHistoryPanel 的时间序列视图(每名一条线)。
+// 票息按名不同(CoreWeave 500bp 档),故逐名给 xform。
 const buildAiCds = (): CurveBody =>
   buildFromDb(
-    AI_CDS.map((c) => ({ label: c.name, symbol: `ICE_CDS_${c.ticker}` })),
-    cdsPriceToSpreadBp,
+    AI_CDS.map((c) => ({
+      label: c.name,
+      symbol: `ICE_CDS_${c.ticker}`,
+      xform: (v: number) => cdsPriceToSpreadBp(v, c.coupon),
+    })),
   );
 
 // source → 曲线构造器。await 对同步返回值也安全,新增曲线源只加一行。
@@ -122,7 +131,7 @@ const BUILDERS: Record<string, () => CurveBody | Promise<CurveBody>> = {
   //(注意方向:面板上 real 是 DFII 直读,反倒是 bei 由 DGS − DFII 现算 —— 别写成「名义 − BEI」)。
   real: () => buildFredCurve(BEI_TENORS.map((t) => ({ tenor: t.tenor, series: t.real }))),
   jgb: buildJgb, // 日本国债收益曲线(MOF)
-  ai_cds: buildAiCds, // AI 巨头 + 甲骨文单名 CDS(ICE 结算价读时换算 spread bp)
+  ai_cds: buildAiCds, // AI 巨头 + 甲骨文 + CoreWeave 单名 CDS(ICE 结算价读时换算 spread bp)
 };
 
 export const yieldCurveRoute = new Hono().get('/', async (c) => {

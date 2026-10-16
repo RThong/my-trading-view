@@ -22,7 +22,7 @@
 | **其它** | Eris(SOFR OIS 曲线)/ MOF+JPX(JGB 收益率/JGB VIX)/ CFTC(日元净持仓 Legacy / VIX 净持仓 TFF)/ Shiller(CAPE) | 混:Eris 日 / MOF 日 / JPX 日 / **CFTC 周** / Shiller 月 | 零;**JPX JGB VIX 用 `fflate`** | 各自 adapter(见 `fetchers/`)| 多为全历史 |
 | **EIA** | 周度石油报告:炼厂开工率 / 加工量 + 馏分油产量(→ 收率、同比)/ 馏分油+汽油库存 / 馏分油出口(→ 季节 z)· **零售柴油/汽油泵价**(→ 与批发期货减出零售加价) | **周频**(实物六条周三 10:30 ET 发、截止上周五,滞后 ~5 天;**零售两条周一发**,两批右端日期不齐是常态) | 零(要 key) | JSON `api.eia.gov/v2/seriesid/PET.{ID}.W`(要 key)⚠️ 裸 ID 404,必须带 `PET.` 前缀 + `.W` 后缀;`start`/`end`/`data[]` **全被忽略**,唯一生效的裁剪参数是 `length`;返回**倒序** | 1982 起全历史;**已发布值下周会被修订**(每次拉全量,故不落库) |
 | **ISM(经 PR Newswire)** | 制造业 / 服务业 PMI 头条 + 各自 Prices 分项(`ismMfg` / `ismSvc` / `ismMfgPrices` / `ismSvcPrices`) | **月频**(制造业第 1 个工作日、服务业第 3 个工作日,10:00 ET) | 零 | newsroom 列表页 `prnewswire.com/news/institute-for-supply-management/?page=N&pagesize=M` 按 slug 认月报 → 单篇解析「AT A GLANCE」表(**按行首标签取行,不按行号**)。⚠️ 三代版式都实测过:报告月可能在表头第二行(2021~2023)、年份可能被拆进两个 span 成「202 1」(2020-10~2022-02)、2020 年前服务业叫 NMI;⚠️ 服务业表右半边是制造业对照列,只取前两格 | **落库**(daily `ism` 分组增量;`bun run src/server/jobs/ismSnapshot.ts --backfill` 回填,已回填 2018-01 起)。⚠️ 回填 = 每月「最后一次被发布的读数」拼接:次月那篇带回的上月值会覆盖(1 月季节因子重估由此带回一个月),更早月份不改 —— 非官方修订后全序列。**停更防护**:每轮写完查两个扇区各自最新报告月,落后当前月 >2 个月 → `ism` 记 failed(状态灯红,悬停见原因);只看列表页认不认得出月报挡不住单扇区改名(旧名月报会在第一页挂一年) |
-| **ICE** | AI 巨头 + 甲骨文单名 CDS EOD 结算价(`iceCds`) | 日频 | 零 | 公开 JSON `www.ice.com/api/cds-settlement-prices/icc-single-names`(免 key) | **仅当天快照,不可回填** |
+| **ICE** | AI 巨头 + 甲骨文 + CoreWeave 单名 CDS EOD 结算价(`iceCds`) | 日频 | 零 | 公开 JSON `www.ice.com/api/cds-settlement-prices/icc-single-names`(免 key) | **仅当天快照,不可回填** |
 | **moomoo** | 期权链(股票/ETF/指数:SPY/.VIX) | 日频 | `moomoo-api` | 本地 OpenD WebSocket `127.0.0.1:33333` | **仅当天快照,不可回填** |
 | **SEC XBRL** | AI 链公司季报财务(TTM 毛利率/capex/FCF) | **季频** | 零 | 公开 JSON `data.sec.gov`(免 key,**必须带 User-Agent**);submissions 比 filed → 有新申报才拉 companyfacts | 全历史(季频) |
 | **Deribit** | 加密期权链(BTC/ETH) | 日频 | 零 | 公开 REST `deribit.com/api/v2/public`(免 key) | 链快照型;但 **DVOL** 波动率指数有历史 |
@@ -139,10 +139,10 @@
   假日 `lastClosedTradingDate()` 会返回假日当天,导致整天判失败、守卫永远不绿。
 - **CBOE(VIX 家族/SKEW/RXM/VX1)**:直接打 API + 下 CSV,**不需要 Playwright**。
 - **FRED(利率 / 信用利差 / 流动性 / 通胀)**:免费 key 在 `.env`(`FRED_API_KEY`),不要提交。**油品现货/期货走 Yahoo(`CL/BZ/HO/RB=F`),不是 FRED**;DXY 也走 Yahoo 真 ICE 指数(`DX-Y.NYB`),不用 FRED 的贸易加权 `DTWEXBGS`。
-- **ICE 单名 CDS(AI 巨头 + 甲骨文)**:免费公开端点(无 auth),真 CDS 结算价,不是债券代理/二手抓取。
-  几个坑:①端点吐的是**价**(平价 100)不是 spread,读时用 `cdsPriceToSpreadBp` 线性近似成 bp(annuity=4.7 校准);
+- **ICE 单名 CDS(AI 巨头 + 甲骨文 + CoreWeave)**:免费公开端点(无 auth),真 CDS 结算价,不是债券代理/二手抓取。
+  几个坑:①端点吐的是**价**(平价 100)不是 spread,读时用 `cdsPriceToSpreadBp` 按标准 CDS 定价反解成 bp(回收率 40%、违约强度恒定、平坦利率 4%、T=5Y,二分;价 ≤ 回收价 40 = 无解 → NaN,路由丢点)。2026-10-16 前是 annuity=4.7 线性近似,离校准点越远越偏低、困境区严重低估,已换掉;
   存库存**原始价**(真值源)。②`instrumentName`(如 `ORCLE.SNRFOR.USD.XR14.100.2031-06-20`)按 ticker 匹配名单,
-  **不认 ICE 的 `name` 字段**(有 "Oracle Cop" 等错拼);筛 SNRFOR+USD+100bp 票息,同名多到期取最长(on-the-run 5Y)。
+  **不认 ICE 的 `name` 字段**(有 "Oracle Cop" 等错拼);筛 SNRFOR+USD+**该名配置的票息档**(`AI_CDS[].coupon`,缺省 100bp;CoreWeave 只挂 500bp),同名多到期取最长(on-the-run 5Y)。
   ③价 ≤0 当缺价滤掉(`Number('')→0` 会伪装成 ~2228bp 假数据)。④**仅当天快照、不可回填**,靠 daily 每天攒;
   故 `ice_cds` 列入 `REQUIRED_JOBS`,且默认展示的 core 标的缺任一即 job failed 告警(`missingCoreCds`)。
 - **Computable GPU Index(算力租赁价)**:公开挂牌价的聚合,**不是成交价**;CoreWeave 在四个面板里占三个,
