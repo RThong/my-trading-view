@@ -176,7 +176,9 @@ export const PERSPECTIVES: Perspective[] = [
     tabs: [
       regimeTab('gpu_compute', '算力价格', 'compute'),
       regimeTab('buyer', '买方合计', 'fundamentals:buyer'),
-      historyTab('ai_cds', 'AI CDS', 'ai_cds', [{ long: 'Oracle', short: 'Apple', label: 'Oracle − Apple' }]),
+      // 曾配 Oracle − Apple 差值格,已撤:实测与 Oracle 本线相关 0.9986(Apple 日波动仅其 1/10、两者日变动相关 0.12),
+      // 减掉 Apple 只是把 Oracle 平移约 40bp,剥不出「共同因子」。
+      historyTab('ai_cds', 'AI CDS', 'ai_cds'),
       { id: 'industry_chain', label: '产业链', render: (interval) => <IndustryChainPanel interval={interval} /> },
     ],
   },

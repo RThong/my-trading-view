@@ -1,6 +1,6 @@
 // 期限走势图数据层:把某一期限的历史序列喂给图,按全局 interval 聚合。
 // 纯函数在此,图表实例管理见下方 useTenorChart。
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   createChart,
   CandlestickSeries,
@@ -9,9 +9,18 @@ import {
   type IChartApi,
   type IPaneApi,
   type ISeriesApi,
+  type MouseEventParams,
   type Time,
 } from 'lightweight-charts';
-import { aggregate, aggregateBars, CHART_OPTIONS, type Bar, type LinePoint } from '../../lib/chart';
+import {
+  aggregate,
+  aggregateBars,
+  CHART_OPTIONS,
+  expandAutoscaleProvider,
+  fmtDate,
+  type Bar,
+  type LinePoint,
+} from '../../lib/chart';
 import type { YPoint } from './yieldCurve.hooks';
 import type { Interval } from '../../hooks/interval';
 import { useStable } from '../../hooks/useStable';
@@ -98,6 +107,9 @@ export type SpreadSpec = { label: string; color: string; data: LinePoint[] };
 /** 现货参照 pane(蜡烛)。给利率那几格当"曲线在动的时候,风险资产在干什么"的对照物。 */
 export type SpotSpec = { label: string; data: Bar[] };
 
+/** 竖线处的读数:日期 + 各期限线 / 差值线的值(按 tenor / label 索引)。不悬停 = null。 */
+export type TenorHover = { date: string; values: Record<string, number> } | null;
+
 /** 建图挂 containerRef;期限线 → pane 0;spreads 每条一个 pane 画利差线 + 0 基线;
  *  spot 非 null → 再一个 pane 画现货蜡烛(共享时间轴、联动)。
  *  从 spreads 里拿掉某条 = 收起它那格(不重建图,故缩放/平移保留)。
@@ -109,7 +121,9 @@ export function useTenorChart(
   rawSpecs: TenorSpec[],
   rawSpreads: SpreadSpec[],
   rawSpot: SpotSpec | null = null,
-) {
+  /** 期限格纵轴下限钉在 0(CDS 用):自动缩放只包数据那一段,会把 30bp 的变化放大成满格。 */
+  zeroBase = false,
+): TenorHover {
   // 引用稳定化在 hook 内部扛:调用方传新数组字面量不该让 sync effect 每帧重跑 fitContent。
   const specs = useStable(rawSpecs);
   const spreads = useStable(rawSpreads);
@@ -121,6 +135,7 @@ export function useTenorChart(
   const spotRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const spotPaneRef = useRef<IPaneApi<Time> | null>(null);
   const showSpot = spot !== null;
+  const [hover, setHover] = useState<TenorHover>(null);
 
   // 挂载建一次,卸载销毁。
   useEffect(() => {
@@ -163,7 +178,10 @@ export function useTenorChart(
           title: spec.tenor,
           lineWidth: 2,
           priceLineVisible: false,
+          ...(zeroBase && { autoscaleInfoProvider: expandAutoscaleProvider([0, 0]) }),
         });
+        // 钉 0 时底部留白归零:默认 0.1 会让轴底多出 −10 这种对 CDS 无意义的负刻度。
+        if (zeroBase) s.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0 } });
         seriesRef.current.set(spec.tenor, s);
       } else {
         // 颜色按当前显示的线依次分配,勾 / 取消别的期限会让这条换色 → 复用的线也要同步颜色。
@@ -173,7 +191,32 @@ export function useTenorChart(
     }
 
     chart.timeScale().fitContent();
-  }, [specs]);
+  }, [specs, zeroBase]);
+
+  // 悬停读数:竖线处各期限线 + 差值线的值。移出图 / 落在无数据处 → null。
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const onMove = (p: MouseEventParams<Time>) => {
+      if (p.time == null) {
+        setHover(null);
+        return;
+      }
+
+      const lines = [...seriesRef.current, ...spreadsRef.current];
+      const values = Object.fromEntries(
+        lines.flatMap(([k, s]) => {
+          const d = p.seriesData.get(s) as { value?: number } | undefined;
+          return typeof d?.value === 'number' ? [[k, d.value]] : [];
+        }),
+      );
+      setHover({ date: fmtDate(p.time), values });
+    };
+
+    chart.subscribeCrosshairMove(onMove);
+    return () => chart.unsubscribeCrosshairMove(onMove);
+  }, []);
 
   // 差值格同步:按 label 增删 pane,已有的只换数据。这里不碰 timeScale,否则显隐差值会把用户的缩放/平移 fit 掉。
   useEffect(() => {
@@ -281,4 +324,6 @@ export function useTenorChart(
     // 重取一次视窗把它拉回全历史。之后不再碰 timeScale,否则每次数据刷新都会把用户的缩放 fit 掉。
     if (first) chart.timeScale().fitContent();
   }, [spot]);
+
+  return hover;
 }

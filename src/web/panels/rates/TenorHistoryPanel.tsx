@@ -62,7 +62,7 @@ const VIEW_DESC: Record<string, { title: string; desc: string }> = {
   },
   ai_cds: {
     title: 'AI CDS',
-    desc: '定义:AI 资本开支巨头 + 甲骨文 + 新云 CoreWeave 的 5Y 单名 CDS 利差(bp)时间走势。\n数据:ICE Clear Credit 免费 EOD 结算价,由合约价按标准 CDS 定价(回收率 40%、违约强度恒定)反解成约定 spread,约 ±10~15bp(CoreWeave 为 500bp 票息档)。\n利差越高 = 市场定价的违约风险越大;甲骨文因 AI 举债显著高于同类,是 AI 信用风险风向标。\nCoreWeave(默认不勾,~1000bp 量级会压扁其余几家)= 租算力给巨头、自己举债买卡的新云,信贷型脆弱的前线;2026-10-15 起才有数据。\n特质溢价读法见下方 pane 的 ⓘ。',
+    desc: '定义:AI 资本开支巨头 + 甲骨文 + 新云 CoreWeave 的 5Y 单名 CDS 利差(bp)时间走势。\n数据:ICE Clear Credit 免费 EOD 结算价,由合约价按标准 CDS 定价(回收率 40%、违约强度恒定)反解成约定 spread,约 ±10~15bp(CoreWeave 为 500bp 票息档)。\n利差越高 = 市场定价的违约风险越大;甲骨文因 AI 举债显著高于同类,是 AI 信用风险风向标。\nCoreWeave(默认不勾,~1000bp 量级会压扁其余几家)= 租算力给巨头、自己举债买卡的新云,信贷型脆弱的前线;2026-10-15 起才有数据。\n纵轴从 0 起(对齐常见 CDS 图):高度比例 = 真实幅度,不被自动缩放放大。',
   },
 };
 
@@ -107,11 +107,11 @@ const SPREAD_DESC: Record<string, Record<string, string>> = {
       '实际这条走阔而 BEI 长端两条不张开 = 归因落在久期风险补偿一侧。',
     ].join('\n'),
   },
-  ai_cds: {
-    'Oracle − Apple':
-      '定义:Oracle − Apple 的 5Y CDS 特质溢价(bp,虚线 = 0)。剥掉宏观信用共同因子,只留甲骨文因 AI 举债被额外索取的那部分。',
-  },
 };
+
+// 纵轴从 0 起的 source:CDS 的读法是「涨了几成」,自动缩放只包数据那一段会把小幅变化放大成满格。
+// 利率不加:曲线读的是相对位置与差值,钉 0 会把 10bp 级的动作压扁。
+const ZERO_BASE = new Set(['ai_cds']);
 
 /** 差值 pane 定义:长腿 − 短腿。label 兼作该格的 key 与说明的索引。 */
 export type SpreadDef = { long: string; short: string; label: string };
@@ -159,6 +159,8 @@ export function TenorHistoryPanel({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // 收起的差值格(按 label)。
   const [hiddenSpreads, setHiddenSpreads] = useState<Set<string>>(new Set());
+  // 聚焦:'' = 按 chip 多选;否则只画这一条(工具条下拉框)。
+  const [focus, setFocus] = useState('');
 
   // 数据到位后种一次默认勾选(按 source)。渲染中条件 setState + seeded 单调标志替代 effect。
   const [seeded, setSeeded] = useState(false);
@@ -171,7 +173,7 @@ export function TenorHistoryPanel({
   // 同屏一般 ≤ 8 条,用的全是验证过的类别色,任意组合两两分得开。不按期限固定取色:OIS 24 档里
   // 同时勾中的几条一旦落在表里相近的位置就撞色(暗底细线真能分开的颜色只有十来种)。
   // 代价:勾 / 取消一条时,排在它后面的线会换色。
-  const shownTenors = data.tenors.filter((t) => selected.has(t));
+  const shownTenors = focus ? [focus] : data.tenors.filter((t) => selected.has(t));
   const colorAt = (i: number) => SERIES_COLORS[i % SERIES_COLORS.length];
 
   const specs: TenorSpec[] = shownTenors.map((t, i) => ({
@@ -196,7 +198,11 @@ export function TenorHistoryPanel({
   const spotBarsData = spotBars(spotRes.data, interval);
   const spotSpec: SpotSpec | null = spot && spotBarsData.length ? { label: spot, data: spotBarsData } : null;
 
-  useTenorChart(containerRef, specs, spreads, spotSpec);
+  const hover = useTenorChart(containerRef, specs, spreads, spotSpec, ZERO_BASE.has(source));
+  const hoverRows = [
+    ...specs.map((s) => ({ key: s.tenor, color: s.color })),
+    ...spreads.map((s) => ({ key: s.label, color: s.color })),
+  ].filter((r) => hover?.values[r.key] != null);
 
   const flip = (prev: Set<string>, k: string) => {
     const n = new Set(prev);
@@ -221,6 +227,19 @@ export function TenorHistoryPanel({
             <InfoTip text={view.desc} />
           </div>
         )}
+        <select
+          value={focus}
+          onChange={(e) => setFocus(e.target.value)}
+          title="只看一条线"
+          className="rounded border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-neutral-300"
+        >
+          <option value="">聚焦:全部</option>
+          {data.tenors.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
         {spreadDefs.map((d) => {
           const shown = !hiddenSpreads.has(d.label);
           const desc = SPREAD_DESC[source]?.[d.label];
@@ -239,8 +258,8 @@ export function TenorHistoryPanel({
           );
         })}
       </div>
-      {/* 期限 chip 多选:颜色 = 线色 */}
-      <div className="flex flex-wrap gap-1.5">
+      {/* 期限 chip 多选:颜色 = 线色。聚焦时收起(只画选中那条,chip 无意义) */}
+      <div className={`flex flex-wrap gap-1.5 ${focus ? 'hidden' : ''}`}>
         {data.tenors.map((t) => {
           const on = selected.has(t);
           return (
@@ -260,6 +279,17 @@ export function TenorHistoryPanel({
       </div>
       <div className="relative min-h-0 flex-1">
         <div ref={containerRef} className="h-full w-full" />
+        {hover && hoverRows.length > 0 && (
+          <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-neutral-900/80 px-2 py-1 text-xs tabular-nums">
+            <div className="text-neutral-400">{hover.date}</div>
+            {hoverRows.map((r) => (
+              <div key={r.key} className="flex justify-between gap-3">
+                <span style={{ color: r.color }}>{r.key}</span>
+                <span className="text-neutral-200">{hover.values[r.key].toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+        )}
         {error && <p className="absolute left-2 top-2 text-xs text-red-400">加载失败:{error.message}</p>}
         {isLoading && <p className="absolute left-2 top-2 text-xs text-neutral-500">加载中…</p>}
         {!isLoading && !error && !maxDate && (
