@@ -46,6 +46,12 @@ export const MARKET_CATALOG: MarketAsset[] = [
     optionSource: 'deribit',
     vrp: { ivIndex: 'DVOL', window: 30, periodsPerYear: 365 },
   },
+  {
+    // 同 BTC 不配 tab:IBIT(BTC 现货 ETF)的格子挂在「BTC」竖视角里,见 perspectives。
+    // 无免费波动率指数 → 不做 VRP,只 现货 + IV + skew(DVOL 是 Deribit 7×24 口径,不拿来配 IBIT)。
+    underlying: 'IBIT',
+    optionSource: 'moomoo',
+  },
   { underlying: 'NOBL', optionSource: 'none' }, // 只做价格:攻防指标的防御腿
 ];
 
