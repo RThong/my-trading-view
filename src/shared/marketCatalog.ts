@@ -10,6 +10,8 @@ export type MarketAsset = {
   tab?: { id: string; label: string }; // 有 → 进「期权」视角横 tab(NOBL 无)
   index?: boolean; // 指数(.VIX):无现货报价,不抓 price
   vrp?: { ivIndex: string; window: number; periodsPerYear: number }; // 有 → 做 VRP;spot 恒 = underlying
+  // 有 → 期权链另抓第二档(第一个 ≥60 天的标准月度到期),只存原始链。SPY/QQQ 不抓:周度极活跃,不缺这档。
+  secondExpiry?: true;
 };
 
 export const MARKET_CATALOG: MarketAsset[] = [
@@ -25,19 +27,29 @@ export const MARKET_CATALOG: MarketAsset[] = [
     tab: { id: 'qqq', label: 'QQQ' },
     vrp: { ivIndex: 'VXN', window: 21, periodsPerYear: 252 },
   },
-  { underlying: '.VIX', optionSource: 'moomoo', tab: { id: 'vix', label: 'VIX' }, index: true }, // 指数,无现货 / 无 VRP
-  { underlying: 'TLT', optionSource: 'moomoo', tab: { id: 'tlt', label: 'TLT' } }, // 无免费波动率指数,只 2-pane
+  // 指数,无现货 / 无 VRP。第二档按 VIX 月度(周三,与 VX 期货同日结算)。
+  { underlying: '.VIX', optionSource: 'moomoo', tab: { id: 'vix', label: 'VIX' }, index: true, secondExpiry: true },
+  {
+    // VXTLT = CBOE 按 TLT 期权编的 30 天波动率指数(2004 起)。
+    underlying: 'TLT',
+    optionSource: 'moomoo',
+    tab: { id: 'tlt', label: 'TLT' },
+    vrp: { ivIndex: 'VXTLT', window: 21, periodsPerYear: 252 },
+    secondExpiry: true,
+  },
   {
     underlying: 'GLD',
     optionSource: 'moomoo',
     tab: { id: 'gld', label: 'GLD' },
     vrp: { ivIndex: 'GVZ', window: 21, periodsPerYear: 252 },
+    secondExpiry: true,
   },
   {
     underlying: 'USO',
     optionSource: 'moomoo',
     tab: { id: 'uso', label: 'USO' },
     vrp: { ivIndex: 'OVX', window: 21, periodsPerYear: 252 },
+    secondExpiry: true,
   },
   {
     // 刻意**不配 tab**:BTC 的格子全在「BTC」竖视角里(现货/夏普 + 期权),不进「期权」视角的横 tab 条。
@@ -48,12 +60,19 @@ export const MARKET_CATALOG: MarketAsset[] = [
   },
   {
     // 同 BTC 不配 tab:IBIT(BTC 现货 ETF)的格子挂在「BTC」竖视角里,见 perspectives。
-    // 无免费波动率指数 → 不做 VRP,只 现货 + IV + skew(DVOL 是 Deribit 7×24 口径,不拿来配 IBIT)。
+    // 隐含腿用 BITVX(CBOE 按 IBIT 期权编,2025-01 起),不用 DVOL(Deribit 7×24 口径,对不上美股时段)。
+    // IBIT 只在美股时段交易 → RV 年化 252,不是 BTC 的 365。
     underlying: 'IBIT',
     optionSource: 'moomoo',
+    vrp: { ivIndex: 'BITVX', window: 21, periodsPerYear: 252 },
+    secondExpiry: true,
   },
   { underlying: 'NOBL', optionSource: 'none' }, // 只做价格:攻防指标的防御腿
 ];
+
+/** 期权链要另抓第二档(月度)到期日的标的。 */
+export const secondExpiryUnderlyings = (): string[] =>
+  MARKET_CATALOG.filter((a) => a.secondExpiry).map((a) => a.underlying);
 
 /** 某期权源的标的清单(moomoo / deribit 白名单;none = 仅价格如 NOBL)。 */
 export const optionUnderlyings = (source: MarketAsset['optionSource']): string[] =>

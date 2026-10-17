@@ -19,7 +19,7 @@
  * 出现过的每个交易日,选取那份 expire_date 最早、且当天尚未到期的合约。
  */
 
-import type { QuoteRow } from '../storage/repository';
+import type { MarketSeriesRow, QuoteRow } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
 import { fetchWithTimeout } from './http';
 import { groupBy, sortBy } from 'remeda';
@@ -194,12 +194,39 @@ function toQuoteRows(
     }));
 }
 
+/** 按合约存的序列 id 前缀:`VX:<到期日>`,如 `VX:2026-11-18`。 */
+export const VX_CONTRACT_PREFIX = 'VX:';
+
 /**
- * 上层入口:一次下载,产出 VX1(近月)与 VX3(第三近)两条序列。
+ * 每份月度合约自己的结算价序列(整条曲线)。按**到期日**而不是排名存:VIX 期权某个到期日
+ * 对应的就是同一天到期的那份 VX(同一个 SOQ 结算),按到期日直接对得上;排名随时可由此推出。
+ * 也不经过排名 → 增量时下载集残缺不会把远月错记成近月(VX1/VX3 踩过的坑),每行都只属于自己的合约。
+ * 到期当天那行保留:它的结算价就是最终结算值(SOQ)。下界同 toQuoteRows。
+ */
+export function toContractRows(
+  contractRows: Array<{ expireDate: string; rows: CboeSettleRow[] }>,
+  freshSince: string,
+): MarketSeriesRow[] {
+  const minDate = freshSince > HISTORY_START_DATE ? freshSince : HISTORY_START_DATE;
+  return contractRows.flatMap((c) =>
+    c.rows
+      .filter((r) => r.tradeDate >= minDate && r.tradeDate <= c.expireDate)
+      .map((r) => ({ seriesId: `${VX_CONTRACT_PREFIX}${c.expireDate}`, obsDate: r.tradeDate, value: r.settle })),
+  );
+}
+
+/**
+ * 上层入口:一次下载,产出 VX1(近月)与 VX3(第三近)两条序列 + 每份月度合约的整条曲线。
  * 全量回填传 `freshSince: '1900-01-01'`;日常刷新传较近日期(只处理仍在交易/近期到期的合约)。
  */
-export async function fetchVxTermStructure(opts: FetchAllOpts = {}): Promise<{ vx1: QuoteRow[]; vx3: QuoteRow[] }> {
+export async function fetchVxTermStructure(
+  opts: FetchAllOpts = {},
+): Promise<{ vx1: QuoteRow[]; vx3: QuoteRow[]; contracts: MarketSeriesRow[] }> {
   const freshSince = opts.freshSince ?? new Date().toISOString().slice(0, 10);
   const contractRows = await downloadContractRows(opts, freshSince);
-  return { vx1: toQuoteRows(contractRows, 1, freshSince), vx3: toQuoteRows(contractRows, 3, freshSince) };
+  return {
+    vx1: toQuoteRows(contractRows, 1, freshSince),
+    vx3: toQuoteRows(contractRows, 3, freshSince),
+    contracts: toContractRows(contractRows, freshSince),
+  };
 }

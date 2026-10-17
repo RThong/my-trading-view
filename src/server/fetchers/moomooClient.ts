@@ -8,6 +8,12 @@ import mmWebsocket from 'moomoo-api';
 
 export const QOT_MARKET_US = 11;
 const LOGIN_TIMEOUT_MS = 10_000;
+/**
+ * 登录后每个请求(GetOptionChain / GetSecuritySnapshot / RequestTradeDate …)的截止时间。
+ * qot 会话悬空时 SDK 的 promise 永远不 settle(2026-10-17 实测一个脚本挂了 5.5 小时),
+ * 没有截止 → catch / finally 都不执行、连接不断,后面的标的与其它 daily 组全被堵死。
+ */
+export const REQUEST_TIMEOUT_MS = 25_000;
 
 export type MoomooConfig = { host: string; port: number; key: string };
 
@@ -64,11 +70,58 @@ export async function qotReady(cfg: MoomooConfig): Promise<boolean> {
   }
 }
 
-/** 连接 → 执行 fn → 无论如何断开。 */
-export async function withConnection<T>(cfg: MoomooConfig, fn: (ws: any) => Promise<T>): Promise<T> {
-  const ws = await connect(cfg);
+export type ConnOpts = {
+  /** 测试注入假 ws;缺省真连 OpenD。 */
+  connect?: (cfg: MoomooConfig) => Promise<any>;
+  timeoutMs?: number;
+};
+
+/** p 在 ms 内不 settle 就以超时 reject;不论哪边先到都清定时器,免得空挂住事件循环。 */
+export function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`moomoo ${label} timeout (${ms}ms)`)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
+
+// SDK 的请求方法都是大写开头(GetOptionChain / RequestTradeDate …),start/stop/onlogin 等是小写。
+// 用 Proxy 统一套截止时间,而不是在每个调用点手包:新加的请求不会漏。
+const isRequestMethod = (key: PropertyKey) => typeof key === 'string' && /^[A-Z]/.test(key);
+
+function withRequestDeadlines(ws: any, ms: number): any {
+  return new Proxy(ws, {
+    get(target, key) {
+      const v = target[key];
+      if (typeof v !== 'function' || !isRequestMethod(key)) return v;
+      return (...args: unknown[]) => withDeadline(Promise.resolve(v.apply(target, args)), ms, String(key));
+    },
+  });
+}
+
+/**
+ * 最小间隔闸门:每次调用排到上一次之后 ≥ minIntervalMs。预约是同步记账的,
+ * 并发调用也会按顺序排开;重试也走同一个闸门,自然计入限额。
+ */
+export function rateGate(minIntervalMs: number): () => Promise<void> {
+  let next = 0;
+  return async () => {
+    const now = Date.now();
+    const at = Math.max(now, next);
+    next = at + minIntervalMs;
+    if (at > now) await Bun.sleep(at - now);
+  };
+}
+
+/** 连接 → 执行 fn → 无论如何断开。fn 拿到的 ws 上每个请求都带截止时间,超时 reject → finally 断开。 */
+export async function withConnection<T>(
+  cfg: MoomooConfig,
+  fn: (ws: any) => Promise<T>,
+  opts: ConnOpts = {},
+): Promise<T> {
+  const ws = await (opts.connect ?? connect)(cfg);
   try {
-    return await fn(ws);
+    return await fn(withRequestDeadlines(ws, opts.timeoutMs ?? REQUEST_TIMEOUT_MS));
   } catch (e: any) {
     // moomoo 的 GetXxx 失败时 reject 的是 {retType,retMsg,errCode} 对象而非 Error;转成带 retMsg
     // 的 Error,否则上层 (err as Error).message 只拿到 undefined,真因(如 "Network interruption.")被吞。

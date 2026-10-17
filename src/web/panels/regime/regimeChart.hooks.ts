@@ -450,6 +450,22 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
         ].join('\n'),
       },
       {
+        key: 'skew',
+        label: 'SKEW',
+        title: 'CBOE SKEW(SPX 尾部偏度)',
+        color: '#38bdf8',
+        percentile: { riskTail: 'high' }, // 高 = 尾部保护被抢贵
+        desc: [
+          '定义:用 SPX 30 天整条期权曲线算的风险中性偏度。100 = 正态(30 天内跌 2σ 的隐含概率约 2.3%),140 约 7.8%(CBOE 换算表)。',
+          'VIX 量平值附近的波动;SKEW 量**深度虚值 put 相对 call 贵多少** —— 谁在为远端极端下跌付钱。',
+          '高 = 尾部保护被抢贵。2018 年以来 74% 的交易日在 120~150,≥160 只占 3.8%。',
+          '',
+          '⚠️ 不是择时信号:SKEW 高常与 VIX 低同时出现(机构在平静期买便宜的尾部保险),历史上对随后跌幅的预测力很弱。',
+          '要和 VIX、期限结构(VIX−3M)同看:三者一起抬 = 真在抢保护;只有 SKEW 冲 = 只是尾部变贵。',
+          '⚠️ 只有 SPX 口径。对 QQQ 的尾部看「期权 · QQQ」的 25Δ skew(近平值那一翼,口径不同)。',
+        ].join('\n'),
+      },
+      {
         key: 'vixCotLm',
         label: 'VIX 持仓(对冲基金)',
         title: 'CFTC VIX 期货净持仓 · Leveraged Money (% of OI)',

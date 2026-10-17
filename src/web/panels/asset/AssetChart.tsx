@@ -12,8 +12,8 @@ const ALL_INDICATOR_IDS = [...INDICATORS.map((d) => d.id), ...OSC_IDS];
 
 // 一个资产的指标放进同一个 chart 的多个 pane(共享时间轴),顶部恒为现货蜡烛:
 //   pane0 现货(OHLC)· pane1 25Δ call/put IV · pane2 skew · [pane3 隐含vs已实现RV · pane4 VRP]
-// 后两个 pane 仅有免费波动率指数的标的有(SPY/QQQ/GLD/USO/BTC,vrpUnderlying 给定时);
-// 无对应指数的(.VIX/TLT)只到 skew(3 pane)。pane 集合由 paneConfig 决定。
+// 后两个 pane 仅有免费波动率指数的标的有(SPY/QQQ/GLD/USO/TLT/IBIT/BTC,vrpUnderlying 给定时);
+// 无对应指数的(.VIX)只到 skew(3 pane)。pane 集合由 paneConfig 决定。
 // 各横向功能(取数/引擎/布局/图例)拆进 ./assetChart.hooks,本组件只拼装 + JSX。
 // 实例与标的绑定一辈子(App keep-alive),故无需按标的 reset。
 export function AssetChart({

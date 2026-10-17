@@ -34,6 +34,7 @@ export const REGIME_SERIES = [
   // ── 库里读(daily job 写)。与 routes/regime.ts 的 JOB_WRITTEN_SERIES 对应
   'vix',
   'vxn',
+  'skew',
   'gpuH100',
   'gpuH200',
   'gpuB200',

@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { parseCboeIndexCsv } from './cboeIndex';
+import { fetchCboeIndexAsQuotes, parseCboeIndexCsv } from './cboeIndex';
 
 describe('parseCboeIndexCsv', () => {
   test('parses OHLC CSV (VIX style)', () => {
@@ -54,5 +54,25 @@ describe('parseCboeIndexCsv', () => {
   test('returns empty for malformed input', () => {
     expect(parseCboeIndexCsv('')).toEqual([]);
     expect(parseCboeIndexCsv('only one line')).toEqual([]);
+  });
+});
+
+describe('fetchCboeIndexAsQuotes 起点下限', () => {
+  const client = {
+    fetchHistory: async () => parseCboeIndexCsv('DATE,GVZ\n09/18/2009,22.62\n01/02/2018,10\n10/16/2026,22.58\n'),
+  };
+  const dates = async (opts: { startDate?: string; afterDate?: string }) =>
+    (await fetchCboeIndexAsQuotes({ cboeSymbol: 'GVZ', storedSymbol: 'GVZ', client, ...opts })).map((r) => r.tradeDate);
+
+  test('缺省以 HISTORY_START_DATE 为下限', async () => {
+    expect(await dates({})).toEqual(['2018-01-02', '2026-10-16']);
+  });
+
+  test('startDate 放开更早的起点', async () => {
+    expect(await dates({ startDate: '2009-09-18' })).toEqual(['2009-09-18', '2018-01-02', '2026-10-16']);
+  });
+
+  test('afterDate 晚于起点时仍按增量截断', async () => {
+    expect(await dates({ startDate: '2009-09-18', afterDate: '2018-01-02' })).toEqual(['2026-10-16']);
   });
 });

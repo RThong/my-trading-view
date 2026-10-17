@@ -14,13 +14,28 @@
  * 鉴权 key。详见 .env:MOOMOO_WS_HOST / MOOMOO_WS_PORT / MOOMOO_WS_KEY。
  */
 
-import type { OptionContract, OptionsChainClient } from '../jobs/optionsSnapshot';
-import { QOT_MARKET_US, envConfig, withConnection } from './moomooClient';
+import type { OptionChainSnapshot, OptionContract, OptionsChainClient } from '../jobs/optionsSnapshot';
+import { nextMonthlyExpiry } from '../jobs/monthlyExpiry';
+import { QOT_MARKET_US, envConfig, rateGate, withConnection, type ConnOpts, type MoomooConfig } from './moomooClient';
 import { fetchUsTradingDates } from './moomooHistoryKL';
 import { lastClosedFrom } from '../jobs/tradingCalendar';
 import { firstBy } from 'remeda';
 
 const SNAPSHOT_BATCH = 400;
+
+// moomoo 官方限频:GetOptionChain 每 30 秒 10 次、GetSecuritySnapshot 每 30 秒 60 次。
+// 换成最小间隔再留点余量;闸门是模块级的 → 整个进程共用一份额度。
+const CHAIN_INTERVAL_MS = 3_200;
+const SNAPSHOT_INTERVAL_MS = 550;
+
+type Gate = () => Promise<void>;
+type Deps = { cfg: () => MoomooConfig; conn?: ConnOpts; chainGate: Gate; snapshotGate: Gate };
+
+const DEFAULT_DEPS: Deps = {
+  cfg: envConfig,
+  chainGate: rateGate(CHAIN_INTERVAL_MS),
+  snapshotGate: rateGate(SNAPSHOT_INTERVAL_MS),
+};
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -44,10 +59,12 @@ type StaticContract = { code: string; strikePrice: number };
 
 async function fetchStaticChain(
   ws: any,
+  gate: Gate,
   symbol: string,
   begin: string,
   end: string,
-): Promise<{ expiry: string; calls: StaticContract[]; puts: StaticContract[] }[]> {
+): Promise<StaticExpiry[]> {
+  await gate();
   const res = await ws.GetOptionChain({
     c2s: {
       owner: { market: QOT_MARKET_US, code: symbol },
@@ -70,10 +87,11 @@ async function fetchStaticChain(
   });
 }
 
-async function fetchSnapshots(ws: any, codes: string[]): Promise<Map<string, any>> {
+async function fetchSnapshots(ws: any, gate: Gate, codes: string[]): Promise<Map<string, any>> {
   const byCode = new Map<string, any>();
   for (let i = 0; i < codes.length; i += SNAPSHOT_BATCH) {
     const batch = codes.slice(i, i + SNAPSHOT_BATCH);
+    await gate();
     const res = await ws.GetSecuritySnapshot({
       c2s: { securityList: batch.map((code) => ({ market: QOT_MARKET_US, code })) },
     });
@@ -84,6 +102,39 @@ async function fetchSnapshots(ws: any, codes: string[]): Promise<Map<string, any
   }
 
   return byCode;
+}
+
+async function fetchSpot(ws: any, gate: Gate, symbol: string): Promise<number> {
+  const v = (await fetchSnapshots(ws, gate, [symbol])).get(symbol)?.basic?.curPrice;
+  if (typeof v !== 'number') throw new Error(`Could not get spot price for ${symbol}`);
+  return v;
+}
+
+type StaticExpiry = { expiry: string; calls: StaticContract[]; puts: StaticContract[] };
+
+/** 对选中到期日的所有行权价(看涨 + 看跌)拉 snapshot,拼成 OptionChainSnapshot。 */
+async function buildSnapshot(
+  ws: any,
+  gate: Gate,
+  symbol: string,
+  best: StaticExpiry,
+  spot: number | null,
+): Promise<OptionChainSnapshot> {
+  const snaps = await fetchSnapshots(
+    ws,
+    gate,
+    [...best.calls, ...best.puts].map((c) => c.code),
+  );
+  const toContracts = (arr: StaticContract[]) =>
+    arr.map((c) => toContract(c, snaps.get(c.code))).filter((c): c is OptionContract => c !== null);
+
+  return {
+    underlyingSymbol: symbol,
+    underlyingPrice: spot,
+    expirationDate: best.expiry,
+    calls: toContracts(best.calls),
+    puts: toContracts(best.puts),
+  };
 }
 
 function toContract(staticC: StaticContract, snap: any): OptionContract | null {
@@ -113,11 +164,11 @@ function toContract(staticC: StaticContract, snap: any): OptionContract | null {
   };
 }
 
-export function defaultMoomooOptionsClient(): OptionsChainClient {
+export function defaultMoomooOptionsClient(deps: Deps = DEFAULT_DEPS): OptionsChainClient {
   return {
     // 权威美股交易日(Qot_RequestTradeDate),给快照打戳用;自开短连接,失败由上层兜底。
     async getTradingDate() {
-      const days = await withConnection(envConfig(), (ws) => fetchUsTradingDates(ws));
+      const days = await withConnection(deps.cfg(), (ws) => fetchUsTradingDates(ws), deps.conn);
       return lastClosedFrom(days);
     },
 
@@ -125,62 +176,56 @@ export function defaultMoomooOptionsClient(): OptionsChainClient {
       // 延迟读取配置:这样即便缺少 MOOMOO_WS_KEY,异常也会在 options group
       // 的 try/catch 里浮现(经 finishJobRun 记录),而不是在构造时就抛出、
       // 把整个 daily job 直接拖垮。
-      const cfg = envConfig();
-      return withConnection(cfg, async (ws) => {
-        // 在目标 DTE 附近取一个窗口(±10 天),确保能命中一个已上市的到期日。
-        const now = Date.now();
-        const begin = isoDate(new Date(now + (targetDte - 10) * 86400_000));
-        const end = isoDate(new Date(now + (targetDte + 10) * 86400_000));
+      const cfg = deps.cfg();
+      return withConnection(
+        cfg,
+        async (ws) => {
+          // 在目标 DTE 附近取一个窗口(±10 天),确保能命中一个已上市的到期日。
+          const now = Date.now();
+          const begin = isoDate(new Date(now + (targetDte - 10) * 86400_000));
+          const end = isoDate(new Date(now + (targetDte + 10) * 86400_000));
 
-        const expiries = await fetchStaticChain(ws, symbol, begin, end);
-        if (expiries.length === 0) {
-          throw new Error(`No expiries for ${symbol} in ${begin}..${end}`);
-        }
+          const expiries = await fetchStaticChain(ws, deps.chainGate, symbol, begin, end);
+          if (expiries.length === 0) {
+            throw new Error(`No expiries for ${symbol} in ${begin}..${end}`);
+          }
 
-        // 选取与 targetDte 距离最近的那个到期日(每个到期日的距离只算一次)。
-        const target = now + targetDte * 86400_000;
-        const best = firstBy(expiries, (e) => Math.abs(new Date(e.expiry + 'T16:00:00Z').getTime() - target))!;
+          // 选取与 targetDte 距离最近的那个到期日(每个到期日的距离只算一次)。
+          const target = now + targetDte * 86400_000;
+          const best = firstBy(expiries, (e) => Math.abs(new Date(e.expiry + 'T16:00:00Z').getTime() - target))!;
 
-        // 对选中到期日的所有行权价(看涨 + 看跌)拉取 snapshot。
-        const allStatic = [...best.calls, ...best.puts];
-        const snaps = await fetchSnapshots(
-          ws,
-          allStatic.map((c) => c.code),
-        );
+          // 标的现价:对标的本身拉取 snapshot。指数(双点代码,如 .VIX)没有现货报价权限
+          //(必回「暂不支持美股指数」),直接跳过、spot 存 null —— 25Δ 选取只用合约 delta,不依赖现货。
+          // 个股/ETF 则必须拿到现货:取不到就报错,避免把瞬时故障静默存成 null。
+          const spot = symbol.startsWith('.') ? null : await fetchSpot(ws, deps.snapshotGate, symbol);
 
-        const calls = best.calls
-          .map((c) => toContract(c, snaps.get(c.code)))
-          .filter((c): c is OptionContract => c !== null);
-        const puts = best.puts
-          .map((c) => toContract(c, snaps.get(c.code)))
-          .filter((c): c is OptionContract => c !== null);
+          return buildSnapshot(ws, deps.snapshotGate, symbol, best, spot);
+        },
+        deps.conn,
+      );
+    },
 
-        // 标的现价:对标的本身拉取 snapshot。指数(双点代码,如 .VIX)没有现货
-        // 报价权限,会抛"暂不支持美股指数";这类标的允许 spot 为 null —— 25Δ
-        // 选取只用合约的 delta,不依赖现货(指数现货可另从 quote_eod 的 ^VIX 取)。
-        // 个股/ETF 则必须拿到现货:取不到就报错,避免把瞬时故障静默存成 null。
-        const isIndex = symbol.startsWith('.');
-        let spot: number | null = null;
-        try {
-          const underlyingSnap = await fetchSnapshots(ws, [symbol]);
-          const v = underlyingSnap.get(symbol)?.basic?.curPrice;
-          if (typeof v === 'number') spot = v;
-        } catch (err) {
-          if (!isIndex) throw err;
-          // 指数现货不支持,忽略;spot 保持 null
-        }
-        if (spot === null && !isIndex) {
-          throw new Error(`Could not get spot price for ${symbol}`);
-        }
+    async fetchMonthlyChain(symbol, minDte, spot) {
+      const kind = symbol === '.VIX' ? 'vix' : 'equity';
+      const expiry = nextMonthlyExpiry(kind, new Date(), minDte);
+      // 遇假日交易所把到期提前一个交易日 → 窗口带上前一天。两天都有到期时取哪个,两类相反:
+      //   ETF:周四可能是日度 / 周度,月度只在周五休市时才落到周四(那时周五没有到期)→ 优先周五;
+      //   VIX:周二只会是被假日提前的月度,周三那份此时是 VIXW 周度 → 优先周二。
+      const begin = isoDate(new Date(new Date(expiry).getTime() - 86400_000));
+      const preferred = kind === 'vix' ? begin : expiry;
 
-        return {
-          underlyingSymbol: symbol,
-          underlyingPrice: spot,
-          expirationDate: best.expiry,
-          calls,
-          puts,
-        };
-      });
+      return withConnection(
+        deps.cfg(),
+        async (ws) => {
+          const expiries = await fetchStaticChain(ws, deps.chainGate, symbol, begin, expiry);
+          const best = expiries.find((e) => e.expiry === preferred) ?? expiries[0];
+          if (!best) throw new Error(`No monthly expiry for ${symbol} on ${expiry}`);
+
+          // 现货复用第一档拿到的(同一轮、同一标的),不再多打一次快照。
+          return buildSnapshot(ws, deps.snapshotGate, symbol, best, spot);
+        },
+        deps.conn,
+      );
     },
   };
 }

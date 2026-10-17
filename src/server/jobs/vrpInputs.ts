@@ -1,22 +1,29 @@
 /**
  * 更新 VRP 输入 + 标的现货到库:
- *   隐含腿 → market_series(close):VIX/VXN/GVZ/OVX(CBOE)+ DVOL(Deribit)
+ *   隐含腿 → market_series(close):VIX/VXN/GVZ/OVX/VXTLT/BITVX(CBOE)+ DVOL(Deribit);另存 VVIX / SKEW(不进 VRP)
  *   标的现货 → price_eod(OHLC):SPY/QQQ/GLD/USO/TLT/NOBL + VIX
  *     - ETF(SPY/QQQ/GLD/USO/TLT/NOBL):Yahoo close(唯一源)、每轮全量重拉
  *       口径 = 只调拆股、不调分红(TradingView 默认 / IBKR TRADES / moomoo App 显示同一个数)
  *     - VIX:CBOE(它既是 SPY 的 IV 腿,又是 .VIX tab 的现货,故两表都写)
  *     - BTC 现货:已移出本 job → cryptoDaily 的 btc_price 组(7 天跑,含周末)。
- *   VRP 的 RV 腿读 price_eod 的 close;基准对应 VIX↔SPY、VXN↔QQQ、GVZ↔GLD、OVX↔USO、DVOL↔BTC
+ *   VRP 的 RV 腿读 price_eod 的 close;基准对应 VIX↔SPY、VXN↔QQQ、GVZ↔GLD、OVX↔USO、VXTLT↔TLT、
+ *   BITVX↔IBIT、DVOL↔BTC
  *   (BTC 的 price_eod 由 cryptoDaily 填,本 job 仍只负责读时无关的隐含腿/ETF 现货)。
  *
- * `updateVrpInputs` 除 ETF 现货外增量更新(按各序列已存最新日期续抓),库空时 CBOE 从 HISTORY_START_DATE、
- * DVOL 从上线日回填。upsert 幂等,可重复跑。
+ * `updateVrpInputs` 除 ETF 现货外增量更新(按各序列已存最新日期续抓),库空时 CBOE 从 HISTORY_START_DATE
+ *(GVZ/OVX 从 2009-09-18,见 CBOE_START)、DVOL 从上线日回填。upsert 幂等,可重复跑。
  *
  * 直接运行 = 立即更新一次:bun run src/server/jobs/vrpInputs.ts
  */
 import type { Database } from 'bun:sqlite';
 import { openDb, migrate } from '../storage/db';
-import { insertMarketSeries, getLatestMarketDate, insertPriceEod, getLatestPriceDate } from '../storage/repository';
+import {
+  insertMarketSeries,
+  getEarliestMarketDate,
+  getLatestMarketDate,
+  insertPriceEod,
+  getLatestPriceDate,
+} from '../storage/repository';
 import { createYahooFetcher } from '../fetchers/yahoo';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
 import { fetchDvolHistory } from '../fetchers/deribitDvol';
@@ -26,6 +33,13 @@ import { lastClosedTradingDate } from './tradingCalendar';
 import { cboeIvLegs, priceLegUnderlyings } from '../../shared/marketCatalog';
 
 const DVOL_START = '2021-01-01'; // DVOL(BTC)上线约 2021 年
+
+// CBOE 指数的起点下限(库空时从这里拉),缺省 HISTORY_START_DATE。GVZ / OVX 放到上市日 2009-09-18,
+// 只放开这两条,不扩大全系统的历史窗口。
+const CBOE_START: Record<string, string> = { GVZ: '2009-09-18', OVX: '2009-09-18' };
+// 不属于任何 VRP 配方、但要每日入库的 CBOE 指数。VVIX = VIX 期权的 30 天隐含波动率(vol of vol);
+// SKEW = SPX 30 天风险中性偏度(深度虚值 put 相对 call 贵多少,尾部保护的价格,「情绪 · 波动率」那格读)。
+const CBOE_EXTRA = ['VVIX', 'SKEW'];
 
 export type VrpInputsResult = {
   total: number;
@@ -81,13 +95,19 @@ export async function updateVrpInputs(db: Database): Promise<VrpInputsResult> {
     total += bars.length;
   };
 
-  // ── 隐含腿 → market_series(CBOE:VXN/GVZ/OVX;VIX 走下方 VX 链路双写,DVOL 走 Deribit)──
-  for (const sym of cboeIvLegs()) {
+  // ── 隐含腿 → market_series(CBOE:VXN/GVZ/OVX/VXTLT/BITVX + VVIX;VIX 走下方双写,DVOL 走 Deribit)──
+  for (const sym of [...cboeIvLegs(), ...CBOE_EXTRA]) {
     await run(sym, async () => {
+      const start = CBOE_START[sym];
+      // 库里最早一天晚于起点(老库升级 / 从旧备份恢复)→ 整段重拉(CBOE CSV 一次 GET 就是全历史);
+      // 否则按最新日期增量。起点必须等于 CSV 首行,否则每轮都会判成「没回填」而整段重拉。
+      const earliest = getEarliestMarketDate(db, sym);
+      const backfill = start !== undefined && (earliest === null || earliest > start);
       const rows = await fetchCboeIndexAsQuotes({
         cboeSymbol: sym,
         storedSymbol: sym,
-        afterDate: getLatestMarketDate(db, sym) ?? undefined,
+        startDate: start,
+        afterDate: backfill ? undefined : (getLatestMarketDate(db, sym) ?? undefined),
       });
       add(
         sym,

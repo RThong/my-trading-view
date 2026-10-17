@@ -7,6 +7,7 @@ import {
   type OptionChainRawRow,
 } from '../storage/repository';
 import { lastClosedTradingDate } from './tradingCalendar';
+import { secondExpiryUnderlyings } from '../../shared/marketCatalog';
 
 export type OptionContract = {
   contractSymbol: string;
@@ -79,6 +80,9 @@ export type OptionsChainClient = {
   /** 权威「最近已收盘交易日」,给快照打戳用。moomoo 实现(Qot_RequestTradeDate);
    *  不实现(如 Deribit)或返回 null 时,上层回退 lastClosedTradingDate。 */
   getTradingDate?(): Promise<string | null>;
+  /** 第二档:第一个 DTE ≥ minDte 的标准月度到期(见 monthlyExpiry);spot 复用第一档拿到的现货。
+   *  只存原始链,不进 25Δ 表。不实现(Deribit)= 不抓第二档。 */
+  fetchMonthlyChain?(symbol: string, minDte: number, spot: number | null): Promise<OptionChainSnapshot>;
 };
 
 type RunOpts = {
@@ -88,13 +92,18 @@ type RunOpts = {
   /** 要做快照的标的,例如 ['SPY']。原样存储为 `underlying` 键。 */
   underlyings: string[];
   client: OptionsChainClient;
+  /** 另抓第二档(月度)到期日的标的;缺省按标的目录(secondExpiry)。 */
+  secondExpiry?: readonly string[];
 };
 
 export type OptionsSnapshotResult = {
   rows: Options25DeltaRow[];
-  /** 失败的标的,形如 'SPY: <原因>';由上层 job 决定记为 partial 还是 failed。 */
+  /** 失败的标的,形如 'SPY: <原因>' / 'GLD 第二档: <原因>';由上层 job 决定记为 partial 还是 failed。 */
   failures: string[];
 };
+
+// 第二档到期日的最小 DTE:第一个 ≥60 天的月度,DTE 落在 60~95。
+const SECOND_EXPIRY_MIN_DTE = 60;
 
 export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshotResult> {
   // 打戳日期:优先用 client 的权威交易日(moomoo Qot_RequestTradeDate,认假期);
@@ -107,48 +116,57 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
     snapshotDate = lastClosedTradingDate();
   }
   const rows: Options25DeltaRow[] = [];
-  const rawRows: OptionChainRawRow[] = [];
   const failures: string[] = [];
+  const secondExpiry = new Set(opts.secondExpiry ?? secondExpiryUnderlyings());
 
-  // 每个标的独立处理:某个标的失败(抓取出错、缺 delta 等)只记下来,
-  // 不影响其它标的——否则一个标的挂掉会把同批已成功的数据一起丢掉。
+  const toRaw = (u: string, chain: OptionChainSnapshot): OptionChainRawRow => ({
+    underlying: u,
+    source: opts.source,
+    snapshotDate,
+    expiry: chain.expirationDate,
+    underlyingPrice: chain.underlyingPrice,
+    // 归档完整的 chain(gzip 压缩),供日后分析使用(max pain、OI 分布、GEX 等)。
+    // moomoo 的 chain 自带 Greeks,因此 GEX 可以直接从归档数据推导,无需重新定价。
+    chainJsonGz: Bun.gzipSync(new TextEncoder().encode(JSON.stringify({ calls: chain.calls, puts: chain.puts }))),
+  });
+
+  // 每个标的独立处理,成功一个就立刻落库:某个标的失败(抓取出错、超时、缺 delta 等)只记下来,
+  // 不影响其它标的;也不会因为后面的标的卡住 / 进程被杀,把前面已拿到的数据一起丢掉(快照型补不回来)。
   for (const u of opts.underlyings) {
     try {
       const chain = await opts.client.fetchChain(u, TARGET_DTE);
       const sel = select25Delta(chain);
 
       // IV 以百分数存储(例如 16.63),方便图表坐标轴显示。
-      rows.push({
+      const row: Options25DeltaRow = {
         underlying: u,
         source: opts.source,
         snapshotDate,
         callIv: sel.callIv * 100,
         putIv: sel.putIv * 100,
         skew: sel.skew * 100,
-      });
+      };
 
-      // 归档完整的 chain(gzip 压缩),供日后分析使用(max pain、OI 分布、
-      // GEX 等)。moomoo 的 chain 自带 Greeks,因此 GEX 可以直接从归档数据
-      // 推导,无需重新定价。
-      const chainJson = JSON.stringify({ calls: chain.calls, puts: chain.puts });
-      const gz = Bun.gzipSync(new TextEncoder().encode(chainJson));
-      rawRows.push({
-        underlying: u,
-        source: opts.source,
-        snapshotDate,
-        expiry: chain.expirationDate,
-        underlyingPrice: chain.underlyingPrice,
-        chainJsonGz: gz,
-      });
+      insertOptions25Delta(opts.db, [row]);
+      insertOptionChainRaw(opts.db, [toRaw(u, chain)]);
+      rows.push(row);
+
+      if (!secondExpiry.has(u) || !opts.client.fetchMonthlyChain) continue;
+      // 第二档只存原始链,25Δ 表仍只用第一档(换档会破坏已有序列的连续性)。
+      // 失败也记进 failures(第一档已落库、照算 rows)→ 整组 partial → daily 守卫当天后续触发点重跑:
+      // 快照型,当天没抓到就永久缺一格。重跑会把第一档也重抓一遍,触发点都在收盘后,覆盖写的是同一份收盘数据。
+      try {
+        const monthly = await opts.client.fetchMonthlyChain(u, SECOND_EXPIRY_MIN_DTE, chain.underlyingPrice);
+        insertOptionChainRaw(opts.db, [toRaw(u, monthly)]);
+      } catch (err) {
+        failures.push(`${u} 第二档: ${(err as Error).message}`);
+      }
     } catch (err) {
       failures.push(`${u}: ${(err as Error).message}`);
     }
   }
 
-  insertOptions25Delta(opts.db, rows);
-  insertOptionChainRaw(opts.db, rawRows);
-
-  // 成功的行已落库;失败的标的一并回传,由上层 job 据此记 success/partial/failed
+  // 成功的行已逐个落库;失败的标的一并回传,由上层 job 据此记 success/partial/failed
   // (与 quotes/macro/cboe 分组的三态一致),不让个别标的拖垮整批。
   return { rows, failures };
 }

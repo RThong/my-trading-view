@@ -74,6 +74,13 @@ export function getLatestMarketDate(db: Database, seriesId: string): string | nu
   return row?.d ?? null;
 }
 
+export function getEarliestMarketDate(db: Database, seriesId: string): string | null {
+  const row = db.query(`SELECT MIN(obs_date) AS d FROM market_series WHERE series_id = $id`).get({ $id: seriesId }) as {
+    d: string | null;
+  };
+  return row?.d ?? null;
+}
+
 // ── price_eod(标的日 OHLC:现货蜡烛图 + VRP 的 RV 腿来源)──────────────────────
 
 export type PriceEodRow = {

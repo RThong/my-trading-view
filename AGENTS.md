@@ -7,8 +7,8 @@
 
 | 源 | 内容 | 频率 | 依赖 | 方式 | 历史 |
 |---|---|---|---|---|---|
-| **CBOE 指数** | VIX 家族 / SKEW / RXM | 日频 | 零 | **静态 CSV 直下**:`cdn.cboe.com/api/global/us_indices/daily_prices/{指数}_History.csv`(无需 key,免爬虫) | 1990 至今全历史 |
-| **CBOE VX 期货** | VX 近月连续(存为 `VX1`) | 日频 | 零 | API 列清单(`www-api.cboe.com/.../product/list/VX/`)+ `cdn.cboe.com/{path}` 下 CSV | 全历史 |
+| **CBOE 指数** | VIX 家族 / SKEW / RXM · **VRP 隐含腿**(VXN/GVZ/OVX/VXTLT/BITVX,daily 入库)· VVIX | 日频 | 零 | **静态 CSV 直下**:`cdn.cboe.com/api/global/us_indices/daily_prices/{指数}_History.csv`(无需 key,免爬虫) | 1990 至今全历史;入库从 2018 起,GVZ/OVX 放到上市日 2009-09-18(`vrpInputs` 的 `CBOE_START`);BITVX 2025-01 起 |
+| **CBOE VX 期货** | VX 近月连续(存为 `VX1`)/ 第三近 `VX3` · **每份月度合约整条曲线 `VX:<到期日>`**(如 `VX:2026-11-18`,按到期日对 VIX 期权;到期当天那行 = 最终结算 SOQ) | 日频 | 零 | API 列清单(`www-api.cboe.com/.../product/list/VX/`)+ `cdn.cboe.com/{path}` 下 CSV | 全历史 |
 | **FRED** | 利率(UST/TIPS)/ 信用利差(HY+IG 梯队)/ 流动性(WALCL/TGA=WDTGAL/准备金 WRBWFRBL/RRP/SOFR/IORB;存量腿一律周三时点,别用周平均 WTREGEN/WRESBAL;RRP 是日频,净流动性只在 WALCL 周三取点,见 `netLiquidityWeekly`)/ 通胀(BEI=DGS−DFII、**5y5y 远期 T5YIFR**、Sticky CPI、薪资)/ **Kim-Wright 期限溢价(THREEFYTP10 + 拟合 THREEFY10)** | 日/月频 | 零(要 key) | JSON API `api.stlouisfed.org/fred/series/observations`(要 key) | 全历史 |
 | **FRED(联储政策 / 通胀发布)** | 政策利率目标区间 `fedTargetUpper/Lower`(DFEDTARU/L)· SEP 点阵图中值 `sepMedian`(FEDTARMD)+ 长期 `sepMedianLr`(FEDTARMDLR)· 核心 CPI / PCE(CPILFESL / PCEPILFE)→ `coreCpiYoy/3m`、`corePceYoy/3m` · 例行发布日 `coreCpiRelease` / `corePceRelease` | 日(区间)/ 每次 SEP(点阵图)/ 月(通胀) | 零(要 key) | 同上 JSON API。发布日走 ALFRED `output_type=4`(每期首发 vintage 的 `realtime_start`)—— **不用 `series/vintagedates`**,那个会混进 CPI 2 月初的季调因子修订日、PCE 随 GDP 的年度修订日。⚠️ `FEDTARMD` 的日期 = **预测哪一年**,我们改记为 `YYYY-12-31`;⚠️ 通胀的日期 = **数据所属月份**,对日线断点要用 `*Release` | 区间 / 通胀全历史;⚠️ **点阵图 FRED 只留最新一版**(不做历史)。另派生 `oisHikes{3m,6m,12m,2y}` = SOFR OIS 隐含累计加息次数(读库 Eris 逐日算,见 `shared/policyPath`,近似值)。⚠️ 基准用 FRED `SOFR` 定盘值(也对外发 `sofr`),**别换成 Eris `SOFR1D`**:那是 T+2 起息的 1 天掉期,会提前吃进下次会议(2026-09-08~16 比定盘值高最多 24bp) |
 | **NY Fed** | HLW 自然利率 r\*(`rstarHlwCurrent`,**季频**)+ ACM 10Y 期限溢价(`tp10Acm`,**月频**,给 KW 当独立对照) | 季/**月** | 零;**HLW 用 `fflate`** | HLW:官方 xlsx = **zip+XML**,`fflate` 解开后**按工作表名**(`HLW Estimates`)经 `workbook.xml`+rels 解路径 —— 不写死 `sheetN`。ACM:**纯 CSV 零依赖**(`acmPlot_data.csv`,49 KB)⚠️ 这是图表的**无文档端点**,官方公开发布的是同目录 10.1 MB 的 BIFF8 `.xls`;已逐字对账确认内容等同 xls 的 `ACM Monthly` 表,但随时可能挪走 → 拿不到就归 unavailable | 1961 起全历史;⚠️ **current estimates 的历史值会被事后重估**(前视偏差,不能用来论证「当时市场定价错了」) |
@@ -85,6 +85,15 @@
 - **链/快照字段路径**(靠 debug dump 试出来的,非直觉):
   - 静态链:`o.call.basic.security.code`、`o.call.optionExData.strikePrice`
   - 快照:greeks/IV/OI 在 `optionExData`,行情(bid/ask/curPrice/volume)在 `basic`
+- **第二档到期日**(标的目录 `secondExpiry`:.VIX / TLT / GLD / USO / IBIT):第一档(~30 天,进 25Δ 表)之外,
+  另存**第一个 DTE ≥60 的标准月度**原始链(`option_chain_raw`,25Δ 表不变)。不按「最接近 N 天」挑:常挑中周度
+  (实测 GLD 11/13 周度 25Δ call OI 13,12/18 月度 13800)。月度日由 `jobs/monthlyExpiry` 推算再按日查,
+  因为月度间隔可达 35 天、而单次链查询跨度 ≤30 天;ETF = 第三个周五,**VIX = 次月第三个周五 −30 天的周三**
+  (= VX 结算日,对 2018 起 114 份 VX 到期日:108 份吻合,6 份假日提前一天 → 查询窗口带上前一天)。
+  第二档复用第一档的现货;失败记进 failures → 整组 partial → daily 守卫当天重跑(快照型,漏一天补不回)。7 标的一轮约 40 秒(链 12 次、受 3.2s 闸门约束)。
+- **请求可能永不返回**:qot 会话悬空时 SDK 的 promise 不 settle(2026-10-17 一个脚本挂了 5.5 小时)。
+  `withConnection` 用 Proxy 给 ws 上所有大写开头的请求方法套 `REQUEST_TIMEOUT_MS`(25s)截止,
+  超时 reject → finally 断开;直接调 SDK 请求时别绕过 `withConnection`。
 - **WebSocket 必须 `ws.websock?.close()`**,光 `ws.stop()` 不够——底层 socket 的重连定时器
   会让事件循环一直活着,daily CLI 永远退不出去。
 - **option chain 的 start~end 跨度 ≤ 30 天**,超了报 ret=-1。
@@ -96,8 +105,10 @@
   要手机验证码,headless 给不了 → 先 GUI 登一次注册本机**。一条龙脚本见 `scripts/daily-with-opend.sh`
   (起 OpenD → 等端口就绪 → 跑 job → 收尾),命令配在 `.env` 的 `OPEND_CMD`。
 - **`moomoo-api` npm 包没有类型声明**,import 处需要 `@ts-expect-error`。
-- **扩标的时的限制**:GetOptionChain 限频约 60次/30s,快照每次最多 **400 个合约**
-  (`SNAPSHOT_BATCH=400` 已压线)。当前 `fetchChain` **每个标的开一条 WebSocket**——
+- **扩标的时的限制**:GetOptionChain 限频 **每 30 秒 10 次**(单次查询的到期日跨度 ≤30 天,
+  是窗口宽度、不妨碍查 90 天后的到期日);GetSecuritySnapshot 每 30 秒 60 次、每次最多 **400 个代码**
+  (`SNAPSHOT_BATCH=400` 已压线)。`moomooOptions` 用进程级 `rateGate` 排开(链 3.2s / 快照 0.55s 间隔,
+  重试也过同一个闸门)。当前 `fetchChain` **每个标的开一条 WebSocket**——
   SPY + .VIX 两个无所谓,但 moomoo 文档警告反复 connect/close 会变慢/超时,**扩到很多
   标的时应改成复用一条连接**(把 `withConnection` 抽出来包住整轮抓取,而非每标的一次)。
 

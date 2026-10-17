@@ -93,20 +93,23 @@ function parseNullable(s: string | undefined): number | null {
 type FetchToRowsOpts = {
   cboeSymbol: string;
   storedSymbol: string;
-  /** 只返回严格晚于该日期的行。优先级高于默认的 HISTORY_START_DATE 下限。 */
+  /** 只返回严格晚于该日期的行。优先级高于起点下限。 */
   afterDate?: string;
+  /** 起点下限,缺省 HISTORY_START_DATE。只给个别需要更长历史的序列放开(如 GVZ/OVX)。 */
+  startDate?: string;
   client?: CboeIndexClient;
 };
 
 /**
  * 抓取一个 CBOE 指数,返回可直接插入 quote_eod 的 QuoteRow[]。
- * 起始日期始终以 HISTORY_START_DATE 为下限。做增量更新时,传入
+ * 起始日期以 startDate(缺省 HISTORY_START_DATE)为下限。做增量更新时,传入
  * `afterDate: latestStoredDate` 即可只抓取更新的行。
  */
 export async function fetchCboeIndexAsQuotes(opts: FetchToRowsOpts): Promise<QuoteRow[]> {
   const client = opts.client ?? defaultCboeIndexClient();
   const all = await client.fetchHistory(opts.cboeSymbol);
-  const cutoff = opts.afterDate && opts.afterDate > HISTORY_START_DATE ? opts.afterDate : HISTORY_START_DATE;
+  const floor = opts.startDate ?? HISTORY_START_DATE;
+  const cutoff = opts.afterDate && opts.afterDate > floor ? opts.afterDate : floor;
   const isStrict = opts.afterDate !== undefined;
   const filtered = all.filter((r) => (isStrict ? r.tradeDate > cutoff : r.tradeDate >= cutoff));
 

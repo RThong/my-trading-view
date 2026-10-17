@@ -96,6 +96,8 @@ const TTL_MS = 6 * 60 * 60 * 1000;
  * 存住 live 腿,缓存命中时就能拿它重新和库里的 merge 一次,和 readDbBacked 的动机同一个。
  */
 let cache: { at: number; body: RegimeBody; moveLive: Point[]; sofrLive: Point[] } | null = null;
+/** 进行中的冷拉(合并并发冷请求用);结束即清空。 */
+let inflight: Promise<RegimeBody> | null = null;
 
 /**
  * AI 链基本面派生量(季频/月频,由 jobs/aiChainFundamentals 每天跑着维护)。库里没有就归 unavailable,
@@ -131,6 +133,8 @@ export const JOB_WRITTEN_SERIES = [
   // (不是"整格不可用",只是最新一点最长滞后 6h),但性质一模一样,别再漏第二次。
   ['vix', 'VIX'],
   ['vxn', 'VXN'],
+  // SKEW 同理(daily 的 vrp_inputs 组写库)。
+  ['skew', 'SKEW'],
   ['gpuH100', 'CGI_H100'],
   ['gpuH200', 'CGI_H200'],
   ['gpuB200', 'CGI_B200'],
@@ -383,6 +387,16 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     }
   }
 
+  // 冷路径要现拉十几个外部源(十几秒),同时到达的冷请求共用一次,别各拉一遍全套。
+  inflight ??= fetchFresh().finally(() => {
+    inflight = null;
+  });
+  return c.json(await inflight);
+});
+
+/** 冷路径:并行现拉全部外部源 + 读库派生,全成功才进缓存(见 shouldCache)。 */
+async function fetchFresh(): Promise<RegimeBody> {
+  const t0 = performance.now();
   const fred = createFredFetcher({ apiKey: process.env.FRED_API_KEY ?? '' });
   const fredSeries = (id: string): Promise<Point[]> =>
     fred.fetchSeries(id, HISTORY_START_DATE).then((rows) => rows.map((r) => ({ date: r.obsDate, value: r.value })));
@@ -558,6 +572,39 @@ export const regimeRoute = new Hono().get('/', async (c) => {
       'EMM_EPM0_PTE_NUS_DPG', // 零售汽油(全等级)$/gal
     ].map(eiaWeekly),
   );
+  // 记每个源从发起到 settle 的耗时,冷拉结束打一行,方便定位拖慢冷启动的源。
+  // 必须在第一个 await 之前挂上:此前全是同步发起,没有源来得及 settle,计时才准。
+  // then(rec, rec) 而不是 finally:finally 派生的新 promise 会把拒绝原样传下去,没人接就成 unhandled。
+  const timings: [string, number][] = [];
+  const pending: Record<string, Promise<unknown>> = {
+    ...src,
+    dxy: usdBarsP,
+    spxCap: spxCapP,
+    spxEqw: spxEqwP,
+    usdjpy: usdjpyBarsP,
+    jgbCurve: jgbCurveP,
+    ust: ustP,
+    jgbVix: jgbVixP,
+    cftcJpy: cftcJpyP,
+    vixCot: vixCotP,
+    bojGap: bojGapP,
+    nakajima: nakajimaP,
+    bojBank: bojBankP,
+    cgpi: cgpiP,
+    coreCoreCpi: coreCoreCpiP,
+    mufg: mufgBarsP,
+    cape: capeP,
+    rstar: rstarP,
+    acm: acmP,
+    coreInfl: coreInflP,
+    oil: oilP,
+    eia: eiaP,
+  };
+  Object.entries(pending).forEach(([name, p]) => {
+    const rec = () => timings.push([name, performance.now() - t0]);
+    p.then(rec, rec);
+  });
+
   const settled = await Promise.allSettled(Object.values(src));
   const raw: Partial<Record<keyof typeof src, Point[]>> = {};
   settled.forEach((s, i) => {
@@ -849,5 +896,9 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   // 配了 key 才缺则是真失败(网络/源结构变了),照旧挡住缓存等下次重试。
   if (shouldCache(unavailable, { hasEiaKey: Boolean(eiaKey), hasEstatKey: Boolean(estatKey) }))
     cache = { at: Date.now(), body, moveLive: raw.move ?? [], sofrLive: raw.sofr ?? [] };
-  return c.json(body);
-});
+
+  // 全部源都打(按耗时降序),一行:定位慢源要看到每一个,不只最慢几个。
+  const bySlowest = timings.sort((a, b) => b[1] - a[1]).map(([name, ms]) => `${name} ${(ms / 1000).toFixed(1)}s`);
+  console.log(`[regime] 冷拉 ${((performance.now() - t0) / 1000).toFixed(1)}s;各源耗时:${bySlowest.join(', ')}`);
+  return body;
+}

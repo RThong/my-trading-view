@@ -102,7 +102,7 @@ export const PERSPECTIVES: Perspective[] = [
       regimeTab('btc_onchain', '链上', 'btcOnchain'),
       assetTab('btc_options', '期权', 'BTC', 'BTC'),
       // IBIT:美股盘的 BTC 敞口(moomoo 期权 + Yahoo 现货),与上面 Deribit 那格是两个市场,单独一格。
-      assetTab('ibit', 'IBIT', 'IBIT'),
+      assetTab('ibit', 'IBIT', 'IBIT', 'IBIT'),
     ],
   },
   {

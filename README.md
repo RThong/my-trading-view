@@ -3,9 +3,9 @@
 A personal, local-only markets dashboard, organized as **vertical perspectives**
 (a left rail) × horizontal sub-tabs:
 
-- **期权 (Options)** — daily 25Δ IV + skew snapshot of SPY / QQQ / VIX / TLT / GLD / USO
+- **期权 (Options)** — daily 25Δ IV + skew snapshot of SPY / QQQ / VIX / TLT / GLD / USO / IBIT
   (via moomoo OpenD) and BTC (via Deribit), stored in SQLite. Underlyings with a free
-  volatility index (SPY/QQQ/GLD/USO/BTC) also get implied-vs-realized + VRP panes.
+  volatility index (SPY/QQQ/GLD/USO/TLT/IBIT/BTC) also get implied-vs-realized + VRP panes.
   The spot candle pane carries TradingView-style overlays (EMA ribbon, Bollinger 2σ/3σ) and,
   in a one-click *spot-only* mode, MACD / RSI sub-charts — see [Spot chart tools](#spot-chart-tools).
 - **Regime perspectives** — macro/market *regime* indicators pulled on demand from

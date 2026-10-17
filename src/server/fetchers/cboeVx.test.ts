@@ -133,6 +133,33 @@ describe('fetchVxTermStructure', () => {
     expect(vx3[0]).toMatchObject({ symbol: 'VX3', tradeDate: '2025-01-02', close: 19.0 });
   });
 
+  test('按合约存整条曲线:id 带到期日,早于起点的滤掉', async () => {
+    const { contracts } = await fetchVxTermStructure({ client: fakeClient, freshSince: '1900-01-01' });
+    expect(contracts).toEqual([
+      { seriesId: 'VX:2025-01-21', obsDate: '2025-01-02', value: 17.5 },
+      { seriesId: 'VX:2025-02-18', obsDate: '2025-01-02', value: 18.2 },
+      { seriesId: 'VX:2025-03-18', obsDate: '2025-01-02', value: 19.0 },
+    ]);
+  });
+
+  test('按合约存:到期当天(最终结算)保留,周度合约不进', async () => {
+    const client: CboeVxClient = {
+      fetchContractList: async () => [
+        { symbol: 'VX+VXT/N6', expireDate: '2026-07-15', csvUrl: 'm' },
+        { symbol: 'VX+VXT26/N6', expireDate: '2026-07-01', csvUrl: 'w' },
+      ],
+      fetchContractCsv: async () => [
+        { tradeDate: '2026-06-24', settle: 19.0 },
+        { tradeDate: '2026-07-15', settle: 18.4 },
+      ],
+    };
+    const { contracts } = await fetchVxTermStructure({ client, freshSince: '2026-06-01' });
+    expect(contracts.map((r) => `${r.seriesId}@${r.obsDate}`)).toEqual([
+      'VX:2026-07-15@2026-06-24',
+      'VX:2026-07-15@2026-07-15',
+    ]);
+  });
+
   test('增量刷新不污染旧日期:freshSince 之前的交易日不产出', async () => {
     // 增量时 freshSince ≈ 今天,下载集只剩远月合约(近月已到期被排除)。
     // 这份远月合约的 CSV 仍覆盖几个月前的交易日 —— 若按所有历史日产出,

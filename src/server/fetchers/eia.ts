@@ -18,6 +18,13 @@ import { HISTORY_START_DATE, SEASONAL_BASELINE_YEARS } from '../config';
 type FetchFn = (url: string) => Promise<Response>;
 
 /**
+ * EIA 单独放宽超时(默认 15s 不够):零售泵价两条服务端就要 ~12s(2026-10-17 实测,实物六条 ~2s),
+ * 贴着 15s 时过时不过 → `/api/regime` 那格 unavailable、整页缓存存不进去、每次请求都冷拉全套。
+ * 改这个数要同步看 server/index.ts 的 idleTimeout(必须比路由最慢一腿还长)。
+ */
+export const EIA_FETCH_TIMEOUT_MS = 40_000;
+
+/**
  * 拉多少周 = 从「展示起点再往前垫 `SEASONAL_BASELINE_YEARS` 年」到今天。**必须算,不能写死。**
  * 曾经写死 780 周,到 2026 年只剩 ~65 周余量,再过两年就盖不住基准期了;
  * 而后果是无声的:`seasonalZ` 对样本不足的点直接跳过,图上最早那批 z 会悄悄消失,不报错。
@@ -52,7 +59,7 @@ const toFiniteNumber = (v: unknown): number | null => {
 };
 
 export function createEiaFetcher(opts: { apiKey: string; fetch?: FetchFn }) {
-  const doFetch = opts.fetch ?? fetchWithTimeout;
+  const doFetch = opts.fetch ?? ((url: string) => fetchWithTimeout(url, undefined, EIA_FETCH_TIMEOUT_MS));
 
   return {
     /** `seriesId` 传裸 EIA 名(如 `WDISTUS1`),前缀/频率后缀在这里拼。 */
