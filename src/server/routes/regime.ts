@@ -683,8 +683,16 @@ async function fetchFresh(): Promise<RegimeBody> {
       return e ? [{ date: b.tradeDate, value: b.close / e }] : [];
     }),
   );
-  // 隐含集中度:VIXEQ − VIX。同期相减用 subtractAt(内连接),缺日跳过不配对;任一腿缺 → 空 → unavailable。
-  put('vixeqVix', subtractAt(raw.vixeq ?? [], raw.vixSpot ?? []));
+  // 隐含集中度:VIXEQ / VIX。用比值不用差:差值随波动率水位整体缩放(恐慌期 VIX 翻倍,价差跟着翻倍),
+  // 比值 ≈ 1/√平均相关性,剥掉了水位。同期内连接,缺日跳过;VIX ≤ 0(坏行)丢点。任一腿缺 → 空 → unavailable。
+  const vixAt = new Map((raw.vixSpot ?? []).map((p) => [p.date, p.value]));
+  put(
+    'vixeqVix',
+    (raw.vixeq ?? []).flatMap((p) => {
+      const v = vixAt.get(p.date);
+      return v && v > 0 ? [{ date: p.date, value: p.value / v }] : [];
+    }),
+  );
   // DXY:close 进 series(unavailable/存在性),OHLC 进 ohlc(蜡烛)。缺 → 归 unavailable。
   put('usd', usdBars?.length ? usdBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
   // 日元 carry 三序列

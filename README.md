@@ -190,7 +190,7 @@ several horizontal tabs:
 | AI | 算力价格 (H100/H200/B200/B300 GPU 租赁价指数) · 买方合计 (AI 链 capex/FCF 判据线) · AI CDS (AI 巨头 + Oracle 单名 CDS，价近似 spread bp) · 产业链 (15 家公司财务明细) | Computable / ICE / SEC / TWSE |
 | 通胀 Inflation | 通胀预期 (BEI) · 通胀走势 · 通胀来源 (RBOB YoY 等) | FRED / Yahoo |
 | 估值 Valuation | Shiller CAPE regime | Shiller |
-| 特色指标 Featured | 攻防 — NOBL/QQQ offense-defense via ZigZag · 集中度 — S&P 500 ÷ S&P 500 Equal Weight (`^GSPC` / `^SPXEW`, realized cap concentration; read direction, not level — structural uptrend since 2023) paired with VIXEQ − VIX (implied concentration / dispersion, with percentile bands) | Yahoo / CBOE |
+| 特色指标 Featured | 攻防 — NOBL/QQQ offense-defense via ZigZag · 集中度 — S&P 500 ÷ S&P 500 Equal Weight (`^GSPC` / `^SPXEW`, realized cap concentration; read direction, not level — structural uptrend since 2023) paired with VIXEQ / VIX (implied concentration / dispersion, ≈ 1/√avg correlation, with percentile bands) | Yahoo / CBOE |
 
 Series with a trailing distribution carry P5/P95 bands + a current-percentile badge, and
 shade extreme periods red (risk end) / green (opportunity end) per each series' direction.
