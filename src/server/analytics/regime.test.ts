@@ -2,6 +2,8 @@ import { test, expect } from 'bun:test';
 import {
   subtractAligned,
   subtractAt,
+  drawdownPct,
+  eqwDdSpread,
   netLiquidityWeekly,
   divideAligned,
   yoyPct,
@@ -450,4 +452,22 @@ test('seasonalZ:minSamples 默认 8 —— 生产端不传这个参数,默认值
     { date: '2024-06-05', value: 120 },
   ];
   expect(seasonalZ(enough, { years: 5 }).find((p) => p.date === '2024-06-05')).toBeDefined();
+});
+
+// 回撤按点数窗口(含当日),不足窗口用已有的(min_periods=1)。
+test('drawdownPct:离窗口内最高收盘的跌幅(pp);高点滚出窗口后按新窗口算', () => {
+  const pts = [100, 110, 99, 88, 90].map((value, i) => ({ date: `2026-01-0${i + 1}`, value }));
+
+  expect(drawdownPct(pts, 3).map((p) => +p.value.toFixed(6))).toEqual([0, 0, 10, 20, 9.090909]);
+  // 窗口 3:第 5 点窗口是 [99, 88, 90],110 已滚出 → (1 − 90/99) × 100
+});
+
+test('eqwDdSpread:两腿内连接后各算回撤再相减;正 = 等权跌得更深', () => {
+  const d = (i: number) => `2026-01-0${i + 1}`;
+  const eqw = [100, 90, 95].map((value, i) => ({ date: d(i), value }));
+  const cap = [100, 99, 100, 120].map((value, i) => ({ date: d(i), value })); // 第 4 天等权缺 → 不出点
+
+  const out = eqwDdSpread(eqw, cap);
+  expect(out.map((p) => p.date)).toEqual([d(0), d(1), d(2)]);
+  expect(out.map((p) => +p.value.toFixed(6))).toEqual([0, 9, 5]); // eqw 回撤 0/10/5,cap 0/1/0
 });

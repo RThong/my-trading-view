@@ -121,6 +121,8 @@ export const REGIME_SERIES = [
   'spxEqw',
   // VIXEQ / VIX(两腿都是 CBOE 现拉,同源同历):期权隐含的集中度 / 离散度,与 spxEqw 并排在「集中度」。
   'vixeqVix',
+  // 等权回撤 − 加权回撤(^SPXEW / ^GSPC 各自 252 日回撤之差,百分点):宽度透支度,付鹏图以 4 为临界值。
+  'eqwDdSpread',
   'rxmSpx',
   'vixSpotTerm',
   'brentWti',

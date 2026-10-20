@@ -36,6 +36,7 @@ import {
   monthlyAnnualizedPct,
   releaseMarkers,
   rollingMean,
+  eqwDdSpread,
   type Point,
 } from '../analytics/regime';
 import { OIS_INPUT_TENORS, hikesByTenor } from '../../shared/policyPath';
@@ -741,6 +742,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
       return e ? [{ date: b.tradeDate, value: b.close / e }] : [];
     }),
   );
+  // 等权回撤 − 加权回撤:宽度透支的回撤口径(见 eqwDdSpread),与上面的比值同两腿。
+  const bars = (b: typeof spxCap) => (b ?? []).map((x) => ({ date: x.tradeDate, value: x.close }));
+  put('eqwDdSpread', eqwDdSpread(bars(spxEqw), bars(spxCap))); // 任一腿缺 → 空 → put 归 unavailable
   // 隐含集中度:VIXEQ / VIX。用比值不用差:差值随波动率水位整体缩放(恐慌期 VIX 翻倍,价差跟着翻倍),
   // 比值 ≈ 1/√平均相关性,剥掉了水位。同期内连接,缺日跳过;VIX ≤ 0(坏行)丢点。任一腿缺 → 空 → unavailable。
   const vixAt = new Map((raw.vixSpot ?? []).map((p) => [p.date, p.value]));

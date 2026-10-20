@@ -165,6 +165,33 @@ export function rollingMean(points: Point[], n: number): Point[] {
 }
 
 /**
+ * 回撤(百分点)= (1 − 收盘 / 过去 n 根含当日的最高收盘) × 100。窗口按点数(交易日),不足 n 根用已有的。
+ * ponytail: 逐点 O(n) 回看,全序列 O(N·n)(5000 点 × 252 ≈ 百万次,毫秒级);要更快换单调队列。
+ */
+export function drawdownPct(points: Point[], n = 252): Point[] {
+  return points.map((p, i) => {
+    const peak = Math.max(...points.slice(Math.max(0, i - n + 1), i + 1).map((x) => x.value));
+    return { date: p.date, value: (1 - p.value / peak) * 100 };
+  });
+}
+
+/**
+ * 等权回撤 − 加权回撤(百分点)。两腿先按日期内连接再各算 252 日回撤(同一指数公司、同一交易日历)。
+ * 正 = 多数股票回撤比大盘深、巨头在撑指数(缩圈);付鹏 2026-10-20 微博图以 4 为临界值。
+ */
+export function eqwDdSpread(eqw: Point[], cap: Point[]): Point[] {
+  const capAt = new Map(cap.map((p) => [p.date, p.value]));
+  const joined = eqw.flatMap((p) => {
+    const c = capAt.get(p.date);
+    return c === undefined ? [] : [{ date: p.date, eqw: p.value, cap: c }];
+  });
+  const ddEqw = drawdownPct(joined.map((j) => ({ date: j.date, value: j.eqw })));
+  const ddCap = drawdownPct(joined.map((j) => ({ date: j.date, value: j.cap })));
+
+  return ddEqw.map((p, i) => ({ date: p.date, value: p.value - ddCap[i].value }));
+}
+
+/**
  * 季节性 z-score:每个点对照**往年同期**的分布,输出 (今值 − 同期均值) / 同期标准差。
  *
  * 为什么要有它:库存/开工率这类序列的绝对水位单看不携带信息 —— 柴油库存 1.05 亿桶是高是低,
