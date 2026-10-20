@@ -17,6 +17,8 @@ export type LineSpec = {
   step?: boolean;
   /** 叠在蜡烛上的指标线(EMA / 布林带):细线、不画最新价水平线、不挂右轴最新值标签 —— 十来条会把蜡烛和轴盖满,读数看悬停图例。 */
   overlay?: boolean;
+  /** 不画线、不参与轴缩放,只在悬停图例给读数(噪声大到不能上图、但读数有用的原始值)。 */
+  hidden?: boolean;
   /** 与另一条线(key)之间填色,画在蜡烛下层(布林带通道底色)。两条线须同一时间轴,配不上的时间点跳过。 */
   fillTo?: { key: string; color: string };
   /**

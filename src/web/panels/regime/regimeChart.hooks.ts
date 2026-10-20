@@ -213,7 +213,7 @@ type PaneSpec = {
    * 也给「总量 + 各项贡献度」这种同尺分解用(日银潜在增速那格,四项相加 ≈ 总量)。
    * 主 key 缺失 → 整格不建;某条 overlay 自己缺失 → 只少那条线,主线照画。
    */
-  overlays?: { key: SeriesKey; title: string; color: string; step?: boolean }[];
+  overlays?: { key: SeriesKey; title: string; color: string; step?: boolean; hidden?: boolean }[];
   /** 事件竖线:序列里每个点的日期画一根满高细柱(发布日这类「哪天发生」的标记,值不画)。 */
   events?: { key: SeriesKey; title: string; color: string }[];
 };
@@ -1323,6 +1323,8 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
           { price: 15, title: '高风险 15%', color: '#a855f7' },
         ],
         expandVisibleTo: [1, 19],
+        // 原始日值只给悬停读数:比均线早过线几天,但单日能跳 10pp,上图就是一片毛刺。
+        overlays: [{ key: 'btcSupplyDensityRaw', title: '原始日值 (%)', color: '#94a3b8', hidden: true }],
         desc: [
           '定义:链上成本价落在当日收盘价 ±5% 内的 BTC 占总供应的比例,取 7 日均线',
           '(Glassnode「Realized Supply Density」的免费复刻,@Murphychen888 叫它「供应集中度」)。',
@@ -1336,6 +1338,8 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
           '读数偏高 ~0.1–0.3pp(2026-08-01 13.2 vs 12.9,10-02 12.1 vs 12)。压线附近别当已触发。',
           '⚠️ 为什么是 7 日均线:原始日值单日能跳 10pp(价格一动,±5% 窗口就换一批筹码);',
           '用 7 日均线和 Murphy 三个公开读数最吻合。代价是比原始值慢几天。',
+          '悬停读数里的「原始日值」就是没平滑的那条:2024-10 起均线 10 次上穿 15%,原始值都更早过线',
+          '(中位早 5 天),但同期原始值上穿了 26 次 —— 多出的 16 次是单日毛刺。只当「可能要来了」的预告看。',
           '⚠️ 当天(UTC)那个点是盘中快照,次日重拉才定;含周末(crypto 7 天)。',
         ].join('\n'),
       },
@@ -2381,6 +2385,7 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
         title: o.title,
         data: aggregate(toLine(data.series[o.key]), interval),
         ...(o.step ? { step: true } : {}),
+        ...(o.hidden ? { hidden: true } : {}),
         // 同 pane 共用一条价格轴 → 框必须每条都夹,否则 overlay 的极值照样撑开整幅。
         ...(p.clampVisibleTo ? { clampVisibleTo: p.clampVisibleTo } : {}),
       }));

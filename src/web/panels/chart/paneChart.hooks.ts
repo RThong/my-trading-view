@@ -90,6 +90,17 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
       ...(spec.overlay ? { priceLineVisible: false, lastValueVisible: false } : {}),
       // 阶梯线:低频序列(季频)不该在两次发布之间画出斜坡,那是凭空造出来的中间值。
       ...(spec.step ? { lineType: LineType.WithSteps } : {}),
+      // 隐形线:series 还在(悬停图例照读 seriesData),但不画、不挂轴标签、不撑轴。
+      ...(spec.hidden
+        ? {
+            title: '',
+            lineVisible: false,
+            crosshairMarkerVisible: false,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            autoscaleInfoProvider: () => null,
+          }
+        : {}),
     },
     spec.pane,
   );
