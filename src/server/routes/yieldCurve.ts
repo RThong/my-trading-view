@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
+import { resolve } from 'node:path';
+import { createSwrCache } from './swrCache';
 import { createFredFetcher } from '../fetchers/fred';
 import type { Point } from '../analytics/regime';
-import { HISTORY_START_DATE } from '../config';
+import { HISTORY_START_DATE, PROJECT_ROOT } from '../config';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
 import {
@@ -16,12 +18,18 @@ import {
 import { fetchJgbCurve } from '../fetchers/mofJgb';
 import { fetchTreasuryCurve, UST_TENORS } from '../fetchers/usTreasuryPar';
 
-type CurveBody = { tenors: string[]; series: Record<string, Point[]>; unavailable: string[] };
+type CurveBody = {
+  tenors: string[];
+  series: Record<string, Point[]>;
+  unavailable: string[];
+  /** 本次现拉失败、沿用上一份成功数据顶上的期限(见 fillFromPrev)。 */
+  fallback?: string[];
+};
 
 /**
  * 通用 FRED 曲线构建:一组 (tenor→series) 读时现拉全历史,并行 + 优雅降级。
  * 单序列失败(FRED key 缺 / 序列 404)→ 归入 unavailable,其余照常返回。
- * 值已是百分点,原样透传。前端 SWR 已做客户端缓存。
+ * 值已是百分点,原样透传。服务端缓存见下方 liveCaches(swrCache)。
  */
 async function buildFredCurve(pairs: { tenor: string; series: string }[]): Promise<CurveBody> {
   const fred = createFredFetcher({ apiKey: process.env.FRED_API_KEY ?? '' });
@@ -41,8 +49,8 @@ async function buildFredCurve(pairs: { tenor: string; series: string }[]): Promi
 
 /**
  * 美债收益曲线:美国财政部每日 par yield 直发源(当天出,比 FRED DGS 快 1-2 天;FRED 本就搬这份)。
- * 按年拉 HISTORY_START_DATE 的年份 → 今年,并行 + 优雅降级(单年失败跳过)。某档全程无数据 → unavailable。
- * 读时现拉、零存储(同 regime);前端 SWR 已做客户端缓存。
+ * 按年拉 HISTORY_START_DATE 的年份 → 今年并行;任一年失败整体抛(由 swrCache 的 load 兜成「全缺 + 沿用上次」)。某档全程无数据 → unavailable。
+ * 读时现拉、不落库;服务端缓存见下方 liveCaches(swrCache)。
  */
 async function buildTreasury(): Promise<CurveBody> {
   const series = await fetchTreasuryCurve();
@@ -118,10 +126,10 @@ const buildAiCds = (): CurveBody =>
     })),
   );
 
-// source → 曲线构造器。await 对同步返回值也安全,新增曲线源只加一行。
-const BUILDERS: Record<string, () => CurveBody | Promise<CurveBody>> = {
-  treasury: buildTreasury, // 默认国债(FRED 现拉)
-  sofr_ois: buildOis,
+// 现拉外部源的曲线(FRED / 财政部 / MOF,冷拉 1~6s)。走 swrCache:有旧值先回、过期后台刷新,
+// 完整结果落盘 → 服务端重启后也是先回盘上那份(见 swrCache)。
+const LIVE_BUILDERS: Record<string, () => Promise<CurveBody>> = {
+  treasury: buildTreasury, // 默认国债(财政部直发)
   credit_rating: () => buildFredCurve(CREDIT_RATING),
   credit_term: () => buildFredCurve(CREDIT_TERM),
   bei: buildBei, // 通胀预期(BEI = DGS − DFII 现算)
@@ -131,13 +139,57 @@ const BUILDERS: Record<string, () => CurveBody | Promise<CurveBody>> = {
   //(注意方向:面板上 real 是 DFII 直读,反倒是 bei 由 DGS − DFII 现算 —— 别写成「名义 − BEI」)。
   real: () => buildFredCurve(BEI_TENORS.map((t) => ({ tenor: t.tenor, series: t.real }))),
   jgb: buildJgb, // 日本国债收益曲线(MOF)
+};
+
+// 读库的曲线每次直读、不缓存:库由 daily job(别的进程)写,进程内缓存看不到,反而会把新数据挡住。
+const DB_BUILDERS: Record<string, () => CurveBody> = {
+  sofr_ois: buildOis,
   ai_cds: buildAiCds, // AI 巨头 + 甲骨文 + CoreWeave 单名 CDS(ICE 结算价读时换算 spread bp)
 };
+
+/** 本次现拉失败的期限用上一份顶上,记入 `fallback`;上一份也没有的照旧 unavailable。 */
+export function fillFromPrev(body: CurveBody, prev: CurveBody | null): CurveBody {
+  const fill = body.unavailable.filter((t) => prev?.series[t]?.length);
+  if (!prev || !fill.length) return body;
+
+  return {
+    ...body,
+    series: { ...body.series, ...Object.fromEntries(fill.map((t) => [t, prev.series[t]])) },
+    unavailable: body.unavailable.filter((t) => !fill.includes(t)),
+    fallback: fill,
+  };
+}
+
+// 每个 source 一份缓存。TTL / 重试间隔与 regime 同(EOD 日频,6h 安全;降级结果 10 分钟后重试)。
+const liveCaches = Object.fromEntries(
+  Object.entries(LIVE_BUILDERS).map(([source, build]) => [
+    source,
+    createSwrCache<CurveBody>({
+      ttlMs: 6 * 60 * 60 * 1000,
+      retryMs: 10 * 60 * 1000,
+      snapshotPath: resolve(PROJECT_ROOT, 'data', 'cache', `yield-${source}.json.gz`),
+      load: async (prev) => {
+        // 构造器整个抛(如 MOF CSV 挂了)= 全部期限都没拉到:按「全缺」降级,而不是让真冷请求 500。
+        const tenors = prev?.tenors ?? [];
+        const body = await build().catch((e: unknown) => {
+          console.warn(`[yield-curve] ${source} 现拉失败,本次全部期限 unavailable: ${(e as Error).message}`);
+          return { tenors, series: {}, unavailable: tenors };
+        });
+        return { value: fillFromPrev(body, prev), complete: body.tenors.length > 0 && !body.unavailable.length };
+      },
+    }),
+  ]),
+);
 
 export const yieldCurveRoute = new Hono().get('/', async (c) => {
   // 缺 source → 默认 treasury;给了无效 source → 400(不静默兜底成国债,否则拼错的 source 会伪装成合理数据)。
   const source = c.req.query('source') ?? 'treasury';
-  const build = BUILDERS[source];
-  if (!build) return c.json({ error: `unknown source: ${source}` }, 400);
-  return c.json(await build());
+
+  // 只认自有属性:`source=toString` / `__proto__` 会顺着原型链命中,随后抛成 500 而不是 400。
+  if (Object.hasOwn(liveCaches, source)) {
+    const { value, refreshing, partial } = await liveCaches[source].get();
+    return c.json({ ...value, refreshing, partial });
+  }
+  if (Object.hasOwn(DB_BUILDERS, source)) return c.json(DB_BUILDERS[source]());
+  return c.json({ error: `unknown source: ${source}` }, 400);
 });

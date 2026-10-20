@@ -57,6 +57,9 @@ import {
   shouldCache,
   EIA_SERIES,
   ESTAT_SERIES,
+  fillFromPrev,
+  mergeDbRead,
+  resolveSofr,
 } from './regime';
 
 test('JOB_WRITTEN_SERIES:out 键唯一、symbol 唯一', () => {
@@ -135,4 +138,60 @@ test('EIA_SERIES 必须与路由实际发出的那批 EIA 线一致(手抄名单
 
   expect(actual.length).toBeGreaterThan(0);
   expect([...EIA_SERIES].sort()).toEqual([...new Set(actual)].sort() as (typeof EIA_SERIES)[number][]);
+});
+
+// 现拉失败的外部源用上一份顶上(面板标「沿用上次」);库读的不补(每次请求都重读库,缺了就是真缺)。
+test('fillFromPrev:只补外部源的缺口,记入 fallback;库读的与上一份也没有的照旧 unavailable', () => {
+  const p = (value: number) => [{ date: '2026-10-16', value }];
+  const prev = {
+    series: { refUtil: p(90), usd: p(100), move: p(80), 'fund:NVDA:gm': p(70) },
+    unavailable: [],
+    ohlc: { usd: [{ time: '2026-10-16', open: 1, high: 2, low: 0.5, close: 1.5 }] },
+  };
+  const fresh = {
+    series: { vix: p(20) },
+    unavailable: ['refUtil', 'usd', 'move', 'fund:NVDA:gm', 'gasRetail'],
+    ohlc: {},
+  };
+
+  const out = fillFromPrev(fresh, prev);
+  expect(out.series).toEqual({ vix: p(20), refUtil: p(90), usd: p(100) });
+  expect(out.ohlc).toEqual({ usd: prev.ohlc.usd });
+  expect(out.fallback).toEqual(['refUtil', 'usd']);
+  expect(out.unavailable).toEqual(['move', 'fund:NVDA:gm', 'gasRetail']);
+});
+
+test('fillFromPrev:没有上一份 → 原样返回', () => {
+  const fresh = { series: {}, unavailable: ['refUtil'] };
+  expect(fillFromPrev(fresh, undefined)).toBe(fresh);
+});
+
+// 缓存(尤其是重启后读回的盘上快照)里的库读序列是旧的:必须整批剔掉再塞本次读库结果,
+// 库里这次没有的 key 不能拿缓存旧值冒充。
+test('mergeDbRead:剔掉缓存里的库读 key,外部源 key 保留,本次读库结果覆盖', () => {
+  const p = (value: number) => [{ date: '2026-10-16', value }];
+  const cached = {
+    series: { hyOas: p(2.8), move: p(80), 'fund:NVDA:gm': p(70), qqq: p(500) },
+    ohlc: { usd: [], btc: [] },
+    unavailable: ['refUtil', 'fund:AMD:gm', 'gpuB300'],
+  };
+  const sec = { series: { 'fund:MU:gm': p(40) }, unavailable: ['fund:NVDA:gm'] };
+  const job = { series: { move: p(81) }, ohlc: {}, unavailable: ['qqq'] };
+
+  const out = mergeDbRead(cached, [sec, job]);
+  expect(out.series).toEqual({ hyOas: p(2.8), 'fund:MU:gm': p(40), move: p(81) }); // 旧 NVDA / qqq 不冒充
+  expect(Object.keys(out.ohlc ?? {})).toEqual(['usd']); // btc 是库读的
+  expect(out.unavailable).toEqual(['refUtil', 'fund:NVDA:gm', 'qqq']);
+});
+
+test('resolveSofr:现拉到 → 用现拉;没拉到且有上一份 → 用上一份并把四条加息次数标 fallback;都没有 → 空', () => {
+  const live = [{ date: '2026-10-19', value: 3.85 }];
+  const prev = [{ date: '2026-10-16', value: 3.84 }];
+
+  expect(resolveSofr(live, prev)).toEqual({ sofrLive: live, fallback: [] });
+  expect(resolveSofr(undefined, prev)).toEqual({
+    sofrLive: prev,
+    fallback: ['oisHikes3m', 'oisHikes6m', 'oisHikes12m', 'oisHikes2y'],
+  });
+  expect(resolveSofr([], undefined)).toEqual({ sofrLive: [], fallback: [] });
 });

@@ -35,18 +35,22 @@ describe('parseTreasuryPar', () => {
   });
 });
 
-// 年度聚合 + 降级:注入 fetch,只让两年成功、其余年份 500。
-// 验「单年失败跳过而非整体报错」+「跨年合并后按日期升序」(源 CSV 本身是倒序)。
-describe('fetchTreasuryCurve(年度聚合 / 降级)', () => {
-  const fake = (okYears: Record<string, string>) => (url: string) => {
-    const year = url.match(/daily-treasury-rates\.csv\/(\d{4})\//)?.[1] ?? '';
-    const csv = okYears[year];
-    return Promise.resolve(
-      csv ? new Response(csv, { status: 200 }) : new Response('nope', { status: 500 }),
-    ) as Promise<Response>;
-  };
+// 年度聚合:注入 fetch,给定年份回对应 CSV,failYears 回 500,其余年份回只有表头的空表。
+// 验「跨年合并后按日期升序」(源 CSV 本身是倒序)+「任一年失败即整体抛」(不让缺段结果冒充齐全)。
+describe('fetchTreasuryCurve(年度聚合 / 失败)', () => {
+  const header = CSV_OLD.split('\n')[0];
+  const fake =
+    (csvByYear: Record<string, string>, failYears: string[] = []) =>
+    (url: string) => {
+      const year = url.match(/daily-treasury-rates\.csv\/(\d{4})\//)?.[1] ?? '';
+      return Promise.resolve(
+        failYears.includes(year)
+          ? new Response('nope', { status: 500 })
+          : new Response(csvByYear[year] ?? header, { status: 200 }),
+      ) as Promise<Response>;
+    };
 
-  it('失败年份跳过,成功年份照常合并且按日期升序', async () => {
+  it('各年合并且按日期升序', async () => {
     const out = await fetchTreasuryCurve(fake({ '2018': CSV_OLD, '2026': CSV_NEW }));
 
     // 2018(1 天)+ 2026(2 天)跨年合并成 3 点,且升序 —— 源 CSV 内是倒序,故这里能证明排过
@@ -57,7 +61,7 @@ describe('fetchTreasuryCurve(年度聚合 / 降级)', () => {
     ]);
   });
 
-  it('全部年份失败 → 空对象,不抛异常', async () => {
-    expect(await fetchTreasuryCurve(fake({}))).toEqual({});
+  it('任一年失败 → 整体抛(缺一段的结果不能当完整结果被缓存)', async () => {
+    await expect(fetchTreasuryCurve(fake({ '2018': CSV_OLD }, ['2026']))).rejects.toThrow('UST 2026');
   });
 });

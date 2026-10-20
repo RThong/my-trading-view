@@ -1,13 +1,28 @@
 // 收益曲线视角数据层:拉 11 期限 FRED 序列 + 纯粹的日期解析逻辑。
 // 图表(SVG)与展示壳在 YieldCurveChart/YieldCurvePanel;这里只管取数与"取某日的一条曲线"。
 import useSWR from 'swr';
+import { useServerRefresh } from '../../hooks/useServerRefresh';
 import { unique, uniqueBy } from 'remeda';
 
 export type YPoint = { date: string; value: number };
-export type YieldCurveData = { tenors: string[]; series: Record<string, YPoint[]>; unavailable: string[] };
+export type YieldCurveData = {
+  tenors: string[];
+  series: Record<string, YPoint[]>;
+  unavailable: string[];
+  /** 服务端缓存过期、后台刷新中(见 server/routes/swrCache):先给的是旧数据。 */
+  refreshing?: boolean;
+  /** 服务端缓存值不完整(有源没拉到,等重试)。 */
+  partial?: boolean;
+  /** 本次现拉失败、服务端用上一份成功数据顶上的期限(面板标「沿用上次」)。 */
+  fallback?: string[];
+};
 
 const NO_DATA: YieldCurveData = { tenors: [], series: {}, unavailable: [] };
-const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
+const SWR_OPTS = {
+  revalidateOnFocus: false,
+  revalidateIfStale: false,
+  revalidateOnReconnect: false,
+};
 
 async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url);
@@ -89,11 +104,9 @@ export function presetDates(maxDate: string, datesAsc: string[]): { label: strin
 // ── Hook ──────────────────────────────────────────────────────────
 
 export function useYieldCurve(source: string) {
-  const {
-    data = NO_DATA,
-    error,
-    isLoading,
-  } = useSWR(`/api/yield-curve?source=${source}`, getJson<YieldCurveData>, SWR_OPTS);
+  const key = `/api/yield-curve?source=${source}`;
+  const { data = NO_DATA, error, isLoading, mutate } = useSWR(key, getJson<YieldCurveData>, SWR_OPTS);
+  useServerRefresh(key, data, mutate);
   const datesAsc = unionDatesAsc(data.series);
   const maxDate = datesAsc[datesAsc.length - 1];
   return {

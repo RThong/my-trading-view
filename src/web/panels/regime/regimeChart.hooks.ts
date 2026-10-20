@@ -1,6 +1,7 @@
 // 宏观 regime 视角的数据层:取数 + 各维度的 pane 配置 + spec 构造。
 // 图表引擎(usePaneChart/usePaneLayout/useCrosshairLegend)与展示壳(PaneChartView)全复用期权侧。
 import useSWR from 'swr';
+import { useServerRefresh } from '../../hooks/useServerRefresh';
 import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../lib/chart';
 import { percentile, percentileRank } from '../../../shared/stats';
 import type { SeriesKey } from '../../../shared/regimeSeries';
@@ -115,6 +116,12 @@ export type RegimePoint = { date: string; value: number };
 export type RegimeData = {
   series: Record<string, RegimePoint[]>;
   unavailable: string[];
+  /** 本次现拉失败、服务端用上一份成功数据顶上的序列(面板标「沿用上次」)。 */
+  fallback?: string[];
+  /** 服务端缓存过期、后台刷新中(见 server/routes/swrCache):先给的是旧数据。 */
+  refreshing?: boolean;
+  /** 服务端缓存值不完整(有源没拉到,等重试)。 */
+  partial?: boolean;
   ohlc?: Record<string, Bar[]>;
   secLag?: SecLag[];
   secTrim?: FundTrim[];
@@ -123,7 +130,11 @@ export type RegimeData = {
 };
 
 const NO_DATA: RegimeData = { series: {}, unavailable: [] }; // 稳定空引用,避免 render 抖动
-const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
+const SWR_OPTS = {
+  revalidateOnFocus: false,
+  revalidateIfStale: false,
+  revalidateOnReconnect: false,
+};
 
 async function getJson<T>(url: string): Promise<T> {
   const r = await fetch(url);
@@ -133,7 +144,8 @@ async function getJson<T>(url: string): Promise<T> {
 
 /** 三个 regime 视角共用;SWR 按 URL 去重,只发一次 /api/regime。 */
 export function useRegimeData() {
-  const { data = NO_DATA, error, isLoading } = useSWR('/api/regime', getJson<RegimeData>, SWR_OPTS);
+  const { data = NO_DATA, error, isLoading, mutate } = useSWR('/api/regime', getJson<RegimeData>, SWR_OPTS);
+  useServerRefresh('/api/regime', data, mutate);
   return { data, error: error as Error | undefined, isLoading };
 }
 

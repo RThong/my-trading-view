@@ -33,11 +33,17 @@ export function RegimeChart({ dim, interval }: { dim: RegimeDim; interval: Inter
   // (某格空着、另一家落后一季、还有一格被裁短)。裁剪那条见 secTrimNote:
   // 裁本身是对的,但不说的话「线怎么这么短」无处可查。
   // overlay 也要算进来:它在 seriesName/colors 里有名有色,缺了却不提示,那格会静默少一条线。
-  const missing = panes
-    .flatMap((p) => [p.key, ...(p.overlays ?? []).map((o) => o.key), ...(p.events ?? []).map((e) => e.key)])
-    .filter((k) => data.unavailable.includes(k));
+  const keys = panes.flatMap((p) => [
+    p.key,
+    ...(p.overlays ?? []).map((o) => o.key),
+    ...(p.events ?? []).map((e) => e.key),
+  ]);
+  const missing = keys.filter((k) => data.unavailable.includes(k));
+  // 源这次没拉到、服务端拿上一份顶上的:线照画,但要说明不是最新(见 server fillFromPrev)。
+  const stale = keys.filter((k) => data.fallback?.includes(k));
   const notes = [
     missing.length ? `暂不可用: ${missing.map((k) => seriesName[k]).join(', ')}` : undefined,
+    stale.length ? `源暂时拉不到,沿用上次数据: ${stale.map((k) => seriesName[k]).join(', ')}` : undefined,
     secLagNote(data, dim),
     secTrimNote(data, dim),
   ].filter((n) => n !== undefined);

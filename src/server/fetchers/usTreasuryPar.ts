@@ -50,12 +50,14 @@ export function parseTreasuryPar(csv: string): Record<string, Point[]> {
   return out;
 }
 
-// 拉 HISTORY_START_DATE 那年 → 今年各年并行,合并同期限并按日期升序。单年失败跳过(优雅降级)。
+// 拉 HISTORY_START_DATE 那年 → 今年各年并行,合并同期限并按日期升序。
+// **任一年失败即整体抛**,不跳过:跳过的话缺一段(或缺今年 = 曲线停在去年底)的结果看上去仍然「齐全」,
+// 会被路由缓存当完整结果存 6h 并写盘。整体抛则由调用方降级 —— yield-curve / regime 都会拿上一份成功值顶上。
 export async function fetchTreasuryCurve(doFetch = fetchWithTimeout): Promise<Record<string, Point[]>> {
   const startYear = Number(HISTORY_START_DATE.slice(0, 4));
   const endYear = new Date().getUTCFullYear();
   const years = Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
-  const settled = await Promise.allSettled(
+  const perYear = await Promise.all(
     years.map(async (y) => {
       const res = await doFetch(CSV(y), { headers: { 'User-Agent': 'Mozilla/5.0' } });
       if (!res.ok) throw new Error(`UST ${y}: ${res.status}`);
@@ -64,9 +66,8 @@ export async function fetchTreasuryCurve(doFetch = fetchWithTimeout): Promise<Re
   );
 
   const merged: Record<string, Point[]> = {};
-  for (const s of settled) {
-    if (s.status !== 'fulfilled') continue;
-    for (const [tenor, pts] of Object.entries(s.value)) {
+  for (const parsed of perYear) {
+    for (const [tenor, pts] of Object.entries(parsed)) {
       merged[tenor] ??= [];
       merged[tenor].push(...pts);
     }

@@ -39,14 +39,18 @@ const VIEW_DESC: Record<string, { title: string; desc: string }> = {
 export function YieldCurvePanel({ source }: { source: string }) {
   const { data, isLoading, error, datesAsc, maxDate, presets } = useYieldCurve(source);
   const [rows, setRows] = useState<Row[]>([]);
-  const [seeded, setSeeded] = useState(false);
+  // 按哪个 maxDate 种的预设;用户动过行之后不再重种。
+  const [seededFor, setSeededFor] = useState<string>();
+  const [touched, setTouched] = useState(false);
   const nextId = (rs: Row[]) => (rs.length ? Math.max(...rs.map((r) => r.id)) : -1) + 1; // id = 现有最大 + 1(免可变计数 ref)
 
-  // 数据到位后种一次预设时间点(最新/前1日/…/一年前),均勾选。渲染中条件 setState + seeded
-  // 单调标志替代 effect:只种一次、删空也不重种,且无需对 exhaustive-deps 谎报依赖。
-  if (!seeded && maxDate && rows.length === 0) {
+  // 数据到位后种预设时间点(最新/前1日/…/一年前),均勾选。渲染中条件 setState 替代 effect,无需对 exhaustive-deps 谎报依赖。
+  // 数据日期前进时重种一次:服务端会先回旧缓存 / 盘上快照、几秒后再给新数据(见 server swrCache),
+  // 只种第一份的话「最新」那行会停在旧日期、当天曲线不出。用户动过行就不再动(删空也不重种)。
+  // guard 收敛:种完 seededFor === maxDate,同一份数据不会再进来。
+  if (maxDate && seededFor !== maxDate && !touched) {
     setRows(presets.map((p, i) => ({ id: i, date: p.date, visible: true })));
-    setSeeded(true);
+    setSeededFor(maxDate);
   }
 
   if (error)
@@ -60,10 +64,15 @@ export function YieldCurvePanel({ source }: { source: string }) {
       </div>
     );
 
-  const setDate = (id: number, date: string) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, date } : r)));
-  const toggle = (id: number) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, visible: !r.visible } : r)));
-  const remove = (id: number) => setRows((rs) => rs.filter((r) => r.id !== id));
-  const addRow = () => setRows((rs) => [...rs, { id: nextId(rs), date: maxDate, visible: true }]);
+  // 用户改行一律经这里:记下「动过」,之后数据更新不再重种覆盖用户的选择。
+  const editRows = (f: (rs: Row[]) => Row[]) => {
+    setTouched(true);
+    setRows(f);
+  };
+  const setDate = (id: number, date: string) => editRows((rs) => rs.map((r) => (r.id === id ? { ...r, date } : r)));
+  const toggle = (id: number) => editRows((rs) => rs.map((r) => (r.id === id ? { ...r, visible: !r.visible } : r)));
+  const remove = (id: number) => editRows((rs) => rs.filter((r) => r.id !== id));
+  const addRow = () => editRows((rs) => [...rs, { id: nextId(rs), date: maxDate, visible: true }]);
 
   const presetLabelOf = (date: string) => presets.find((p) => p.date === date)?.label;
   const labelOf = (date: string) => (presetLabelOf(date) ? `${presetLabelOf(date)}: ${date}` : date);
@@ -92,6 +101,9 @@ export function YieldCurvePanel({ source }: { source: string }) {
       )}
       {data.unavailable.length > 0 && (
         <div className="text-xs text-amber-500">缺失期限:{data.unavailable.join(', ')}</div>
+      )}
+      {(data.fallback?.length ?? 0) > 0 && (
+        <div className="text-xs text-amber-500">源暂时拉不到,沿用上次数据:{data.fallback?.join(', ')}</div>
       )}
 
       {/* 图 */}

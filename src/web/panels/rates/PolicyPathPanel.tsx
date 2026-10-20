@@ -119,6 +119,8 @@ export function PolicyPathPanel() {
     return <div className="flex h-full items-center justify-center text-amber-500">暂无 SOFR OIS / SOFR 定盘数据</div>;
 
   const s = regime.data.series;
+  // SOFR 这次没现拉到、服务端用上一份顶上(加息次数的基准跟着是旧的)→ 标出来,与 regime 面板同口径。
+  const sofrStale = regime.data.fallback?.includes('sofr');
   const upper = last(s.fedTargetUpper)?.value;
   const lower = last(s.fedTargetLower)?.value;
   const target: [number, number] | undefined = upper !== undefined && lower !== undefined ? [lower, upper] : undefined;
@@ -135,7 +137,9 @@ export function PolicyPathPanel() {
         </span>
         <span>OIS {asOf}</span>
         <span>目标区间 {target ? `${fmt(target[0], 2)}–${fmt(target[1], 2)}` : '—'}</span>
-        <span>SOFR 定盘 {fmt(base, 2)}(基准)</span>
+        <span className={sofrStale ? 'text-amber-500' : undefined}>
+          SOFR 定盘 {fmt(base, 2)}(基准{sofrStale ? ',源暂时拉不到,沿用上次数据' : ''})
+        </span>
         <span>点阵图 {lr ? `${lr.date} 版` : '—'}</span>
         <span className="text-amber-500/80">近似值,精度约几 bp</span>
       </div>

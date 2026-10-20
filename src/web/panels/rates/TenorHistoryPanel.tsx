@@ -221,6 +221,9 @@ export function TenorHistoryPanel({
     <div className="flex h-full flex-col gap-3">
       {/* 工具条:视图说明(label + ⓘ)+ 差值 pane(▾ 显隐 + label + ⓘ) */}
       <div className="flex flex-wrap items-center gap-1.5 self-start text-xs">
+        {(data.fallback?.length ?? 0) > 0 && (
+          <span className="text-amber-500">源暂时拉不到,沿用上次数据:{data.fallback?.join(', ')}</span>
+        )}
         {view && (
           <div className="flex items-center gap-0.5 rounded border border-neutral-700 px-1 py-0.5">
             <span className="text-neutral-300">{view.title}</span>

@@ -45,8 +45,12 @@ export function parseMofJgbCsv(text: string, since: string): JgbCurve {
 
 /** 拉全历史 + 当月 CSV 并合并(当月覆盖同日),since 过滤。 */
 export async function fetchJgbCurve(since = '2018-01-01'): Promise<JgbCurve> {
+  // 非 2xx 必须抛:不然错误页被当 CSV 解析成空,当月数据静默消失、结果却看似齐全(会被路由缓存存 6h)。
   const get = (path: string) =>
-    fetchWithTimeout(`${MOF_BASE}/${path}`, { headers: { 'User-Agent': UA } }).then((r) => r.text());
+    fetchWithTimeout(`${MOF_BASE}/${path}`, { headers: { 'User-Agent': UA } }).then((r) => {
+      if (!r.ok) throw new Error(`MOF ${path}: ${r.status}`);
+      return r.text();
+    });
   const [hist, cur] = await Promise.all([get('historical/jgbcme_all.csv'), get('jgbcme.csv')]);
   const h = parseMofJgbCsv(hist, since);
   const c = parseMofJgbCsv(cur, since);
