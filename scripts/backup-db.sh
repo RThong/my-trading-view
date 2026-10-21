@@ -57,7 +57,10 @@ fi
 # 用 mktemp -d 而不是 mktemp:VACUUM INTO 要求目标不存在,建目录再拼文件名直接满足,
 # 不用"先建文件再删掉"那一步(那中间还有个别人抢建同名文件的窗口)。
 tmpd="$(mktemp -d)"
-trap 'rm -rf "$tmpd"; rm -f "$DEST"/.mtv-*."$$".partial.gz' EXIT
+# 压缩件暂存路径(publish 与 trap 共用一处定义,免得只改一边 trap 就悄悄删不到)。
+# trap 写完整路径不用通配:launchd 下 TCC 拦 iCloud 目录的 readdir,glob 展不开、rm 什么也删不掉(见下方轮转处)。
+part="$DEST/.mtv-$stamp.$$.partial.gz"
+trap 'rm -rf "$tmpd"; rm -f "$part"' EXIT
 
 # VACUUM INTO 而不是 cp:cp 会漏掉 WAL 里**已提交但未 checkpoint** 的事务,
 # 并发写入时还可能拷到撕裂状态。VACUUM INTO 走读事务,产出的是自洽的新库。
@@ -89,7 +92,6 @@ fi
 # 所以 CRC 通过 = 可恢复。mv 是原子 rename → 要么还是上次验过的那份,要么是这次验过的这份,
 # **不存在中间态**(同日重跑因此安全:旧的一直有效,直到新的验完)。
 publish() { # $1 = 源文件(未压缩库) $2 = 最终路径
-  local part="$DEST/.mtv-$stamp.$$.partial.gz"
   gzip -6 -c "$1" > "$part"
   gzip -t "$part"
   mv -f "$part" "$2"

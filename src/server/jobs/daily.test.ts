@@ -1,8 +1,9 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
-import { getOptions25Delta, getJobHealth } from '../storage/repository';
-import { runDailyJob } from './daily';
+import { getOptions25Delta, getJobHealth, insertPriceEod, insertMarketSeries } from '../storage/repository';
+import { priceLegUnderlyings } from '../../shared/marketCatalog';
+import { runDailyJob, staleFreshnessProbes } from './daily';
 import type { OptionsChainClient, OptionChainSnapshot } from './optionsSnapshot';
 
 function freshDb(): Database {
@@ -165,5 +166,43 @@ describe('daily job (options-only)', () => {
     const h = getJobHealth(db).find((h) => h.name === 'vx_term_structure');
     expect(h?.status).toBe('failed');
     expect(h?.error).toContain('CBOE down');
+  });
+});
+
+// 守卫只看「当天 success 过」会被数据源晚发布坑:过早那次 success 但没拿到上一交易日那根,
+// 当天其余触发点全被跳过(2026-10-20 实测)。探针滞后时守卫不放行。
+describe('staleFreshnessProbes', () => {
+  const put = (db: Database, underlying: string, obsDate: string) =>
+    insertPriceEod(db, [{ underlying, obsDate, open: null, high: null, low: null, close: 1, source: 'test' }]);
+  const putVx1 = (db: Database, obsDate: string) => insertMarketSeries(db, [{ seriesId: 'VX1', obsDate, value: 20 }]);
+  const allPrice = () => [...priceLegUnderlyings(), 'VIX'];
+  const upTo = (date: string) => {
+    const db = freshDb();
+    for (const u of allPrice()) put(db, u, date);
+    putVx1(db, date);
+    return db;
+  };
+
+  test('全部到上一交易日 → 空;旧行不影响(看的是最新一天)', () => {
+    const db = upTo('2026-10-19');
+    put(db, 'QQQ', '2026-10-16');
+    expect(staleFreshnessProbes(db, '2026-10-19')).toEqual([]);
+  });
+
+  test('只有一条滞后 → 只列它(ETF / VX1 各一例)', () => {
+    const db = upTo('2026-10-16');
+    for (const u of allPrice().filter((u) => u !== 'IBIT')) put(db, u, '2026-10-19');
+    putVx1(db, '2026-10-19');
+    expect(staleFreshnessProbes(db, '2026-10-19')).toEqual(['IBIT']);
+
+    const vxLate = upTo('2026-10-19');
+    expect(staleFreshnessProbes(vxLate, '2026-10-20')).toContain('VX1');
+    for (const u of allPrice()) put(vxLate, u, '2026-10-20');
+    expect(staleFreshnessProbes(vxLate, '2026-10-20')).toEqual(['VX1']); // ETF/VIX 到了不代表 VX 到了
+  });
+
+  test('全部滞后 / 空库 → 全列', () => {
+    expect(staleFreshnessProbes(upTo('2026-10-19'), '2026-10-20')).toEqual([...allPrice(), 'VX1']);
+    expect(staleFreshnessProbes(freshDb(), '2026-10-19')).toEqual([...allPrice(), 'VX1']);
   });
 });

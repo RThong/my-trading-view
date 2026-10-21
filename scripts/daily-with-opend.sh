@@ -146,5 +146,14 @@ scripts/export-csv.sh || echo "警告:CSV 导出失败(不影响已落库的数�
 
 # 备份放在最后:要备的正是这一轮刚写进去的数据。
 # 同样只告警不 exit —— 备份挂了不该让这一轮抓取显示为失败。iCloud 没登录 / 磁盘满属于这一类。
-echo "备份数据库到 iCloud…"
-scripts/backup-db.sh || echo "警告:数据库备份失败(数据已落库,只是这一份没备成),见上。" >&2
+#
+# ⚠ **只在 launchd(com.mtv.daily)里备份,手动跑不备**:launchd 写进 iCloud 的文件带 com.apple.macl,
+# 凭它之后才能覆盖 / 轮转删除自己写过的那份;终端 / IDE 手动跑写出的文件没有这个标记,
+# 当天后续 launchd 那次 mv 覆盖它会被 TCC 拒(Operation not permitted),14 天后轮转也删不掉它
+# (2026-10-20 实测:手动 09:08 备了一份 → 12:00 launchd 覆盖失败)。手动跑的数据已落库,晚些的定时那次会备上。
+if [[ "${XPC_SERVICE_NAME:-}" == "com.mtv.daily" ]]; then
+  echo "备份数据库到 iCloud…"
+  scripts/backup-db.sh || echo "警告:数据库备份失败(数据已落库,只是这一份没备成),见上。" >&2
+else
+  echo "手动运行不做 iCloud 备份(只有 launchd 写的文件之后能被它覆盖 / 轮转),由下一次定时任务备份。"
+fi

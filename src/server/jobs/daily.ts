@@ -4,7 +4,16 @@ console.debug = () => {};
 
 import type { Database } from 'bun:sqlite';
 import { openDb, migrate } from '../storage/db';
-import { startJobRun, finishJobRun, getTodaySucceededJobs, type FinishParams } from '../storage/repository';
+import {
+  startJobRun,
+  finishJobRun,
+  getTodaySucceededJobs,
+  getLatestPriceDate,
+  getLatestMarketDate,
+  type FinishParams,
+} from '../storage/repository';
+import { priceLegUnderlyings } from '../../shared/marketCatalog';
+import { lastClosedTradingDate } from './tradingCalendar';
 import { OPTIONS_UNDERLYINGS } from '../config';
 import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
 import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
@@ -209,12 +218,30 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
 }
 
 // 一天多触发点(JST 11/12/20/21/22,见 scripts/gen-cron.sh)的「成功即止」守卫:
-// 这几组当天全部 success 过 → 跳过本次。
+// 这几组当天全部 success 过、且新鲜度探针都到位(见 staleFreshnessProbes)→ 跳过本次。
 // 任一组当天还没成功(含失败/部分)→ 照常跑,直到跑出一次全绿。
 // btc_price 不列入:低频,失败不该阻断"当天必需组已全绿则跳过"的逻辑。
 // ice_cds 必须列入:ICE 端点只当日快照、不能回填,当天没抓到就永久丢,首触发失败须让后续触发补。
 // move 必须列入:Yahoo 日线断供期间只有 meta 当日快照,当天没记就永久缺一格(同 ice_cds)。
 const REQUIRED_JOBS = ['options', 'vrp_inputs', 'vx_term_structure', 'ice_cds', 'move'];
+
+/**
+ * 守卫放行跳过还要求数据**真到了上一交易日**,只看「当天 success 过」不够:数据源会晚发布。
+ * 2026-10-20 实测:美东 20:08 跑,Yahoo 长历史日线与 CBOE 都还没有 10-19 那根,两组照样报 success
+ * → 当天其余触发点全被跳过,面板停在上周五。
+ * 探针 = ETF 现货 + VIX(都是 vrp_inputs 写进 price_eod)+ VX1(vx_term_structure 写进 market_series,
+ * 它是另一条 CBOE 链路,ETF/VIX 到了不代表 VX 期货结算到了)。
+ * 节假日 lastClosedTradingDate 不认交易所假日 → 恒判滞后 → 当天每个触发点多跑一遍(几十秒、照常结束,接受)。
+ * VX 期货结算偶尔比 VIX 晚一天:那天同理多跑几遍,直到 VX1 到位。
+ */
+export function staleFreshnessProbes(db: Database, lastClosed = lastClosedTradingDate()): string[] {
+  const latest: [string, string | null][] = [
+    ...[...priceLegUnderlyings(), 'VIX'].map((u): [string, string | null] => [u, getLatestPriceDate(db, u)]),
+    ['VX1', getLatestMarketDate(db, 'VX1')],
+  ];
+
+  return latest.filter(([, d]) => (d ?? '') < lastClosed).map(([name]) => name);
+}
 
 // CLI 入口
 if (import.meta.main) {
@@ -222,9 +249,16 @@ if (import.meta.main) {
   migrate(db);
 
   const done = getTodaySucceededJobs(db);
-  if (REQUIRED_JOBS.every((j) => done.includes(j))) {
+  const stale = staleFreshnessProbes(db);
+  const allDone = REQUIRED_JOBS.every((j) => done.includes(j));
+  if (allDone && !stale.length) {
     console.log(`今天必需组已全部成功(${done.join(', ')}),跳过本次运行。`);
   } else {
+    // 滞后就说出是哪几条:首轮(还没跑过)本来就滞后,写出来也便于对照跑完有没有追上。
+    if (stale.length)
+      console.log(
+        `数据还没到 ${lastClosedTradingDate()}(${stale.join(', ')})${allDone ? ',必需组今天虽已成功过,再跑一次' : ''}。`,
+      );
     await runDailyJob({
       db,
       optionsUnderlyings: OPTIONS_UNDERLYINGS,
