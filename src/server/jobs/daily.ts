@@ -125,7 +125,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     });
   }
 
-  // ice_cds 分组:AI 巨头 + 甲骨文单名 CDS EOD 结算价(ICE 免费)。
+  // ice_cds 分组:AI 巨头 + 甲骨文 + CoreWeave + SpaceX 单名 CDS EOD 结算价(ICE 免费)。
   // 默认展示的 core 标的缺任一 → failed(数据源可能改 ticker),让当天后续触发重试并在状态板告警。
   if (opts.iceCdsUpdater) {
     await withJobRun(opts.db, 'ice_cds', async () => {

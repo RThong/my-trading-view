@@ -114,7 +114,7 @@ const buildJgb = async (): Promise<CurveBody> => {
 // Eris 的 FairCoupon 已是百分点 → 恒等 xform。
 const buildOis = (): CurveBody => buildFromDb(ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })));
 
-// AI 巨头 + 甲骨文 + CoreWeave 单名 CDS:读库原始价,xform 成约定 spread(bp)。"tenor" 复用为公司名。
+// AI 巨头 + 甲骨文 + CoreWeave + SpaceX 单名 CDS:读库原始价,xform 成约定 spread(bp)。"tenor" 复用为公司名。
 // 非真曲线(公司无序),但复用 CurveBody 走 TenorHistoryPanel 的时间序列视图(每名一条线)。
 // 票息按名不同(CoreWeave 500bp 档),故逐名给 xform。
 const buildAiCds = (): CurveBody =>
@@ -144,7 +144,7 @@ const LIVE_BUILDERS: Record<string, () => Promise<CurveBody>> = {
 // 读库的曲线每次直读、不缓存:库由 daily job(别的进程)写,进程内缓存看不到,反而会把新数据挡住。
 const DB_BUILDERS: Record<string, () => CurveBody> = {
   sofr_ois: buildOis,
-  ai_cds: buildAiCds, // AI 巨头 + 甲骨文 + CoreWeave 单名 CDS(ICE 结算价读时换算 spread bp)
+  ai_cds: buildAiCds, // AI 巨头 + 甲骨文 + CoreWeave + SpaceX 单名 CDS(ICE 结算价读时换算 spread bp)
 };
 
 /** 本次现拉失败的期限用上一份顶上,记入 `fallback`;上一份也没有的照旧 unavailable。 */

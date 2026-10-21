@@ -101,6 +101,8 @@ describe('cdsPriceToSpreadBp', () => {
   it('Apple 102.89 → ~35bp(报价 ~39bp)', () => expect(cdsPriceToSpreadBp(102.8879)).toBeCloseTo(35, 0));
   // 2026-10-15 ICE 结算价 83.0764;同日报道收盘 ~1038bp(盘中峰值 1194.5)
   it('CoreWeave 83.08 → ~1053bp', () => expect(cdsPriceToSpreadBp(83.0764, 500)).toBeCloseTo(1053, 0));
+  // 2026-10-20 ICE 结算价 94.7560;FT 同日报「创纪录 226bp」
+  it('SpaceX 94.76 → ~227bp', () => expect(cdsPriceToSpreadBp(94.756)).toBeCloseTo(226.6, 0));
   // annuity 4.7 线性近似在这里只有 ~1138:风险久期随违约强度缩短,困境区必须非线性
   it('困境区不被压低:价 70 → >1700bp', () => expect(cdsPriceToSpreadBp(70, 500)).toBeGreaterThan(1700));
   it('深困境区不被上界截断:价 42 → ~21960bp', () => expect(cdsPriceToSpreadBp(42, 500)).toBeCloseTo(21960, -1));

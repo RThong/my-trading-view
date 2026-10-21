@@ -62,7 +62,7 @@ const VIEW_DESC: Record<string, { title: string; desc: string }> = {
   },
   ai_cds: {
     title: 'AI CDS',
-    desc: '定义:AI 资本开支巨头 + 甲骨文 + 新云 CoreWeave 的 5Y 单名 CDS 利差(bp)时间走势。\n数据:ICE Clear Credit 免费 EOD 结算价,由合约价按标准 CDS 定价(回收率 40%、违约强度恒定)反解成约定 spread,约 ±10~15bp(CoreWeave 为 500bp 票息档)。\n利差越高 = 市场定价的违约风险越大;甲骨文因 AI 举债显著高于同类,是 AI 信用风险风向标。\nCoreWeave(默认不勾,~1000bp 量级会压扁其余几家)= 租算力给巨头、自己举债买卡的新云,信贷型脆弱的前线;2026-10-15 起才有数据。\n纵轴从 0 起(对齐常见 CDS 图):高度比例 = 真实幅度,不被自动缩放放大。',
+    desc: '定义:AI 资本开支巨头 + 甲骨文 + 新云 CoreWeave + SpaceX 的 5Y 单名 CDS 利差(bp)时间走势。\n数据:ICE Clear Credit 免费 EOD 结算价,由合约价按标准 CDS 定价(回收率 40%、违约强度恒定)反解成约定 spread,约 ±10~15bp(CoreWeave 为 500bp 票息档)。\n利差越高 = 市场定价的违约风险越大;甲骨文因 AI 举债显著高于同类,是 AI 信用风险风向标。\nCoreWeave(默认不勾,~1000bp 量级会压扁其余几家)= 租算力给巨头、自己举债买卡的新云,信贷型脆弱的前线;2026-10-15 起才有数据。\nSpaceX(默认不勾,~200bp 量级)= FT 报道 AI 对冲盘集中买 CDS 的七家之一;2026-10-20 起才有数据。\n纵轴从 0 起(对齐常见 CDS 图):高度比例 = 真实幅度,不被自动缩放放大。',
   },
 };
 

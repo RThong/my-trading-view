@@ -38,7 +38,7 @@ export const DEFAULT_TENORS: Record<string, string[]> = {
   real: ['5Y', '10Y', '30Y'],
   // JGB 没有差值 pane:2Y 是日本银行股的主变量(见「银行」那格),10Y 是长端锚。
   jgb: ['2Y', '10Y'],
-  // AI CDS:默认展示除 Broadcom/Dell/Intel 外的 7 家(这三条较次要,留 chip 按需勾)。
+  // AI CDS:默认展示 core 的 7 家;Broadcom/Dell/Intel 较次要、CoreWeave/SpaceX 是新挂的名,留 chip 按需勾。
   // 须与 rateCurves.ts AI_CDS 的 core 名单一致(core 缺失会让每日 job failed 告警)。
   ai_cds: ['Oracle', 'Microsoft', 'Alphabet', 'Amazon', 'Apple', 'Nvidia', 'Meta'],
 };

@@ -49,7 +49,7 @@ export const CREDIT_TERM: { tenor: string; series: string }[] = [
   { tenor: '15Y+', series: 'BAMLC8A0C15PY' },
 ];
 
-// AI 资本开支巨头 + 甲骨文 + 新云 CoreWeave 的单名 CDS(ICE Clear Credit 免费 EOD 结算价)。
+// AI 资本开支巨头 + 甲骨文 + 新云 CoreWeave + SpaceX 的单名 CDS(ICE Clear Credit 免费 EOD 结算价)。
 // ticker = ICE instrumentName 首段;name = 显示名(不依赖 ICE 里的 "Oracle Cop" 等错拼)。
 // 存库 series_id = ICE_CDS_{ticker}。顺序:焦点 Oracle 打头,其余按篮子排。
 // core = 前端默认展示的 7 家;缺任一即视为数据源异常(见 missingCoreCds)。
@@ -69,10 +69,13 @@ export const AI_CDS: { ticker: string; name: string; core?: boolean; coupon?: nu
   // 新云(租算力给巨头、自己举债买卡)= 信贷型脆弱的前线;2026-10-15 起才攒数。
   // 非 core:利差 ~1000bp 量级,默认勾选会把其余几家压成一条线。
   { ticker: 'COREWEI', name: 'CoreWeave', coupon: 500 },
+  // FT 2026-10-20(大摩数据):AI 对冲盘集中买的七家 CDS 之一,其余六家上面都有。2026-10-20 起才攒数。
+  // 非 core:新挂的名,缺失不该让 job failed;~227bp 低于甲骨文,不压扁别的线,但默认勾选须与 core 名单一致,故不默认勾。
+  { ticker: 'SPACEXP', name: 'SpaceX' },
 ];
 
 // 已抓到的 ticker 集合里,缺哪些 core 标的(→ 显示名)。空 = 默认篮子齐,job success;
-// 非空 = ICE 端点可能改了 ticker,让 job failed 告警(非 core 的 Broadcom/Dell/Intel/CoreWeave 缺失容忍)。
+// 非空 = ICE 端点可能改了 ticker,让 job failed 告警(非 core 的 Broadcom/Dell/Intel/CoreWeave/SpaceX 缺失容忍)。
 export const missingCoreCds = (gotTickers: Set<string>): string[] =>
   AI_CDS.filter((c) => c.core && !gotTickers.has(c.ticker)).map((c) => c.name);
 
