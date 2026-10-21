@@ -304,8 +304,9 @@ export function readDbBacked(
 
   // BTC:现货蜡烛 + 1Y 滚动夏普。窗口 365 而非 252 —— crypto 每天都有数据点,
   // 「一年」就是 365 个点;年化同走 √365(与 VRP 的 BTC 腿同口径,见 analytics/vrp)。
+  // 蜡烛带上当天盘中那根(看盘要);夏普只用已收盘的,盘中那根的收益只有几小时,混进去是偏差。
   const btcBars = getPriceBars(db, 'BTC');
-  const btcClose = btcBars.map((b) => ({ date: b.date, value: b.close }));
+  const btcClose = getPriceBars(db, 'BTC', { closedOnly: true }).map((b) => ({ date: b.date, value: b.close }));
   // 这里**不走 put**(与 qqq 的写法刻意不同):BTC 点数是它们的两倍多,
   // 把 close 再塞一份进 series 是 ~196KB 的纯冗余 —— 蜡烛只读 ohlc,那份 series 唯一作用是判存在性。
   // 存在性直接由 ohlc 判,语义不变、payload 省掉。

@@ -17,10 +17,10 @@ export const vrpRoute = new Hono().get('/:underlying', (c) => {
   try {
     const iv = getMarketSeries(db, r.iv); // 隐含腿:波动率指数
     const rv = realizedVol(
-      getPriceBars(db, r.spot).map((b) => ({ date: b.date, value: b.close })),
+      getPriceBars(db, r.spot, { closedOnly: true }).map((b) => ({ date: b.date, value: b.close })),
       r.window,
       r.periodsPerYear,
-    ); // RV 腿:标的现货 close
+    ); // RV 腿:标的现货 close,只用已收盘的 bar(BTC 当天盘中那根会把短窗 RV 拉低)
     return c.json(computeVrp(iv, rv));
   } finally {
     db.close();

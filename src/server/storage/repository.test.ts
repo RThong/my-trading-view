@@ -10,6 +10,7 @@ import {
   getSecLag,
   insertSecFundamentals,
   putSecProcessedFiled,
+  getPriceBars,
 } from './repository';
 
 function freshDb(): Database {
@@ -185,5 +186,23 @@ describe('getSecLag:本地水位取 MAX(数据 filed, processed_filed)', () => {
 
     expect(getSecLag(db).map((l) => l.ticker)).toEqual(['NVDA']);
     db.close();
+  });
+});
+
+describe('repository: price_eod closedOnly', () => {
+  test('只留抓取时已过完那天的 bar(按 fetched_at 判,与今天是几号无关)', () => {
+    const db = freshDb();
+    const put = (d: string, f: string) =>
+      db.run(
+        `INSERT INTO price_eod (underlying, obs_date, open, high, low, close, source, fetched_at)
+         VALUES ('BTC', ?, 1, 1, 1, 1, 'bitstamp', ?)`,
+        [d, f],
+      );
+    put('2026-10-19', '2026-10-20T02:00:30.036Z'); // 次日抓 = 已收盘
+    put('2026-10-20', '2026-10-21T02:00:28.250Z');
+    put('2026-10-21', '2026-10-21T02:00:28.250Z'); // 当天抓 = 盘中
+    const dates = (closedOnly: boolean) => getPriceBars(db, 'BTC', { closedOnly }).map((b) => b.date);
+    expect(dates(false)).toEqual(['2026-10-19', '2026-10-20', '2026-10-21']);
+    expect(dates(true)).toEqual(['2026-10-19', '2026-10-20']);
   });
 });
