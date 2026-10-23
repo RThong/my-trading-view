@@ -42,6 +42,20 @@ describe('computeBeiCurve(BEI = 名义 − TIPS 实际)', () => {
     expect(series['5Y'][1].value).toBeCloseTo(2.0, 10);
   });
 
+  it('两腿末日不同 → 截到共同末日,不用旧值前向填充出末端错点', () => {
+    const { series } = computeBeiCurve([
+      {
+        tenor: '10Y',
+        nominal: [
+          { date: '2026-10-21', value: 4.0 },
+          { date: '2026-10-22', value: 3.9 }, // 名义先发,实际还停在 10-21
+        ],
+        real: [{ date: '2026-10-21', value: 2.0 }],
+      },
+    ]);
+    expect(series['10Y']).toEqual([{ date: '2026-10-21', value: 2.0 }]);
+  });
+
   it('某腿缺(null 或空)→ 该档进 unavailable,不入 series', () => {
     const { series, unavailable } = computeBeiCurve([
       { tenor: '5Y', nominal: [{ date: '2018-01-02', value: 4.0 }], real: [{ date: '2018-01-02', value: 2.0 }] },

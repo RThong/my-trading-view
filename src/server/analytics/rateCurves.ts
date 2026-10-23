@@ -115,19 +115,11 @@ export const cdsPriceToSpreadBp = (price: number, coupon = 100): number => {
   return (lo + hi) / 2;
 };
 
-// 通胀预期曲线:BEI 盈亏平衡通胀 = 名义国债(DGS) − 同期限 TIPS 实际收益(DFII)= 市场为通胀定的价
+// 通胀预期曲线:BEI 盈亏平衡通胀 = 名义国债 − 同期限 TIPS 实际收益 = 市场为通胀定的价
 // (前瞻,领先 CPI)。FRED 只现成发布 5Y/10Y breakeven,故各档两腿自减现算,拼出完整 5–30Y 曲线。
 // 值为百分点,可转负(通缩预期),0 轴为通胀/通缩分界。短端止于 5Y(TIPS 无流动短端)。
-export const BEI_TENORS: { tenor: string; nominal: string; real: string }[] = [
-  { tenor: '5Y', nominal: 'DGS5', real: 'DFII5' },
-  { tenor: '7Y', nominal: 'DGS7', real: 'DFII7' },
-  { tenor: '10Y', nominal: 'DGS10', real: 'DFII10' },
-  { tenor: '20Y', nominal: 'DGS20', real: 'DFII20' },
-  { tenor: '30Y', nominal: 'DGS30', real: 'DFII30' },
-];
-
 // 各档 BEI = 名义 − TIPS 实际(subtractAligned 按日前向填充对齐)。
-// 某腿缺(null/空)或相减后无重叠日 → 该档进 unavailable,不入 series。I/O(拉 FRED)在调用方。
+// 某腿缺(null/空)或相减后无重叠日 → 该档进 unavailable,不入 series。I/O(拉财政部两张曲线)在调用方。
 export function computeBeiCurve(legs: { tenor: string; nominal: Point[] | null; real: Point[] | null }[]): {
   tenors: string[];
   series: Record<string, Point[]>;
@@ -137,7 +129,9 @@ export function computeBeiCurve(legs: { tenor: string; nominal: Point[] | null; 
   const unavailable: string[] = [];
 
   for (const { tenor, nominal, real } of legs) {
-    const bei = nominal?.length && real?.length ? subtractAligned([nominal, real]) : [];
+    // 两腿末日不同(如某天一张表先发)时,多出的末端会被前向填充成「新名义 − 旧实际」的错点 → 截到两腿共同末日
+    const end = [nominal?.at(-1)?.date ?? '', real?.at(-1)?.date ?? ''].sort()[0];
+    const bei = nominal?.length && real?.length ? subtractAligned([nominal, real]).filter((p) => p.date <= end) : [];
     if (bei.length) series[tenor] = bei;
     else unavailable.push(tenor);
   }

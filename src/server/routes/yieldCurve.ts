@@ -10,13 +10,12 @@ import {
   ERIS_OIS_TENORS,
   CREDIT_RATING,
   CREDIT_TERM,
-  BEI_TENORS,
   computeBeiCurve,
   AI_CDS,
   cdsPriceToSpreadBp,
 } from '../analytics/rateCurves';
 import { fetchJgbCurve } from '../fetchers/mofJgb';
-import { fetchTreasuryCurve, UST_TENORS } from '../fetchers/usTreasuryPar';
+import { fetchTreasuryCurve, fetchTreasuryRealCurve, UST_TENORS, UST_REAL_TENORS } from '../fetchers/usTreasuryPar';
 
 type CurveBody = {
   tenors: string[];
@@ -47,18 +46,25 @@ async function buildFredCurve(pairs: { tenor: string; series: string }[]): Promi
   return { tenors: pairs.map((p) => p.tenor), series, unavailable };
 }
 
+// 财政部现拉失败 → 记日志并当作全部期限无数据(空对象)。
+const warnUstFailed = (e: unknown): Record<string, Point[]> => {
+  console.warn(`[yield-curve] 财政部曲线现拉失败: ${(e as Error).message}`);
+  return {};
+};
+
 /**
- * 美债收益曲线:美国财政部每日 par yield 直发源(当天出,比 FRED DGS 快 1-2 天;FRED 本就搬这份)。
- * 按年拉 HISTORY_START_DATE 的年份 → 今年并行;任一年失败整体抛(由 swrCache 的 load 兜成「全缺 + 沿用上次」)。某档全程无数据 → unavailable。
+ * 美债收益曲线(名义 / TIPS 实际):美国财政部每日曲线直发源(当天出,比 FRED DGS / DFII 快 1-2 天;FRED 本就搬这份)。
+ * 按年拉 HISTORY_START_DATE 的年份 → 今年并行;任一年失败整体抛,这里兜成「全部期限 unavailable」(再由 fillFromPrev 沿用上次)。
+ * 在这里兜而不交给 swrCache 的 load:那边冷启动无快照时只能给出空 tenors,这里知道固定档位。
  * 读时现拉、不落库;服务端缓存见下方 liveCaches(swrCache)。
  */
-async function buildTreasury(): Promise<CurveBody> {
-  const series = await fetchTreasuryCurve();
+async function buildUst(fetchCurve: () => Promise<Record<string, Point[]>>, tenors: string[]): Promise<CurveBody> {
+  const series = await fetchCurve().catch(warnUstFailed);
 
-  const avail = Object.fromEntries(UST_TENORS.flatMap((t) => (series[t]?.length ? [[t, series[t]]] : [])));
-  const unavailable = UST_TENORS.filter((t) => !series[t]?.length);
+  const avail = Object.fromEntries(tenors.flatMap((t) => (series[t]?.length ? [[t, series[t]]] : [])));
+  const unavailable = tenors.filter((t) => !series[t]?.length);
 
-  return { tenors: UST_TENORS, series: avail, unavailable };
+  return { tenors, series: avail, unavailable };
 }
 
 // 从 market_series 读一组 (label→symbol),按 xform 转值;缺行的 label 进 unavailable。
@@ -88,20 +94,17 @@ function buildFromDb(pairs: { label: string; symbol: string; xform?: (v: number)
   }
 }
 
-// BEI 通胀曲线:各档拉 名义(DGS)+ TIPS 实际(DFII),现算 名义 − 实际(见 computeBeiCurve)。
-// 单腿失败 → null,由 computeBeiCurve 归入 unavailable(FRED 无现成多档 breakeven,故自拼)。
+// BEI 通胀曲线:各档 财政部名义 − 财政部 TIPS 实际,现算(见 computeBeiCurve)。
+// 两腿同源同日发布,日期天然对齐;任一腿整体抛 → 该腿为空,computeBeiCurve 把五档都归入 unavailable。
 async function buildBei(): Promise<CurveBody> {
-  const fred = createFredFetcher({ apiKey: process.env.FRED_API_KEY ?? '' });
-  const leg = (id: string): Promise<Point[] | null> =>
-    fred
-      .fetchSeries(id, HISTORY_START_DATE)
-      .then((rows) => rows.map((r) => ({ date: r.obsDate, value: r.value })))
-      .catch(() => null);
+  const [nominal, real] = await Promise.all([
+    fetchTreasuryCurve().catch(warnUstFailed),
+    fetchTreasuryRealCurve().catch(warnUstFailed),
+  ]);
 
-  const legs = await Promise.all(
-    BEI_TENORS.map(async (t) => ({ tenor: t.tenor, nominal: await leg(t.nominal), real: await leg(t.real) })),
+  return computeBeiCurve(
+    UST_REAL_TENORS.map((tenor) => ({ tenor, nominal: nominal[tenor] ?? null, real: real[tenor] ?? null })),
   );
-  return computeBeiCurve(legs);
 }
 
 // JGB 收益曲线(MOF 官方 CSV,2018 起,15 档含 2Y)。缺档进 unavailable。
@@ -129,15 +132,15 @@ const buildAiCds = (): CurveBody =>
 // 现拉外部源的曲线(FRED / 财政部 / MOF,冷拉 1~6s)。走 swrCache:有旧值先回、过期后台刷新,
 // 完整结果落盘 → 服务端重启后也是先回盘上那份(见 swrCache)。
 const LIVE_BUILDERS: Record<string, () => Promise<CurveBody>> = {
-  treasury: buildTreasury, // 默认国债(财政部直发)
+  treasury: () => buildUst(fetchTreasuryCurve, UST_TENORS), // 默认国债(财政部直发)
   credit_rating: () => buildFredCurve(CREDIT_RATING),
   credit_term: () => buildFredCurve(CREDIT_TERM),
-  bei: buildBei, // 通胀预期(BEI = DGS − DFII 现算)
-  // 实际收益率曲线(TIPS)。DFII 各档本就是 BEI 的减数腿、buildBei 每次都在拉,
-  // 这里只是把它单独暴露出来 —— 与 bei 同档位,便于 名义 / 实际 / 通胀 三条对读。
+  bei: buildBei, // 通胀预期(BEI = 财政部名义 − 财政部实际 现算)
+  // 实际收益率曲线(TIPS,财政部直发;= FRED DFII 同值,但 DFII 经 H.15 固定晚一个工作日,故不用)。
+  // 与 bei 同档位,便于 名义 / 实际 / 通胀 三条对读。
   // ⚠️ ACM / Kim-Wright 期限溢价模型只发到 10Y,30Y 段的成分拆解只能靠这条实际收益率
-  //(注意方向:面板上 real 是 DFII 直读,反倒是 bei 由 DGS − DFII 现算 —— 别写成「名义 − BEI」)。
-  real: () => buildFredCurve(BEI_TENORS.map((t) => ({ tenor: t.tenor, series: t.real }))),
+  //(注意方向:面板上 real 是直读,反倒是 bei 由 名义 − 实际 现算 —— 别写成「名义 − BEI」)。
+  real: () => buildUst(fetchTreasuryRealCurve, UST_REAL_TENORS),
   jgb: buildJgb, // 日本国债收益曲线(MOF)
 };
 

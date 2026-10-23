@@ -28,7 +28,7 @@ well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local pag
   - moomoo OpenD (local WebSocket) — stock/ETF/index options (options only; spot prices come from Yahoo)
   - [Deribit](https://docs.deribit.com) public REST — crypto options + DVOL
   - CBOE public CSV — VIX/VXN/GVZ/OVX, COR1M/VIXEQ, VX1/VX3 futures, RXM (Risk Reversal) + SPX
-  - [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) — rates/TIPS · credit spread · net liquidity · repo · inflation (BEI · 5y5y forward · sticky CPI · wages) · Kim-Wright term premium (needs a free API key)
+  - [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) — rates · credit spread · net liquidity · repo · inflation (5y5y forward · sticky CPI · wages) · Kim-Wright term premium (needs a free API key)
   - NY Fed — HLW natural rate r\* (`current estimates` xlsx, quarterly) · ACM 10Y term premium (monthly CSV, the independent cross-check on Kim-Wright); no key
   - Yahoo (`yahoo-finance2` v4) — **ETF spot OHLC** (SPY/QQQ/GLD/USO/TLT/NOBL: split-adjusted, *not* dividend-adjusted — the same number TradingView shows by default; full history back to each fund's listing, re-fetched in full every run so a future split can't leave two adjustment bases stitched together) · DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY · S&P 500 and its equal-weight index (`^GSPC` / `^SPXEW`, the concentration ratio)
   - Eris — SOFR OIS par curve · MOF + JPX — JGB yields / JGB VIX · CFTC — JPY net positioning · Shiller — CAPE · CNN — Fear & Greed
@@ -41,7 +41,7 @@ well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local pag
   - [DART](https://opendart.fss.or.kr) (Korea FSS) — the *only* source for SK Hynix's four line items: its SEC side has no financial XBRL, and its 6-K only carries revenue / operating profit, so gross margin and FCF can't be derived from either; needs `DART_API_KEY`
   - [Computable GPU Index](https://api.getcomputable.com) ([collector + method, Apache-2.0](https://github.com/getcomputable/gpu-index)) — H100/H200/B200/B300 cloud rental price indices, key-free public REST. **List-price aggregate, not transaction prices**; rolling window of only a few weeks, and CoreWeave sits in three of the panels (so not independent of CRWV). The method is re-minted every few weeks (panel seats, vote smoothing); each print carries its `methodology_id`. CC BY-NC 4.0
   - [Bitstamp](https://www.bitstamp.net/api) public REST — BTC spot daily OHLC (spot, native UTC midnight cut, gap-free from 2012; Deribit's daily bars cut at 08:00 UTC and Yahoo's BTC-USD only starts 2014-09)
-  - [US Treasury](https://home.treasury.gov/interest-rates-data-csv-archive) daily par yield CSV — the par curve FRED doesn't publish as one series
+  - [US Treasury](https://home.treasury.gov/interest-rates-data-csv-archive) daily par yield + TIPS real yield CSV — nominal / real / BEI curves, published same day (FRED's DGS / DFII lag one business day)
 - **Scheduling:** macOS `launchd`, three agents — **daily** (options · VRP inputs · VX term structure · Eris OIS · ICE CDS · MOVE), **crypto** (Deribit options · BTC spot · Computable GPU Index), and **SEC** (quarterly fundamentals). Each group records into `job_run`; a run whose required groups are already green for the day is skipped, so a single failing optional source can't make every trigger point re-run the whole job.
 
 The end-to-end type safety from server routes to React components flows through
@@ -188,7 +188,7 @@ several horizontal tabs:
 | 利率 Rates | 收益曲线 · 期限走势 (+ 10Y−1Y / 30Y−10Y spread panes) · SOFR OIS · OIS 走势 · 利率波动率 (MOVE) · 实际收益率 (TIPS 曲线) · 实际走势 · 长端分解 (5y5y 通胀远期 + 期限溢价(Kim-Wright vs NY Fed ACM 两模型并排) + A vs L 缺口(KW 预期短端 vs HLW r*+5y5y) + HLW r*) | FRED / Eris / NY Fed / Yahoo |
 | 日本 Japan | 日元 (USD-JPY + CFTC 持仓) · JGB 收益曲线 · 期限走势 · 日债波动率 (JGB VIX) · 产出缺口 (需給ギャップ + 潜在成長率及四项贡献度) · 长端分解 (期限溢价 + 预期短端 + 自然利率 r\* 及 95% 区间，**r\* 是实际口径、与名义两条分格**) | Yahoo / CFTC / MOF / JPX / BOJ / Nakajima |
 | AI | 算力价格 (H100/H200/B200/B300 GPU 租赁价指数) · 买方合计 (AI 链 capex/FCF 判据线) · AI CDS (AI 巨头 + Oracle 单名 CDS，价近似 spread bp) · 产业链 (15 家公司财务明细) | Computable / ICE / SEC / TWSE |
-| 通胀 Inflation | 通胀预期 (BEI) · 通胀走势 · 通胀来源 (RBOB YoY 等) | FRED / Yahoo |
+| 通胀 Inflation | 通胀预期 (BEI) · 通胀走势 · 通胀来源 (RBOB YoY 等) | US Treasury (BEI) / FRED / Yahoo |
 | 估值 Valuation | Shiller CAPE regime | Shiller |
 | 特色指标 Featured | 攻防 — NOBL/QQQ offense-defense via ZigZag · 集中度 — S&P 500 ÷ S&P 500 Equal Weight (`^GSPC` / `^SPXEW`, realized cap concentration; read direction, not level — structural uptrend since 2023) paired with VIXEQ / VIX (implied concentration / dispersion, ≈ 1/√avg correlation, with percentile bands) | Yahoo / CBOE |
 
