@@ -21,7 +21,7 @@
   "dependencies": {
     "@radix-ui/react-popover": "^1.1.19",
     "fflate": "^0.8.3",
-    "hono": "^4.12.30",
+    "hono": "^4.13.13",
     "lightweight-charts": "^5.2.0",
     "lucide-react": "^1.25.0",
     "moomoo-api": "^10.9.6908",
@@ -42,6 +42,6 @@
     "concurrently": "^10.0.3",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.1.5"
+    "vite": "^8.3.4"
   }
 }

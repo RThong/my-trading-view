@@ -1,2 +1,4 @@
 [install]
 exact = false
+# 只装发布满 3 天的版本(单位:秒):npm 投毒版通常几小时到一两天内被发现下架,冷却期挡掉这类供应链攻击
+minimumReleaseAge = 259200
