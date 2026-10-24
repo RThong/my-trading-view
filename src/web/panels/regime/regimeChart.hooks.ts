@@ -7,6 +7,7 @@ import { percentile, percentileRank } from '../../../shared/stats';
 import type { SeriesKey } from '../../../shared/regimeSeries';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../chart/paneChart.types';
+import { rollMismatchDates, type RollMismatchKind } from '../../lib/oilRoll';
 import {
   KIND_RENDER,
   SEC_BUYER_FCF_KEY,
@@ -35,6 +36,10 @@ const PCTL_HI = 95;
 const BG_RED = 'rgba(239,68,68,0.45)';
 const BG_GREEN = 'rgba(34,197,94,0.45)';
 const BG_NONE = 'rgba(0,0,0,0)';
+// 期货错月背景:中性灰蓝,刻意不与红 / 绿(风险 / 机会)同色系;画在分位带下层。
+// 刻意调淡:错月偏差平时只有线本身波动的零头,这是「在这里算涨跌 / 市场紧时多看一眼」的提醒,
+// 不是「这段数据不能用」—— 0.28 时全历史视图满屏条纹,读起来像大半数据都坏了。
+const BG_ROLL = 'rgba(148,163,184,0.14)';
 // 符号柱状图(期限结构):正=backwardation 绿、负=contango 红。
 const SIGNED_UP = '#22c55e';
 const SIGNED_DOWN = '#ef4444';
@@ -74,6 +79,15 @@ const BREADTH_CHECK =
 // 别看到这条注释就以为已经全覆盖了。
 const BG_LEGEND =
   '背景带:红 = 已在风险那一侧的极端(超出 P5/P95),绿 = 在相反那一侧的极端。方向由本格的风险端决定,不是「红涨绿跌」。';
+// 错月背景的读法(两种 kind 的错月时段正好相反,各写一句)。依据与量级见 lib/oilRoll。
+const ROLL_NOTE: Record<RollMismatchKind, string> = {
+  crack:
+    '灰蓝背景 = 期货错月:每月 WTI 到期(25 号前第 3 个营业日)之后到月底,WTI 已换下月合约,柴油 / 汽油还是本月合约。' +
+    '这段读数多出一个产品近两月价差(平时 $0.3~1/桶,市场紧时 $8+),看前后同月段更可靠。',
+  brentWti:
+    '灰蓝背景 = 期货错月:每月月初到 WTI 到期(25 号前第 3 个营业日)这段,Brent 已是下月合约、WTI 还是本月合约,' +
+    '差出一个 WTI 近两月价差(平时 $0.2~1/桶,紧时可达 $4+);WTI 到期后到月底两腿同月,那段最可比。',
+};
 // 四格季节 z 共用。**±2 在这个 z 上不是教科书里的 2.5% 单侧门槛**,实测各格 |z|>2 的比例远高于此。
 // 但更要紧的是**超限几乎全压在单侧**,且**两类单侧的稳健性不同**:
 //  · 库存两格(只往下)与出口(只往上)在全期 / 2022 起 / 近两年三个窗口里方向一致 → 稳。
@@ -216,6 +230,8 @@ type PaneSpec = {
   overlays?: { key: SeriesKey; title: string; color: string; step?: boolean; hidden?: boolean }[];
   /** 事件竖线:序列里每个点的日期画一根满高细柱(发布日这类「哪天发生」的标记,值不画)。 */
   events?: { key: SeriesKey; title: string; color: string }[];
+  /** 两条期货腿相减的格子:灰蓝背景标出合约月份对不上的日子(见 lib/oilRoll)。 */
+  rollMismatch?: RollMismatchKind;
 };
 
 type DimConfig = { panes: PaneSpec[] };
@@ -973,6 +989,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
         color: '#38bdf8',
         band: { lo: 1.5, hi: 10 },
         clampVisibleTo: [-5, 15],
+        rollMismatch: 'brentWti',
         desc: [
           '定义:国际海运原油(Brent)− 美国内陆原油(WTI),$/桶。看「紧张在哪、桶往哪流」。',
           '走阔 = 国际紧,美国相对绝缘。',
@@ -981,6 +998,8 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
           '',
           CLAMP_NOTE('−5~15', '2020-04 的负油价把这条打到 63,不夹的话常态带 1.5~10 在图上完全分辨不出。'),
           '⚠️ 地缘期会反过来:买家转订美国轻质原油,反而把 WTI 顶到高于 Brent。转负未必是美国需求问题。',
+          '',
+          ROLL_NOTE.brentWti,
         ].join('\n'),
       },
       {
@@ -989,6 +1008,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
         title: '柴油裂解 (ULSD×42 − WTI, $/桶) · 外称 取暖油 / Heating Oil / HO crack',
         color: '#f97316',
         percentile: { riskTail: 'high' },
+        rollMismatch: 'crack',
         desc: [
           '定义:炼一桶原油出柴油的毛利(ULSD×42 − WTI,$/桶)。看下游 / 实体经济。',
           '高 = 产品端比原油紧,运输 / 工业 / 农业的燃料成本在涨;低 = 产品端偏松,实体在转冷。',
@@ -1018,6 +1038,8 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
           '⚠️ 名称对上不等于数值对得上:原油腿(WTI 还是 Brent)、合约月份、连续合约的展期规则得先对齐,才能逐日比。',
           '⚠️ 也别反推成「柴油和取暖油是同一种油」—— 两者同属 distillate fuel oil(馏分燃料油),馏分切口与物性相近,',
           '但最终用途、税务(取暖 / 非道路用染红免燃油税)与部分规格不同。ULSD 是给这一族产品当定价基准的,不是说它们本身是一个东西。',
+          '',
+          ROLL_NOTE.crack,
         ].join('\n'),
       },
       {
@@ -1029,6 +1051,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
         // (柴油同口径只有 49%)—— 夏季配方切换让这条例行走高,染红的是季节不是风险,
         // 那种告警每年都响一遍,响了等于没响。P5/P95 参考线与分位徽标照留。
         percentile: {},
+        rollMismatch: 'crack',
         desc: [
           '定义:炼一桶原油出汽油的毛利(RBOB×42 − WTI,$/桶)。柴油那格的配对腿。',
           '**两条一起读才分得清「炼厂整体紧」还是「某个产品紧」**:同涨 = 炼能本身是瓶颈;',
@@ -1039,6 +1062,8 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
           '⚠️ **本格不染背景带,和同 tab 另外两格不同** —— 季节性太强:实测冲破 P95 的日子里 93% 在 5~8 月',
           '(柴油同口径只有 49%)。夏季换配方本来就会把它顶上去,染红只会教人把季节当风险。',
           '要判「这次夏天是不是真的不一样」,看同 tab 的汽油库存季节 z 是否同向 —— 那条已经扣掉了季节。',
+          '',
+          ROLL_NOTE.crack,
         ].join('\n'),
       },
       {
@@ -1047,6 +1072,7 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
         title: '3-2-1 裂解 ((2×RBOB + ULSD)×42/3 − WTI, $/桶)',
         color: '#a78bfa',
         percentile: { riskTail: 'high' },
+        rollMismatch: 'crack',
         desc: [
           '定义:新闻和卖方报告里默认的那个「炼厂利润」—— 3 桶原油炼出 2 桶汽油 + 1 桶馏分油的加权毛利,$/桶。',
           '代数上等于 (2×汽油裂解 + 柴油裂解) / 3,所以它**不带新信息**,是上面两格的加权平均。',
@@ -1056,6 +1082,8 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
           '',
           '⚠️ 权重是固定的 2:1,不随实际产出结构变化;美国炼厂的真实收率各厂各异。',
           '⚠️ 判方向仍看上面两条单品线 —— 加权平均会把「只有柴油紧」这种结构信息平均掉。',
+          '',
+          ROLL_NOTE.crack,
         ].join('\n'),
       },
     ],
@@ -2427,7 +2455,30 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
           .map((r) => ({ time: r.date, value: 1, color: e.color })),
         priceScaleId: `ev-${e.key}`,
       }));
-    if (!p.percentile) return [...eventSpecs, lineSpec, ...overlaySpecs];
+    // 错月背景:按原始日频逐日判定(同分位带,与显示 interval 无关);最先建 → 在最底层,分位红 / 绿压在它上面。
+    const mismatch =
+      p.rollMismatch &&
+      rollMismatchDates(
+        rows.map((r) => r.date),
+        p.rollMismatch,
+      );
+    const rollSpecs: HistoSpec[] = mismatch
+      ? [
+          {
+            key: `${key}-roll`,
+            pane,
+            kind: 'histogram',
+            title: '',
+            data: rows.map((r) =>
+              mismatch.has(r.date)
+                ? { time: r.date, value: 1, color: BG_ROLL }
+                : { time: r.date, value: 0, color: BG_NONE },
+            ),
+            priceScaleId: `roll-${key}`,
+          },
+        ]
+      : [];
+    if (!p.percentile) return [...rollSpecs, ...eventSpecs, lineSpec, ...overlaySpecs];
 
     // 分位:P5/P95 参考线用原始日频算(与显示 interval 无关);极端期画满高背景带。
     // since 给了则只用该子窗口算阈值(线仍画全部 rows);阈值再铺回整条线。
@@ -2446,7 +2497,7 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
       ];
     const risk = p.percentile.riskTail;
     // 背景带 = 风险/机会信号,需已知风险端;无 riskTail(如 10Y 收益率,高低方向不单一)只留 P5/P95 线,不染背景。
-    if (risk === undefined) return [...eventSpecs, lineSpec, ...overlaySpecs];
+    if (risk === undefined) return [...rollSpecs, ...eventSpecs, lineSpec, ...overlaySpecs];
     // 背景带按原始日频逐日判定极端(不用聚合点),保证与显示 interval 无关。
     const bgData: HistoPoint[] = rows.map((r) => {
       if (r.value < lo) return { time: r.date, value: 1, color: risk === 'low' ? BG_RED : BG_GREEN };
@@ -2461,7 +2512,7 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
       data: bgData,
       priceScaleId: `bg-${key}`,
     };
-    return [...eventSpecs, bgSpec, lineSpec, ...overlaySpecs]; // bg 先建 → 画在线的下层
+    return [...rollSpecs, ...eventSpecs, bgSpec, lineSpec, ...overlaySpecs]; // bg 先建 → 画在线的下层
   });
 }
 
