@@ -368,6 +368,17 @@ test('oilCracks:三条裂解的数学(×42、权重 2:1、缺腿返回 undefined
   expect(oilCracks({ wti, diesel, rbob: null }).dieselCrack).toBeDefined(); // 只丢受影响的那条
 });
 
+test('subtractAt:7 天都有值的一腿(IORB)不把周末 / 未来日期带进来,锚在另一腿(SOFR)的日子上', () => {
+  // IORB 是 FRED Daily, 7-Day:周末与未来几天都有值;SOFR 只有营业日
+  const iorb = ['2026-10-22', '2026-10-23', '2026-10-24', '2026-10-25', '2026-10-26'].map((date) => ({
+    date,
+    value: 3.9,
+  }));
+  const sofr = [{ date: '2026-10-22', value: 3.9 }];
+
+  expect(subtractAt(iorb, sofr)).toEqual([{ date: '2026-10-22', value: 0 }]);
+});
+
 test('oilCracks:只取两腿都有的日子,不把产品腿多出的那天配上昨天的原油', () => {
   // 2023-11-23 感恩节:HO / RB 有行、CL 无 —— 前向填充会造出「当天柴油 − 昨天原油」的假点
   const wti = seq([60, 61], 1); // 01-01、01-02

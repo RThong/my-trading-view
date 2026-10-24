@@ -429,7 +429,7 @@ function readSecSeries(db: Database): {
 /**
  * 宏观 / regime 指标:现拉外部源(零存储,见 spec),并行 + 优雅降级 + 内存 TTL 缓存。
  * 单源失败(FRED key 缺 / CBOE 符号 404 / CNN 反爬)→ 归入 unavailable,其余照常返回,不整体 500。
- * 净流动性 / 回购利差为读时派生(前向填充对齐后线性组合)。
+ * 净流动性 / 回购利差为读时派生(净流动性锚在周三、回购利差锚在 SOFR 营业日,见各自注释)。
  */
 export const regimeRoute = new Hono().get('/', async (c) => {
   const { value: cache, refreshing, partial } = await regimeCache.get();
@@ -765,7 +765,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   put('vixCotAm', vixCot?.assetMgr);
   put('vixCotLm', vixCot?.levMoney);
   put('dgs10', dgs10?.length ? dgs10 : undefined); // 10Y 国债(财政部直发,利率波动率 pane)
-  put('usjp2y', dgs2?.length && jgb2y?.length ? subtractAligned([dgs2, jgb2y]) : undefined); // 美日 2Y 利差 = UST2Y − JGB2Y
+  // 美日 2Y 利差 = UST2Y − JGB2Y。**有意用并集前向填充**(见 analytics/regime 文件头):两国节假日错开时
+  // 休市那边利率确实没变,沿用旧值是对的;交集会删掉约一成真实交易日。代价:MOF 次日早上才发,最新一天常是旧 JGB。
+  put('usjp2y', dgs2?.length && jgb2y?.length ? subtractAligned([dgs2, jgb2y]) : undefined);
   // KW 预期腿 = 拟合 10Y − 期限溢价 = 未来 10 年预期短端利率的平均。
   // 用 subtractAt(inner join)而非 subtractAligned:这是同期恒等式,不是水位组合 —— 缺日就该跳过,
   // 不该配出「昨天的拟合收益率 − 今天的溢价」。两腿当前日历一致(见 subtractAt 的注释),
@@ -882,7 +884,10 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   );
   // 对外统一十亿美元:百万美元的七位数在价格轴上读不出来,且与逆回购同单位才能直接比。
   put('reserves', raw.reserves && scale(raw.reserves, 0.001));
-  put('repoStress', raw.iorb && raw.sofr ? subtractAligned([raw.iorb, raw.sofr]) : undefined);
+  // 交集相减,锚在 SOFR 的营业日:IORB 是 FRED「Daily, 7-Day」—— 连周末都有,还会提前挂出未来几天
+  // (2026-10-24 已挂到 10-26)。并集前向填充会造出约 550 个周末点 + 未来日期点(都用旧 SOFR),
+  // 塞进时间轴还把周五的值在分位里算三遍。IORB 天天有值,交集即 SOFR 的日期,不丢真实观测。
+  put('repoStress', raw.iorb && raw.sofr ? subtractAt(raw.iorb, raw.sofr) : undefined);
   // RXM(Cboe 风险逆转指数:买 25Δ call / 卖 25Δ put 滚动策略)/ SPX:该策略相对 SPX 的累计表现比。
   put('rxmSpx', raw.rxm && raw.spx ? divideAligned(raw.rxm, raw.spx) : undefined);
 
