@@ -27,12 +27,13 @@ function padWeekdaysTo25(month: string, last: string): string[] {
  * 规则:锚 = 当月 ≤25 号的最后一个交易日;到期 = 锚往前数 3 个交易日。
  */
 export function wtiExpiryByMonth(dates: string[]): Map<string, string> {
-  const months = [...new Set(dates.map((d) => d.slice(0, 7)))];
   const lastDate = dates.at(-1) ?? '';
+  // 先按月分组一次(图表每次重渲染都会调,别每个月都重扫全部日期)
+  const byMonth = Map.groupBy(dates, (d) => d.slice(0, 7));
 
   return new Map(
-    months.flatMap((m) => {
-      const known = dates.filter((d) => d.startsWith(m) && d <= `${m}-25`);
+    [...byMonth].flatMap(([m, days]) => {
+      const known = days.filter((d) => d <= `${m}-25`);
       // 只在整份数据还没走到本月 25 号时补:已走过的月份若也补,会把圣诞这类休市日当工作日塞进去
       const pad = lastDate < `${m}-25` && known.length ? padWeekdaysTo25(m, lastDate) : [];
       const expiry = [...known, ...pad].at(-4);

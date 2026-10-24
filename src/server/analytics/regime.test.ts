@@ -368,6 +368,14 @@ test('oilCracks:三条裂解的数学(×42、权重 2:1、缺腿返回 undefined
   expect(oilCracks({ wti, diesel, rbob: null }).dieselCrack).toBeDefined(); // 只丢受影响的那条
 });
 
+test('oilCracks:只取两腿都有的日子,不把产品腿多出的那天配上昨天的原油', () => {
+  // 2023-11-23 感恩节:HO / RB 有行、CL 无 —— 前向填充会造出「当天柴油 − 昨天原油」的假点
+  const wti = seq([60, 61], 1); // 01-01、01-02
+  const diesel = seq([2, 2, 2], 1); // 01-01、01-02、01-03(CL 没有)
+
+  expect(oilCracks({ wti, diesel, rbob: null }).dieselCrack?.map((p) => p.date)).toEqual(['2024-01-01', '2024-01-02']);
+});
+
 test('retailMargin:锚在零售的周频日期上,批发腿取当日或之前最近一根', () => {
   // 零售 = 每周一调查;批发 = 日频期货(含零售没有的那几天)。
   const retail = [

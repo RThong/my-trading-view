@@ -887,7 +887,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   put('rxmSpx', raw.rxm && raw.spx ? divideAligned(raw.rxm, raw.spx) : undefined);
 
   // 油市结构(物理紧张):Brent−WTI 海运 vs 内陆;柴油裂解 = ULSD×42 − WTI(HO 单位 $/gal→$/bbl)。
-  put('brentWti', brent && wti ? subtractAligned([brent, wti]) : undefined);
+  // 交集相减(同裂解,见 oilCracks):Brent 在 2023-11-23 感恩节有行、WTI 无,前向填充会造假点
+  put('brentWti', brent && wti ? subtractAt(brent, wti) : undefined);
   // 三条裂解在 analytics/oilCracks 里算(纯函数,带变异检验;口径与「为什么写成加权平均」见那边)。
   const cracks = oilCracks({ wti, diesel, rbob });
   put('dieselCrack', cracks.dieselCrack);

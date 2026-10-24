@@ -284,8 +284,10 @@ export function oilCracks({ wti, diesel, rbob }: CrackLegs): {
   rbobCrack?: Point[];
   crack321?: Point[];
 } {
-  const dieselCrack = diesel && wti ? subtractAligned([scale(diesel, GAL_PER_BBL), wti]) : null;
-  const rbobCrack = rbob && wti ? subtractAligned([scale(rbob, GAL_PER_BBL), wti]) : null;
+  // 只取两腿都有的日子(subtractAt):产品腿偶有 WTI 不开的日子(2023-11-23 感恩节 HO / RB 有行、CL 无),
+  // 前向填充会造出「当天产品 − 昨天原油」的假点,还会把这个非交易日塞进前端推 WTI 到期日用的日历
+  const dieselCrack = diesel && wti ? subtractAt(scale(diesel, GAL_PER_BBL), wti) : null;
+  const rbobCrack = rbob && wti ? subtractAt(scale(rbob, GAL_PER_BBL), wti) : null;
   // 3-2-1:3 桶原油 → 2 汽油 + 1 馏分。写成两条单品裂解的加权平均,省掉重复表达 ×42 与权重。
   const crack321 = rbobCrack && dieselCrack ? scale(sumAligned([scale(rbobCrack, 2), dieselCrack]), 1 / 3) : null;
 

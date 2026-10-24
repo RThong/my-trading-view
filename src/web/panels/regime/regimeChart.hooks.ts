@@ -82,10 +82,10 @@ const BG_LEGEND =
 // 错月背景的读法(两种 kind 的错月时段正好相反,各写一句)。依据与量级见 lib/oilRoll。
 const ROLL_NOTE: Record<RollMismatchKind, string> = {
   crack:
-    '灰蓝背景 = 期货错月:每月 WTI 到期(25 号前第 3 个营业日)之后到月底,WTI 已换下月合约,柴油 / 汽油还是本月合约。' +
+    '灰蓝背景 = 期货错月:每月 WTI 到期(25 号或其前最近一个营业日,再往前数第 3 个营业日)之后到月底,WTI 已换下月合约,柴油 / 汽油还是本月合约。' +
     '这段读数多出一个产品近两月价差(平时 $0.3~1/桶,市场紧时 $8+),看前后同月段更可靠。',
   brentWti:
-    '灰蓝背景 = 期货错月:每月月初到 WTI 到期(25 号前第 3 个营业日)这段,Brent 已是下月合约、WTI 还是本月合约,' +
+    '灰蓝背景 = 期货错月:每月月初到 WTI 到期(25 号或其前最近一个营业日,再往前数第 3 个营业日)这段,Brent 已是下月合约、WTI 还是本月合约,' +
     '差出一个 WTI 近两月价差(平时 $0.2~1/桶,紧时可达 $4+);WTI 到期后到月底两腿同月,那段最可比。',
 };
 // 四格季节 z 共用。**±2 在这个 z 上不是教科书里的 2.5% 单侧门槛**,实测各格 |z|>2 的比例远高于此。
@@ -2469,6 +2469,8 @@ export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Int
             pane,
             kind: 'histogram',
             title: '',
+            // 每个交易日都要有点(非错月日填透明):各格共享时间轴按点排位,只放错月日的话
+            // 1W / 1M 下主线已聚合成稀疏点,错月段会被撑得不成比例(同分位背景带的做法)
             data: rows.map((r) =>
               mismatch.has(r.date)
                 ? { time: r.date, value: 1, color: BG_ROLL }
