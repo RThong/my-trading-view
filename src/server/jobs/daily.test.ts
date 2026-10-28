@@ -3,7 +3,7 @@ import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
 import { getOptions25Delta, getJobHealth, insertPriceEod, insertMarketSeries } from '../storage/repository';
 import { priceLegUnderlyings } from '../../shared/marketCatalog';
-import { runDailyJob, staleFreshnessProbes } from './daily';
+import { runDailyJob, staleFreshnessProbes, pendingGroups, groupsForStaleProbes, runPendingGroups } from './daily';
 import type { OptionsChainClient, OptionChainSnapshot } from './optionsSnapshot';
 
 function freshDb(): Database {
@@ -152,7 +152,7 @@ describe('daily job (options-only)', () => {
       }),
     });
     const h = getJobHealth(db).find((h) => h.name === 'move');
-    expect(h?.status).toBe('success'); // 必须是 success,否则 REQUIRED_JOBS 守卫当天永远不绿
+    expect(h?.status).toBe('success'); // 必须是 success,否则这组当天每个触发点都白重跑
     expect(h?.error).toContain('未前进');
   });
 
@@ -204,5 +204,54 @@ describe('staleFreshnessProbes', () => {
   test('全部滞后 / 空库 → 全列', () => {
     expect(staleFreshnessProbes(upTo('2026-10-19'), '2026-10-20')).toEqual([...allPrice(), 'VX1']);
     expect(staleFreshnessProbes(freshDb(), '2026-10-19')).toEqual([...allPrice(), 'VX1']);
+  });
+});
+
+// 守卫按组判:一组失败只重跑它自己,已成功的组(尤其期权快照)不被后续触发点覆盖。
+describe('按组的成功即止守卫', () => {
+  test('pendingGroups:剔掉今天已成功的;force 的不论成败都跑', () => {
+    const groups = ['options', 'vrp_inputs', 'computable_gpu'];
+    expect(pendingGroups(groups, [])).toEqual(groups);
+    expect(pendingGroups(groups, ['options', 'vrp_inputs'])).toEqual(['computable_gpu']);
+    expect(pendingGroups(groups, groups)).toEqual([]);
+    expect(pendingGroups(groups, groups, ['vrp_inputs'])).toEqual(['vrp_inputs']);
+  });
+
+  test('groupsForStaleProbes:VX1 → vx_term_structure,ETF / VIX → vrp_inputs(去重)', () => {
+    expect(groupsForStaleProbes([])).toEqual([]);
+    expect(groupsForStaleProbes(['SPY', 'VIX'])).toEqual(['vrp_inputs']);
+    expect(groupsForStaleProbes(['VX1'])).toEqual(['vx_term_structure']);
+    expect(groupsForStaleProbes(['QQQ', 'VX1'])).toEqual(['vrp_inputs', 'vx_term_structure']);
+  });
+
+  test('runPendingGroups:失败的组下一轮单独重跑,成功的组不再跑;全绿后整轮跳过', async () => {
+    const db = freshDb();
+    const calls: string[] = [];
+    let gpuUp = false;
+    const table = {
+      vx_term_structure: () => ({
+        vxUpdater: async () => {
+          calls.push('vx');
+          return { total: 1 };
+        },
+      }),
+      computable_gpu: () => ({
+        computableGpuUpdater: async () => {
+          calls.push('gpu');
+          return gpuUp ? { total: 1, missing: [], errors: [] } : { total: 0, missing: ['H100'], errors: ['503'] };
+        },
+      }),
+    };
+
+    expect(await runPendingGroups(db, table)).toEqual(['vx_term_structure', 'computable_gpu']);
+    expect(calls).toEqual(['vx', 'gpu']);
+
+    gpuUp = true;
+    expect(await runPendingGroups(db, table)).toEqual(['computable_gpu']);
+    expect(calls).toEqual(['vx', 'gpu', 'gpu']);
+
+    expect(await runPendingGroups(db, table)).toEqual([]);
+    expect(await runPendingGroups(db, table, ['vx_term_structure'])).toEqual(['vx_term_structure']);
+    expect(calls).toEqual(['vx', 'gpu', 'gpu', 'vx']);
   });
 });

@@ -147,7 +147,7 @@
   但同一响应的 `meta.regularMarketPrice/Time` 仍带当日真值。故 `fetchers/moveIndex` 用 meta 补当天,
   `jobs/moveSnapshot` 把整条序列镜像进 `market_series` 的 `MOVE`,regime 路由读时 **Yahoo 优先、库兜底**
   (`mergeMove`),源自愈后真值自动 upsert 覆盖,**没有删除路径**。断供期 meta 只有当日快照、漏一天永久缺一格,
-  故 `move` 列入 `REQUIRED_JOBS`,且成败判据是「本次有没有拿到**已收盘**的 meta 点」(盘中值不落库,见 `isCloseSnapshot`:判的是**当下**——meta 的 ET 日已翻篇、或现在已过 17:00 ET——不看 meta 那一刻几点,故半日市早收不构成特例。取 17 不取 16 是因为 MOVE ~16:34 ET 才定盘)——**不要改成比对交易日历**,
+  故 `move` 失败时当天后续触发点会重跑它(守卫按组判,见 `runPendingGroups`),且成败判据是「本次有没有拿到**已收盘**的 meta 点」(盘中值不落库,见 `isCloseSnapshot`:判的是**当下**——meta 的 ET 日已翻篇、或现在已过 17:00 ET——不看 meta 那一刻几点,故半日市早收不构成特例。取 17 不取 16 是因为 MOVE ~16:34 ET 才定盘)——**不要改成比对交易日历**,
   假日 `lastClosedTradingDate()` 会返回假日当天,导致整天判失败、守卫永远不绿。
 - **CBOE(VIX 家族/SKEW/RXM/VX1)**:直接打 API + 下 CSV,**不需要 Playwright**。
 - **FRED(利率 / 信用利差 / 流动性 / 通胀)**:免费 key 在 `.env`(`FRED_API_KEY`),不要提交。**油品现货/期货走 Yahoo(`CL/BZ/HO/RB=F`),不是 FRED**;DXY 也走 Yahoo 真 ICE 指数(`DX-Y.NYB`),不用 FRED 的贸易加权 `DTWEXBGS`。
@@ -156,7 +156,7 @@
   存库存**原始价**(真值源)。②`instrumentName`(如 `ORCLE.SNRFOR.USD.XR14.100.2031-06-20`)按 ticker 匹配名单,
   **不认 ICE 的 `name` 字段**(有 "Oracle Cop" 等错拼);筛 SNRFOR+USD+**该名配置的票息档**(`AI_CDS[].coupon`,缺省 100bp;CoreWeave 只挂 500bp),同名多到期取最长(on-the-run 5Y)。
   ③价 ≤0 当缺价滤掉(`Number('')→0` 会伪装成 ~2228bp 假数据)。④**仅当天快照、不可回填**,靠 daily 每天攒;
-  故 `ice_cds` 列入 `REQUIRED_JOBS`,且默认展示的 core 标的缺任一即 job failed 告警(`missingCoreCds`)。
+  故 `ice_cds` 失败时当天后续触发点会重跑它(守卫按组判),且默认展示的 core 标的缺任一即 job failed 告警(`missingCoreCds`)。
 - **Computable GPU Index(算力租赁价)**:公开挂牌价的聚合,**不是成交价**;CoreWeave 在四个面板里占三个,
   所以这条线跟 CRWV 不独立,别拿它给 CRWV 做交叉验证。几个实测坑:
   ①**窗口和粒度都在变,别写死**。文档说 90 天 / 15 分钟,实测 2026-09-18 是 26~39 天(比两周前实测的 17~30 天**更长**),

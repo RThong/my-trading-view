@@ -139,7 +139,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   // move 分组:MOVE 债市波动率。Yahoo 日线断供时只有 meta 当日快照,当天不记就永久缺一格。
   // 判成败看 gotMetaPoint 而非 total:断供时历史 bars 仍有几千行,只看 total 会误判成功、当天不再重试。
   // stalled(meta 日期不前进,疑似源冻结)只挂告警文案、仍记 success —— partial 不算 succeeded,
-  // 会让当天守卫永远不绿、把整条 pipeline 重跑 5 次,代价大于收益。
+  // 会让这组当天每个触发点都重跑,而冻结不会自愈,重跑无用。
   if (opts.moveUpdater) {
     await withJobRun(opts.db, 'move', async () => {
       const { total, metaDate, gotMetaPoint, stalled } = await opts.moveUpdater!(opts.db);
@@ -160,14 +160,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   }
 
   // computable_gpu 分组:CGI 算力租赁价(H100/H200/B200/B300)。B300 provider 最薄、允许缺(experimental),
-  // H100/H200/B200 缺任一才算 failed。
-  //
-  // ⚠️ 这个 failed **只作可见性标记,当天不会被重试** —— 别照 ice_cds 的直觉理解。
-  // ice_cds 在 daily 的 REQUIRED 里,所以当天后续触发点会因为它没绿而重跑整组;
-  // computable_gpu 故意**不进** cryptoDaily 的 REQUIRED(见那个文件的注释),于是只要
-  // options_crypto + btc_price 已绿,后续触发就整体跳过,它当天不会再跑。
-  // 这样取舍是因为 CGI **可回填**(服务端保留 26~39 天历史、抓取是幂等覆盖),靠次日跑补就够,
-  // 不值得为一个 experimental 源让整组 crypto job 每个触发点都重跑一遍。
+  // H100/H200/B200 缺任一才算 failed(当天后续触发点只重跑这一组,见 runPendingGroups)。
   if (opts.computableGpuUpdater) {
     await withJobRun(opts.db, 'computable_gpu', async () => {
       const { total, missing, errors } = await opts.computableGpuUpdater!(opts.db);
@@ -180,7 +173,6 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   }
 
   // ism 分组:ISM PMI(月频,PR Newswire)。稳态每次只打一次列表页 —— 新月报一个月才来两篇。
-  // **不进 REQUIRED_JOBS**:可回填(漏一天次日补),不值得为它让整组 daily 每个触发点重跑。
   // 美东 10:00 发布 = JST 23:00,当天最后一个触发点(22 点)赶不上,次日第一个触发点拿到。
   if (opts.ismUpdater) {
     await withJobRun(opts.db, 'ism', async () => {
@@ -201,9 +193,8 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     });
   }
 
-  // btc_supply_density 分组:BTC ±5% 已实现供应密度(BRK,可回填)。
-  // **不进 REQUIRED**:漏一天次日自动补(增量按「库里缺哪天」拉),同 ism。
-  // 排在 btc_price 之后:首跑全量回填要几分钟,别让 REQUIRED 里的 btc_price 等它。
+  // btc_supply_density 分组:BTC ±5% 已实现供应密度(BRK,可回填;增量按「库里缺哪天」拉)。
+  // 排在 btc_price 之后:首跑全量回填要几分钟,别让 btc_price 等它。
   // 停更(源最新日期 >3 天不前进)只挂告警文案、仍记 success:停更不会自愈,记 failed 也不会让它好起来。
   if (opts.supplyDensityUpdater) {
     await withJobRun(opts.db, 'btc_supply_density', async () => {
@@ -217,13 +208,18 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   }
 }
 
-// 一天多触发点(JST 11/12/20/21/22,见 scripts/gen-cron.sh)的「成功即止」守卫:
-// 这几组当天全部 success 过、且新鲜度探针都到位(见 staleFreshnessProbes)→ 跳过本次。
-// 任一组当天还没成功(含失败/部分)→ 照常跑,直到跑出一次全绿。
-// btc_price 不列入:低频,失败不该阻断"当天必需组已全绿则跳过"的逻辑。
-// ice_cds 必须列入:ICE 端点只当日快照、不能回填,当天没抓到就永久丢,首触发失败须让后续触发补。
-// move 必须列入:Yahoo 日线断供期间只有 meta 当日快照,当天没记就永久缺一格(同 ice_cds)。
-const REQUIRED_JOBS = ['options', 'vrp_inputs', 'vx_term_structure', 'ice_cds', 'move'];
+/** 组名(= job_run.job_name)→ 该组在 runDailyJob 里的注入参数。函数形式:没轮到的组不构造客户端。 */
+export type GroupTable = Record<string, () => Partial<Omit<RunDailyJobOpts, 'db'>>>;
+
+/**
+ * 一天多触发点(JST 11/12/20/21/22,见 scripts/gen-cron.sh)的「成功即止」守卫,**按组**判:
+ * 今天已 success 过的组剔掉,其余(没跑过 / failed / partial)照跑;force 里的组不论成败都跑。
+ * 按组而不按整个 job:一组失败只重跑它自己 —— 整轮重跑会把已成功的期权快照换成更晚的那份,
+ * 也白打一遍各家接口。所以也不再分「必需 / 可回填」,今天没成功的就再跑。
+ */
+export function pendingGroups(groups: string[], succeededToday: string[], force: string[] = []): string[] {
+  return groups.filter((g) => force.includes(g) || !succeededToday.includes(g));
+}
 
 /**
  * 守卫放行跳过还要求数据**真到了上一交易日**,只看「当天 success 过」不够:数据源会晚发布。
@@ -231,7 +227,7 @@ const REQUIRED_JOBS = ['options', 'vrp_inputs', 'vx_term_structure', 'ice_cds', 
  * → 当天其余触发点全被跳过,面板停在上周五。
  * 探针 = ETF 现货 + VIX(都是 vrp_inputs 写进 price_eod)+ VX1(vx_term_structure 写进 market_series,
  * 它是另一条 CBOE 链路,ETF/VIX 到了不代表 VX 期货结算到了)。
- * 节假日 lastClosedTradingDate 不认交易所假日 → 恒判滞后 → 当天每个触发点多跑一遍(几十秒、照常结束,接受)。
+ * 节假日 lastClosedTradingDate 不认交易所假日 → 恒判滞后 → 这两组当天每个触发点多跑一遍(几十秒,接受)。
  * VX 期货结算偶尔比 VIX 晚一天:那天同理多跑几遍,直到 VX1 到位。
  */
 export function staleFreshnessProbes(db: Database, lastClosed = lastClosedTradingDate()): string[] {
@@ -243,34 +239,44 @@ export function staleFreshnessProbes(db: Database, lastClosed = lastClosedTradin
   return latest.filter(([, d]) => (d ?? '') < lastClosed).map(([name]) => name);
 }
 
+/** 滞后探针 → 写它的那一组(见 staleFreshnessProbes):VX1 归 vx_term_structure,其余归 vrp_inputs。 */
+export function groupsForStaleProbes(stale: string[]): string[] {
+  return [...new Set(stale.map((p) => (p === 'VX1' ? 'vx_term_structure' : 'vrp_inputs')))];
+}
+
+/** daily / cryptoDaily 两个 CLI 共用:挑出今天还没成功的组(加上 force)跑一轮,全绿就跳过。返回本轮跑的组。 */
+export async function runPendingGroups(db: Database, table: GroupTable, force: string[] = []): Promise<string[]> {
+  const pending = pendingGroups(Object.keys(table), getTodaySucceededJobs(db), force);
+  if (!pending.length) {
+    console.log('今天各组均已成功,跳过本次运行。');
+    return pending;
+  }
+
+  console.log(`本轮跑:${pending.join(', ')}`);
+  await runDailyJob(Object.assign({ db }, ...pending.map((g) => table[g]!())));
+  return pending;
+}
+
+const DAILY_GROUPS: GroupTable = {
+  options: () => ({ optionsUnderlyings: OPTIONS_UNDERLYINGS, optionsClient: defaultMoomooOptionsClient() }),
+  vrp_inputs: () => ({ vrpInputsUpdater: updateVrpInputs }),
+  vx_term_structure: () => ({ vxUpdater: updateVxTermStructure }),
+  eris_snapshot: () => ({ erisUpdater: updateErisSnapshot }),
+  ice_cds: () => ({ iceCdsUpdater: updateIceCds }),
+  move: () => ({ moveUpdater: updateMoveIndex }),
+  ism: () => ({ ismUpdater: updateIsm }),
+};
+
 // CLI 入口
 if (import.meta.main) {
   const db = openDb();
   migrate(db);
 
-  const done = getTodaySucceededJobs(db);
   const stale = staleFreshnessProbes(db);
-  const allDone = REQUIRED_JOBS.every((j) => done.includes(j));
-  if (allDone && !stale.length) {
-    console.log(`今天必需组已全部成功(${done.join(', ')}),跳过本次运行。`);
-  } else {
-    // 滞后就说出是哪几条:首轮(还没跑过)本来就滞后,写出来也便于对照跑完有没有追上。
-    if (stale.length)
-      console.log(
-        `数据还没到 ${lastClosedTradingDate()}(${stale.join(', ')})${allDone ? ',必需组今天虽已成功过,再跑一次' : ''}。`,
-      );
-    await runDailyJob({
-      db,
-      optionsUnderlyings: OPTIONS_UNDERLYINGS,
-      optionsClient: defaultMoomooOptionsClient(),
-      vrpInputsUpdater: updateVrpInputs,
-      vxUpdater: updateVxTermStructure,
-      erisUpdater: updateErisSnapshot,
-      iceCdsUpdater: updateIceCds,
-      moveUpdater: updateMoveIndex,
-      ismUpdater: updateIsm,
-    });
+  // 滞后就说出是哪几条:首轮(还没跑过)本来就滞后,写出来也便于对照跑完有没有追上。
+  if (stale.length) console.log(`数据还没到 ${lastClosedTradingDate()}(${stale.join(', ')})。`);
+
+  if ((await runPendingGroups(db, DAILY_GROUPS, groupsForStaleProbes(stale))).length)
     console.log('Daily job complete.');
-  }
   db.close();
 }
