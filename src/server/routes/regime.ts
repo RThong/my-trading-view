@@ -775,6 +775,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // ⚠️ 判的是**派生后**的长度不是输入腿:inner join 零重叠就返回 [],空数组在 JS 里是真值,
   // 直接 put 会落成 `series.expShort10Kw = []` —— 既不进 unavailable,面板还要拿空序列去算分位。
   put('expShort10Kw', subtractAt(raw.kwFitted10 ?? [], raw.tp10Kw ?? []));
+  put('jgb2y', jgb2y?.length ? jgb2y : undefined);
   put('jgb10y', jgb10y?.length ? jgb10y : undefined);
   put('jgbVix', jgbVix?.length ? jgbVix : undefined);
   // 日银产出缺口(日历季度)+ 潜在增速及四项贡献度(财年半期)。**两条频率不同、时间轴不是一套**,

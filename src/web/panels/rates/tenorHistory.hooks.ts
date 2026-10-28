@@ -36,7 +36,7 @@ export const DEFAULT_TENORS: Record<string, string[]> = {
   bei: ['5Y', '10Y', '30Y'],
   // 实际收益率与 bei 同档位、刻意同一组默认勾选 —— 两格并排就是「名义 − BEI = 实际」的两边。
   real: ['5Y', '10Y', '30Y'],
-  // JGB 没有差值 pane:2Y 是日本银行股的主变量(见「银行」那格),10Y 是长端锚。
+  // JGB 没有差值 pane:10Y 是日本银行股的股价主变量,2Y 是利润层的验证腿(两者都在「银行」那格)。
   jgb: ['2Y', '10Y'],
   // AI CDS:默认展示 core 的 7 家;Broadcom/Dell/Intel 较次要、CoreWeave/SpaceX 是新挂的名,留 chip 按需勾。
   // 须与 rateCurves.ts AI_CDS 的 core 名单一致(core 缺失会让每日 job failed 告警)。

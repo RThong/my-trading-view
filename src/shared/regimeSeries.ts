@@ -70,6 +70,8 @@ export const REGIME_SERIES = [
   'vixCotLm',
   'dgs10',
   'usjp2y',
+  // JGB 2Y(MOF,%)。「银行」那格 10Y 主线的对照腿:读「长端动、短端不动」要两条同格。
+  'jgb2y',
   'jgb10y',
   'jgbVix',
   // 日银产出缺口 / 潜在增速(季度更新,**两条时间轴不同**:缺口是日历季度,潜在增速是财年半期)。
