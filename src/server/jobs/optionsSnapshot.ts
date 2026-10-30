@@ -67,11 +67,13 @@ export function select25Delta(chain: OptionChainSnapshot): Selection {
 
 // 依赖 moomoo 的符号约定:put delta 为负、call delta 为正。已用真实 OpenD
 // 抓取的链核实(SPY 6/19:249 个 put delta 全 <=0,728P=-0.2507 与 App 一致)。
-/** 取 delta 最接近 target 的合约;忽略没有 delta 的合约。 */
+/** 取 delta 最接近 target 的合约;忽略没有 delta 或没有报价的合约。 */
 function pickClosestDelta(arr: OptionContract[], target: number): OptionContract {
-  const withDelta = arr.filter((c) => typeof c.delta === 'number');
-  if (withDelta.length === 0) throw new Error('期权链缺少 delta,无法选取 25Δ');
-  return firstBy(withDelta, (c) => Math.abs(c.delta! - target))!;
+  // moomoo 对还没报价的合约(如刚挂牌的到期日)把 delta / IV 全填 0 而不是 null;
+  // 不剔掉就会选中 delta=0 的合约、写进 IV=0(.VIX 2026-10-28 实测)。
+  const quoted = arr.filter((c) => typeof c.delta === 'number' && c.delta !== 0 && c.impliedVolatility > 0);
+  if (quoted.length === 0) throw new Error('期权链缺少有效 delta / IV(全为 0 或缺失),无法选取 25Δ');
+  return firstBy(quoted, (c) => Math.abs(c.delta! - target))!;
 }
 
 /** 抓取器满足的最小 client 接口。 */

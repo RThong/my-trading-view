@@ -159,6 +159,36 @@ describe('select25Delta', () => {
     expect(sel.putStrike).toBeLessThan(spot); // 虚值 put
     expect(sel.skew).toBeCloseTo(sel.putIv - sel.callIv, 8);
   });
+
+  test('忽略 delta 为 0 的未报价合约', () => {
+    // 有效合约离 ±0.25 比 delta=0 更远,不剔掉就会选中未报价那张
+    const unquoted = { ...SAMPLE_CHAIN.calls[0], strike: 9999, delta: 0, impliedVolatility: 0 };
+    const sel = select25Delta({
+      ...SAMPLE_CHAIN,
+      calls: [...SAMPLE_CHAIN.calls.filter((c) => c.delta === 0.7), unquoted],
+      puts: [...SAMPLE_CHAIN.puts.filter((c) => c.delta === -0.52), unquoted],
+    });
+
+    expect(sel).toMatchObject({ callStrike: 4800, callIv: 0.25, putStrike: 5000, putIv: 0.22 });
+  });
+
+  test('忽略 delta 正常但 IV 为 0 的合约', () => {
+    const noIv = { ...SAMPLE_CHAIN.calls[0], strike: 9999, impliedVolatility: 0 };
+    const sel = select25Delta({
+      ...SAMPLE_CHAIN,
+      calls: [...SAMPLE_CHAIN.calls, { ...noIv, delta: 0.25 }],
+      puts: [...SAMPLE_CHAIN.puts, { ...noIv, delta: -0.25 }],
+    });
+
+    expect(sel).toMatchObject({ callStrike: 5400, callIv: 0.19, putStrike: 4600, putIv: 0.27 });
+  });
+
+  test('整条链都没报价(全 0)就抛错,不写 0', () => {
+    const zero = (c: (typeof SAMPLE_CHAIN.calls)[number]) => ({ ...c, delta: 0, impliedVolatility: 0 });
+    expect(() =>
+      select25Delta({ ...SAMPLE_CHAIN, calls: SAMPLE_CHAIN.calls.map(zero), puts: SAMPLE_CHAIN.puts.map(zero) }),
+    ).toThrow();
+  });
 });
 
 describe('runOptionsSnapshot', () => {
@@ -234,5 +264,23 @@ describe('runOptionsSnapshot', () => {
     expect(getOptions25Delta(db, 'SPY', 7)).toHaveLength(1);
     expect(failures).toHaveLength(1);
     expect(failures[0]).toContain('.VIX');
+  });
+
+  test('链全为 0 的标的进 failures、两张表都不落库', async () => {
+    const zero = (c: (typeof SAMPLE_CHAIN.calls)[number]) => ({ ...c, delta: 0, impliedVolatility: 0 });
+    const mock: OptionsChainClient = {
+      fetchChain: async () => ({
+        ...SAMPLE_CHAIN,
+        calls: SAMPLE_CHAIN.calls.map(zero),
+        puts: SAMPLE_CHAIN.puts.map(zero),
+      }),
+    };
+
+    const { rows, failures } = await runOptionsSnapshot({ db, source: 'moomoo', underlyings: ['.VIX'], client: mock });
+
+    expect(rows).toHaveLength(0);
+    expect(failures[0]).toContain('.VIX');
+    expect(getOptions25Delta(db, '.VIX', 7)).toHaveLength(0);
+    expect(db.query(`SELECT 1 FROM option_chain_raw WHERE underlying = '.VIX'`).all()).toHaveLength(0);
   });
 });
