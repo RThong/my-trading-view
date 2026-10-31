@@ -156,6 +156,31 @@ describe('daily job (options-only)', () => {
     expect(h?.error).toContain('未前进');
   });
 
+  test('btc_supply_density: 正常 / 停更挂告警仍 success / 一个点都没有 failed', async () => {
+    const run = async (r: { written: number; latest: string | undefined; stale: boolean }) => {
+      await runDailyJob({ db, supplyDensityUpdater: async () => r });
+      const h = getJobHealth(db).find((h) => h.name === 'btc_supply_density')!;
+      const { n } = db
+        .query('SELECT records_written AS n FROM job_run WHERE job_name = $j ORDER BY run_id DESC LIMIT 1')
+        .get({ $j: 'btc_supply_density' }) as { n: number | null };
+      return { status: h.status, error: h.error, n };
+    };
+
+    expect(await run({ written: 5418, latest: '2026-10-31', stale: false })).toEqual({
+      status: 'success',
+      error: null,
+      n: 5418,
+    });
+
+    const stale = await run({ written: 5418, latest: '2026-10-20', stale: true });
+    expect(stale).toMatchObject({ status: 'success', n: 5418 }); // 停更不会自愈,记 failed 只会让守卫白重跑
+    expect(stale.error).toContain('疑似停更(源最新 2026-10-20)');
+
+    const empty = await run({ written: 0, latest: undefined, stale: true });
+    expect(empty.status).toBe('failed');
+    expect(empty.error).toContain('一个点都没有');
+  });
+
   test('vx_term_structure: updater 抛错记 failed', async () => {
     await runDailyJob({
       db,

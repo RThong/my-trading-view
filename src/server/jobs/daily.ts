@@ -49,7 +49,7 @@ type RunDailyJobOpts = {
   ismUpdater?: (db: Database) => Promise<IsmResult>;
   /** Computable GPU Index(H100/H200/B200/B300 算力租赁价)更新器(注入式;cryptoDaily 传 updateComputableGpu,测试省略以免联网)。 */
   computableGpuUpdater?: (db: Database) => Promise<{ total: number; missing: string[]; errors: string[] }>;
-  /** BTC ±5% 已实现供应密度(BRK URPD)更新器(注入式;cryptoDaily 传 updateSupplyDensity,测试省略以免联网)。 */
+  /** BTC ±5% 已实现供应密度(BRK supply_density 序列)更新器(注入式;cryptoDaily 传 updateSupplyDensity,测试省略以免联网)。 */
   supplyDensityUpdater?: (db: Database) => Promise<SupplyDensityResult>;
 };
 
@@ -193,17 +193,18 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     });
   }
 
-  // btc_supply_density 分组:BTC ±5% 已实现供应密度(BRK,可回填;增量按「库里缺哪天」拉)。
-  // 排在 btc_price 之后:首跑全量回填要几分钟,别让 btc_price 等它。
+  // btc_supply_density 分组:BTC ±5% 已实现供应密度(BRK 现成序列,一次请求全段覆盖写)。
   // 停更(源最新日期 >3 天不前进)只挂告警文案、仍记 success:停更不会自愈,记 failed 也不会让它好起来。
   if (opts.supplyDensityUpdater) {
     await withJobRun(opts.db, 'btc_supply_density', async () => {
-      const { succeeded, failures, latest, stale } = await opts.supplyDensityUpdater!(opts.db);
-      const state = threeState(succeeded, succeeded, failures);
-      if (!stale || state.status === 'failed') return state;
+      const { written, latest, stale } = await opts.supplyDensityUpdater!(opts.db);
+      if (!written) return { status: 'failed', error: 'BRK supply_density 2012 起一个点都没有' };
 
-      const warn = `告警:BRK URPD 疑似停更(源最新 ${latest ?? '无'})`;
-      return { ...state, error: state.error ? `${warn}; ${state.error}` : warn };
+      return {
+        status: 'success',
+        recordsWritten: written,
+        ...(stale && { error: `告警:BRK supply_density 疑似停更(源最新 ${latest})` }),
+      };
     });
   }
 }

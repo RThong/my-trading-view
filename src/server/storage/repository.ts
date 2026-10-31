@@ -344,19 +344,6 @@ export function getSecFundamentals(db: Database, ticker: string): SecFundamental
   }));
 }
 
-/**
- * 「抓的时候那天还没过完」的日期:fetched_at 早于 obs_date 次日 + graceHours。
- * 给日内会变的快照型序列用(如 BRK URPD 当天条目),这些行要重拉成收盘值。
- */
-export function getProvisionalDates(db: Database, seriesId: string, graceHours: number): string[] {
-  const rows = db
-    .query(
-      `SELECT obs_date AS d FROM market_series WHERE series_id = $id AND julianday(fetched_at) < julianday(obs_date) + 1 + $g / 24.0`,
-    )
-    .all({ $id: seriesId, $g: graceHours }) as { d: string }[];
-  return rows.map((r) => r.d);
-}
-
 /** 按前缀取一族序列(SEC 派生量比对用:算出来的和库里的一致就整轮不写)。
  *  前缀里的 `_` / `%` 会被 LIKE 当通配符,故统一转义后再匹配。 */
 export function getMarketSeriesByPrefix(db: Database, prefix: string): MarketSeriesRow[] {
