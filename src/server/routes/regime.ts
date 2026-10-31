@@ -500,6 +500,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     sepMedian: fredSeries('FEDTARMD'),
     sepMedianLr: fredSeries('FEDTARMDLR'),
     cor1m: cboeSeries('COR1M'),
+    cor3m: cboeSeries('COR3M'),
     vixeq: cboeSeries('VIXEQ'),
     // 恒定期限的即期隐含波动率指数。**和已有的 VX1/VX3 期货不是一回事**:VX3 是"三个月后那个
     // 30 天波动率"的**远期**,VIX3M 是"现在三个月"的**即期**。实测(2018-01-02~2026-08-07,
@@ -716,6 +717,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const direct: Partial<Record<RegimeSeries, keyof typeof src>> = {
     hyOas: 'hyOas',
     cor1m: 'cor1m',
+    cor3m: 'cor3m',
     vixeq: 'vixeq',
     fng: 'fng',
     vix6m: 'vix6m',
@@ -889,6 +891,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // (2026-10-24 已挂到 10-26)。并集前向填充会造出约 550 个周末点 + 未来日期点(都用旧 SOFR),
   // 塞进时间轴还把周五的值在分位里算三遍。IORB 天天有值,交集即 SOFR 的日期,不丢真实观测。
   put('repoStress', raw.iorb && raw.sofr ? subtractAt(raw.iorb, raw.sofr) : undefined);
+  // 隐含相关性期限结构 COR3M − COR1M(百分点):同源,日历偶有不齐(2018 起 4 天只有 1M),内连接、缺日跳过,不前向填充。任一腿缺 → 空 → unavailable。
+  put('corTermSpread', subtractAt(raw.cor3m ?? [], raw.cor1m ?? []));
   // RXM(Cboe 风险逆转指数:买 25Δ call / 卖 25Δ put 滚动策略)/ SPX:该策略相对 SPX 的累计表现比。
   put('rxmSpx', raw.rxm && raw.spx ? divideAligned(raw.rxm, raw.spx) : undefined);
 

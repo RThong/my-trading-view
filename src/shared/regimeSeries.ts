@@ -20,6 +20,8 @@ export const REGIME_SERIES = [
   // ── 直接透传的 FRED / CBOE / CNN 源(regime.ts 的 `direct` 映射)
   'hyOas',
   'cor1m',
+  // Cboe 3 个月隐含相关性(标普前 50 大成分股两两隐含相关性均值),面板上紧挨 cor1m 单独一格。
+  'cor3m',
   'vixeq',
   'fng',
   'vix6m',
@@ -63,6 +65,8 @@ export const REGIME_SERIES = [
   'tp10Acm',
   'netLiquidity',
   'repoStress',
+  // COR3M − COR1M(百分点,同日内连接,可为负):隐含相关性期限结构,< 0 = 倒挂(近端相关性被抢先定价)。
+  'corTermSpread',
   'usd',
   'usdjpy',
   'cftcJpy',
