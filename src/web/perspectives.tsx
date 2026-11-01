@@ -1,7 +1,7 @@
 // 竖 tab = 视角;每个视角自带横 tab 列表,每个 tab 自带渲染闭包(label/source/render 一处配置)。
 // 取代原 App 里"tabs 只声明 id/label + 相邻 render(tabId) 用字符串分支决定内容"的分离写法——
 // 新增 tab = 往数组加一条工厂调用,不再牵动 render 分支,两者也不会漂移。
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 import { AssetChart } from './panels/asset/AssetChart';
 import { RegimeChart } from './panels/regime/RegimeChart';
 import { YieldCurvePanel } from './panels/rates/YieldCurvePanel';
@@ -12,6 +12,11 @@ import { IndustryChainPanel } from './panels/regime/IndustryChainPanel';
 import type { RegimeDim } from './panels/regime/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
 import { MARKET_CATALOG } from '../shared/marketCatalog';
+
+// 图表编辑器懒加载:不进首屏包,点到这个竖 tab 才拉。
+const ChartEditorPage = lazy(() =>
+  import('./panels/chartEditor/ChartEditorPage').then((m) => ({ default: m.ChartEditorPage })),
+);
 
 export type TabDef = { id: string; label: string; group?: string; render: (interval: Interval) => ReactNode };
 export type Perspective = { id: string; label: string; tabs: TabDef[] };
@@ -188,6 +193,22 @@ export const PERSPECTIVES: Perspective[] = [
     tabs: [
       { id: 'attack_defense', label: '攻防', render: () => <AttackDefensePanel /> },
       regimeTab('concentration', '集中度', 'concentration'),
+    ],
+  },
+  {
+    // 自由组图:空白图上挑现有序列、分格叠放(见 panels/chartEditor)。单视图,无横 tab。
+    id: 'editor',
+    label: '图表编辑',
+    tabs: [
+      {
+        id: 'editor',
+        label: '图表编辑',
+        render: (interval) => (
+          <Suspense fallback={<p className="text-sm text-neutral-500">加载中…</p>}>
+            <ChartEditorPage interval={interval} />
+          </Suspense>
+        ),
+      },
     ],
   },
 ];
