@@ -75,9 +75,13 @@ export function useCrosshairLegend(
 }
 
 /** time 当天或之前最近一点的值(周 / 月频序列在日线十字线上按「截至当日」读)。time 为 null = 最新值。 */
-export function asOfValue(points: LinePoint[] | undefined, time: string | null): number | undefined {
-  if (!points?.length) return undefined;
-  if (time === null) return points.at(-1)!.value;
+export const asOfValue = (points: LinePoint[] | undefined, time: string | null): number | undefined =>
+  asOfPoint(points, time)?.value;
 
-  return points.findLast((p) => p.time <= time)?.value;
+/** 同 asOfValue,但返回整个点(平移过的图层要靠它的日期反推原始日期)。 */
+export function asOfPoint(points: LinePoint[] | undefined, time: string | null): LinePoint | undefined {
+  if (!points?.length) return undefined;
+  if (time === null) return points.at(-1);
+
+  return points.findLast((p) => p.time <= time);
 }

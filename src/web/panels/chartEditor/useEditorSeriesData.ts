@@ -1,16 +1,20 @@
 // 编辑器的取数层:按注册表把各序列统一成 { time, value }[],再按 Header 的周期聚合。
-// 只读复用现有接口与数据 hook(/api/regime 的 useRegimeData、/api/price),保证同一序列和旧图表数字一致。
+// 只读复用现有接口与数据 hook(/api/regime 的 useRegimeData、/api/price、/api/yield-curve),保证同一序列和旧图表数字一致;
+// 任意 Yahoo 代码走 /api/yahoo/history。
 import { useMemo } from 'react';
 import useSWR from 'swr';
 import { aggregate, type LinePoint } from '../../lib/chart';
 import type { Interval } from '../../hooks/interval';
+import { useServerRefresh } from '../../hooks/useServerRefresh';
 import { useRegimeData, type RegimeData } from '../regime/regimeChart.hooks';
-import { seriesDef, type SeriesDef } from './registry';
+import { shiftPoints } from './analysis';
+import { rememberYahooName, seriesDef, type CurveSource, type SeriesDef, type SeriesSource } from './registry';
 
 type PriceBar = { date: string; close: number };
 type PriceData = Record<string, PriceBar[]>;
 
 const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
+const YAHOO_SWR_OPTS = { ...SWR_OPTS, revalidateIfStale: true };
 const NO_PRICE: PriceData = {};
 
 async function getPrices([, ...symbols]: string[]): Promise<PriceData> {
@@ -35,19 +39,127 @@ export const weekdayOnly = (points: LinePoint[]): LinePoint[] =>
     return dow !== 0 && dow !== 6;
   });
 
-/** 单条序列:从原始响应取出 → 统一形状 → (7×24 的)去周末 → 按周期聚合。取不到 → []。 */
-export function seriesPoints(def: SeriesDef, regime: RegimeData, prices: PriceData, interval: Interval): LinePoint[] {
+/**
+ * 一次取数请求:哪条序列、平移多少交易日;daily = 不按页头周期聚合、固定日线
+ * (领先滞后扫描要逐交易日平移,周 / 月线聚合过的序列扫不出日级领先)。同一序列参数不同就是不同请求。
+ */
+export type SeriesRequest = { series: string; shift: number; daily?: true };
+
+/** 请求的键(也是 points 的键)。注册表 id 里没有 '@' / '#'。 */
+export const requestKey = ({ series, shift, daily }: SeriesRequest): string =>
+  `${series}${shift ? `@${shift}` : ''}${daily ? '#d' : ''}`;
+
+const parseKey = (key: string): SeriesRequest => {
+  const daily = key.endsWith('#d');
+  const body = daily ? key.slice(0, -2) : key;
+  const at = body.lastIndexOf('@');
+  const req = at < 0 ? { series: body, shift: 0 } : { series: body.slice(0, at), shift: Number(body.slice(at + 1)) };
+  return daily ? { ...req, daily: true } : req;
+};
+
+type YahooHistory = { symbol: string; name: string; points: { date: string; close: number }[] };
+/** 代码 → 日线;取不到的为 null(单个代码失败不连累其它代码) */
+type YahooData = Record<string, YahooHistory | null>;
+const NO_YAHOO: YahooData = {};
+
+// 按代码缓存请求:勾选新代码时 SWR 的键变了会整组重取,已取过的直接复用这里的 promise,不重复请求
+const yahooRequests = new Map<string, Promise<YahooHistory | null>>();
+function fetchYahoo(symbol: string): Promise<YahooHistory | null> {
+  const hit = yahooRequests.get(symbol);
+  if (hit) return hit;
+
+  const req = fetch(`/api/yahoo/history/${encodeURIComponent(symbol)}`)
+    .then(async (r) => {
+      if (!r.ok) return null;
+      const h = (await r.json()) as YahooHistory;
+      rememberYahooName(symbol, h.name);
+      return h;
+    })
+    .catch(() => null);
+  // 失败的不缓存,下次勾选再试
+  req.then((h) => {
+    if (!h) yahooRequests.delete(symbol);
+  });
+  yahooRequests.set(symbol, req);
+  return req;
+}
+
+async function getYahoo([, ...symbols]: string[]): Promise<YahooData> {
+  const rows = await Promise.all(symbols.map(async (s) => [s, await fetchYahoo(s)] as const));
+  return Object.fromEntries(rows);
+}
+
+const isWeekend = (date: string) => {
+  const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return dow === 0 || dow === 6;
+};
+/** 日线里周末点超过一成 = 7×24 资产(加密);美股的周末快照入库前已归到周五,不会误判。同 AssetChart 的判据。 */
+const hasWeekends = (points: LinePoint[]) => points.filter((p) => isWeekend(p.time)).length > points.length * 0.1;
+
+/** 收益曲线接口的响应(只用到的字段)。同利率页 useYieldCurve 的 YieldCurveData。 */
+type CurveData = {
+  series: Record<string, { date: string; value: number }[]>;
+  refreshing?: boolean;
+  partial?: boolean;
+};
+const NO_CURVE: CurveData = { series: {} };
+
+async function getCurve(url: string): Promise<CurveData> {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url}: ${r.status}`);
+  return r.json() as Promise<CurveData>;
+}
+
+/**
+ * 某条收益曲线(没用到就不发请求)。要的是长历史版(history=full:名义 1990 起、实际 / BEI 2003 起),
+ * 与利率页的默认版(2018 起)分开缓存 —— 旧页面的分位 / 时间轴不受影响。
+ * 服务端给的是旧 / 不完整数据时照利率页的做法定时重取(useServerRefresh)。
+ */
+function useCurve(curve: CurveSource, used: boolean) {
+  const key = `/api/yield-curve?source=${curve}&history=full`;
+  const { data = NO_CURVE, error, isLoading, mutate } = useSWR(used ? key : null, getCurve, SWR_OPTS);
+  useServerRefresh(key, data, mutate);
+
+  return { data, error: error as Error | undefined, isLoading };
+}
+
+/** 各源的原始响应,seriesPoints 从这里按注册表取。 */
+export type SourceData = {
+  regime: RegimeData;
+  prices: PriceData;
+  curves: Partial<Record<CurveSource, CurveData>>;
+  yahoo?: YahooData;
+};
+
+const fromDated = (rows: { date: string; value: number }[] | undefined): LinePoint[] =>
+  (rows ?? []).map((p) => ({ time: p.date, value: p.value }));
+const fromCloses = (rows: { date: string; close: number }[] | undefined): LinePoint[] =>
+  (rows ?? []).map((b) => ({ time: b.date, value: b.close }));
+
+/** 按数据源种类从原始响应里取出 { time, value }[](查表,每种源一个取法)。取不到 → []。 */
+const EXTRACT: {
+  [K in SeriesSource['kind']]: (src: Extract<SeriesSource, { kind: K }>, data: SourceData) => LinePoint[];
+} = {
+  regime: (src, data) => fromDated(data.regime.series[src.key]),
+  regimeOhlc: (src, data) => (data.regime.ohlc?.[src.key] ?? []).map((b) => ({ time: b.time, value: b.close })),
+  curve: (src, data) => fromDated(data.curves[src.curve]?.series[src.tenor]),
+  yahoo: (src, data) => fromCloses(data.yahoo?.[src.symbol]?.points),
+  price: (src, data) => fromCloses(data.prices[src.symbol]),
+};
+
+/**
+ * 单条序列:从原始响应取出 → 统一形状 → (7×24 的)去周末 → 平移 → 按周期聚合。取不到 → []。
+ * 先平移再聚合:反过来的话周线键(周一)平移后落在周中,时间轴上会多出空位。
+ */
+export function seriesPoints(def: SeriesDef, data: SourceData, interval: Interval, shift = 0): LinePoint[] {
   const src = def.source;
-  const raw: LinePoint[] =
-    src.kind === 'regime'
-      ? (regime.series[src.key] ?? []).map((p) => ({ time: p.date, value: p.value }))
-      : src.kind === 'regimeOhlc'
-        ? (regime.ohlc?.[src.key] ?? []).map((b) => ({ time: b.time, value: b.close }))
-        : (prices[src.symbol] ?? []).map((b) => ({ time: b.date, value: b.close }));
+  const raw = (EXTRACT[src.kind] as (s: SeriesSource, d: SourceData) => LinePoint[])(src, data);
 
   const finite = raw.filter((p) => Number.isFinite(p.value));
 
-  return aggregate(def.weekends ? weekdayOnly(finite) : finite, interval);
+  // 静态表里的 7×24 序列已标 weekends;Yahoo 任意代码事先不知道,按数据判
+  const weekends = def.weekends || (src.kind === 'yahoo' && hasWeekends(finite));
+  return aggregate(shiftPoints(weekends ? weekdayOnly(finite) : finite, shift), interval);
 }
 
 /**
@@ -65,44 +177,76 @@ export function commonRange(series: LinePoint[][]): { from: string; to: string }
 }
 
 export type EditorSeriesData = {
-  /** 序列 id → 点。只含当前文档用到的序列。 */
+  /** 请求键(requestKey)→ 点。只含本次请求到的。 */
   points: Record<string, LinePoint[]>;
   isLoading: boolean;
   error?: Error;
-  /** 用到了、但源这次没给数据的序列 id */
+  /** 用到了、但源这次没给数据的序列 id(注册表 id,不带平移) */
   missing: string[];
 };
 
-export function useEditorSeriesData(seriesIds: string[], interval: Interval): EditorSeriesData {
+export function useEditorSeriesData(requests: SeriesRequest[], interval: Interval): EditorSeriesData {
   const { data: regime, error: regimeError, isLoading: regimeLoading } = useRegimeData();
 
   // 用 join 后的字符串当依赖:调用方每次渲染给新数组,内容不变就不重算(稳定化责任放在 hook 内)。
-  const idsKey = [...new Set(seriesIds)].sort().join(',');
+  const keysStr = [...new Set(requests.map(requestKey))].sort().join(',');
   const sources = useMemo(
     () =>
-      idsKey
+      keysStr
         .split(',')
-        .map((id) => seriesDef(id)?.source)
+        .map((k) => seriesDef(parseKey(k).series)?.source)
         .filter((s) => s !== undefined),
-    [idsKey],
+    [keysStr],
   );
-  const symbols = sources.flatMap((s) => (s.kind === 'price' ? [s.symbol] : []));
-  const usesRegime = sources.some((s) => s.kind !== 'price');
+  // 去重:同一代码可能同时有原线、平移后、扫描用日线几份请求,取的都是同一份 /api/price
+  const symbols = [...new Set(sources.flatMap((s) => (s.kind === 'price' ? [s.symbol] : [])))];
+  const usesRegime = sources.some((s) => s.kind === 'regime' || s.kind === 'regimeOhlc');
+  const usesCurve = (c: CurveSource) => sources.some((s) => s.kind === 'curve' && s.curve === c);
   const priceKey = symbols.length ? ['editor:price', ...symbols] : null;
+  const yahooSymbols = [...new Set(sources.flatMap((s) => (s.kind === 'yahoo' ? [s.symbol] : [])))];
+  const yahooKey = yahooSymbols.length ? ['editor:yahoo', ...yahooSymbols] : null;
+  // revalidateIfStale:失败的代码 fetchYahoo 不缓存,但 SWR 会把 {SYM: null} 按键缓存住 ——
+  // 取消再勾选回到同一个键时要重取一次,失败的才有机会重试(成功的走 fetchYahoo 的 promise 缓存,不重复请求)
+  const { data: yahoo = NO_YAHOO, isLoading: yahooLoading } = useSWR(yahooKey, getYahoo, YAHOO_SWR_OPTS);
   const { data: prices = NO_PRICE, error: priceError, isLoading: priceLoading } = useSWR(priceKey, getPrices, SWR_OPTS);
+  // 曲线源是固定的几个,逐个调用(hook 不能放进循环)
+  const treasury = useCurve('treasury', usesCurve('treasury'));
+  const real = useCurve('real', usesCurve('real'));
+  const bei = useCurve('bei', usesCurve('bei'));
+  const curveStates = [treasury, real, bei];
 
-  const points = useMemo(() => {
-    const defs = idsKey
-      .split(',')
-      .map((id) => seriesDef(id))
-      .filter((d) => d !== undefined);
-    return Object.fromEntries(defs.map((d) => [d.id, seriesPoints(d, regime, prices, interval)]));
-  }, [idsKey, regime, prices, interval]);
+  const points = useMemo(
+    () =>
+      Object.fromEntries(
+        keysStr
+          .split(',')
+          .filter(Boolean)
+          .flatMap((k) => {
+            const req = parseKey(k);
+            const def = seriesDef(req.series);
+            const data = { regime, prices, yahoo, curves: { treasury: treasury.data, real: real.data, bei: bei.data } };
+            return def ? [[k, seriesPoints(def, data, req.daily ? '1D' : interval, req.shift)]] : [];
+          }),
+      ),
+    [keysStr, regime, prices, yahoo, treasury.data, real.data, bei.data, interval],
+  );
 
-  // 状态只算当前真用到的源:只挑了 SPY 时,regime 慢或挂了都与这张图无关
-  const isLoading = (usesRegime && regimeLoading) || priceLoading;
-  const missing = isLoading ? [] : Object.keys(points).filter((id) => points[id].length === 0);
-  const error = (usesRegime ? regimeError : undefined) ?? (priceError as Error | undefined);
+  // 状态只算当前真用到的源:只挑了 SPY 时,regime 慢或挂了都与这张图无关(没用到的曲线 key 为 null,不算)
+  const isLoading =
+    (usesRegime && regimeLoading) || priceLoading || yahooLoading || curveStates.some((c) => c.isLoading);
+  const missing = isLoading
+    ? []
+    : [
+        ...new Set(
+          Object.keys(points)
+            .filter((k) => points[k].length === 0)
+            .map((k) => parseKey(k).series),
+        ),
+      ];
+  const error =
+    (usesRegime ? regimeError : undefined) ??
+    (priceError as Error | undefined) ??
+    curveStates.find((c) => c.error)?.error;
 
   return { points, isLoading, error, missing };
 }

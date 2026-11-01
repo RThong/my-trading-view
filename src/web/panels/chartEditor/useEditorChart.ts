@@ -1,11 +1,20 @@
 // 编辑器的渲染层:只吃「ChartDoc + 取到的数据」,直接用 lightweight-charts v5 API。
-// 图只建一次;之后每次文档变化按图层 id 增量对账(加 / 删 / 换格 / 换轴 / 改色),不重建整张图,
+// 图只建一次;之后每次文档变化按图层 id 增量对账(加 / 删 / 换格 / 换轴 / 改色 / 倒轴 / 对数),不重建整张图,
 // 所以加格删格时缩放与十字线状态都还在。不依赖旧图表引擎(panels/chart/)。
 import { type RefObject, useEffect, useRef } from 'react';
-import { createChart, LineSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
+import {
+  createChart,
+  LineSeries,
+  PriceScaleMode,
+  type IChartApi,
+  type IPaneApi,
+  type ISeriesApi,
+  type Time,
+} from 'lightweight-charts';
 import { CHART_OPTIONS, type LinePoint } from '../../lib/chart';
 import type { Interval } from '../../hooks/interval';
-import type { ChartDoc } from './chartDoc';
+import { isCorrLayer, isSeriesLayer, type ChartDoc, type Layer } from './chartDoc';
+import { canLogScale, type LayerData } from './layerPoints';
 import { commonRange } from './useEditorSeriesData';
 
 export type LayerSeries = Map<string, ISeriesApi<'Line'>>;
@@ -24,13 +33,16 @@ const round3 = (n: number) => Math.round(n * 1000) / 1000;
 export function useEditorChart(
   containerRef: RefObject<HTMLDivElement | null>,
   doc: ChartDoc,
-  points: Record<string, LinePoint[]>,
+  data: Record<string, LayerData>,
   { onStretches, interval }: Options,
 ) {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<LayerSeries>(new Map());
   // 每条图层上次 setData 的数组引用:引用没变就不重设(改色 / 换轴不该触发整段重灌数据)。
   const fedRef = useRef(new Map<string, LinePoint[]>());
+  // lw-charts 格对象 → 它上次对应的文档格 id。对应关系变了 = 这块 lw 格装的是「新的格」,要把内置轴设回默认,
+  // 见纵轴那个 effect。只认格对象身份不够:lw 会复用旧格对象(最后一格永不删除;移走某格唯一的线后别的线会挪进来)
+  const paneOwnerRef = useRef(new Map<IPaneApi<Time>, string>());
   // 上次对准视图时的周期:只在 effect 里读写,不参与渲染
   const alignedIntervalRef = useRef(interval);
   // 最新回调放 ref:监听器只挂一次,不随调用方每次渲染的新函数引用重挂
@@ -79,29 +91,78 @@ export function useEditorChart(
     // 要重灌的:新建的、或数据引用变了的图层(改色、换格都不会换数据引用)
     const stale = layers.flatMap((l) => {
       const s = seriesRef.current.get(l.id);
-      const data = points[l.series];
+      const pts = data[l.id]?.display;
       const prev = fedRef.current.get(l.id);
-      return s && data && prev !== data ? [{ id: l.id, s, data, prev }] : [];
+      return s && pts && prev !== pts ? [{ id: l.id, s, pts, prev }] : [];
     });
-    stale.forEach(({ id, s, data }) => {
-      s.setData(data);
-      fedRef.current.set(id, data);
+    stale.forEach(({ id, s, pts }) => {
+      s.setData(pts);
+      fedRef.current.set(id, pts);
     });
-    // 这一轮有没有图层「第一次拿到真数据」(新加的线 / 加载完成)
-    const arrived = stale.filter(({ data, prev }) => data.length > 0 && !prev?.length);
+    // 这一轮有没有序列图层「第一次拿到真数据」(新加的线 / 加载完成);派生层(相关性 / 劈叉)不触发对准
+    const seriesIds = new Set(layers.filter(isSeriesLayer).map((l) => l.id));
+    const arrived = stale.filter(({ id, pts, prev }) => seriesIds.has(id) && pts.length > 0 && !prev?.length);
 
     // 有新线到位、或换了周期,就把横轴对准「所有线都有数据的那一段」:长历史的线不截,往左拖还在,
     // 只是不让短历史的线挤在右边。其余时候缩放归用户,删线 / 改色 / 数据刷新不动视图。
     const intervalChanged = alignedIntervalRef.current !== interval;
     if (arrived.length === 0 && !intervalChanged) return;
-    const range = commonRange(layers.map((l) => points[l.series] ?? []));
+    const seriesPts = [...seriesIds].map((id) => data[id]?.display ?? []);
+    const range = commonRange(seriesPts);
     // 换周期时数据可能还没到:等有数据的那一轮再对准,别把「已对准」提前记上
-    if (!range && !layers.some((l) => points[l.series]?.length)) return;
+    if (!range && !seriesPts.some((p) => p.length)) return;
 
     alignedIntervalRef.current = interval;
     if (range) chart.timeScale().setVisibleRange(range);
     else chart.timeScale().fitContent();
-  }, [doc, points, interval]);
+  }, [doc, data, interval]);
+
+  // 纵轴显示模式(倒轴 / 对数)。放在结构与数据之后:对数要看数据,轴上有 ≤0 的值就按普通坐标画。
+  // 内置左右轴每格都在,没声明的也要明确设回默认(轴被回收后再挂上图层,不能沿用旧状态)。
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const panes = chart.panes();
+    // 文档里已没有的格 / 图里已删掉的 lw 格,对应关系作废(清空后再加线时新格可能复用同一个 id)
+    const live = new Set(panes);
+    const docIds = new Set(doc.panes.map((p) => p.id));
+    [...paneOwnerRef.current].forEach(([api, id]) => {
+      if (!live.has(api) || !docIds.has(id)) paneOwnerRef.current.delete(api);
+    });
+
+    doc.panes.forEach((pane, i) => {
+      const api = panes[i];
+      if (!api) return;
+      // 新格(或 lw 格换了主人):lw-charts 写某一格内置轴的选项时会顺手 merge 进整张图的全局选项,新格按全局建轴;
+      // 旧格对象被复用时还带着上一个主人的手动范围。两种都会让新线落在别处的范围里、整格空白 —— 设回自动
+      if (paneOwnerRef.current.get(api) !== pane.id) {
+        api.priceScale('right').setAutoScale(true);
+        api.priceScale('left').setAutoScale(true);
+        paneOwnerRef.current.set(api, pane.id);
+      }
+      // 留白同理会漏进全局:每格按自己该有的值写(相关性格收窄,让 −1~1 不被撑成 1.5),只在不同时写
+      const margins = pane.layers.some(isCorrLayer) ? CORR_MARGINS : DEFAULT_MARGINS;
+      const right = api.priceScale('right');
+      const curMargins = right.options().scaleMargins;
+      if (curMargins.top !== margins.top || curMargins.bottom !== margins.bottom) {
+        right.applyOptions({ scaleMargins: margins });
+      }
+      const byId = new Map(pane.scales.map((sc) => [sc.id, sc]));
+      const ids = new Set(['right', 'left', ...byId.keys()]);
+      ids.forEach((id) => {
+        const sc = byId.get(id);
+        const ps = api.priceScale(id);
+        const cur = ps.options();
+        const invertScale = !!sc?.invert;
+        const mode = sc?.log && canLogScale(pane, id, data) ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal;
+        // 只写真变了的那一项:哪怕写回同样的 mode,lw-charts 也会按数据重算显示范围,
+        // 把用户手动拖好的纵轴缩放冲掉(实测:加一格相关性时主图纵轴被重置)
+        if (cur.invertScale !== invertScale) ps.applyOptions({ invertScale });
+        if (cur.mode !== mode) ps.applyOptions({ mode });
+      });
+    });
+  }, [doc, data]);
 
   // 分隔条拖完:读回各格比例。原生拖拽改的是图内状态,不读回的话下次结构变化会被 JSON 里的旧值盖掉。
   // 挂在 window 上:lw-charts 允许拖出图外再松手(它自己在 documentElement 上听 mouseup),
@@ -141,10 +202,7 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LineP
       const opts = { color: layer.color, priceScaleId: layer.scale };
       const existing = series.get(layer.id);
       if (!existing) {
-        series.set(
-          layer.id,
-          chart.addSeries(LineSeries, { ...opts, lineWidth: 2, priceLineVisible: false }, paneIndex),
-        );
+        series.set(layer.id, createLayerSeries(chart, layer, opts, paneIndex));
         return;
       }
       if (existing.getPane().paneIndex() !== paneIndex) existing.moveToPane(paneIndex);
@@ -167,6 +225,41 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LineP
   const panes = chart.panes();
   doc.panes.forEach((pane, i) => {
     const api = panes[i];
-    if (api && Math.abs(api.getStretchFactor() - pane.stretch) > STRETCH_EPS) api.setStretchFactor(pane.stretch);
+    if (!api) return;
+    if (Math.abs(api.getStretchFactor() - pane.stretch) > STRETCH_EPS) api.setStretchFactor(pane.stretch);
   });
+}
+
+// 内置轴留白:lw-charts 默认值,与相关性格收窄后的值
+const DEFAULT_MARGINS = { top: 0.2, bottom: 0.1 };
+const CORR_MARGINS = { top: 0.06, bottom: 0.06 };
+
+const ZERO_LINE = { price: 0, color: '#525252', lineWidth: 1 as const, lineStyle: 2, axisLabelVisible: false };
+
+/**
+ * 按图层种类建 series。相关性层的轴固定 −1~1(不随数据缩放,不同时段才可比)并画 0 线;
+ * 劈叉层画 0 线(参照期里应贴着它)。
+ */
+function createLayerSeries(
+  chart: IChartApi,
+  layer: Layer,
+  opts: { color: string; priceScaleId: string },
+  paneIndex: number,
+): ISeriesApi<'Line'> {
+  const study = isSeriesLayer(layer) ? undefined : layer.study;
+  const s = chart.addSeries(
+    LineSeries,
+    {
+      ...opts,
+      lineWidth: study ? 1 : 2,
+      priceLineVisible: false,
+      ...(study?.kind === 'corr'
+        ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } }) }
+        : {}),
+    },
+    paneIndex,
+  );
+  if (study) s.createPriceLine(ZERO_LINE);
+
+  return s;
 }

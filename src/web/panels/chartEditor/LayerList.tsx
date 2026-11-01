@@ -1,30 +1,23 @@
 import { type DragEvent, useState } from 'react';
-import { GripVertical, X } from 'lucide-react';
-import type { ChartDoc, Layer, Pane, PaneTarget, ScaleChoice } from './chartDoc';
-import { seriesDef } from './registry';
+import { isCorrLayer, type ChartDoc, type PaneTarget } from './chartDoc';
+import { LayerCard, type CardActions } from './LayerCard';
+import { canLogScale, type LayerData } from './layerPoints';
+import type { ChartDocActions } from './useChartDoc';
 
 type Props = {
   doc: ChartDoc;
-  /** before:插到这条图层前面;缺省 = 追加到该格末尾 */
-  onMove: (layerId: string, target: PaneTarget, before?: string) => void;
-  onScale: (layerId: string, choice: ScaleChoice) => void;
-  onColor: (layerId: string, color: string) => void;
-  onRemove: (layerId: string) => void;
+  data: Record<string, LayerData>;
+  actions: CardActions & Pick<ChartDocActions, 'move'>;
 };
 
-// <select> 的 value 只能是字符串:挂轴选择编码成 right / left / new / ov:<轴 id>
-const encodeScale = (scaleId: string) => (scaleId === 'right' || scaleId === 'left' ? scaleId : `ov:${scaleId}`);
-const decodeScale = (v: string): ScaleChoice =>
-  v === 'right' || v === 'left' ? v : v === 'new' ? 'newOverlay' : { overlay: v.slice(3) };
-
-const SELECT =
-  'rounded border border-neutral-800 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-300 hover:border-neutral-600';
 const DRAG_TYPE = 'text/plain';
+// 相关性格不接收拖放(它的 −1~1 轴不能与别的线共用,见 chartDoc 的 isCorrLayer)
+const NO_DROP = { onDragOver: () => {}, onDrop: () => {} };
 
 // 右侧下半:一格一个区块,区块里是该格的图层卡片。卡片整张可拖:
 // 放到另一张卡片上 = 插到它前面(同格即调顺序);放到区块空白处 = 追加到该格末尾;
 // 拖到最下面的虚线框 = 新开一格。
-export function LayerList({ doc, onMove, onScale, onColor, onRemove }: Props) {
+export function LayerList({ doc, data, actions }: Props) {
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<PaneTarget | null>(null);
   // 拖到哪张卡片上方(插入提示线画在它顶上)
@@ -53,7 +46,7 @@ export function LayerList({ doc, onMove, onScale, onColor, onRemove }: Props) {
     onDrop: (e: DragEvent) => {
       e.preventDefault();
       const id = e.dataTransfer.getData(DRAG_TYPE);
-      if (id) onMove(id, target);
+      if (id) actions.move(id, target);
       endDrag();
     },
   });
@@ -69,7 +62,7 @@ export function LayerList({ doc, onMove, onScale, onColor, onRemove }: Props) {
       e.preventDefault();
       e.stopPropagation();
       const id = e.dataTransfer.getData(DRAG_TYPE);
-      if (id) onMove(id, paneId, layerId);
+      if (id) actions.move(id, paneId, layerId);
       endDrag();
     },
   });
@@ -90,7 +83,7 @@ export function LayerList({ doc, onMove, onScale, onColor, onRemove }: Props) {
       {doc.panes.map((pane, i) => (
         <div
           key={pane.id}
-          {...dropTarget(pane.id)}
+          {...(pane.layers.some(isCorrLayer) ? {} : dropTarget(pane.id))}
           className={
             'rounded border p-1.5 transition-colors ' +
             (over === pane.id ? 'border-sky-500 bg-sky-500/5' : 'border-neutral-800')
@@ -103,16 +96,17 @@ export function LayerList({ doc, onMove, onScale, onColor, onRemove }: Props) {
             {pane.layers.map((l) => (
               <LayerCard
                 key={l.id}
+                doc={doc}
                 layer={l}
                 pane={pane}
+                data={data[l.id]}
+                canLog={canLogScale(pane, l.scale, data)}
+                actions={actions}
                 faded={dragging === l.id}
                 insertMark={overCard === l.id && dragging !== l.id}
-                drop={cardDrop(pane.id, l.id)}
+                drop={pane.layers.some(isCorrLayer) ? NO_DROP : cardDrop(pane.id, l.id)}
                 onDragStart={startDrag(l.id)}
                 onDragEnd={endDrag}
-                onScale={onScale}
-                onColor={onColor}
-                onRemove={onRemove}
               />
             ))}
           </ul>
@@ -133,84 +127,5 @@ export function LayerList({ doc, onMove, onScale, onColor, onRemove }: Props) {
         拖到这里新开一格
       </div>
     </section>
-  );
-}
-
-type CardProps = Pick<Props, 'onScale' | 'onColor' | 'onRemove'> & {
-  layer: Layer;
-  pane: Pane;
-  faded: boolean;
-  /** 在这张卡片顶上画插入提示线 */
-  insertMark: boolean;
-  drop: { onDragOver: (e: DragEvent) => void; onDrop: (e: DragEvent) => void };
-  onDragStart: (e: DragEvent) => void;
-  onDragEnd: () => void;
-};
-
-function LayerCard({
-  layer,
-  pane,
-  faded,
-  insertMark,
-  drop,
-  onDragStart,
-  onDragEnd,
-  onScale,
-  onColor,
-  onRemove,
-}: CardProps) {
-  const overlays = pane.scales.filter((s) => s.side === 'overlay');
-
-  return (
-    <li
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      {...drop}
-      className={
-        'relative cursor-grab rounded border border-neutral-800 bg-neutral-950 px-1.5 py-1.5 active:cursor-grabbing ' +
-        (faded ? 'opacity-40 ' : '') +
-        (insertMark
-          ? "before:absolute before:inset-x-0 before:-top-1 before:h-0.5 before:rounded before:bg-sky-500 before:content-['']"
-          : '')
-      }
-    >
-      <div className="flex items-center gap-1.5">
-        <GripVertical size={14} className="shrink-0 text-neutral-600" />
-        <input
-          type="color"
-          value={layer.color}
-          onChange={(e) => onColor(layer.id, e.target.value)}
-          className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border-0 bg-transparent p-0"
-          title="颜色"
-        />
-        <span className="flex-1 truncate text-sm text-neutral-200">
-          {seriesDef(layer.series)?.label ?? layer.series}
-        </span>
-        <select
-          value={encodeScale(layer.scale)}
-          onChange={(e) => onScale(layer.id, decodeScale(e.target.value))}
-          className={SELECT}
-          title="挂哪根纵轴"
-        >
-          <option value="right">右轴</option>
-          <option value="left">左轴</option>
-          {overlays.map((s, i) => (
-            <option key={s.id} value={`ov:${s.id}`}>
-              独立轴 {i + 1}
-            </option>
-          ))}
-          <option value="new">新独立轴</option>
-        </select>
-        <button
-          type="button"
-          onClick={() => onRemove(layer.id)}
-          className="text-neutral-600 hover:text-neutral-200"
-          title="删除"
-        >
-          <X size={14} />
-        </button>
-      </div>
-    </li>
   );
 }

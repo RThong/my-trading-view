@@ -1,7 +1,10 @@
 import { useRef, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { Interval } from '../../hooks/interval';
+import { AnalysisPanel, pairRequests, resolvePair } from './AnalysisPanel';
+import { isSeriesLayer } from './chartDoc';
 import { EmptyState } from './EmptyState';
+import { layerRequest, useLayerData } from './layerPoints';
 import { LayerList } from './LayerList';
 import { Legend } from './Legend';
 import { SeriesPicker } from './SeriesPicker';
@@ -10,18 +13,28 @@ import { useChartDoc } from './useChartDoc';
 import { useCrosshairLegend } from './useCrosshairLegend';
 import { useEditorChart } from './useEditorChart';
 import { useEditorSeriesData } from './useEditorSeriesData';
+import { useLineDrag } from './useLineDrag';
+import { useVisibleRange } from './useVisibleRange';
 
-// 图表编辑页:空白图上自己挑序列、分格叠放。只负责组装 —— 状态见 useChartDoc,取数见 useEditorSeriesData,
-// 渲染见 useEditorChart。全部编辑状态就是 doc 这一份 JSON(右下角可查看)。
+// 图表编辑页:空白图上自己挑序列、分格叠放、做相关性 / 领先滞后 / 参照期对齐。只负责组装 ——
+// 状态见 useChartDoc,取数见 useEditorSeriesData,各图层最终数据见 layerPoints,渲染见 useEditorChart。
+// 全部编辑状态就是 doc 这一份 JSON(右下角可查看)。
 export function ChartEditorPage({ interval }: { interval: Interval }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { doc, load, toggleSeries, remove, move, setScale, setColor, setStretches } = useChartDoc();
+  const actions = useChartDoc();
+  const { doc, load, toggleSeries, setStretches } = actions;
   const [showJson, setShowJson] = useState(false);
+  // 分析区选中的 A / B(页面持有:扫描要额外取它们未平移的原序列)
+  const [pair, setPair] = useState<{ a?: string; b?: string }>({});
 
-  const seriesIds = doc.panes.flatMap((p) => p.layers.map((l) => l.series));
-  const { points, isLoading, error, missing } = useEditorSeriesData(seriesIds, interval);
-  const { chartRef } = useEditorChart(containerRef, doc, points, { onStretches: setStretches, interval });
+  const seriesLayers = doc.panes.flatMap((p) => p.layers.filter(isSeriesLayer));
+  const requests = [...seriesLayers.map(layerRequest), ...pairRequests(resolvePair(doc, pair))];
+  const { points, isLoading, error, missing } = useEditorSeriesData(requests, interval);
+  const data = useLayerData(doc, points);
+  const { chartRef, seriesRef } = useEditorChart(containerRef, doc, data, { onStretches: setStretches, interval });
   const { hoverTime, layout } = useCrosshairLegend(containerRef, chartRef, doc);
+  const visibleRange = useVisibleRange(chartRef);
+  useLineDrag(containerRef, chartRef, seriesRef, doc);
 
   const empty = doc.panes.length === 0;
   const status = [
@@ -37,7 +50,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
         {empty ? (
           <EmptyState onLoad={load} />
         ) : (
-          <Legend doc={doc} points={points} hoverTime={hoverTime} layout={layout} />
+          <Legend doc={doc} interval={interval} data={data} hoverTime={hoverTime} layout={layout} />
         )}
         {status.length > 0 && (
           <div className="pointer-events-none absolute right-16 top-1 z-10 rounded bg-neutral-950/80 px-2 py-0.5 text-xs text-amber-400">
@@ -48,9 +61,17 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
 
       {/* 侧栏本身不滚:下拉框要能盖住下面的图层区;只有图层区自己滚 */}
       <aside className="flex w-80 shrink-0 flex-col gap-3 border-l border-neutral-800 pl-3">
-        <SeriesPicker used={new Set(seriesIds)} onToggle={toggleSeries} />
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <LayerList doc={doc} onMove={move} onScale={setScale} onColor={setColor} onRemove={remove} />
+        <SeriesPicker used={new Set(seriesLayers.map((l) => l.series))} onToggle={toggleSeries} />
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+          <LayerList doc={doc} data={data} actions={actions} />
+          <AnalysisPanel
+            doc={doc}
+            points={points}
+            visibleRange={visibleRange}
+            pair={pair}
+            onPair={setPair}
+            actions={actions}
+          />
         </div>
         <div className="border-t border-neutral-800 pt-2">
           <button

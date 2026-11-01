@@ -15,7 +15,14 @@ import {
   cdsPriceToSpreadBp,
 } from '../analytics/rateCurves';
 import { fetchJgbCurve } from '../fetchers/mofJgb';
-import { fetchTreasuryCurve, fetchTreasuryRealCurve, UST_TENORS, UST_REAL_TENORS } from '../fetchers/usTreasuryPar';
+import {
+  fetchTreasuryCurve,
+  fetchTreasuryRealCurve,
+  UST_FIRST_YEAR,
+  UST_REAL_FIRST_YEAR,
+  UST_TENORS,
+  UST_REAL_TENORS,
+} from '../fetchers/usTreasuryPar';
 
 type CurveBody = {
   tenors: string[];
@@ -96,11 +103,13 @@ function buildFromDb(pairs: { label: string; symbol: string; xform?: (v: number)
 
 // BEI 通胀曲线:各档 财政部名义 − 财政部 TIPS 实际,现算(见 computeBeiCurve)。
 // 两腿同源同日发布,日期天然对齐;任一腿整体抛 → 该腿为空,computeBeiCurve 把五档都归入 unavailable。
-async function buildBei(): Promise<CurveBody> {
-  const [nominal, real] = await Promise.all([
-    fetchTreasuryCurve().catch(warnUstFailed),
-    fetchTreasuryRealCurve().catch(warnUstFailed),
-  ]);
+// startYear 缺省 = 全站起点;长历史版两腿都从 TIPS 有数那年起(名义腿再往前也配不上)。
+async function buildBei(startYear?: number): Promise<CurveBody> {
+  const nominalLeg = () => fetchTreasuryCurve(undefined, undefined, startYear).catch(warnUstFailed);
+  const realLeg = () => fetchTreasuryRealCurve(undefined, undefined, startYear).catch(warnUstFailed);
+  // 长历史版两腿各二十多年,同时拉会让财政部那边一次挨十几个请求(实测整条失败过),改成先后拉
+  const [nominal, real] =
+    startYear === undefined ? await Promise.all([nominalLeg(), realLeg()]) : [await nominalLeg(), await realLeg()];
 
   return computeBeiCurve(
     UST_REAL_TENORS.map((tenor) => ({ tenor, nominal: nominal[tenor] ?? null, real: real[tenor] ?? null })),
@@ -163,31 +172,51 @@ export function fillFromPrev(body: CurveBody, prev: CurveBody | null): CurveBody
   };
 }
 
+/**
+ * 长历史版(`history=full`,只给图表编辑器用):财政部那三条从各自有数的第一年拉起
+ * (名义 1990、实际 / BEI 2003)。**与默认版分开缓存、分开落盘** —— 旧页面仍是全站统一的 2018 起,
+ * 它们的分位 / 时间轴不受影响。
+ */
+const FULL_BUILDERS: Record<string, () => Promise<CurveBody>> = {
+  treasury: () => buildUst(() => fetchTreasuryCurve(undefined, undefined, UST_FIRST_YEAR), UST_TENORS),
+  real: () => buildUst(() => fetchTreasuryRealCurve(undefined, undefined, UST_REAL_FIRST_YEAR), UST_REAL_TENORS),
+  bei: () => buildBei(UST_REAL_FIRST_YEAR),
+};
+
 // 每个 source 一份缓存。TTL / 重试间隔与 regime 同(EOD 日频,6h 安全;降级结果 10 分钟后重试)。
-const liveCaches = Object.fromEntries(
-  Object.entries(LIVE_BUILDERS).map(([source, build]) => [
-    source,
-    createSwrCache<CurveBody>({
-      ttlMs: 6 * 60 * 60 * 1000,
-      retryMs: 10 * 60 * 1000,
-      snapshotPath: resolve(PROJECT_ROOT, 'data', 'cache', `yield-${source}.json.gz`),
-      load: async (prev) => {
-        // 构造器整个抛(如 MOF CSV 挂了)= 全部期限都没拉到:按「全缺」降级,而不是让真冷请求 500。
-        const tenors = prev?.tenors ?? [];
-        const body = await build().catch((e: unknown) => {
-          console.warn(`[yield-curve] ${source} 现拉失败,本次全部期限 unavailable: ${(e as Error).message}`);
-          return { tenors, series: {}, unavailable: tenors };
-        });
-        return { value: fillFromPrev(body, prev), complete: body.tenors.length > 0 && !body.unavailable.length };
-      },
-    }),
-  ]),
-);
+const curveCaches = (builders: Record<string, () => Promise<CurveBody>>, fileSuffix: string) =>
+  Object.fromEntries(
+    Object.entries(builders).map(([source, build]) => [source, curveCache(source, build, fileSuffix)]),
+  );
+
+const curveCache = (source: string, build: () => Promise<CurveBody>, fileSuffix: string) =>
+  createSwrCache<CurveBody>({
+    ttlMs: 6 * 60 * 60 * 1000,
+    retryMs: 10 * 60 * 1000,
+    snapshotPath: resolve(PROJECT_ROOT, 'data', 'cache', `yield-${source}${fileSuffix}.json.gz`),
+    load: async (prev) => {
+      // 构造器整个抛(如 MOF CSV 挂了)= 全部期限都没拉到:按「全缺」降级,而不是让真冷请求 500。
+      const tenors = prev?.tenors ?? [];
+      const body = await build().catch((e: unknown) => {
+        console.warn(`[yield-curve] ${source} 现拉失败,本次全部期限 unavailable: ${(e as Error).message}`);
+        return { tenors, series: {}, unavailable: tenors };
+      });
+      return { value: fillFromPrev(body, prev), complete: body.tenors.length > 0 && !body.unavailable.length };
+    },
+  });
+
+const liveCaches = curveCaches(LIVE_BUILDERS, '');
+const fullCaches = curveCaches(FULL_BUILDERS, '-full');
 
 export const yieldCurveRoute = new Hono().get('/', async (c) => {
   // 缺 source → 默认 treasury;给了无效 source → 400(不静默兜底成国债,否则拼错的 source 会伪装成合理数据)。
   const source = c.req.query('source') ?? 'treasury';
 
+  // 长历史版只有财政部那三条;其它源没有更长的历史可给,照常回默认版
+  if (c.req.query('history') === 'full' && Object.hasOwn(fullCaches, source)) {
+    const { value, refreshing, partial } = await fullCaches[source].get();
+    return c.json({ ...value, refreshing, partial });
+  }
   // 只认自有属性:`source=toString` / `__proto__` 会顺着原型链命中,随后抛成 500 而不是 400。
   if (Object.hasOwn(liveCaches, source)) {
     const { value, refreshing, partial } = await liveCaches[source].get();

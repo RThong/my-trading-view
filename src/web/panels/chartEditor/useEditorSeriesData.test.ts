@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { RegimeData } from '../regime/regimeChart.hooks';
-import { REGISTRY, seriesDef, searchSeries } from './registry';
+import { REGISTRY, rememberYahooName, seriesDef, searchSeries, yahooId } from './registry';
 import { asOfValue } from './useCrosshairLegend';
 import { commonRange, seriesPoints, weekdayOnly } from './useEditorSeriesData';
 import { REGIME_SERIES } from '../../../shared/regimeSeries';
@@ -23,29 +23,55 @@ const regime: RegimeData = {
   },
 };
 const prices = { SPY: [{ date: '2026-10-30', close: 755.7 }] };
+const curves = { real: { series: { '10Y': [{ date: '2026-10-30', value: 1.92 }] } } };
+const src = { regime, prices, curves };
 
 describe('seriesPoints', () => {
   test('regime 序列:统一成 {time,value},丢掉非有限值', () => {
-    expect(seriesPoints(seriesDef('vix')!, regime, prices, '1D')).toEqual([{ time: '2026-10-30', value: 19.4 }]);
+    expect(seriesPoints(seriesDef('vix')!, src, '1D')).toEqual([{ time: '2026-10-30', value: 19.4 }]);
   });
 
   test('BTC 走 ohlc 收盘,并去掉周末', () => {
-    expect(seriesPoints(seriesDef('btc')!, regime, prices, '1D').map((p) => p.time)).toEqual([
-      '2026-10-30',
-      '2026-11-02',
-    ]);
+    expect(seriesPoints(seriesDef('btc')!, src, '1D').map((p) => p.time)).toEqual(['2026-10-30', '2026-11-02']);
   });
 
   test('price 源取收盘', () => {
-    expect(seriesPoints(seriesDef('SPY')!, regime, prices, '1D')).toEqual([{ time: '2026-10-30', value: 755.7 }]);
+    expect(seriesPoints(seriesDef('SPY')!, src, '1D')).toEqual([{ time: '2026-10-30', value: 755.7 }]);
+  });
+
+  test('收益曲线源取对应期限', () => {
+    expect(seriesPoints(seriesDef('real10y')!, src, '1D')).toEqual([{ time: '2026-10-30', value: 1.92 }]);
+    expect(seriesPoints(seriesDef('real5y')!, src, '1D')).toEqual([]);
+  });
+
+  test('Yahoo 任意代码:动态定义;含大量周末点的(加密)自动去周末', () => {
+    rememberYahooName('BTC-USD', 'Bitcoin USD');
+    const def = seriesDef(yahooId('btc-usd'))!;
+    expect(def).toMatchObject({
+      id: 'yh:BTC-USD',
+      label: 'BTC-USD Bitcoin USD',
+      source: { kind: 'yahoo', symbol: 'BTC-USD' },
+    });
+    const yahoo = {
+      'BTC-USD': {
+        symbol: 'BTC-USD',
+        name: 'Bitcoin USD',
+        points: ['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02'].map((date, i) => ({ date, close: 100 + i })),
+      },
+      'GC=F': { symbol: 'GC=F', name: 'Gold', points: [{ date: '2026-10-30', close: 3900 }] },
+    };
+    expect(seriesPoints(def, { ...src, yahoo }, '1D').map((p) => p.time)).toEqual(['2026-10-30', '2026-11-02']);
+    expect(seriesPoints(seriesDef('yh:GC=F')!, { ...src, yahoo }, '1D')).toEqual([{ time: '2026-10-30', value: 3900 }]);
+    // 没记到名字就只显示代码
+    expect(seriesDef('yh:ZZZ')!.label).toBe('ZZZ');
   });
 
   test('源里没有 → 空数组', () => {
-    expect(seriesPoints(seriesDef('dgs10')!, regime, prices, '1D')).toEqual([]);
+    expect(seriesPoints(seriesDef('dgs10')!, src, '1D')).toEqual([]);
   });
 
   test('按周期聚合(周线取周内最后一点,键为周一)', () => {
-    expect(seriesPoints(seriesDef('btc')!, regime, prices, '1W')).toEqual([
+    expect(seriesPoints(seriesDef('btc')!, src, '1W')).toEqual([
       { time: '2026-10-26', value: 100 },
       { time: '2026-11-02', value: 103 },
     ]);
@@ -68,7 +94,7 @@ describe('registry', () => {
 
   test('搜索命中名称 / 别名,不区分大小写', () => {
     expect(searchSeries('dxy').map((d) => d.id)).toEqual(['usd']);
-    expect(searchSeries('比特币').map((d) => d.id)).toEqual(['btc']);
+    expect(searchSeries('比特币').map((d) => d.id)).toEqual(['IBIT', 'btc']);
     expect(searchSeries('  ')).toBe(REGISTRY);
   });
 });

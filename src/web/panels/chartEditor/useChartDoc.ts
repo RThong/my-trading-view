@@ -4,17 +4,29 @@ import { SERIES_COLORS } from '../../lib/palette';
 import {
   EMPTY_DOC,
   addLayer,
+  addStudy,
+  applyLayerFit,
+  clearLayerFit,
+  isSeriesLayer,
   moveLayer,
   nextColor,
   removeLayer,
   removeSeries,
+  setCorrParams,
   setLayerColor,
   setLayerScale,
+  setLayerShift,
+  setScaleInvert,
+  setScaleLog,
   setStretches,
   type ChartDoc,
+  type Fit,
   type PaneTarget,
   type ScaleChoice,
+  type Study,
 } from './chartDoc';
+
+type CorrPatch = Parameters<typeof setCorrParams>[2];
 
 export function useChartDoc() {
   const [doc, setDoc] = useState<ChartDoc>(EMPTY_DOC);
@@ -25,7 +37,7 @@ export function useChartDoc() {
     /** 下拉框勾选 / 取消勾选:在图上的就整条拿掉,不在的加到第 0 格 */
     toggleSeries: (series: string) =>
       setDoc((d) =>
-        d.panes.some((p) => p.layers.some((l) => l.series === series))
+        d.panes.some((p) => p.layers.some((l) => isSeriesLayer(l) && l.series === series))
           ? removeSeries(d, series)
           : addLayer(d, series, nextColor(d, SERIES_COLORS)),
       ),
@@ -35,5 +47,15 @@ export function useChartDoc() {
     setScale: (layerId: string, choice: ScaleChoice) => setDoc((d) => setLayerScale(d, layerId, choice)),
     setColor: (layerId: string, color: string) => setDoc((d) => setLayerColor(d, layerId, color)),
     setStretches: (stretches: number[]) => setDoc((d) => setStretches(d, stretches)),
+    setShift: (layerId: string, shift: number) => setDoc((d) => setLayerShift(d, layerId, shift)),
+    setInvert: (paneId: string, scaleId: string, invert: boolean) =>
+      setDoc((d) => setScaleInvert(d, paneId, scaleId, invert)),
+    setLog: (paneId: string, scaleId: string, log: boolean) => setDoc((d) => setScaleLog(d, paneId, scaleId, log)),
+    addStudy: (study: Study) => setDoc((d) => addStudy(d, study, nextColor(d, SERIES_COLORS))),
+    setCorr: (layerId: string, patch: CorrPatch) => setDoc((d) => setCorrParams(d, layerId, patch)),
+    applyFit: (layerId: string, fit: Fit) => setDoc((d) => applyLayerFit(d, layerId, fit, nextColor(d, SERIES_COLORS))),
+    clearFit: (layerId: string) => setDoc((d) => clearLayerFit(d, layerId)),
   };
 }
+
+export type ChartDocActions = ReturnType<typeof useChartDoc>;

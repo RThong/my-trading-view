@@ -61,6 +61,17 @@ describe('fetchTreasuryCurve(年度聚合 / 失败)', () => {
   const fake = (csvByYear: Record<string, string> = {}, failYears: string[] = []) =>
     fakeFetch(nominalRow, csvByYear, failYears);
 
+  it('startYear 决定从哪年拉起(长历史版 1990),每年各请求一次', async () => {
+    const asked: string[] = [];
+    const counting = (url: string) => {
+      asked.push(yearOf(url));
+      return fake()(url);
+    };
+    const out = await fetchTreasuryCurve(counting, new Date('2026-10-30T00:00:00Z'), 1990);
+    expect(asked.toSorted()).toEqual(Array.from({ length: 37 }, (_, i) => String(1990 + i)));
+    expect(out['10Y'][0].date).toBe('1990-01-02');
+  });
+
   it('各年合并且按日期升序', async () => {
     const out = await fetchTreasuryCurve(fake({ '2018': CSV_OLD, '2026': CSV_NEW }));
     const dates = out['10Y'].map((p) => p.date);

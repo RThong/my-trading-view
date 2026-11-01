@@ -84,14 +84,18 @@ lightweight-charts 的映射：`right` / `left` 用内置轴，`overlay` 用自�
 
 拖分隔条用 lw-charts 原生功能（`layout.panes.enableResize`）。拖完在 pointerup 时（监听 `window`：lw-charts 允许拖出图外再松手）读回各格的 `getStretchFactor()` 写回 JSON，保证 JSON 始终是唯一真源；后续结构变化再按 JSON 重新设置比例。单根纵轴的缩放、全格共用时间轴，都直接用 lw-charts 原生行为。
 
-## 3. MVP 序列注册表（17 条，都不依赖 OpenD）
+## 3. 序列注册表（28 条内置 + 任意 Yahoo 代码，都不依赖 OpenD）
 
-除 SPY 外都来自 `/api/regime`（一次请求，`useRegimeData`，各面板共用 SWR 缓存，所以不会多发请求）。SPY 来自 `/api/price/SPY`（`price_eod`，与期权页的现货同源）。
+数据来源：SPY / GLD / IBIT / TLT / USO 走 `/api/price/:symbol`（`price_eod`，与期权页现货同源）；美债 2Y/10Y/30Y、实际利率 5/10/30Y、BEI 5/10Y 走 `/api/yield-curve?source=…&history=full`（编辑器专用长历史版：名义 1990 起、实际 / BEI 2003 起，与旧页面默认的 2018 起版本分开缓存）；其余走 `/api/regime`（`useRegimeData`，各面板共用 SWR 缓存）。另可搜任意 Yahoo 代码（图层 id = `yh:<代码>`，走 `/api/yahoo/search` + `/api/yahoo/history/:symbol`，读时现拉、不落库）。
 
 | 分类 | id | 名称 | 频率 | 来源 |
 |---|---|---|---|---|
 | 资产 | `SPY` | SPY 收盘 | 日 | `/api/price/SPY` → `close` |
 | 资产 | `qqq` | QQQ 收盘 | 日 | regime `series.qqq` |
+| 资产 | `GLD` | GLD 黄金 | 日 | `/api/price/GLD` → `close` |
+| 资产 | `IBIT` | IBIT 比特币 ETF | 日（2024-01 上市） | `/api/price/IBIT` → `close` |
+| 资产 | `TLT` | TLT 长期美债 | 日 | `/api/price/TLT` → `close` |
+| 资产 | `USO` | USO 原油 | 日 | `/api/price/USO` → `close` |
 | 资产 | `btc` | BTC 收盘 | 日（含周末） | regime `ohlc.btc` → `close` |
 | 资产 | `usd` | 美元指数 DXY | 日 | regime `series.usd` |
 | 资产 | `usdjpy` | USD/JPY | 日 | regime `series.usdjpy` |
@@ -100,7 +104,7 @@ lightweight-charts 的映射：`right` / `left` 用内置轴，`overlay` 用自�
 | 波动率 | `move` | MOVE | 日 | regime |
 | 波动率 | `skew` | SKEW | 日 | regime |
 | 波动率 | `cor1m` | COR1M 隐含相关性 | 日 | regime |
-| 利率 | `dgs10` | 美债 10Y | 日 | regime |
+| 利率 | `dgs10` | 美债 10Y | 日（1990 起） | `/api/yield-curve` treasury 10Y（id 沿用旧名） |
 | 利率 | `jgb10y` | 日债 10Y | 日 | regime |
 | 利率 | `tp10Kw` | 10Y 期限溢价（KW） | 日 | regime |
 | 信用·流动性 | `hyOas` | HY OAS | 日（FRED 只给近 3 年） | regime |
@@ -113,6 +117,16 @@ lightweight-charts 的映射：`right` / `left` 用内置轴，`overlay` 用自�
 周 / 月频序列与日频序列放在一起时，原样作为稀疏点画出（lw-charts 把线连起来），不做前向填充。
 
 **历史长度不截**：各序列有多长就给多长（SPY 1993 起、BTC 2012 起，regime 大多 2018 起）。有新线拿到数据时，横轴对准「所有线都有数据的那一段」（起点取最晚的起点），往左拖仍能看到长历史的那几条；切换页头周期时同样重新对准（与旧图表「换周期即重铺」一致）；删线、改色、数据刷新不动视图。为让 2018 起约 2200 根日线在常见屏宽下放得下，编辑器把 `minBarSpacing` 调到 0.1（默认 0.5）。没有把其它源往 2018 年以前补：那牵动后端与全部旧页面，另议。
+
+## 4. 第二轮（分析与交互）
+
+- **纵轴属性**：`Scale.invert`（倒轴）、`Scale.log`（对数；轴上有 ≤0 值时渲染退回普通坐标）。只在值真变化时写 lw-charts 选项 —— 重复写 `mode` 会冲掉用户手动缩放的范围。
+- **平移**：`SeriesLayer.shift`（交易日，±3650），先平移再聚合；图例在日线下标原始日期。
+- **派生图层** `StudyLayer.study`：滚动相关性 `{kind:'corr', a, b, window, mode, horizon}`（同一对只一格；独占一格、不挪不换轴，轴固定 −1~1）与劈叉幅度 `{kind:'gap', of}`。引用失效由 `normalize` 收拾。
+- **参照期对齐** `SeriesLayer.fit = {target, start, end}`：参照期内最小二乘换算到 target 单位，挪到 target 的格与轴，并加劈叉格；样本 <10 不让点。
+- **领先滞后扫描**：用 A / B 未平移的日线原序列，±750 交易日内逐日平移算相关，画整条曲线。
+- **选线拖动**：点线选中（加粗），格内任意处上下拖只挪它的轴；左 / 右轴交给原生拖（临时切 `defaultVisiblePriceScaleId`，mouseup 处理完再切回），独立轴自己挪；双击复位自动缩放。
+- **lw-charts 5.2 的坑**：`priceScale.setVisibleRange` 在对数轴上不换算（会算出 Infinity）；数据变化时派发「可视时间范围」事件可能抛 `Value is null`（改订阅逻辑范围）。
 
 ## 本期不做（再列一次，防止范围膨胀）
 
