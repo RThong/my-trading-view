@@ -6,6 +6,7 @@ import { priceRoute } from './routes/price';
 import { regimeRoute } from './routes/regime';
 import { yieldCurveRoute } from './routes/yieldCurve';
 import { yahooRoute } from './routes/yahoo';
+import { seriesRoute } from './routes/series';
 
 const app = new Hono()
   .basePath('/api')
@@ -15,7 +16,8 @@ const app = new Hono()
   .route('/price', priceRoute)
   .route('/regime', regimeRoute)
   .route('/yield-curve', yieldCurveRoute)
-  .route('/yahoo', yahooRoute);
+  .route('/yahoo', yahooRoute)
+  .route('/series', seriesRoute);
 
 export default {
   port: 3000,

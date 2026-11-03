@@ -17,7 +17,17 @@ import {
   ComboboxValue,
   useComboboxAnchor,
 } from '@web/components/ui/combobox';
-import { CATEGORIES, YAHOO_PREFIX, rememberYahooName, searchSeries, seriesDef, yahooId } from './registry';
+import {
+  CATEGORIES,
+  REGISTRY,
+  YAHOO_PREFIX,
+  libraryIdForYahoo,
+  rememberYahooName,
+  searchSeries,
+  seriesDef,
+  yahooId,
+} from './registry';
+import { useVxContracts } from './useVxContracts';
 import { searchable, type YahooHit, useYahooSearch } from './useYahooSearch';
 
 type Props = {
@@ -69,14 +79,21 @@ export function SeriesPicker({ selected, onToggle, onClear }: Props) {
   const yahoo = useYahooSearch(query);
   const used = new Set(selected.map((s) => s.series));
   const colorOf = new Map(selected.map((s) => [s.series, s.color]));
-  const hits = searchSeries(query);
+  // 库里已有的 Yahoo 代码(SPY、^VIX…)归到库里那条:并进内置结果,不在 Yahoo 组里再列一条
+  const yahooOnly = yahoo.hits.filter((h) => !libraryIdForYahoo(h.symbol));
+  const vxContracts = useVxContracts();
+  const hitIds = new Set([
+    ...searchSeries(query, vxContracts).map((d) => d.id),
+    ...(q ? yahoo.hits.map((h) => libraryIdForYahoo(h.symbol)) : []),
+  ]);
+  const hits = [...REGISTRY, ...vxContracts].filter((d) => hitIds.has(d.id));
   const builtin: Group[] = CATEGORIES.map((c) => ({
     value: c,
     items: hits.filter((d) => d.category === c).map((d) => ({ id: d.id, label: d.label, meta: d.freq })),
   }));
   // Yahoo:有关键字时列搜索结果;没关键字时列图上已有的,方便取消勾选
   const yahooItems: Option[] = q
-    ? yahoo.hits.map(yahooOption)
+    ? yahooOnly.map(yahooOption)
     : [...used].filter((id) => id.startsWith(YAHOO_PREFIX)).map((id) => ({ id, label: labelOf(id), meta: '日' }));
   const groups = [...builtin, { value: 'Yahoo', items: yahooItems }].filter((g) => g.items.length > 0);
   const yahooStatus = !q
