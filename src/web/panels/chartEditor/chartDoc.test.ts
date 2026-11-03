@@ -383,3 +383,50 @@ describe('叠加', () => {
     expect(parseChartDoc(bad)).toBeNull();
   });
 });
+
+describe('固定面板用的可选字段', () => {
+  const base = (layerPatch: object, panePatch: object = {}) => ({
+    v: 1,
+    panes: [
+      {
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [{ id: 'l1', series: 'vix', scale: 'right', color: '#111111', ...layerPatch }],
+        ...panePatch,
+      },
+    ],
+  });
+
+  test('合法值原样保留', () => {
+    const ok = base(
+      {
+        title: 'VIX',
+        render: { kind: 'line', baseline: 0, step: true },
+        refLines: [{ price: 4, title: '临界 4', color: '#ef4444' }],
+        percentile: { riskTail: 'high', since: '2000-01-01' },
+      },
+      { label: 'VIX', desc: '说明' },
+    );
+    expect(parseChartDoc(ok)).toEqual(ok as ChartDoc);
+  });
+
+  test.each([
+    ['render.kind 不认识', { render: { kind: 'candle' } }],
+    ['step 只能是 true', { render: { kind: 'line', step: false } }],
+    ['参考线颜色须 #rrggbb', { refLines: [{ price: 1, title: 'x', color: 'red' }] }],
+    ['参考线缺价位', { refLines: [{ title: 'x' }] }],
+    ['riskTail 只有 low / high', { percentile: { riskTail: 'mid' } }],
+    ['since 须是真日期', { percentile: { since: '2026-13-01' } }],
+    ['title 不能是空串', { title: '' }],
+  ])('图层:%s → 拒收', (_, patch) => {
+    expect(parseChartDoc(base(patch))).toBeNull();
+  });
+
+  test.each([
+    ['label 不能是空串', { label: '' }],
+    ['desc 须是字符串', { desc: 1 }],
+  ])('格:%s → 拒收', (_, patch) => {
+    expect(parseChartDoc(base({}, patch))).toBeNull();
+  });
+});

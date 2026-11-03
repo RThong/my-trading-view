@@ -21,6 +21,15 @@ export type Scale = {
  */
 export type Fit = { target: string; start: string; end: string; alpha: number; beta: number; r: number };
 
+// 以下几个可选字段给固定面板用(固定面板的每个 tab 也是一份 ChartDoc,见 panels/regime/docs)。
+// 编辑器暂不画它们,只原样保留:从固定面板打开、改完再导出,这些设定不丢。
+/** 画法。缺省 = 普通折线。baseline:会穿零的序列画一条基线;step:低频序列画阶梯(两次发布之间值不变) */
+export type LayerRender = { kind: 'line'; baseline?: number; step?: true };
+/** 有绝对含义的阈值线(如「临界 4」),跟随图层所在的纵轴 */
+export type RefLine = { price: number; title: string; color?: string };
+/** 按图层自身历史算 P5 / P95 参考线;riskTail = 哪一端是风险(背景染红 / 绿);since = 只用这天起的数据算分位 */
+export type PercentileBand = { riskTail?: 'low' | 'high'; since?: string };
+
 export type Layer = {
   id: string;
   /** 引用同一格 scales 里的某个 id */
@@ -31,6 +40,11 @@ export type Layer = {
   /** 平移的交易日数,> 0 往后(右)挪 —— 看它是不是领先别的线 */
   shift?: number;
   fit?: Fit;
+  /** 图例名;缺省用注册表里的名称 */
+  title?: string;
+  render?: LayerRender;
+  refLines?: RefLine[];
+  percentile?: PercentileBand;
 };
 
 export type Pane = {
@@ -39,6 +53,10 @@ export type Pane = {
   stretch: number;
   scales: Scale[];
   layers: Layer[];
+  /** 格子的短名(固定面板工具条上的开关);缺省用主图层的名称 */
+  label?: string;
+  /** 读法说明(悬停 ⓘ 显示) */
+  desc?: string;
 };
 
 export type ChartDoc = { v: 1; panes: Pane[] };
@@ -368,10 +386,15 @@ export function moveLayer(doc: ChartDoc, layerId: string, target: PaneTarget, be
   const builtin = layer.scale === 'right' || layer.scale === 'left' ? BUILTIN[layer.scale] : undefined;
   const carried = [overlay ?? builtin].filter((s) => s !== undefined);
 
+  // 源格只剩这一条线时,源格会被 normalize 删掉:拖到新格 = 整格换了位置,短名 / 说明跟着走;
+  // 拖进已有格 = 两格并成一格,只留目标格自己的(源格那段说明讲的是另一件事,带过去反而误导)
+  const { label, desc } = hit.pane.layers.length === 1 ? hit.pane : {};
+  const paneMeta = { ...(label !== undefined && { label }), ...(desc !== undefined && { desc }) };
+
   const withoutLayer = doc.panes.map((p) => ({ ...p, layers: p.layers.filter((l) => l.id !== layerId) }));
   const panes =
     target === 'new'
-      ? [...withoutLayer, { id: nextId(doc, 'p'), stretch: SUB_STRETCH, scales: carried, layers: [layer] }]
+      ? [...withoutLayer, { id: nextId(doc, 'p'), stretch: SUB_STRETCH, scales: carried, layers: [layer], ...paneMeta }]
       : withoutLayer.map((p) =>
           p.id === target
             ? { ...p, scales: [...p.scales, ...carried], layers: insertBefore(p.layers, layer, before) }
@@ -455,6 +478,18 @@ const isFit = (x: unknown): x is Fit =>
   x.beta !== 0 &&
   isNum(x.r);
 
+const isRender = (x: unknown): x is LayerRender =>
+  isObj(x) &&
+  x.kind === 'line' &&
+  (x.baseline === undefined || isNum(x.baseline)) &&
+  (x.step === undefined || x.step === true);
+const isRefLine = (x: unknown): x is RefLine =>
+  isObj(x) && isNum(x.price) && isStr(x.title) && (x.color === undefined || isColor(x.color));
+const isPercentile = (x: unknown): x is PercentileBand =>
+  isObj(x) &&
+  (x.riskTail === undefined || x.riskTail === 'low' || x.riskTail === 'high') &&
+  (x.since === undefined || isDate(x.since));
+
 const isLayer = (x: unknown): x is Layer =>
   isObj(x) &&
   isStr(x.id) &&
@@ -462,10 +497,29 @@ const isLayer = (x: unknown): x is Layer =>
   isColor(x.color) &&
   isStr(x.series) &&
   (x.shift === undefined || isInt(x.shift, -MAX_SHIFT, MAX_SHIFT)) &&
-  (x.fit === undefined || isFit(x.fit));
+  (x.fit === undefined || isFit(x.fit)) &&
+  (x.title === undefined || isStr(x.title)) &&
+  (x.render === undefined || isRender(x.render)) &&
+  (x.refLines === undefined || (Array.isArray(x.refLines) && x.refLines.every(isRefLine))) &&
+  (x.percentile === undefined || isPercentile(x.percentile));
+
+const canonicalRender = (r: LayerRender): LayerRender => ({
+  kind: r.kind,
+  ...(r.baseline !== undefined ? { baseline: r.baseline } : {}),
+  ...(r.step ? { step: true as const } : {}),
+});
+const canonicalRefLine = (r: RefLine): RefLine => ({
+  price: r.price,
+  title: r.title,
+  ...(r.color !== undefined ? { color: r.color } : {}),
+});
+const canonicalPercentile = (p: PercentileBand): PercentileBand => ({
+  ...(p.riskTail ? { riskTail: p.riskTail } : {}),
+  ...(p.since ? { since: p.since } : {}),
+});
 
 /**
- * 按字段白名单、固定顺序重建图层(id、series、scale、color、shift、fit):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
+ * 按字段白名单、固定顺序重建图层(id、series、scale、color、shift、fit、title、render、refLines、percentile):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
  * 守住「图层不存数据」;编辑操作改 shift / fit 后也走这里,先改哪个字段都一样,复制出去的 JSON 再导入文本原样不变。
  */
 function canonicalLayer(l: Layer): Layer {
@@ -487,6 +541,10 @@ function canonicalLayer(l: Layer): Layer {
           },
         }
       : {}),
+    ...(l.title !== undefined ? { title: l.title } : {}),
+    ...(l.render ? { render: canonicalRender(l.render) } : {}),
+    ...(l.refLines ? { refLines: l.refLines.map(canonicalRefLine) } : {}),
+    ...(l.percentile ? { percentile: canonicalPercentile(l.percentile) } : {}),
   };
 }
 
@@ -501,7 +559,9 @@ const isPane = (x: unknown): x is Pane =>
   Array.isArray(x.scales) &&
   x.scales.every(isScale) &&
   Array.isArray(x.layers) &&
-  x.layers.every(isLayer);
+  x.layers.every(isLayer) &&
+  (x.label === undefined || isStr(x.label)) &&
+  (x.desc === undefined || isStr(x.desc));
 
 const allUnique = (ids: string[]) => new Set(ids).size === ids.length;
 
@@ -529,6 +589,8 @@ export function parseChartDoc(x: unknown): ChartDoc | null {
     stretch: p.stretch,
     scales: p.scales.map(canonicalScale),
     layers: p.layers.map(canonicalLayer),
+    ...(p.label !== undefined ? { label: p.label } : {}),
+    ...(p.desc !== undefined ? { desc: p.desc } : {}),
   }));
 
   return normalize({ v: 1, panes });

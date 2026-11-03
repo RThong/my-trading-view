@@ -8,6 +8,10 @@ import type { SeriesKey } from '../../../shared/regimeSeries';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../chart/paneChart.types';
 import { rollMismatchDates, type RollMismatchKind } from '../../lib/oilRoll';
+import { BREADTH_CHECK, SIGMA_ID } from './descSnippets';
+import type { ChartDoc } from '../chartEditor/chartDoc';
+import { CONCENTRATION } from './docs/concentration';
+import { seriesDef } from '../chartEditor/registry';
 import {
   KIND_RENDER,
   SEC_BUYER_FCF_KEY,
@@ -59,8 +63,6 @@ const FIVE_STEPS =
 const FICC_TRIANGLE =
   'FICC 低波三角(油价 / 10Y / 美元)之一:三者低波本身 = 资金敢极端集中到核心的安全垫,防线一松传导极快。';
 const RESONANCE = '共振清单:低波 + 高 CAPE + RXM/SPX 低 + 利率 / 总量流动性收紧,四项同亮 = 降杠杆 / 买保险。';
-// 近似而非恒等:严格关系还取决于权重与相关矩阵,VIXEQ 又是等权平均,故不写「恒低于」。
-const SIGMA_ID = '近似关系 σ指数 ≈ σ个股 × √平均相关性 → VIX 通常低于 VIXEQ,缺口主要反映相关性 / 离散度。';
 // compute dim 四条 GPU 指数共用的署名(License 要求),四格各写一遍会改一处漏一处。
 const CGI_ATTRIBUTION = '数据:Computable(getcomputable.com),公开 REST 无需鉴权,CC BY-NC 4.0。';
 // CoreWeave 是 H100/H200/B200 三条的 panel 成员 —— 拿这几格跟 CRWV 股价对比时不是两个独立信号。
@@ -70,9 +72,6 @@ const CGI_CRWV_CAVEAT = '⚠️ CoreWeave 同时是本条 panel 成员,和 CRWV 
 // 这份数据最要紧的方法论限制,四格都要有 —— 同上,用户一次只 hover 一格。
 // 拿其中任一格当"成交价"读会直接误判价格趋势,比 CRWV 那条更不能漏。
 const CGI_LIST_PRICE_CAVEAT = '⚠️ 是"公开挂牌价"聚合,不是实际成交价——大多数 provider 报的是 list price。';
-// 「低离散是真分化还是被按住」的交叉清单:VIXEQ 与 COR1M 是同一件事的两种写法,判据同一套。
-const BREADTH_CHECK =
-  '判别看宽度(RSP/SPY、200 日线上占比)+ 头部权重 + 流动性松紧:宽度塌 + 权重高 = 被少数巨头按住,不是健康分化。';
 // 背景带的颜色含义。**只有颜色、图上没有图例** —— 而红色直觉上像「涨」,第一次看极易读反。
 // 能源两个 tab 的格子都带这句(一次只 hover 一格,漏哪格哪格就没提醒)。
 // ⚠️ 全文件还有十余格配了 riskTail 却没带 —— 那是既有状态,本次没动;要补该整轮补齐,
@@ -217,7 +216,7 @@ type PaneSpec = {
     | { kind: 'candle' }; // 蜡烛(用 data.ohlc[key]),不套分位/背景带;价格轴线性/对数按数据自判
   band?: { lo: number; hi: number }; // 固定常态带 → 上下参考线(基本面锚,替代自指的 P5/P95)
   /** 自定义参考线(有绝对含义的阈值,不是「常态上下限」时用,如供应密度的警戒 / 高风险)。与 band 二选一。 */
-  refLines?: { price: number; title: string; color: string }[];
+  refLines?: { price: number; title: string; color?: string }[];
   /** 轴至少覆盖这段(见 LineSpec.expandVisibleTo):让 refLines 在数据还没走到时也看得见。 */
   expandVisibleTo?: [number, number];
   /**
@@ -287,7 +286,16 @@ const BTC_SPOT_PANE: PaneSpec = {
   ].join('\n'),
 };
 
-export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
+/**
+ * 已迁成 ChartDoc 的 tab(与图表编辑器同一格式,序列引注册表 id;见 ./docs)。
+ * 逐 tab 往这里挪:挪一个,就从下面 REGIME_DIMS 删掉对应的手写 panes —— 两边同时有,类型会报错。
+ */
+type DocDim = 'concentration';
+export const REGIME_DOCS: Record<DocDim, ChartDoc> = {
+  concentration: CONCENTRATION,
+};
+
+export const REGIME_DIMS: Record<Exclude<FixedDim, DocDim>, DimConfig> = {
   credit: {
     panes: [
       {
@@ -1785,67 +1793,6 @@ export const REGIME_DIMS: Record<FixedDim, DimConfig> = {
     ],
   },
   // 估值:席勒 CAPE(PE10)。高=贵=未来回报低=风险(红);低=便宜=机会(绿)。
-  concentration: {
-    panes: [
-      {
-        key: 'spxEqw',
-        label: '市值 / 等权',
-        title: '标普500 ÷ 等权',
-        color: '#38bdf8',
-        // 不套分位:2023 起结构性上行,水位不平稳,分位永远贴着最高处,没有信息。读方向与拐点。
-        desc: [
-          '定义:标普 500(市值加权)÷ 标普 500 等权指数(^GSPC / ^SPXEW,都是价格指数,不含分红)。',
-          '上行 = 大市值股在拉指数、多数股票没跟(缩圈,集中度上升);下行 = 上涨在扩散(变宽)。',
-          '与下方「VIXEQ / VIX」那格互补:那条是期权**隐含**的集中度,这条是价格**已走出**的集中度。',
-          '',
-          '⚠️ 不是纯广度:等权相对超配中小盘、价值与周期股,比值里混着「成长 vs 价值」的风格因素。',
-          '⚠️ 2023 起结构性抬升、水位不平稳 → 不做分位,看方向与拐点(如 2022 大盘股杀估值时的回落)。',
-        ].join('\n'),
-      },
-      {
-        key: 'vixeqVix',
-        label: 'VIXEQ / VIX',
-        title: 'VIXEQ / VIX 隐含集中度',
-        color: '#ec4899',
-        // 比值均值回复、没有结构性趋势 → 分位有意义;抬升 = 集中度脆弱(风险端)。
-        percentile: { riskTail: 'high' },
-        desc: [
-          '定义:标普成分股平均单股隐含波动率(VIXEQ)÷ 指数隐含波动率(VIX)。读它等于读隐含相关性 / 离散度。',
-          SIGMA_ID,
-          '比值 ≈ 1/√平均相关性(平均相关性 ≈ 1/比值²):用比值不用差,是因为差值随波动率水位整体缩放,比值剥掉了水位。',
-          '抬升 = 头部压住 VIX、其余缺血推高 VIXEQ → 集中度脆弱升高(风险端,红);',
-          '暴力回落到 1 附近 = 相关性奔向 1 = 齐杀,系统性事件。',
-          '与上面「标普500 ÷ 等权」并读:那条是价格**已走出**的集中度,这条是期权**隐含**的。二者同向才是一致信号。',
-          '',
-          '⚠️ 比值本身中性,要看缺口怎么撑开的:真分化(宽度仍在)还是被巨头按住(宽度已塌)。',
-          BREADTH_CHECK,
-        ].join('\n'),
-      },
-      {
-        key: 'eqwDdSpread',
-        label: '等权 − 加权回撤',
-        title: '等权回撤 − 加权回撤 (pp)',
-        color: '#a78bfa',
-        // 穿 0 是常态(2022 大盘股杀估值时到 −6)→ 0 基线;4 = 付鹏图标的「临界值」。
-        // 不套分位:临界值是有绝对含义的阈值,P5/P95 会和它抢参考线(refLines 优先,见 buildRegimeSpecs)。
-        render: { kind: 'line', baseline: 0 },
-        refLines: [{ price: 4, title: '临界 4', color: '#ef4444' }],
-        desc: [
-          '定义:标普 500 等权(^SPXEW)的 252 日回撤 − 标普 500(^GSPC)的 252 日回撤,百分点。',
-          '回撤 = 1 − 收盘 / 过去 252 个交易日最高收盘;两个都是价格指数,按日期内连接。',
-          '正 = 多数股票离高点比大盘更远、权重巨头把指数撑在高位(缩圈);负 = 巨头跌得更深(如 2022)。',
-          '',
-          '读法(复刻付鹏 2026-10-20「市值集中度泡沫与波动率压制」下图):',
-          '显著 > 0 并飙升 = 多数股票回撤更深、巨头被动资金抱团撑在高位;',
-          '冲向 4~6(历史极值区)= 宽度透支到极限,巨头微幅补跌即可触发 VIX 脉冲。',
-          '实测:2026-10-07 达 5.12(年内峰值)后,10-16 VIX 盘中 22.31;2023-06-01 峰值 7.43,2006 起最高 8.23(2020-07-09)。',
-          '',
-          '与上面两格的分工:「标普500 ÷ 等权」是比值、2023 起结构性上行只能读方向;',
-          '这条是回撤差、均值回复,水位本身可读。',
-        ].join('\n'),
-      },
-    ],
-  },
   valuation: {
     panes: [
       {
@@ -2397,9 +2344,51 @@ const SOURCE_PANES: Record<ChainSource, (ticker: string) => PaneSpec[]> = {
   twse: twseCompanyPanes,
 };
 
+/**
+ * ChartDoc → 固定面板的格子定义。图层的序列 id 经注册表解析成 /api/regime 的键,下游(渲染规格、分位徽标、
+ * 缺失提示)照旧按格子走。目前只支持「一格一条 regime 序列」(已迁的 tab 都是这种);不符合就是 doc 写错了,
+ * 直接抛 —— 模块加载时就炸,不会静默少一格或静默不照画。叠加线 / 事件线 / 蜡烛等等迁到用它们的 tab 时再加。
+ */
+export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
+  const panes = doc.panes.map((p): PaneSpec => {
+    if (p.layers.length !== 1) throw new Error(`ChartDoc 格 ${p.id}:固定面板目前只支持一格一条线`);
+    const [l] = p.layers;
+    const def = seriesDef(l.series);
+    if (def?.source.kind !== 'regime') throw new Error(`ChartDoc 图层 ${l.id}:${l.series} 不是 /api/regime 的序列`);
+    // 固定面板画不了的设定:写了却不照画比报错更糟(看图的人以为生效了)。
+    // 格高(stretch)不在此列(用户定):只关乎好不好看、不影响读数,固定面板各格一律等高,高度靠折叠 / 展开调
+    const scale = p.scales.find((sc) => sc.id === l.scale);
+    if (l.shift || l.fit || l.scale !== 'right' || scale?.invert || scale?.log)
+      throw new Error(`ChartDoc 图层 ${l.id}:固定面板只画右轴原值,不支持平移 / 叠加 / 左轴 / 独立轴 / 倒轴 / 对数`);
+
+    return {
+      key: def.source.key,
+      label: p.label ?? def.label,
+      title: l.title ?? def.label,
+      color: l.color,
+      ...(p.desc !== undefined && { desc: p.desc }),
+      ...(l.render && { render: l.render }),
+      ...(l.refLines && { refLines: l.refLines }),
+      ...(l.percentile && { percentile: l.percentile }),
+    };
+  });
+
+  // 格子按序列键做身份(说明 / 名称 / 配色的表、图上的线都按键存):同一序列占两格,后一格会悄悄盖掉前一格
+  const dup = panes.map((p) => p.key).find((k, i, keys) => keys.indexOf(k) !== i);
+  if (dup) throw new Error(`ChartDoc:序列 ${dup} 出现在不止一格,固定面板一格对应一条序列`);
+
+  return panes;
+}
+
+// 模块加载时转一次:固定维度的 panes 要是模块常量(RegimeChart 按引用做 memo,见那边的注释)
+const DOC_PANES = Object.fromEntries(
+  Object.entries(REGIME_DOCS).map(([dim, doc]) => [dim, docToPaneSpecs(doc)]),
+) as Record<DocDim, PaneSpec[]>;
+
 /** dim → panes。基本面维度按名单现算(引用每次新建,故 RegimeChart 里要 useMemo 化的地方已由 dim 固定)。 */
 export function dimPanes(dim: RegimeDim): PaneSpec[] {
-  if (!dim.startsWith('fundamentals:')) return REGIME_DIMS[dim as FixedDim].panes;
+  if (Object.hasOwn(DOC_PANES, dim)) return DOC_PANES[dim as DocDim];
+  if (!dim.startsWith('fundamentals:')) return REGIME_DIMS[dim as Exclude<FixedDim, DocDim>].panes;
 
   const who = dim.slice('fundamentals:'.length);
   if (who === 'buyer') return [buyerAggregatePane, buyerQuarterlyPane];
