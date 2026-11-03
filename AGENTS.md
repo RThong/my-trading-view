@@ -174,4 +174,8 @@
   `react-hooks/exhaustive-deps` 为 error)。因 typescript-eslint 不支持项目用的 TS7,lint 用 Biome/oxlint
   这类 Rust 工具(不依赖 typescript 包)。**不要自动 git commit**,等用户发话。
 - 注释用中文。声明式优先于命令式 `for` 循环。
+- **UI 组件库:shadcn/ui**(base-nova 风格,底层 Base UI `@base-ui/react`),组件源码在 `src/web/components/ui/`(拷进来归自己,可改),
+  类名合并 `cn` 在 `src/web/lib/utils.ts`(clsx + tailwind-merge),颜色变量在 `styles.css` 的 `@theme inline`(只映射到 neutral 深色,
+  没有明暗两套)。加组件:`bunx shadcn@latest add <名字>` 后**检查 styles.css 是否被塞进 `:root` 变量 / `body` 全局样式**,有就删掉、
+  缺的变量照现有写法补进 `@theme`;组件里的图标占位换 lucide。旧的手写组件(InfoTip / TabBar 等)碰到再迁,不专门改。
 - 秘密只在 `.env`(gitignored):`FRED_API_KEY`、`EIA_API_KEY`、`ESTAT_APP_ID`、`MOOMOO_WS_*`、`SEC_USER_AGENT`(SEC 要求真实联系方式)。

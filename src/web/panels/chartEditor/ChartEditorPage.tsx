@@ -66,7 +66,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
       {/* 侧栏本身不滚:下拉框要能盖住下面的图层区;只有图层区自己滚 */}
       <aside className="flex w-80 shrink-0 flex-col gap-3 border-l border-neutral-800 pl-3">
         <SeriesPicker
-          used={new Set(seriesLayers.map((l) => l.series))}
+          selected={seriesLayers.map((l) => ({ series: l.series, color: l.color }))}
           onToggle={toggleSeries}
           onClear={() => load(EMPTY_DOC)}
         />

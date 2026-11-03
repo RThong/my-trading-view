@@ -129,6 +129,9 @@ lightweight-charts 的映射：`right` / `left` 用内置轴，`overlay` 用自�
 - **选线拖动**：点线选中（加粗），格内任意处上下拖只挪它的轴；左 / 右轴交给原生拖（临时切 `defaultVisiblePriceScaleId`，mouseup 处理完再切回），独立轴自己挪；双击复位自动缩放。
 - **lw-charts 5.2 的坑**：`priceScale.setVisibleRange` 在对数轴上不换算（会算出 Infinity）；数据变化时派发「可视时间范围」事件可能抛 `Value is null`（改订阅逻辑范围）。
 
+- **序列搜索框**(第三轮末):换成 shadcn Combobox 的标签式多选 —— 输入区一条序列一个标签(图上颜色、× 删一条)、右侧清空全部 / 展开;
+  空输入退格删最后一个;↑↓ 回车可选。搜索、分组、Yahoo 联网结果仍由 `SeriesPicker` 自己算(组件的 `filter={null}`)。
+
 ## 仍未做
 
 各类变换（起点=100 / 同比）、四则运算、水平线 / 竖线、保存载入、URL 状态、旧图迁移、多图布局。

@@ -1,159 +1,38 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Search, X } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
+import { Check, Search } from 'lucide-react';
+import {
+  Combobox,
+  ComboboxChip,
+  ComboboxChips,
+  ComboboxChipsInput,
+  ComboboxClear,
+  ComboboxCollection,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxItem,
+  ComboboxLabel,
+  ComboboxList,
+  ComboboxTrigger,
+  ComboboxValue,
+  useComboboxAnchor,
+} from '@web/components/ui/combobox';
 import { CATEGORIES, YAHOO_PREFIX, rememberYahooName, searchSeries, seriesDef, yahooId } from './registry';
-import { searchable, useYahooSearch } from './useYahooSearch';
+import { searchable, type YahooHit, useYahooSearch } from './useYahooSearch';
 
 type Props = {
-  /** 已在图上的序列 id = 勾选状态 */
-  used: Set<string>;
+  /** 已在图上的序列(按图层顺序),每条带图上的颜色 —— 输入区里一条一个标签 */
+  selected: { series: string; color: string }[];
   /** 勾选 = 加到第 1 格;取消勾选 = 从图上拿掉 */
   onToggle: (seriesId: string) => void;
   /** 一键清空图上所有序列 */
   onClear: () => void;
 };
 
-// 右侧顶部:搜索框 + 多选下拉。平时只占一行,点开才列序列;勾一条就收起、清空关键字,接着打字搜下一条。
-// 下拉里先列内置序列(按分类),再列 Yahoo 搜索结果(任意代码)。
-export function SeriesPicker({ used, onToggle, onClear }: Props) {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+/** 下拉里的一行:id 是选中值,其余只管显示 */
+type Option = { id: string; label: ReactNode; meta: string; title?: string };
+type Group = { value: string; items: Option[] };
 
-  // 点下拉框外面收起
-  useEffect(() => {
-    if (!open) return;
-
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
-
-  // 勾选后清空关键字、收起列表(下次展开从头开始),焦点留在输入框:接着打字就重新展开搜下一条
-  const pick = (id: string) => {
-    onToggle(id);
-    setQuery('');
-    // 先聚焦再收起:聚焦会触发 onFocus 的展开,放在后面就把刚收起的列表又打开了
-    inputRef.current?.focus();
-    setOpen(false);
-  };
-
-  const q = query.trim();
-  const yahoo = useYahooSearch(query);
-  const usedYahoo = [...used].filter((id) => id.startsWith(YAHOO_PREFIX));
-  const hits = searchSeries(query);
-  const groups = CATEGORIES.map((c) => ({ category: c, items: hits.filter((d) => d.category === c) })).filter(
-    (g) => g.items.length > 0,
-  );
-
-  return (
-    <div ref={rootRef} className="relative">
-      <label className="flex items-center gap-2 rounded border border-neutral-800 bg-neutral-900 px-2 py-1.5 focus-within:border-neutral-600">
-        <Search size={14} className="text-neutral-500" />
-        <input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
-          placeholder="搜索并勾选序列"
-          className="w-full bg-transparent text-sm text-neutral-200 outline-none placeholder:text-neutral-600"
-        />
-        {used.size > 0 && (
-          <>
-            <span className="whitespace-nowrap text-xs text-neutral-500">已选 {used.size}</span>
-            <button
-              type="button"
-              onClick={onClear}
-              className="flex items-center whitespace-nowrap text-xs text-neutral-500 hover:text-neutral-200"
-              title="清空图上所有序列"
-            >
-              <X size={12} />
-              清空
-            </button>
-          </>
-        )}
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="text-neutral-500 hover:text-neutral-200"
-          title={open ? '收起' : '展开'}
-        >
-          <ChevronDown size={14} className={open ? 'rotate-180' : ''} />
-        </button>
-      </label>
-
-      {open && (
-        <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-[28rem] overflow-y-auto rounded border border-neutral-700 bg-neutral-900 py-1 shadow-lg">
-          {groups.length === 0 && !q && <p className="px-3 py-2 text-xs text-neutral-500">没有可选的序列</p>}
-          {groups.map((g) => (
-            <div key={g.category}>
-              <h3 className="px-3 pb-0.5 pt-1.5 text-xs text-neutral-500">{g.category}</h3>
-              {g.items.map((d) => (
-                <OptionRow key={d.id} on={used.has(d.id)} onClick={() => pick(d.id)} label={d.label} meta={d.freq} />
-              ))}
-            </div>
-          ))}
-
-          {/* 任意 Yahoo 代码:有关键字时列搜索结果;没关键字时列图上已有的,方便取消勾选 */}
-          <div>
-            <h3 className="px-3 pb-0.5 pt-1.5 text-xs text-neutral-500">
-              Yahoo
-              {q
-                ? searchable(q)
-                  ? yahoo.isLoading
-                    ? ' · 搜索中…'
-                    : ` · 搜到 ${yahoo.hits.length} 个`
-                  : ' · 只能用英文名或代码搜'
-                : ' · 图上已有'}
-            </h3>
-            {q ? (
-              <>
-                {yahoo.hits.map((h) => (
-                  <OptionRow
-                    key={h.symbol}
-                    on={used.has(yahooId(h.symbol))}
-                    onClick={() => {
-                      rememberYahooName(h.symbol, h.name);
-                      pick(yahooId(h.symbol));
-                    }}
-                    label={
-                      <>
-                        <span className="font-medium text-neutral-200">{h.symbol}</span>{' '}
-                        <span className="text-neutral-400">{h.name}</span>
-                      </>
-                    }
-                    meta={TYPE_LABEL[h.type] ?? h.type}
-                    title={[h.symbol, h.name, h.exchange].filter(Boolean).join(' · ')}
-                  />
-                ))}
-                {searchable(q) && !yahoo.isLoading && yahoo.hits.length === 0 && (
-                  <p className="px-3 py-1 text-xs text-neutral-600">
-                    {yahoo.error ? '搜索失败,稍后再试' : 'Yahoo 上没搜到(用英文名或代码搜,如 gold、GC=F、^N225)'}
-                  </p>
-                )}
-              </>
-            ) : usedYahoo.length > 0 ? (
-              usedYahoo.map((id) => (
-                <OptionRow key={id} on onClick={() => pick(id)} label={seriesDef(id)?.label ?? id} meta="日" />
-              ))
-            ) : (
-              <p className="px-3 py-1 text-xs text-neutral-600">输入代码或英文名搜索 Yahoo 上的任意品种</p>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Yahoo 的 quoteType → 短中文标签(交易所全名太长,挤掉代码;放进悬停提示)
 const TYPE_LABEL: Record<string, string> = {
   EQUITY: '股票',
   ETF: 'ETF',
@@ -164,36 +43,156 @@ const TYPE_LABEL: Record<string, string> = {
   MUTUALFUND: '基金',
 };
 
-function OptionRow({
-  on,
-  onClick,
-  label,
-  meta,
-  title,
-}: {
-  on: boolean;
-  onClick: () => void;
-  label: ReactNode;
-  meta: string;
-  title?: string;
-}) {
+const yahooOption = (h: YahooHit): Option => ({
+  id: yahooId(h.symbol),
+  label: (
+    <>
+      <span className="font-medium text-neutral-200">{h.symbol}</span>{' '}
+      <span className="text-neutral-400">{h.name}</span>
+    </>
+  ),
+  meta: TYPE_LABEL[h.type] ?? h.type,
+  title: [h.symbol, h.name, h.exchange].filter(Boolean).join(' · '),
+});
+
+const labelOf = (id: string) => seriesDef(id)?.label ?? id;
+
+// 右侧顶部:标签式多选框(shadcn Combobox)。输入区里一条序列一个标签(带图上的颜色,× 删这一条),最右是清空全部和展开;
+// 下拉里先列内置序列(按分类),再列 Yahoo 搜索结果(任意代码)。勾一条就收起、清空关键字,接着打字搜下一条;
+// 输入框为空时按退格删掉最后一个标签。搜索 / 分组都自己算好再交给组件(filter=null),组件内置的过滤不用。
+export function SeriesPicker({ selected, onToggle, onClear }: Props) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const anchor = useComboboxAnchor();
+
+  const q = query.trim();
+  const yahoo = useYahooSearch(query);
+  const used = new Set(selected.map((s) => s.series));
+  const colorOf = new Map(selected.map((s) => [s.series, s.color]));
+  const hits = searchSeries(query);
+  const builtin: Group[] = CATEGORIES.map((c) => ({
+    value: c,
+    items: hits.filter((d) => d.category === c).map((d) => ({ id: d.id, label: d.label, meta: d.freq })),
+  }));
+  // Yahoo:有关键字时列搜索结果;没关键字时列图上已有的,方便取消勾选
+  const yahooItems: Option[] = q
+    ? yahoo.hits.map(yahooOption)
+    : [...used].filter((id) => id.startsWith(YAHOO_PREFIX)).map((id) => ({ id, label: labelOf(id), meta: '日' }));
+  const groups = [...builtin, { value: 'Yahoo', items: yahooItems }].filter((g) => g.items.length > 0);
+  const yahooStatus = !q
+    ? yahooItems.length === 0
+      ? '输入代码或英文名搜索 Yahoo 上的任意品种'
+      : null
+    : !searchable(q)
+      ? 'Yahoo 只能用英文名或代码搜'
+      : yahoo.isLoading
+        ? 'Yahoo · 搜索中…'
+        : yahoo.hits.length > 0
+          ? null
+          : yahoo.error
+            ? 'Yahoo · 搜索失败,稍后再试'
+            : 'Yahoo 上没搜到(用英文名或代码搜,如 gold、GC=F、^N225)';
+
+  // 选中值的增减翻译成逐条勾选 / 取消;清空走 onClear(一次清掉,不逐条删)。
+  // Esc 引起的不算:Base UI 在下拉已收起时按 Esc 会清空选中值,这里 Esc 只该收起下拉,照这个处理会清空整张图
+  const onValueChange = (next: string[], { reason }: { reason: string }) => {
+    if (reason === 'escape-key') return;
+    if (next.length === 0 && used.size > 1) onClear();
+    else {
+      next
+        .filter((id) => !used.has(id))
+        .forEach((id) => {
+          const hit = yahoo.hits.find((h) => yahooId(h.symbol) === id);
+          if (hit) rememberYahooName(hit.symbol, hit.name);
+          onToggle(id);
+        });
+      [...used].filter((id) => !next.includes(id)).forEach(onToggle);
+    }
+    // 勾完收起、清空关键字(焦点组件自己留在输入框):接着打字就重新展开搜下一条
+    setQuery('');
+    setOpen(false);
+  };
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      className="flex w-full items-center gap-2 px-3 py-1 text-left text-sm text-neutral-300 hover:bg-neutral-800 hover:text-white"
+    <Combobox<string, true, Group>
+      multiple
+      autoHighlight
+      items={groups}
+      filter={null}
+      value={[...used]}
+      onValueChange={onValueChange}
+      inputValue={query}
+      onInputValueChange={setQuery}
+      open={open}
+      onOpenChange={setOpen}
+      itemToStringLabel={labelOf}
     >
-      <span
-        className={
-          'flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm border ' +
-          (on ? 'border-sky-500 bg-sky-500 text-neutral-950' : 'border-neutral-600')
-        }
+      {/* 标签 + 输入框在左边自动换行;清空 / 展开固定在最右,不跟着标签折到第二行 */}
+      <ComboboxChips
+        ref={anchor}
+        className="flex-nowrap items-start gap-1.5 border-neutral-800 bg-neutral-900 px-2 py-1"
       >
-        {on && <Check size={11} strokeWidth={3} />}
-      </span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      <span className="shrink-0 text-[11px] text-neutral-600">{meta}</span>
-    </button>
+        <Search size={14} className="mt-1 shrink-0 text-neutral-500" />
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+          <ComboboxValue>
+            {(values: string[]) => (
+              <>
+                {values.map((id) => (
+                  <ComboboxChip key={id} title={labelOf(id)}>
+                    <span className="size-2 shrink-0 rounded-full" style={{ background: colorOf.get(id) }} />
+                    <span className="max-w-28 truncate">{labelOf(id)}</span>
+                  </ComboboxChip>
+                ))}
+                <ComboboxChipsInput
+                  placeholder={values.length ? '' : '搜索并勾选序列'}
+                  className="h-5.5 text-sm text-neutral-200"
+                />
+              </>
+            )}
+          </ComboboxValue>
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
+          {used.size > 0 && <ComboboxClear title="清空图上所有序列" />}
+          <ComboboxTrigger title={open ? '收起' : '展开'} />
+        </div>
+      </ComboboxChips>
+
+      <ComboboxContent anchor={anchor} className="ring-neutral-700">
+        {/* Yahoo 还在搜时先不说「没有匹配」,免得和下面的「搜索中」打架 */}
+        {!yahoo.isLoading && <ComboboxEmpty>没有匹配的序列</ComboboxEmpty>}
+        {/* 最高 28rem,窗口矮时按可用高度收(留出下面那行 Yahoo 提示),否则列表底部被裁掉、滚不到 */}
+        <ComboboxList className="max-h-[min(28rem,calc(var(--available-height)-2.5rem))]">
+          {(group: Group) => (
+            <ComboboxGroup key={group.value} items={group.items}>
+              <ComboboxLabel>{group.value}</ComboboxLabel>
+              <ComboboxCollection>
+                {(o: Option) => (
+                  <ComboboxItem
+                    key={o.id}
+                    value={o.id}
+                    title={o.title}
+                    showIndicator={false}
+                    className="text-neutral-300"
+                  >
+                    {/* 选中标记放最左:复选框样式,同改版前 */}
+                    <span
+                      className={
+                        'flex size-3.5 shrink-0 items-center justify-center rounded-sm border ' +
+                        (used.has(o.id) ? 'border-sky-500 bg-sky-500 text-neutral-950' : 'border-neutral-600')
+                      }
+                    >
+                      {used.has(o.id) && <Check className="size-2.75" strokeWidth={3} />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                    <span className="shrink-0 text-[11px] text-neutral-600">{o.meta}</span>
+                  </ComboboxItem>
+                )}
+              </ComboboxCollection>
+            </ComboboxGroup>
+          )}
+        </ComboboxList>
+        {yahooStatus && <p className="px-3 pb-2 pt-1 text-xs text-neutral-600">{yahooStatus}</p>}
+      </ComboboxContent>
+    </Combobox>
   );
 }
