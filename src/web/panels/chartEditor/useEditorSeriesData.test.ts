@@ -1,9 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import type { RegimeData } from '../regime/regimeChart.hooks';
-import { REGISTRY, rememberYahooName, seriesDef, searchSeries, yahooId } from './registry';
+import {
+  CURVE_SOURCES,
+  REGISTRY,
+  libraryIdForYahoo,
+  rememberYahooName,
+  seriesDef,
+  searchSeries,
+  yahooId,
+} from './registry';
 import { asOfValue } from './useCrosshairLegend';
 import { commonRange, seriesPoints, weekdayOnly } from './useEditorSeriesData';
-import { REGIME_SERIES } from '../../../shared/regimeSeries';
+import { REGIME_SERIES, isSeriesKey } from '../../../shared/regimeSeries';
 
 const regime: RegimeData = {
   series: {
@@ -22,9 +30,9 @@ const regime: RegimeData = {
     ],
   },
 };
-const prices = { SPY: [{ date: '2026-10-30', close: 755.7 }] };
+const endpoints = { '/api/price/SPY': [{ date: '2026-10-30', open: 750, close: 755.7 }] };
 const curves = { real: { series: { '10Y': [{ date: '2026-10-30', value: 1.92 }] } } };
-const src = { regime, prices, curves };
+const src = { regime, endpoints, curves };
 
 describe('seriesPoints', () => {
   test('regime 序列:统一成 {time,value},丢掉非有限值', () => {
@@ -66,6 +74,18 @@ describe('seriesPoints', () => {
     expect(seriesDef('yh:ZZZ')!.label).toBe('ZZZ');
   });
 
+  test('URL + 字段型(25Δ / VRP / 库里序列):按字段取值,取不到的接口 → 空数组', () => {
+    const skew = seriesDef('opt:SPY:skew')!;
+    expect(skew.source).toEqual({ kind: 'endpoint', url: '/api/options/25delta/SPY?days=3650', field: 'skew' });
+    const more = {
+      ...endpoints,
+      '/api/options/25delta/SPY?days=3650': [{ date: '2026-10-30', callIv: 12, putIv: 17, skew: 5 }],
+      '/api/series/VX%3A2026-11-18': null,
+    };
+    expect(seriesPoints(skew, { ...src, endpoints: more }, '1D')).toEqual([{ time: '2026-10-30', value: 5 }]);
+    expect(seriesPoints(seriesDef('db:VX:2026-11-18')!, { ...src, endpoints: more }, '1D')).toEqual([]);
+  });
+
   test('源里没有 → 空数组', () => {
     expect(seriesPoints(seriesDef('dgs10')!, src, '1D')).toEqual([]);
   });
@@ -86,16 +106,60 @@ test('weekdayOnly 保留周一~周五', () => {
 describe('registry', () => {
   test('id 唯一;regime 源的 key 都是后端真实对外名', () => {
     expect(new Set(REGISTRY.map((d) => d.id)).size).toBe(REGISTRY.length);
-    const names: ReadonlySet<string> = new Set(REGIME_SERIES);
     REGISTRY.forEach((d) => {
-      if (d.source.kind === 'regime') expect(names.has(d.source.key)).toBe(true);
+      if (d.source.kind === 'regime') expect(isSeriesKey(d.source.key)).toBe(true);
     });
+  });
+
+  test('改版前的 id 全部还在(ChartDoc / 自动保存的存档引用它们)', () => {
+    const legacy = ['SPY', 'qqq', 'GLD', 'IBIT', 'TLT', 'USO', 'btc', 'usd', 'usdjpy', 'vix', 'vxn', 'move', 'skew']
+      .concat(['cor1m', 'dgs10', 'jgb10y', 'ust2y', 'ust30y', 'real5y', 'real10y', 'real30y', 'bei5y', 'bei10y'])
+      .concat(['tp10Kw', 'hyOas', 'netLiquidity', 'coreCpiYoy', 'ismMfg']);
+    expect(legacy.filter((id) => !seriesDef(id))).toEqual([]);
+    expect(seriesDef('dgs10')?.source).toEqual({ kind: 'curve', curve: 'treasury', tenor: '10Y' });
+  });
+
+  test('regime 序列除了不可画的都进名单', () => {
+    const ids = new Set(REGISTRY.map((d) => d.id));
+    expect(REGIME_SERIES.filter((k) => !ids.has(k))).toEqual([
+      'bojHikeDates',
+      'sepMedian',
+      'coreCpiRelease',
+      'corePceRelease',
+    ]);
   });
 
   test('搜索命中名称 / 别名,不区分大小写', () => {
     expect(searchSeries('dxy').map((d) => d.id)).toEqual(['usd']);
-    expect(searchSeries('比特币').map((d) => d.id)).toEqual(['IBIT', 'btc']);
+    expect(searchSeries('us10y').map((d) => d.id)).toEqual(['dgs10']);
+    expect(searchSeries('比特币').map((d) => d.id)).toEqual(expect.arrayContaining(['IBIT', 'btc', 'btcSharpe1y']));
     expect(searchSeries('  ')).toBe(REGISTRY);
+  });
+
+  test('VX 单月合约不在静态表里,按 id 现生成定义', () => {
+    expect(seriesDef('db:VX:2026-11-18')).toMatchObject({
+      label: 'VX 2026-11-18 到期',
+      category: 'VX 合约',
+      source: { kind: 'endpoint', url: '/api/series/VX%3A2026-11-18', field: 'value' },
+    });
+    expect(seriesDef('db:NOPE')).toBeUndefined();
+  });
+
+  test('各曲线族、期权、基本面都有登记', () => {
+    const kinds = new Set(REGISTRY.flatMap((d) => (d.source.kind === 'curve' ? [d.source.curve] : [])));
+    expect([...kinds].sort()).toEqual([...CURVE_SOURCES].sort());
+    expect(seriesDef('cds:Oracle')?.unit).toBe('bp');
+    expect(seriesDef('vrp:BTC:vrp')?.weekends).toBe(true);
+    expect(seriesDef('fund:NVDA:fcf')?.unit).toBe('百万美元');
+  });
+
+  test('库里已有的 Yahoo 代码对到库里那条', () => {
+    expect(libraryIdForYahoo('spy')).toBe('SPY');
+    expect(libraryIdForYahoo('^VIX')).toBe('vix');
+    expect(libraryIdForYahoo('DX-Y.NYB')).toBe('usd');
+    expect(libraryIdForYahoo('^GVZ')).toBe('db:GVZ');
+    expect(libraryIdForYahoo('^VIX6M')).toBe('vix6m');
+    expect(libraryIdForYahoo('AAPL')).toBeUndefined();
   });
 });
 

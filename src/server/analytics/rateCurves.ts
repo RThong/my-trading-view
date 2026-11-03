@@ -1,78 +1,9 @@
 // 各曲线的期限/序列映射 + 值转换(纯函数,便于单测)。
 import { subtractAligned, type Point } from './regime';
+import { AI_CDS } from '../../shared/rateCurveDefs';
 
-// Eris ParCouponCurve 的 24 档期限(顺序即曲线 x 轴)。存库 series_id = ERIS_OIS_{tenor}。
-export const ERIS_OIS_TENORS: string[] = [
-  '1D',
-  '1W',
-  '1M',
-  '3M',
-  '6M',
-  '9M',
-  '12M',
-  '18M',
-  '2Y',
-  '3Y',
-  '4Y',
-  '5Y',
-  '6Y',
-  '7Y',
-  '8Y',
-  '9Y',
-  '10Y',
-  '12Y',
-  '15Y',
-  '20Y',
-  '25Y',
-  '30Y',
-  '40Y',
-  '50Y',
-];
-
-// 信用利差曲线(FRED ICE BofA OAS,读时现拉,值已是百分点)。
-export const CREDIT_RATING: { tenor: string; series: string }[] = [
-  { tenor: 'AAA', series: 'BAMLC0A1CAAA' },
-  { tenor: 'AA', series: 'BAMLC0A2CAA' },
-  { tenor: 'A', series: 'BAMLC0A3CA' },
-  { tenor: 'BBB', series: 'BAMLC0A4CBBB' },
-  { tenor: 'BB', series: 'BAMLH0A1HYBB' },
-  { tenor: 'B', series: 'BAMLH0A2HYB' },
-  { tenor: 'CCC', series: 'BAMLH0A3HYC' },
-];
-
-export const CREDIT_TERM: { tenor: string; series: string }[] = [
-  { tenor: '1-3Y', series: 'BAMLC1A0C13Y' },
-  { tenor: '3-5Y', series: 'BAMLC2A0C35Y' },
-  { tenor: '5-7Y', series: 'BAMLC3A0C57Y' },
-  { tenor: '7-10Y', series: 'BAMLC4A0C710Y' },
-  { tenor: '10-15Y', series: 'BAMLC7A0C1015Y' },
-  { tenor: '15Y+', series: 'BAMLC8A0C15PY' },
-];
-
-// AI 资本开支巨头 + 甲骨文 + 新云 CoreWeave + SpaceX 的单名 CDS(ICE Clear Credit 免费 EOD 结算价)。
-// ticker = ICE instrumentName 首段;name = 显示名(不依赖 ICE 里的 "Oracle Cop" 等错拼)。
-// 存库 series_id = ICE_CDS_{ticker}。顺序:焦点 Oracle 打头,其余按篮子排。
-// core = 前端默认展示的 7 家;缺任一即视为数据源异常(见 missingCoreCds)。
-// 注:前端默认勾选(tenorHistory.hooks 的 DEFAULT_TENORS.ai_cds)须与 core 名单一致。
-// coupon 缺省 = 100bp(投资级惯例);高收益名只挂 500bp 合约,需单独给。
-export const AI_CDS: { ticker: string; name: string; core?: boolean; coupon?: number }[] = [
-  { ticker: 'ORCLE', name: 'Oracle', core: true },
-  { ticker: 'MSFT', name: 'Microsoft', core: true },
-  { ticker: 'ALPHINC', name: 'Alphabet', core: true },
-  { ticker: 'AMZN', name: 'Amazon', core: true },
-  { ticker: 'APLINC', name: 'Apple', core: true },
-  { ticker: 'NVIDIA', name: 'Nvidia', core: true },
-  { ticker: 'BROINC', name: 'Broadcom' },
-  { ticker: 'DELLN', name: 'Dell' },
-  { ticker: 'INTC', name: 'Intel' },
-  { ticker: 'METAPL', name: 'Meta', core: true },
-  // 新云(租算力给巨头、自己举债买卡)= 信贷型脆弱的前线;2026-10-15 起才攒数。
-  // 非 core:利差 ~1000bp 量级,默认勾选会把其余几家压成一条线。
-  { ticker: 'COREWEI', name: 'CoreWeave', coupon: 500 },
-  // FT 2026-10-20(大摩数据):AI 对冲盘集中买的七家 CDS 之一,其余六家上面都有。2026-10-20 起才攒数。
-  // 非 core:新挂的名,缺失不该让 job failed;~227bp 低于甲骨文,不压扁别的线,但默认勾选须与 core 名单一致,故不默认勾。
-  { ticker: 'SPACEXP', name: 'SpaceX' },
-];
+// 期限 / 名单搬到 shared(图表编辑器也要),这里转出保持原引用路径不变
+export { AI_CDS, CREDIT_RATING, CREDIT_TERM, ERIS_OIS_TENORS } from '../../shared/rateCurveDefs';
 
 // 已抓到的 ticker 集合里,缺哪些 core 标的(→ 显示名)。空 = 默认篮子齐,job success;
 // 非空 = ICE 端点可能改了 ticker,让 job failed 告警(非 core 的 Broadcom/Dell/Intel/CoreWeave/SpaceX 缺失容忍)。

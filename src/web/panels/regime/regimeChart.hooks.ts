@@ -157,8 +157,14 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 /** 三个 regime 视角共用;SWR 按 URL 去重,只发一次 /api/regime。 */
-export function useRegimeData() {
-  const { data = NO_DATA, error, isLoading, mutate } = useSWR('/api/regime', getJson<RegimeData>, SWR_OPTS);
+/** enabled = false 时不发请求(图表编辑器图上没用到 regime 序列时,不拉这份大响应)。 */
+export function useRegimeData(enabled = true) {
+  const {
+    data = NO_DATA,
+    error,
+    isLoading,
+    mutate,
+  } = useSWR(enabled ? '/api/regime' : null, getJson<RegimeData>, SWR_OPTS);
   useServerRefresh('/api/regime', data, mutate);
   return { data, error: error as Error | undefined, isLoading };
 }

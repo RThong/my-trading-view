@@ -1,40 +1,18 @@
 import { fetchWithTimeout } from './http';
 import type { Point } from '../analytics/regime';
 import { HISTORY_START_DATE } from '../config';
+import {
+  UST_COL_TO_TENOR as COL_TO_TENOR,
+  UST_REAL_COL_TO_TENOR as REAL_COL_TO_TENOR,
+} from '../../shared/rateCurveDefs';
 
 // 美国财政部每日曲线直发源(当天收盘即出,比 FRED 快 1-2 天)。按年一个 CSV,无需 key。
 // FRED 的 DGS(名义)/ DFII(TIPS 实际)本就是搬这两张表(经 H.15),数值一致,只是固定晚一个工作日。
 const CSV = (year: number, type: string) =>
   `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/${year}/all?type=${type}&field_tdr_date_value=${year}&_format=csv`;
 
-// 名义 par yield:财政部列名 → 本项目期限标签。只取标准 11 档(各年新增的 1.5Mo/2Mo/4Mo 等额外档忽略)。
-const COL_TO_TENOR: Record<string, string> = {
-  '1 Mo': '1M',
-  '3 Mo': '3M',
-  '6 Mo': '6M',
-  '1 Yr': '1Y',
-  '2 Yr': '2Y',
-  '3 Yr': '3Y',
-  '5 Yr': '5Y',
-  '7 Yr': '7Y',
-  '10 Yr': '10Y',
-  '20 Yr': '20Y',
-  '30 Yr': '30Y',
-};
-
-// TIPS 实际收益率(real yield curve):只有 5 档,表头是全大写「5 YR」,与名义表不同。
-// 短端止于 5Y(TIPS 无流动短端)。2018 年 CSV 首行 01/02/2018 即有数。
-const REAL_COL_TO_TENOR: Record<string, string> = {
-  '5 YR': '5Y',
-  '7 YR': '7Y',
-  '10 YR': '10Y',
-  '20 YR': '20Y',
-  '30 YR': '30Y',
-};
-
-// 期限展示顺序(= 曲线 x 轴)。直接派生自上表的值顺序,避免两张平行表 desync。
-export const UST_TENORS = Object.values(COL_TO_TENOR);
-export const UST_REAL_TENORS = Object.values(REAL_COL_TO_TENOR);
+// 列名 → 期限的对照表搬到 shared(图表编辑器按它列期限),这里照旧按原名使用 / 转出
+export { UST_REAL_TENORS, UST_TENORS } from '../../shared/rateCurveDefs';
 
 // 解析一年 CSV → {tenor: Point[]}。列按表头名定位(各年列集不同,不能靠下标)。
 // 日期 MM/DD/YYYY → YYYY-MM-DD;空格子 / 非数跳过(假日某档可能缺)。

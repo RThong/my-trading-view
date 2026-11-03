@@ -346,6 +346,16 @@ export function getSecFundamentals(db: Database, ticker: string): SecFundamental
 
 /** 按前缀取一族序列(SEC 派生量比对用:算出来的和库里的一致就整轮不写)。
  *  前缀里的 `_` / `%` 会被 LIKE 当通配符,故统一转义后再匹配。 */
+/** 某前缀下有哪些 series_id(去重、升序)。给图表编辑器列 VX 各月合约这类份数会增长的名单。 */
+export function listMarketSeriesIds(db: Database, prefix: string): string[] {
+  const escaped = prefix.replace(/[\\_%]/g, (ch) => `\\${ch}`);
+  const rows = db
+    .query(`SELECT DISTINCT series_id FROM market_series WHERE series_id LIKE $p ESCAPE '\\' ORDER BY series_id`)
+    .all({ $p: `${escaped}%` }) as Array<{ series_id: string }>;
+
+  return rows.map((r) => r.series_id);
+}
+
 export function getMarketSeriesByPrefix(db: Database, prefix: string): MarketSeriesRow[] {
   const escaped = prefix.replace(/[\\_%]/g, (ch) => `\\${ch}`);
   const rows = db
