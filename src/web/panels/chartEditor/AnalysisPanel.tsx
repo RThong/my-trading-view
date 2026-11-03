@@ -1,121 +1,118 @@
-import { type ReactNode, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
+import * as Popover from '@radix-ui/react-popover';
+import { ChevronDown, ChevronRight, CircleHelp } from 'lucide-react';
 import type { LinePoint } from '../../lib/chart';
-import { fitParams, lagScan, shiftBusinessDays, strongestLag, type CorrMode, type LagPoint } from './analysis';
-import { hasCorr, isFitTarget, isSeriesLayer, MAX_SHIFT, type ChartDoc, type SeriesLayer } from './chartDoc';
+import { bestOverlay, OVERLAY_RULES, shiftBusinessDays, type OverlayResult, type Segment } from './analysis';
+import { isFitTarget, type ChartDoc, type Layer } from './chartDoc';
 import { baseLabel } from './layerLabel';
-import { layerRequest } from './layerPoints';
-import { NumberField } from './NumberField';
 import type { ChartDocActions } from './useChartDoc';
 import { requestKey } from './useEditorSeriesData';
 import type { DateRange } from './useVisibleRange';
 
 type Props = {
   doc: ChartDoc;
-  /** 取数结果(按请求键)。扫描要用 A / B 未平移的原序列,页面会替选中的两条额外请求一份 */
+  /** 取数结果(按请求键)。找偏移要用 A / B 未平移的原序列,页面会替选中的两条额外请求一份 */
   points: Record<string, LinePoint[]>;
   visibleRange: DateRange | null;
   /** 选中的 A / B 图层 id(页面持有,因为它要据此多请求未平移的数据) */
   pair: { a?: string; b?: string };
   onPair: (pair: { a?: string; b?: string }) => void;
-  actions: Pick<ChartDocActions, 'addStudy' | 'setShift' | 'applyFit'>;
+  actions: Pick<ChartDocActions, 'overlay'>;
 };
 
+const PAIR_LOCKED = '已叠加,先取消叠加才能换线';
 const SELECT =
-  'min-w-0 flex-1 rounded border border-neutral-800 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-300 hover:border-neutral-600';
+  'min-w-0 flex-1 rounded border border-neutral-800 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-300 hover:border-neutral-600 disabled:cursor-not-allowed disabled:opacity-50';
 const BTN =
   'rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40';
-const DATE =
-  'min-w-0 flex-1 rounded border border-neutral-800 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-300 [color-scheme:dark]';
 
-// 扫描范围上限(交易日,约 3 年):每一步都要整段重新配对算一次,范围随手填大会卡死页面
-const MAX_SCAN = 750;
-
-/** 扫描范围:取整、夹进 ±MAX_SCAN、保证 min < max。 */
-export function clampLagRange(min: number, max: number): { min: number; max: number } {
-  const c = (n: number) => Math.max(-MAX_SCAN, Math.min(MAX_SCAN, Math.round(n)));
-  const [lo, hi] = c(min) <= c(max) ? [c(min), c(max)] : [c(max), c(min)];
-  if (lo < hi) return { min: lo, max: hi };
-  return lo === MAX_SCAN ? { min: lo - 1, max: lo } : { min: lo, max: lo + 1 };
-}
+/** 点「叠加对比」的结果,记着是哪一对、按 A 多少平移算的(换了 A / B 就不显示;日期是 A 未平移的) */
+type ShownResult = { a: string; b: string; key: string; aShift: number; invert: boolean; res: OverlayResult };
 
 /** 选中的两条序列图层:选的不在图上了就退回默认(第一 / 第二条)。 */
-export function resolvePair(doc: ChartDoc, pair: { a?: string; b?: string }): { a?: SeriesLayer; b?: SeriesLayer } {
-  const series = doc.panes.flatMap((p) => p.layers.filter(isSeriesLayer));
+export function resolvePair(doc: ChartDoc, pair: { a?: string; b?: string }): { a?: Layer; b?: Layer } {
+  const series = doc.panes.flatMap((p) => p.layers);
+  // 叠加期间 A / B 锁定为叠加的那一对(同时只有一组叠加):换线要先取消叠加
+  const fitted = series.find((l) => l.fit);
+  if (fitted) return { a: series.find((l) => l.id === fitted.fit?.target), b: fitted };
+
   const a = series.find((l) => l.id === pair.a) ?? series[0];
   const b = series.find((l) => l.id === pair.b && l.id !== a?.id) ?? series.find((l) => l.id !== a?.id);
 
   return { a, b };
 }
 
-/** A / B 未平移、未聚合的日线原序列请求(扫描要逐交易日平移;页面据此多取一份数据)。 */
-const rawRequest = (l: SeriesLayer) => ({ series: l.series, shift: 0, daily: true as const });
-export const pairRequests = (pair: { a?: SeriesLayer; b?: SeriesLayer }) =>
+/** A / B 未平移、未聚合的日线原序列请求(找偏移要逐交易日平移;页面据此多取一份数据)。 */
+const rawRequest = (l: Layer) => ({ series: l.series, shift: 0, daily: true as const });
+export const pairRequests = (pair: { a?: Layer; b?: Layer }) =>
   [pair.a, pair.b].filter((l) => l !== undefined).map(rawRequest);
 
-// 右侧「分析」区:选两条线 A / B,三件工具 —— 加滚动相关性格、领先滞后扫描、参照期对齐。
+// 右侧「分析」区:选两条线 A / B,叠加对比(B 按 A 的刻度叠上去)。
 export function AnalysisPanel({ doc, points, visibleRange, pair, onPair, actions }: Props) {
   const [open, setOpen] = useState(true);
-  const [mode, setMode] = useState<CorrMode>('level');
-  const [horizon, setHorizon] = useState(20);
-  const [corrWindow, setCorrWindow] = useState(60);
-  const [lagRange, setLagRange] = useState({ min: -40, max: 180 });
-  const [onlyVisible, setOnlyVisible] = useState(true);
-  const [ref, setRef] = useState({ start: '', end: '' });
+  const [result, setResult] = useState<ShownResult | null>(null);
 
-  const series = doc.panes.flatMap((p) => p.layers.filter(isSeriesLayer));
+  const series = doc.panes.flatMap((p) => p.layers);
   const { a, b } = resolvePair(doc, pair);
-  const corrExists = !!a && !!b && hasCorr(doc, a.id, b.id);
+  const pairLocked = series.some((l) => l.fit);
   const aPts = a && points[requestKey(rawRequest(a))];
   const bPts = b && points[requestKey(rawRequest(b))];
-  // 可视区间是画面上的日期(A 平移后的);扫描用的是 A 未平移的原序列,按 A 的平移反推回去才对得上。
-  // 依赖用起止日期字符串:十字线一动整页重渲染,换算出的新对象若进依赖,扫描每帧重算(上千步 × 上万点)
-  const aShift = a?.shift ?? 0;
-  const scanFrom = onlyVisible && visibleRange ? shiftBusinessDays(visibleRange.from, -aShift) : undefined;
-  const scanTo = onlyVisible && visibleRange ? shiftBusinessDays(visibleRange.to, -aShift) : undefined;
-
-  const scan = useMemo(
-    () =>
-      // 区收起时不算:默认只扫可视区间,每次平移 / 缩放都会重跑上千步
-      open && aPts?.length && bPts?.length
-        ? lagScan(aPts, bPts, {
-            minLag: lagRange.min,
-            maxLag: lagRange.max,
-            mode,
-            horizon,
-            range: scanFrom && scanTo ? { from: scanFrom, to: scanTo } : undefined,
-          })
-        : [],
-    [open, aPts, bPts, lagRange, mode, horizon, scanFrom, scanTo],
-  );
-  const best = strongestLag(scan);
-
-  // 先按当前数据试算一次:参照期里配对点不够(<10)就不让点,免得换算失败、线白挪一趟。
-  // B 已是别的线的换算目标时不能再换算它(会把那条线的换算静默冲掉)。试算也走 memo,理由同上
+  // B 已是别的线的叠加目标时不能再叠它(会把那条线的换算静默冲掉);A 自己在叠加中也不能当基准
   const bIsTarget = !!b && isFitTarget(doc, b.id);
-  const refOk = !!a && !!b && ref.start !== '' && ref.end !== '' && ref.start < ref.end && !a.fit && !bIsTarget;
-  const aFitPts = a ? points[requestKey(layerRequest(a))] : undefined;
-  const bFitPts = b ? points[requestKey(layerRequest(b))] : undefined;
-  const fitPreview = useMemo(
-    () => (refOk ? fitParams(aFitPts ?? [], bFitPts ?? [], ref.start, ref.end) : null),
-    [refOk, aFitPts, bFitPts, ref.start, ref.end],
-  );
+  // A 的轴是对数时对不上:B 轴只能按线性比例跟着 A 的范围走
+  const aScale = a && doc.panes.find((p) => p.layers.includes(a))?.scales.find((sc) => sc.id === a.scale);
+  const canOverlay =
+    !!a && !!b && !!aPts?.length && !!bPts?.length && !!visibleRange && !a.fit && !bIsTarget && !aScale?.log;
 
   if (series.length < 2) {
     return (
       <Section open={open} onToggle={() => setOpen((v) => !v)}>
-        <p className="text-xs text-neutral-500">图上至少要有两条序列,才能比较相关性、领先滞后和做参照期对齐</p>
+        <p className="text-xs text-neutral-500">图上至少要有两条序列,才能叠加对比</p>
       </Section>
     );
   }
 
-  const name = (l?: SeriesLayer) => (l ? baseLabel(doc, l.id) : '?');
+  const name = (l?: Layer) => (l ? baseLabel(doc, l.id) : '?');
+
+  const overlay = () => {
+    if (!canOverlay) return;
+    // 可视区间是画面上的日期(A 平移后的);找偏移用的是 A 未平移的原序列,按 A 的平移反推回去才对得上
+    const aShift = a.shift ?? 0;
+    const res = bestOverlay(aPts, bPts, {
+      from: shiftBusinessDays(visibleRange.from, -aShift),
+      to: shiftBusinessDays(visibleRange.to, -aShift),
+    });
+    // A 的轴若本来就倒着,B 要倒的方向跟着反一次
+    const invert = res.kind === 'ok' && res.overlay.fit.beta < 0 !== !!aScale?.invert;
+    setResult({ a: a.id, b: b.id, key: pairKey(a, b), aShift, invert, res });
+    if (res.kind !== 'ok') return;
+
+    const { seg, lag, fit } = res.overlay;
+    // 基准段存画面上的日期(A 平移后的)
+    const start = shiftBusinessDays(seg.from, aShift);
+    const end = shiftBusinessDays(seg.to, aShift);
+    actions.overlay(
+      b.id,
+      lag + aShift,
+      { target: a.id, start, end, alpha: fit.alpha, beta: fit.beta, r: fit.r },
+      invert,
+    );
+  };
+  // 除了图层 id 还要核对是哪两条序列:清空 / 删线后 id 会被新线复用,不核对会把上一对的结果挂到新的一对上
+  const shown =
+    result && a && b && result.a === a.id && result.b === b.id && result.key === pairKey(a, b) ? result : null;
 
   return (
     <Section open={open} onToggle={() => setOpen((v) => !v)}>
       <div className="flex items-center gap-1.5 text-xs text-neutral-400">
         A
-        <select value={a?.id} onChange={(e) => onPair({ ...pair, a: e.target.value })} className={SELECT}>
+        <select
+          value={a?.id}
+          disabled={pairLocked}
+          title={pairLocked ? PAIR_LOCKED : undefined}
+          onChange={(e) => onPair({ ...pair, a: e.target.value })}
+          className={SELECT}
+        >
           {series.map((l) => (
             <option key={l.id} value={l.id}>
               {name(l)}
@@ -123,7 +120,13 @@ export function AnalysisPanel({ doc, points, visibleRange, pair, onPair, actions
           ))}
         </select>
         B
-        <select value={b?.id} onChange={(e) => onPair({ ...pair, b: e.target.value })} className={SELECT}>
+        <select
+          value={b?.id}
+          disabled={pairLocked}
+          title={pairLocked ? PAIR_LOCKED : undefined}
+          onChange={(e) => onPair({ ...pair, b: e.target.value })}
+          className={SELECT}
+        >
           {series
             .filter((l) => l.id !== a?.id)
             .map((l) => (
@@ -134,140 +137,117 @@ export function AnalysisPanel({ doc, points, visibleRange, pair, onPair, actions
         </select>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-neutral-500">
-        <select
-          value={mode}
-          onChange={(e) => setMode(e.target.value as CorrMode)}
-          className="rounded border border-neutral-800 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-300"
-          title="水平:直接拿数值算(两条都有长期趋势时会虚高);变化率:先换成各自 N 期的涨跌再算"
-        >
-          <option value="level">按水平</option>
-          <option value="change">按变化率</option>
-        </select>
-        {mode === 'change' && (
-          <span className="flex items-center gap-1">
-            变化期
-            <NumberField value={horizon} onCommit={(n) => setHorizon(Math.max(1, Math.min(500, Math.round(n))))} />
-          </span>
-        )}
-      </div>
-
-      <Tool title="滚动相关性">
-        <div className="flex items-center gap-1.5 text-xs text-neutral-500">
-          窗口
-          <NumberField value={corrWindow} onCommit={(n) => setCorrWindow(Math.max(5, Math.min(2000, Math.round(n))))} />
-          期
-          <button
-            type="button"
-            className={`${BTN} ml-auto`}
-            disabled={!a || !b || corrExists}
-            title={corrExists ? '这两条线已有一格相关性,窗口 / 口径在那张卡片上改' : undefined}
-            onClick={() =>
-              a && b && actions.addStudy({ kind: 'corr', a: a.id, b: b.id, window: corrWindow, mode, horizon })
-            }
-          >
-            {corrExists ? '已在图上' : '加一格到图上'}
-          </button>
-        </div>
-      </Tool>
-
-      <Tool title="领先滞后扫描">
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-neutral-500">
-          B 平移
-          <NumberField value={lagRange.min} onCommit={(n) => setLagRange((r) => clampLagRange(n, r.max))} />~
-          <NumberField value={lagRange.max} onCommit={(n) => setLagRange((r) => clampLagRange(r.min, n))} />天
-          <label className="flex items-center gap-1">
-            <input type="checkbox" checked={onlyVisible} onChange={(e) => setOnlyVisible(e.target.checked)} />
-            只算可视区间
-          </label>
-        </div>
-        <LagChart scan={scan} best={best} />
-        {best ? (
-          <div className="flex items-center gap-2 text-xs text-neutral-400">
-            <span className="flex-1">
-              最强:
-              {best.lag >= 0
-                ? `${name(b)} 领先 ${name(a)} ${best.lag} 天`
-                : `${name(a)} 领先 ${name(b)} ${-best.lag} 天`}
-              ,相关 {best.r.toFixed(2)}(样本 {best.n})
-            </span>
-            <button
-              type="button"
-              className={BTN}
-              disabled={Math.abs(best.lag + (a?.shift ?? 0)) > MAX_SHIFT}
-              onClick={() => b && actions.setShift(b.id, best.lag + (a?.shift ?? 0))}
-              title={
-                Math.abs(best.lag + (a?.shift ?? 0)) > MAX_SHIFT
-                  ? `叠上 A 当前的平移后超过 ±${MAX_SHIFT} 天的上限,设不了`
-                  : '把 B 平移到这个位置(相对 A 当前的平移)'
-              }
-            >
-              按此平移 B
-            </button>
-          </div>
-        ) : (
-          <p className="text-xs text-neutral-600">数据不足,算不出来</p>
-        )}
-        {best && (best.lag === lagRange.min || best.lag === lagRange.max) && (
+      <div className="flex flex-col gap-1.5 rounded border border-neutral-800 p-1.5">
+        <h3 className="flex items-center text-xs text-neutral-400">
+          叠加对比
+          <span className="text-neutral-600"> · 看两线从哪里分开</span>
+          <Help text={OVERLAY_HELP} />
+        </h3>
+        <button type="button" className={`${BTN} self-start`} disabled={!canOverlay} onClick={overlay}>
+          叠加 {name(b)} 到 {name(a)}
+        </button>
+        {shown && <OverlayNote shown={shown} a={name(a)} b={name(b)} />}
+        {/* 按钮点不了的原因留在面板上(不收进说明浮层):不说就不知道为什么是灰的 */}
+        {(a?.fit || aScale?.log || bIsTarget) && (
           <p className="text-[11px] leading-snug text-amber-500">
-            最强点落在扫描范围的边上,真正的峰值可能还在范围外,放宽范围再看。
+            {a?.fit && 'A 自己已叠加在别的线上,不能当基准。'}
+            {aScale?.log && 'A 的轴是对数坐标,对不上线性比例,先关掉对数。'}
+            {bIsTarget &&
+              `${name(b)} 是 ${series
+                .filter((l) => l.fit?.target === b?.id)
+                .map((l) => name(l))
+                .join('、')} 的叠加目标,先取消那条线的叠加。`}
           </p>
         )}
-        <p className="text-[11px] leading-snug text-neutral-600">
-          看整条曲线比只看最高点可靠:一片平台说明「大约」这个天数,单个尖峰多半是巧合。两条都有长期趋势时用「按变化率」。
-        </p>
-      </Tool>
-
-      <Tool title="参照期对齐">
-        <div className="flex items-center gap-1 text-xs text-neutral-500">
-          <input
-            type="date"
-            value={ref.start}
-            onChange={(e) => setRef((r) => ({ ...r, start: e.target.value }))}
-            className={DATE}
-          />
-          ~
-          <input
-            type="date"
-            value={ref.end}
-            onChange={(e) => setRef((r) => ({ ...r, end: e.target.value }))}
-            className={DATE}
-          />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            className={BTN}
-            disabled={!visibleRange}
-            onClick={() => visibleRange && setRef({ start: visibleRange.from, end: visibleRange.to })}
-            title="先把图缩放到两条线走势相似的那段,再点这里"
-          >
-            取当前可视区间
-          </button>
-          <button
-            type="button"
-            className={`${BTN} ml-auto`}
-            disabled={!fitPreview}
-            onClick={() => a && b && actions.applyFit(b.id, { target: a.id, start: ref.start, end: ref.end })}
-          >
-            把 B 换算到 A 的刻度
-          </button>
-        </div>
-        <p className="text-[11px] leading-snug text-neutral-600">
-          参照期选两条线本来走势相似、在劈叉之前的那段,尽量长、包含几轮涨跌。换算后 B 挪到 A
-          的格和轴上,下面加一格劈叉幅度。
-          {a?.fit && ' A 自己已在换算中,不能当基准。'}
-          {bIsTarget &&
-            ` ${name(b)} 是 ${series
-              .filter((l) => l.fit?.target === b?.id)
-              .map((l) => name(l))
-              .join('、')} 的换算目标,先取消那条线的对齐。`}
-          {refOk && !fitPreview && ' 这段参照期里两条线能配对的数据点不到 10 个,换一段更长的。'}
-        </p>
-      </Tool>
+      </div>
     </Section>
   );
 }
+
+const FAIL_TEXT: Record<Segment['fails'][number], (sg: Segment) => string> = {
+  weak: (sg) => `涨跌相关 ${sg.rc.toFixed(2)}(要求 ≥ ${sg.need.toFixed(2)})`,
+  unstable: (sg) => `一直成立:4 份只过 ${sg.parts} 份(要求 ≥ ${OVERLAY_RULES.partsMin})`,
+  level: (sg) => `整体走势 ${sg.rl.toFixed(2)}(要求同向且 ≥ ${OVERLAY_RULES.levelMin})`,
+};
+
+const yearsText = (months: number) => (months >= 12 ? `${(months / 12).toFixed(1)} 年` : `${Math.round(months)} 个月`);
+
+// 结果分行:一行一项,标签一列、数值一列,扫一眼就能找到要看的那项
+function Rows({ rows }: { rows: [keyof typeof ROW_HELP, string][] }) {
+  return (
+    <dl className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-0.5 text-xs text-neutral-300">
+      {rows.map(([k, v]) => (
+        <div key={k} className="contents">
+          <dt className="flex items-center text-neutral-500">
+            {k}
+            <Help text={ROW_HELP[k]} />
+          </dt>
+          <dd>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+// 每一项的「这是什么、怎么看」
+const ROW_HELP = {
+  基准段: '比例按这段定(黄底)\n段内该贴着,段外分开 = 劈叉\n不合理就缩放到别的年份再点',
+  涨跌相关: '约一个月涨跌幅的相关,−1 ~ 1\n越接近 ±1 越同步,负数 = 反向\n段越短,要求越高',
+  一直成立: '基准段切 4 份,各算一次涨跌相关\n4 份全过 = 整段同步\n只过 3 份 = 中间走弱过',
+  整体走势: '两条线数值本身的相关\n越接近 ±1 叠得越紧\n0.5 左右只能大致对上',
+  偏移: 'B 平移几天后最像 A\n领先 N 天 = B 先动,约 N 个交易日后 A 跟上\n不平移 = 同时动',
+  方向: '反向时 B 的轴倒过来画(上小下大)\n两线同涨同跌 = 关系照旧',
+} as const;
+
+/** 方向的说法按 B 轴实际倒没倒:A 轴本来就倒着时,反向的 B 反而不用倒。 */
+export const directionText = (beta: number, bInverted: boolean, b: string) =>
+  beta >= 0 ? '同向' : bInverted ? `反向,${b} 的轴已倒过来` : `反向(A 的轴已倒,${b} 不用倒)`;
+
+const pairKey = (a: Layer, b: Layer) => `${a.series}|${b.series}`;
+
+function OverlayNote({ shown: { res, aShift, invert }, a, b }: { shown: ShownResult; a: string; b: string }) {
+  const date = (d: string) => shiftBusinessDays(d, aShift);
+  if (res.kind === 'none') {
+    const { whole } = res;
+    if (!whole) return <p className="text-xs text-amber-500">可视区间里能配对的数据太少,放大一点再试。</p>;
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="text-xs text-amber-500">没找到两者同步的一段,没叠。没过的是:</p>
+        <ul className="list-disc pl-4 text-xs text-amber-500">
+          {whole.fails.map((f) => (
+            <li key={f}>{FAIL_TEXT[f](whole)}</li>
+          ))}
+        </ul>
+        <p className="text-[11px] text-neutral-500">缩放到别的年份再点,或换一对线</p>
+      </div>
+    );
+  }
+
+  const { seg, lag, fit } = res.overlay;
+  const lagText =
+    lag === 0
+      ? '同时动,不平移'
+      : lag > 0
+        ? `${b} 领先 ${a} ${lag} 个交易日,已右移`
+        : `${b} 落后 ${a} ${-lag} 个交易日,已左移`;
+
+  return (
+    <Rows
+      rows={[
+        ['基准段', `${date(seg.from)} ~ ${date(seg.to)}(${yearsText(seg.months)})`],
+        ['涨跌相关', `${seg.rc.toFixed(2)}(要求 ≥ ${seg.need.toFixed(2)})`],
+        ['一直成立', `4 份过 ${seg.parts} 份(要求 ≥ ${OVERLAY_RULES.partsMin})`],
+        ['整体走势', `${seg.rl.toFixed(2)}(要求同向且 ≥ ${OVERLAY_RULES.levelMin})`],
+        ['偏移', lagText],
+        ['方向', directionText(fit.beta, invert, b)],
+      ]}
+    />
+  );
+}
+
+const OVERLAY_HELP = `自动选两者同步的一段(黄底),按它的比例叠上 B
+段外分开的地方就是劈叉
+只看某几年:先缩放到那几年再点`;
 
 function Section({ open, onToggle, children }: { open: boolean; onToggle: () => void; children: ReactNode }) {
   return (
@@ -285,52 +265,24 @@ function Section({ open, onToggle, children }: { open: boolean; onToggle: () => 
   );
 }
 
-function Tool({ title, children }: { title: string; children: ReactNode }) {
+// 说明收进问号浮层。走 Portal 挂到 body 上:侧栏是滚动容器,浮层画在里面会被裁掉
+function Help({ text }: { text: string }) {
   return (
-    <div className="flex flex-col gap-1.5 rounded border border-neutral-800 p-1.5">
-      <h3 className="text-xs text-neutral-400">{title}</h3>
-      {children}
-    </div>
-  );
-}
-
-const W = 280;
-const H = 96;
-const PAD = { l: 26, r: 6, t: 6, b: 16 };
-
-// 「平移天数 → 相关性」曲线。横轴平移天数,纵轴 −1~1;标出 0 天竖线与最强点。
-function LagChart({ scan, best }: { scan: LagPoint[]; best: LagPoint | undefined }) {
-  const valid = scan.filter((p) => Number.isFinite(p.r));
-  if (valid.length < 2) return null;
-
-  const lo = scan[0].lag;
-  const hi = scan.at(-1)!.lag;
-  const x = (lag: number) => PAD.l + ((lag - lo) / (hi - lo || 1)) * (W - PAD.l - PAD.r);
-  const y = (r: number) => PAD.t + ((1 - r) / 2) * (H - PAD.t - PAD.b);
-  const path = valid.map((p) => `${x(p.lag).toFixed(1)},${y(p.r).toFixed(1)}`).join(' ');
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="平移天数与相关性">
-      {[1, 0, -1].map((r) => (
-        <g key={r}>
-          <line x1={PAD.l} x2={W - PAD.r} y1={y(r)} y2={y(r)} stroke={r === 0 ? '#404040' : '#262626'} />
-          <text x={PAD.l - 4} y={y(r) + 3} textAnchor="end" fontSize="9" fill="#737373">
-            {r}
-          </text>
-        </g>
-      ))}
-      {lo < 0 && hi > 0 && (
-        <line x1={x(0)} x2={x(0)} y1={PAD.t} y2={H - PAD.b} stroke="#404040" strokeDasharray="2 2" />
-      )}
-      <polyline points={path} fill="none" stroke="#3987e5" strokeWidth="1.5" />
-      {best && <circle cx={x(best.lag)} cy={y(best.r)} r="3" fill="#e66767" />}
-      {[lo, 0, hi]
-        .filter((v, i, arr) => arr.indexOf(v) === i && v >= lo && v <= hi)
-        .map((v) => (
-          <text key={v} x={x(v)} y={H - 4} textAnchor="middle" fontSize="9" fill="#737373">
-            {v}
-          </text>
-        ))}
-    </svg>
+    <Popover.Root>
+      <Popover.Trigger aria-label="说明" className="ml-1 text-neutral-500 hover:text-neutral-200">
+        <CircleHelp size={13} />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="left"
+          align="start"
+          sideOffset={6}
+          collisionPadding={8}
+          className="z-50 w-max max-w-80 whitespace-pre-wrap rounded-md border border-neutral-700 bg-neutral-900 p-3 text-xs leading-relaxed text-neutral-300 shadow-lg outline-none"
+        >
+          {text}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }

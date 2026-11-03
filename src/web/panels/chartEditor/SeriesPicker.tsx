@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Search } from 'lucide-react';
+import { Check, ChevronDown, Search, X } from 'lucide-react';
 import { CATEGORIES, YAHOO_PREFIX, rememberYahooName, searchSeries, seriesDef, yahooId } from './registry';
 import { searchable, useYahooSearch } from './useYahooSearch';
 
@@ -8,14 +8,17 @@ type Props = {
   used: Set<string>;
   /** 勾选 = 加到第 1 格;取消勾选 = 从图上拿掉 */
   onToggle: (seriesId: string) => void;
+  /** 一键清空图上所有序列 */
+  onClear: () => void;
 };
 
-// 右侧顶部:搜索框 + 多选下拉。平时只占一行,点开才列序列,可以连续勾好几条(勾完不收起)。
+// 右侧顶部:搜索框 + 多选下拉。平时只占一行,点开才列序列;勾一条就收起、清空关键字,接着打字搜下一条。
 // 下拉里先列内置序列(按分类),再列 Yahoo 搜索结果(任意代码)。
-export function SeriesPicker({ used, onToggle }: Props) {
+export function SeriesPicker({ used, onToggle, onClear }: Props) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // 点下拉框外面收起
   useEffect(() => {
@@ -28,6 +31,15 @@ export function SeriesPicker({ used, onToggle }: Props) {
 
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
+
+  // 勾选后清空关键字、收起列表(下次展开从头开始),焦点留在输入框:接着打字就重新展开搜下一条
+  const pick = (id: string) => {
+    onToggle(id);
+    setQuery('');
+    // 先聚焦再收起:聚焦会触发 onFocus 的展开,放在后面就把刚收起的列表又打开了
+    inputRef.current?.focus();
+    setOpen(false);
+  };
 
   const q = query.trim();
   const yahoo = useYahooSearch(query);
@@ -42,6 +54,7 @@ export function SeriesPicker({ used, onToggle }: Props) {
       <label className="flex items-center gap-2 rounded border border-neutral-800 bg-neutral-900 px-2 py-1.5 focus-within:border-neutral-600">
         <Search size={14} className="text-neutral-500" />
         <input
+          ref={inputRef}
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -52,7 +65,20 @@ export function SeriesPicker({ used, onToggle }: Props) {
           placeholder="搜索并勾选序列"
           className="w-full bg-transparent text-sm text-neutral-200 outline-none placeholder:text-neutral-600"
         />
-        {used.size > 0 && <span className="whitespace-nowrap text-xs text-neutral-500">已选 {used.size}</span>}
+        {used.size > 0 && (
+          <>
+            <span className="whitespace-nowrap text-xs text-neutral-500">已选 {used.size}</span>
+            <button
+              type="button"
+              onClick={onClear}
+              className="flex items-center whitespace-nowrap text-xs text-neutral-500 hover:text-neutral-200"
+              title="清空图上所有序列"
+            >
+              <X size={12} />
+              清空
+            </button>
+          </>
+        )}
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
@@ -70,13 +96,7 @@ export function SeriesPicker({ used, onToggle }: Props) {
             <div key={g.category}>
               <h3 className="px-3 pb-0.5 pt-1.5 text-xs text-neutral-500">{g.category}</h3>
               {g.items.map((d) => (
-                <OptionRow
-                  key={d.id}
-                  on={used.has(d.id)}
-                  onClick={() => onToggle(d.id)}
-                  label={d.label}
-                  meta={d.freq}
-                />
+                <OptionRow key={d.id} on={used.has(d.id)} onClick={() => pick(d.id)} label={d.label} meta={d.freq} />
               ))}
             </div>
           ))}
@@ -101,7 +121,7 @@ export function SeriesPicker({ used, onToggle }: Props) {
                     on={used.has(yahooId(h.symbol))}
                     onClick={() => {
                       rememberYahooName(h.symbol, h.name);
-                      onToggle(yahooId(h.symbol));
+                      pick(yahooId(h.symbol));
                     }}
                     label={
                       <>
@@ -121,7 +141,7 @@ export function SeriesPicker({ used, onToggle }: Props) {
               </>
             ) : usedYahoo.length > 0 ? (
               usedYahoo.map((id) => (
-                <OptionRow key={id} on onClick={() => onToggle(id)} label={seriesDef(id)?.label ?? id} meta="日" />
+                <OptionRow key={id} on onClick={() => pick(id)} label={seriesDef(id)?.label ?? id} meta="日" />
               ))
             ) : (
               <p className="px-3 py-1 text-xs text-neutral-600">输入代码或英文名搜索 Yahoo 上的任意品种</p>

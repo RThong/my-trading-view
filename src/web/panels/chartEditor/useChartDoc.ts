@@ -4,15 +4,12 @@ import { SERIES_COLORS } from '../../lib/palette';
 import {
   EMPTY_DOC,
   addLayer,
-  addStudy,
   applyLayerFit,
   clearLayerFit,
-  isSeriesLayer,
   moveLayer,
   nextColor,
   removeLayer,
   removeSeries,
-  setCorrParams,
   setLayerColor,
   setLayerScale,
   setLayerShift,
@@ -23,10 +20,7 @@ import {
   type Fit,
   type PaneTarget,
   type ScaleChoice,
-  type Study,
 } from './chartDoc';
-
-type CorrPatch = Parameters<typeof setCorrParams>[2];
 
 export function useChartDoc() {
   const [doc, setDoc] = useState<ChartDoc>(EMPTY_DOC);
@@ -37,7 +31,7 @@ export function useChartDoc() {
     /** 下拉框勾选 / 取消勾选:在图上的就整条拿掉,不在的加到第 0 格 */
     toggleSeries: (series: string) =>
       setDoc((d) =>
-        d.panes.some((p) => p.layers.some((l) => isSeriesLayer(l) && l.series === series))
+        d.panes.some((p) => p.layers.some((l) => l.series === series))
           ? removeSeries(d, series)
           : addLayer(d, series, nextColor(d, SERIES_COLORS)),
       ),
@@ -51,9 +45,9 @@ export function useChartDoc() {
     setInvert: (paneId: string, scaleId: string, invert: boolean) =>
       setDoc((d) => setScaleInvert(d, paneId, scaleId, invert)),
     setLog: (paneId: string, scaleId: string, log: boolean) => setDoc((d) => setScaleLog(d, paneId, scaleId, log)),
-    addStudy: (study: Study) => setDoc((d) => addStudy(d, study, nextColor(d, SERIES_COLORS))),
-    setCorr: (layerId: string, patch: CorrPatch) => setDoc((d) => setCorrParams(d, layerId, patch)),
-    applyFit: (layerId: string, fit: Fit) => setDoc((d) => applyLayerFit(d, layerId, fit, nextColor(d, SERIES_COLORS))),
+    /** 叠加对比:先按找到的偏移平移,再挂自己的轴叠到 fit.target 上(invert = 这根轴要不要倒) */
+    overlay: (layerId: string, shift: number, fit: Fit, invert: boolean) =>
+      setDoc((d) => applyLayerFit(setLayerShift(d, layerId, shift), layerId, fit, invert)),
     clearFit: (layerId: string) => setDoc((d) => clearLayerFit(d, layerId)),
   };
 }

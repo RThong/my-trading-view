@@ -14,36 +14,24 @@ export type Scale = {
   log?: true;
 };
 
-/** 参照期换算:在 [start, end] 里求本图层 → target 图层单位的线性比例,换算后画在 target 的刻度上。 */
-export type Fit = { target: string; start: string; end: string };
+/**
+ * 叠到 target 上:基准段 [start, end](画面日期)里按日线求出的 target ≈ alpha + beta × 本图层,r = 按水平的相关。
+ * 本图层挂自己的轴、按原值画,渲染层每帧按这个比例把它的轴范围对齐 target 的轴(见 useFitSync)。
+ * 比例点按钮时算好存下来,不在渲染时重算:页头切到周 / 月线后聚合点变少,重算会让比例漂移甚至算不出来。
+ */
+export type Fit = { target: string; start: string; end: string; alpha: number; beta: number; r: number };
 
-/** 派生图层:数据由别的图层算出来,不对应注册表序列。 */
-export type Study =
-  /** 两条图层的滚动相关性(按平移后的位置算) */
-  | { kind: 'corr'; a: string; b: string; window: number; mode: 'level' | 'change'; horizon: number }
-  /** 劈叉幅度:of 图层(须带 fit)的换算目标 − 换算后的 of */
-  | { kind: 'gap'; of: string };
-
-type LayerBase = {
+export type Layer = {
   id: string;
   /** 引用同一格 scales 里的某个 id */
   scale: string;
   color: string;
-};
-
-export type SeriesLayer = LayerBase & {
   /** 注册表 id */
   series: string;
   /** 平移的交易日数,> 0 往后(右)挪 —— 看它是不是领先别的线 */
   shift?: number;
   fit?: Fit;
 };
-
-export type StudyLayer = LayerBase & { study: Study };
-
-export type Layer = SeriesLayer | StudyLayer;
-
-export const isSeriesLayer = (l: Layer): l is SeriesLayer => 'series' in l;
 
 export type Pane = {
   id: string;
@@ -87,32 +75,30 @@ export function nextId(doc: ChartDoc, prefix: 'p' | 'l' | 's'): string {
 }
 
 /**
- * 图层之间的引用失效时怎么收拾:换算目标没了(或目标自己也在换算)→ 去掉 fit;
- * 相关性引用的图层不在 / 不是序列图层 → 删掉该派生层;劈叉引用的图层没有 fit → 删掉。
- * 先修 fit 再查派生层,因为劈叉依赖 fit。
+ * 叠加关系失效时去掉 fit:目标没了 / 目标自己也叠在别人上 / 两者不在同一格(底色、对齐都按同格算)/
+ * B 的轴上还挂着别的线(含 A:同一根轴上「按 A 的范围反推 B 的范围」会自己追自己,纵轴每帧乱跳)。
  */
 function pruneRefs(doc: ChartDoc): ChartDoc {
-  const series = new Map(doc.panes.flatMap((p) => p.layers.filter(isSeriesLayer).map((l) => [l.id, l] as const)));
-  const fitOk = (l: SeriesLayer) =>
-    !l.fit || (l.fit.target !== l.id && series.has(l.fit.target) && !series.get(l.fit.target)!.fit);
-  const dropped = new Set([...series.values()].filter((l) => !fitOk(l)).map((l) => l.id));
-  const d = detachFit(doc, dropped);
-
-  const fixed = new Map(d.panes.flatMap((p) => p.layers.filter(isSeriesLayer).map((l) => [l.id, l] as const)));
-  const studyOk = ({ study }: StudyLayer) =>
-    study.kind === 'corr' ? fixed.has(study.a) && fixed.has(study.b) : !!fixed.get(study.of)?.fit;
-
-  return {
-    ...d,
-    panes: d.panes.map((p) => ({
-      ...p,
-      layers: p.layers.filter((l) => isSeriesLayer(l) || studyOk(l)),
-    })),
+  const layers = new Map(doc.panes.flatMap((p) => p.layers.map((l) => [l.id, l] as const)));
+  const paneOf = new Map(doc.panes.flatMap((p) => p.layers.map((l) => [l.id, p] as const)));
+  const fitOk = (l: Layer) => {
+    if (!l.fit) return true;
+    const target = layers.get(l.fit.target);
+    const pane = paneOf.get(l.id)!;
+    return (
+      !!target &&
+      target.id !== l.id &&
+      !target.fit &&
+      paneOf.get(target.id) === pane &&
+      pane.layers.every((o) => o.id === l.id || o.scale !== l.scale)
+    );
   };
+
+  return detachFit(doc, new Set([...layers.values()].filter((l) => !fitOk(l)).map((l) => l.id)));
 }
 
 /**
- * 去掉这些图层的 fit,并各自改挂本格一根新独立轴。取消对齐(或换算目标没了)后它按原始数值画,
+ * 去掉这些图层的 fit,并各自改挂本格一根新独立轴。取消叠加(或叠加目标没了)后它按原始数值画,
  * 和 target 单位不同,还挂在 target 的轴上会把那根轴撑歪;独立轴自己缩放,位置也不跳格。
  */
 function detachFit(doc: ChartDoc, ids: ReadonlySet<string>): ChartDoc {
@@ -125,13 +111,13 @@ function detachFit(doc: ChartDoc, ids: ReadonlySet<string>): ChartDoc {
   return {
     ...doc,
     panes: doc.panes.map((p) => {
-      const hit = p.layers.filter((l) => isSeriesLayer(l) && ids.has(l.id));
+      const hit = p.layers.filter((l) => ids.has(l.id));
       if (hit.length === 0) return p;
       return {
         ...p,
         scales: [...p.scales, ...hit.map((l) => ({ id: scaleOf(l.id), side: 'overlay' as const }))],
         layers: p.layers.map((l) => {
-          if (!isSeriesLayer(l) || !ids.has(l.id)) return l;
+          if (!ids.has(l.id)) return l;
           const { fit: _drop, ...rest } = l;
           return { ...rest, scale: scaleOf(l.id) };
         }),
@@ -178,18 +164,24 @@ export function findLayer(doc: ChartDoc, layerId: string): { pane: Pane; layer: 
   return pane && layer ? { pane, layer } : undefined;
 }
 
-/** 是否滚动相关性层。它的轴固定 −1~1(autoscale provider),和别的线共轴或被拖成手动就不固定了 —— 只能独占一格、不挪不换轴。 */
-export const isCorrLayer = (l: Layer): boolean => !isSeriesLayer(l) && l.study.kind === 'corr';
-const hasCorrLayer = (p: Pane) => p.layers.some(isCorrLayer);
+/**
+ * 这一格里被叠加的线(B)占着的轴。别的线不能再挂上去:B 的轴范围跟着 A 走,挂上去的线会被强行按 A 的比例缩放,
+ * 叠加关系也会被 pruneRefs 解除 —— 加线 / 挪线 / 换轴碰到它都改开独立轴或不让换。
+ */
+export const fitScaleIds = (p: Pane): Set<string> => new Set(p.layers.filter((l) => l.fit).map((l) => l.scale));
 
-/** 加一条图层:默认第 0 格、右轴。空图(或第 0 格是相关性格)时在最上面新建主格。 */
+/** 加一条图层:默认第 0 格、右轴(右轴被叠加的线占着就开独立轴)。空图时新建主格。 */
 export function addLayer(doc: ChartDoc, series: string, color: string): ChartDoc {
-  const layer: Layer = { id: nextId(doc, 'l'), series, scale: 'right', color };
   const [first, ...rest] = doc.panes;
-  const panes =
-    first && !hasCorrLayer(first)
-      ? [{ ...first, layers: [...first.layers, layer] }, ...rest]
-      : [{ id: nextId(doc, 'p'), stretch: MAIN_STRETCH, scales: [BUILTIN.right], layers: [layer] }, ...doc.panes];
+  const overlay =
+    first && fitScaleIds(first).has('right') ? { id: nextId(doc, 's'), side: 'overlay' as const } : undefined;
+  const layer: Layer = { id: nextId(doc, 'l'), series, scale: overlay?.id ?? 'right', color };
+  const panes = first
+    ? [
+        { ...first, scales: overlay ? [...first.scales, overlay] : first.scales, layers: [...first.layers, layer] },
+        ...rest,
+      ]
+    : [{ id: nextId(doc, 'p'), stretch: MAIN_STRETCH, scales: [BUILTIN.right], layers: [layer] }, ...doc.panes];
 
   return normalize({ ...doc, panes });
 }
@@ -201,13 +193,13 @@ export function removeLayer(doc: ChartDoc, layerId: string): ChartDoc {
   });
 }
 
-/** 拿掉某条序列的全部图层(下拉框取消勾选)。依赖它们的派生层由 normalize 一并收拾。 */
+/** 拿掉某条序列的全部图层(下拉框取消勾选)。叠在它们上的线由 normalize 改挂独立轴。 */
 export function removeSeries(doc: ChartDoc, series: string): ChartDoc {
   return normalize({
     ...doc,
     panes: doc.panes.map((p) => ({
       ...p,
-      layers: p.layers.filter((l) => !isSeriesLayer(l) || l.series !== series),
+      layers: p.layers.filter((l) => l.series !== series),
     })),
   });
 }
@@ -216,14 +208,14 @@ export function removeSeries(doc: ChartDoc, series: string): ChartDoc {
 export function setLayerShift(doc: ChartDoc, layerId: string, shift: number): ChartDoc {
   const n = Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, Math.round(shift) || 0));
   const cur = findLayer(doc, layerId)?.layer;
-  if (!cur || !isSeriesLayer(cur) || (cur.shift ?? 0) === n) return doc;
+  if (!cur || (cur.shift ?? 0) === n) return doc;
 
   return {
     ...doc,
     panes: doc.panes.map((p) => ({
       ...p,
       layers: p.layers.map((l) => {
-        if (l.id !== layerId || !isSeriesLayer(l)) return l;
+        if (l.id !== layerId) return l;
         const { shift: _old, ...rest } = l;
         return n === 0 ? rest : { ...rest, shift: n };
       }),
@@ -256,83 +248,51 @@ export const setScaleInvert = (doc: ChartDoc, paneId: string, scaleId: string, o
 export const setScaleLog = (doc: ChartDoc, paneId: string, scaleId: string, on: boolean) =>
   setScaleFlag(doc, paneId, scaleId, 'log', on);
 
-/** 加一个派生图层(相关性 / 劈叉),单独新开一格放在最下面。 */
-/** 这两条图层(不分先后)是否已有一格相关性。同一对只留一格,参数在那张卡片上改。 */
-export const hasCorr = (doc: ChartDoc, a: string, b: string): boolean =>
-  doc.panes.some((p) =>
-    p.layers.some(
-      (l) =>
-        !isSeriesLayer(l) &&
-        l.study.kind === 'corr' &&
-        ((l.study.a === a && l.study.b === b) || (l.study.a === b && l.study.b === a)),
-    ),
-  );
-
-export function addStudy(doc: ChartDoc, study: Study, color: string): ChartDoc {
-  if (study.kind === 'corr' && hasCorr(doc, study.a, study.b)) return doc;
-  const layer: StudyLayer = { id: nextId(doc, 'l'), study, scale: 'right', color };
-  const pane: Pane = { id: nextId(doc, 'p'), stretch: SUB_STRETCH, scales: [BUILTIN.right], layers: [layer] };
-
-  return normalize({ ...doc, panes: [...doc.panes, pane] });
-}
-
-/** 改相关性层的参数(窗口 / 口径 / 变化期)。 */
-export function setCorrParams(
-  doc: ChartDoc,
-  layerId: string,
-  patch: Partial<Pick<Extract<Study, { kind: 'corr' }>, 'window' | 'mode' | 'horizon'>>,
-): ChartDoc {
-  return {
-    ...doc,
-    panes: doc.panes.map((p) => ({
-      ...p,
-      layers: p.layers.map((l) =>
-        l.id === layerId && !isSeriesLayer(l) && l.study.kind === 'corr'
-          ? { ...l, study: { ...l.study, ...patch } }
-          : l,
-      ),
-    })),
-  };
-}
-
 /** 是否有别的图层按它换算(它是某条线的 fit.target)。 */
 export const isFitTarget = (doc: ChartDoc, layerId: string): boolean =>
-  doc.panes.some((p) => p.layers.some((l) => isSeriesLayer(l) && l.fit?.target === layerId));
+  doc.panes.some((p) => p.layers.some((l) => l.fit?.target === layerId));
 
 /**
- * 参照期对齐:把图层 layerId 换算到 fit.target 的单位,并挪进 target 所在格、挂到 target 的轴上
- * (换算后两者同单位,同一根轴才叠得上);再在最下面加一格劈叉幅度(已有就不重复加)。
+ * 叠到 target 上:挪进 target 所在格,挂一根自己的轴 —— 优先 target 对面的内置轴(有刻度可读),
+ * 两侧都被别的线占了才开独立轴(没刻度);反向时这根轴设成倒轴(invert 由调用方按比例符号算好)。
  */
-export function applyLayerFit(doc: ChartDoc, layerId: string, fit: Fit, gapColor: string): ChartDoc {
+export function applyLayerFit(doc: ChartDoc, layerId: string, fit: Fit, invert: boolean): ChartDoc {
   const self = findLayer(doc, layerId);
   const target = findLayer(doc, fit.target);
-  if (!self || !target || !isSeriesLayer(self.layer) || !isSeriesLayer(target.layer) || layerId === fit.target) {
-    return doc;
-  }
+  if (!self || !target || layerId === fit.target) return doc;
   // 本图层已是别人的换算目标:再给它加 fit 会让 pruneRefs 静默去掉那条线的换算(「目标自己也在换算」不允许)
   if (isFitTarget(doc, layerId)) return doc;
 
-  const moved = moveLayer(doc, layerId, target.pane.id);
-  const withFit: ChartDoc = {
-    ...moved,
-    panes: moved.panes.map((p) => ({
-      ...p,
-      layers: p.layers.map((l) =>
-        l.id === layerId && isSeriesLayer(l) ? { ...l, fit, scale: target.layer.scale } : l,
-      ),
-    })),
-  };
-  const hasGap = withFit.panes.some((p) =>
-    p.layers.some((l) => !isSeriesLayer(l) && l.study.kind === 'gap' && l.study.of === layerId),
-  );
+  // 已在 A 的格(同一对换视口重新叠加)就不挪:同格 moveLayer 会把 B 排到末尾,冲掉用户调好的顺序
+  const moved = self.pane.id === target.pane.id ? doc : moveLayer(doc, layerId, target.pane.id);
+  const pane = moved.panes.find((p) => p.id === target.pane.id)!;
+  const taken = new Set(pane.layers.filter((l) => l.id !== layerId).map((l) => l.scale));
+  const sides = target.layer.scale === 'left' ? (['right', 'left'] as const) : (['left', 'right'] as const);
+  const side = sides.find((id) => !taken.has(id));
+  const overlay = side ? undefined : { id: nextId(moved, 's'), side: 'overlay' as const };
+  const scaleId = side ?? overlay!.id;
 
-  return hasGap ? normalize(withFit) : addStudy(normalize(withFit), { kind: 'gap', of: layerId }, gapColor);
+  const withFit = normalize({
+    ...moved,
+    panes: moved.panes.map((p) =>
+      p.id !== pane.id
+        ? p
+        : {
+            ...p,
+            scales: overlay ? [...p.scales, overlay] : p.scales,
+            layers: p.layers.map((l) => (l.id === layerId ? { ...l, fit, scale: scaleId } : l)),
+          },
+    ),
+  });
+
+  // B 的轴只能是线性:B 轴范围按线性比例从 A 推出来(B 原来那根轴若开着对数,这里关掉)
+  return setScaleLog(setScaleInvert(withFit, pane.id, scaleId, invert), pane.id, scaleId, false);
 }
 
-/** 取消参照期对齐:去掉 fit 并改挂一根新独立轴(见 detachFit);对应的劈叉格由 normalize 收拾。 */
+/** 取消叠加:去掉 fit 并改挂一根新独立轴(见 detachFit)。 */
 export function clearLayerFit(doc: ChartDoc, layerId: string): ChartDoc {
   const l = findLayer(doc, layerId)?.layer;
-  return l && isSeriesLayer(l) && l.fit ? normalize(detachFit(doc, new Set([layerId]))) : doc;
+  return l?.fit ? normalize(detachFit(doc, new Set([layerId]))) : doc;
 }
 
 export function setLayerColor(doc: ChartDoc, layerId: string, color: string): ChartDoc {
@@ -345,6 +305,7 @@ export function setLayerScale(doc: ChartDoc, layerId: string, choice: ScaleChoic
   if (!hit) return doc;
 
   const { scaleId, added } = resolveScale(doc, choice);
+  if (fitScaleIds(hit.pane).has(scaleId)) return doc;
   const panes = doc.panes.map((p) =>
     p.id !== hit.pane.id
       ? p
@@ -377,11 +338,12 @@ export function moveLayer(doc: ChartDoc, layerId: string, target: PaneTarget, be
   if (hit.pane.id === target) return reorderInPane(doc, hit.pane, layerId, before);
   // 目标格不存在:原样返回,别把图层从源格摘掉却放不进任何格
   if (target !== 'new' && !doc.panes.some((p) => p.id === target)) return doc;
-  // 相关性层不挪,也不许别的线挪进相关性格(见 isCorrLayer)
-  if (isCorrLayer(hit.layer) || doc.panes.some((p) => p.id === target && hasCorrLayer(p))) return doc;
 
   const srcScale = hit.pane.scales.find((s) => s.id === hit.layer.scale);
-  const overlay = srcScale?.side === 'overlay' ? { id: nextId(doc, 's'), side: 'overlay' as const } : undefined;
+  const targetPane = doc.panes.find((p) => p.id === target);
+  // 独立轴是源格私有的,得新开;带过去的内置轴若在目标格被叠加的线占着,也改开独立轴
+  const needOverlay = srcScale?.side === 'overlay' || (!!targetPane && fitScaleIds(targetPane).has(hit.layer.scale));
+  const overlay = needOverlay ? { id: nextId(doc, 's'), side: 'overlay' as const } : undefined;
   const layer: Layer = { ...hit.layer, scale: overlay?.id ?? hit.layer.scale };
   const builtin = layer.scale === 'right' || layer.scale === 'left' ? BUILTIN[layer.scale] : undefined;
   const carried = [overlay ?? builtin].filter((s) => s !== undefined);
@@ -461,47 +423,47 @@ const isDate = (x: unknown): x is string =>
 const isInt = (x: unknown, lo: number, hi: number): x is number =>
   Number.isInteger(x) && (x as number) >= lo && (x as number) <= hi;
 
+const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
 const isFit = (x: unknown): x is Fit =>
-  isObj(x) && isStr(x.target) && isDate(x.start) && isDate(x.end) && x.start < x.end;
-
-const isStudy = (x: unknown): x is Study =>
   isObj(x) &&
-  (x.kind === 'corr'
-    ? isStr(x.a) &&
-      isStr(x.b) &&
-      isInt(x.window, 5, 2000) &&
-      (x.mode === 'level' || x.mode === 'change') &&
-      isInt(x.horizon, 1, 500)
-    : x.kind === 'gap' && isStr(x.of));
+  isStr(x.target) &&
+  isDate(x.start) &&
+  isDate(x.end) &&
+  x.start < x.end &&
+  isNum(x.alpha) &&
+  isNum(x.beta) &&
+  x.beta !== 0 &&
+  isNum(x.r);
 
 const isLayer = (x: unknown): x is Layer =>
   isObj(x) &&
   isStr(x.id) &&
   isStr(x.scale) &&
   isColor(x.color) &&
-  ('series' in x
-    ? isStr(x.series) &&
-      (x.shift === undefined || isInt(x.shift, -MAX_SHIFT, MAX_SHIFT)) &&
-      (x.fit === undefined || isFit(x.fit))
-    : isStudy(x.study));
+  isStr(x.series) &&
+  (x.shift === undefined || isInt(x.shift, -MAX_SHIFT, MAX_SHIFT)) &&
+  (x.fit === undefined || isFit(x.fit));
 
 /** 按字段白名单重建图层:载入的 JSON 里多出来的字段(比如数据)一律丢掉,守住「图层不存数据」。 */
 function cleanLayer(l: Layer): Layer {
-  const base = { id: l.id, scale: l.scale, color: l.color };
-  if (!isSeriesLayer(l)) {
-    const st = l.study;
-    const study: Study =
-      st.kind === 'corr'
-        ? { kind: 'corr', a: st.a, b: st.b, window: st.window, mode: st.mode, horizon: st.horizon }
-        : { kind: 'gap', of: st.of };
-    return { ...base, study };
-  }
-
   return {
-    ...base,
+    id: l.id,
+    scale: l.scale,
+    color: l.color,
     series: l.series,
     ...(l.shift ? { shift: l.shift } : {}),
-    ...(l.fit ? { fit: { target: l.fit.target, start: l.fit.start, end: l.fit.end } } : {}),
+    ...(l.fit
+      ? {
+          fit: {
+            target: l.fit.target,
+            start: l.fit.start,
+            end: l.fit.end,
+            alpha: l.fit.alpha,
+            beta: l.fit.beta,
+            r: l.fit.r,
+          },
+        }
+      : {}),
   };
 }
 
@@ -537,13 +499,6 @@ const idsUnique = (panes: Pane[]): boolean =>
 export function parseChartDoc(x: unknown): ChartDoc | null {
   if (!isObj(x) || x.v !== 1 || !Array.isArray(x.panes) || !x.panes.every(isPane)) return null;
   if (!idsUnique(x.panes)) return null;
-  // 同一对线(不分先后)只能有一格相关性 —— 与 addStudy 的守卫一致,载入的 JSON 也不能绕过
-  const pairs = x.panes
-    .flatMap((p) => p.layers)
-    .flatMap((l) => (!isSeriesLayer(l) && l.study.kind === 'corr' ? [[l.study.a, l.study.b].sort().join('|')] : []));
-  if (!allUnique(pairs)) return null;
-  // 相关性层独占一格(它的 −1~1 轴不能与别的线共用),与 addLayer / moveLayer 的守卫一致
-  if (x.panes.some((p) => p.layers.length > 1 && p.layers.some(isCorrLayer))) return null;
 
   // 按字段白名单重建:载入的 JSON 里多出来的字段一律丢掉
   const panes = x.panes.map((p) => ({

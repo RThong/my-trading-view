@@ -1,5 +1,5 @@
 import { type DragEvent, useState } from 'react';
-import { isCorrLayer, type ChartDoc, type PaneTarget } from './chartDoc';
+import type { ChartDoc, PaneTarget } from './chartDoc';
 import { LayerCard, type CardActions } from './LayerCard';
 import { canLogScale, type LayerData } from './layerPoints';
 import type { ChartDocActions } from './useChartDoc';
@@ -11,8 +11,6 @@ type Props = {
 };
 
 const DRAG_TYPE = 'text/plain';
-// 相关性格不接收拖放(它的 −1~1 轴不能与别的线共用,见 chartDoc 的 isCorrLayer)
-const NO_DROP = { onDragOver: () => {}, onDrop: () => {} };
 
 // 右侧下半:一格一个区块,区块里是该格的图层卡片。卡片整张可拖:
 // 放到另一张卡片上 = 插到它前面(同格即调顺序);放到区块空白处 = 追加到该格末尾;
@@ -83,7 +81,7 @@ export function LayerList({ doc, data, actions }: Props) {
       {doc.panes.map((pane, i) => (
         <div
           key={pane.id}
-          {...(pane.layers.some(isCorrLayer) ? {} : dropTarget(pane.id))}
+          {...dropTarget(pane.id)}
           className={
             'rounded border p-1.5 transition-colors ' +
             (over === pane.id ? 'border-sky-500 bg-sky-500/5' : 'border-neutral-800')
@@ -99,12 +97,11 @@ export function LayerList({ doc, data, actions }: Props) {
                 doc={doc}
                 layer={l}
                 pane={pane}
-                data={data[l.id]}
                 canLog={canLogScale(pane, l.scale, data)}
                 actions={actions}
                 faded={dragging === l.id}
                 insertMark={overCard === l.id && dragging !== l.id}
-                drop={pane.layers.some(isCorrLayer) ? NO_DROP : cardDrop(pane.id, l.id)}
+                drop={cardDrop(pane.id, l.id)}
                 onDragStart={startDrag(l.id)}
                 onDragEnd={endDrag}
               />

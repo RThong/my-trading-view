@@ -13,7 +13,7 @@ import {
 } from 'lightweight-charts';
 import { CHART_OPTIONS, type LinePoint } from '../../lib/chart';
 import type { Interval } from '../../hooks/interval';
-import { isCorrLayer, isSeriesLayer, type ChartDoc, type Layer } from './chartDoc';
+import type { ChartDoc } from './chartDoc';
 import { canLogScale, type LayerData } from './layerPoints';
 import { commonRange } from './useEditorSeriesData';
 
@@ -99,8 +99,8 @@ export function useEditorChart(
       s.setData(pts);
       fedRef.current.set(id, pts);
     });
-    // 这一轮有没有序列图层「第一次拿到真数据」(新加的线 / 加载完成);派生层(相关性 / 劈叉)不触发对准
-    const seriesIds = new Set(layers.filter(isSeriesLayer).map((l) => l.id));
+    // 这一轮有没有图层「第一次拿到真数据」(新加的线 / 加载完成)
+    const seriesIds = new Set(layers.map((l) => l.id));
     const arrived = stale.filter(({ id, pts, prev }) => seriesIds.has(id) && pts.length > 0 && !prev?.length);
 
     // 有新线到位、或换了周期,就把横轴对准「所有线都有数据的那一段」:长历史的线不截,往左拖还在,
@@ -141,13 +141,6 @@ export function useEditorChart(
         api.priceScale('left').setAutoScale(true);
         paneOwnerRef.current.set(api, pane.id);
       }
-      // 留白同理会漏进全局:每格按自己该有的值写(相关性格收窄,让 −1~1 不被撑成 1.5),只在不同时写
-      const margins = pane.layers.some(isCorrLayer) ? CORR_MARGINS : DEFAULT_MARGINS;
-      const right = api.priceScale('right');
-      const curMargins = right.options().scaleMargins;
-      if (curMargins.top !== margins.top || curMargins.bottom !== margins.bottom) {
-        right.applyOptions({ scaleMargins: margins });
-      }
       const byId = new Map(pane.scales.map((sc) => [sc.id, sc]));
       const ids = new Set(['right', 'left', ...byId.keys()]);
       ids.forEach((id) => {
@@ -157,7 +150,7 @@ export function useEditorChart(
         const invertScale = !!sc?.invert;
         const mode = sc?.log && canLogScale(pane, id, data) ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal;
         // 只写真变了的那一项:哪怕写回同样的 mode,lw-charts 也会按数据重算显示范围,
-        // 把用户手动拖好的纵轴缩放冲掉(实测:加一格相关性时主图纵轴被重置)
+        // 把用户手动拖好的纵轴缩放冲掉(实测:加一格时主图纵轴被重置)
         if (cur.invertScale !== invertScale) ps.applyOptions({ invertScale });
         if (cur.mode !== mode) ps.applyOptions({ mode });
       });
@@ -202,7 +195,7 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LineP
       const opts = { color: layer.color, priceScaleId: layer.scale };
       const existing = series.get(layer.id);
       if (!existing) {
-        series.set(layer.id, createLayerSeries(chart, layer, opts, paneIndex));
+        series.set(layer.id, createLayerSeries(chart, opts, paneIndex));
         return;
       }
       if (existing.getPane().paneIndex() !== paneIndex) existing.moveToPane(paneIndex);
@@ -230,36 +223,8 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LineP
   });
 }
 
-// 内置轴留白:lw-charts 默认值,与相关性格收窄后的值
-const DEFAULT_MARGINS = { top: 0.2, bottom: 0.1 };
-const CORR_MARGINS = { top: 0.06, bottom: 0.06 };
-
-const ZERO_LINE = { price: 0, color: '#525252', lineWidth: 1 as const, lineStyle: 2, axisLabelVisible: false };
-
-/**
- * 按图层种类建 series。相关性层的轴固定 −1~1(不随数据缩放,不同时段才可比)并画 0 线;
- * 劈叉层画 0 线(参照期里应贴着它)。
- */
-function createLayerSeries(
+const createLayerSeries = (
   chart: IChartApi,
-  layer: Layer,
   opts: { color: string; priceScaleId: string },
   paneIndex: number,
-): ISeriesApi<'Line'> {
-  const study = isSeriesLayer(layer) ? undefined : layer.study;
-  const s = chart.addSeries(
-    LineSeries,
-    {
-      ...opts,
-      lineWidth: study ? 1 : 2,
-      priceLineVisible: false,
-      ...(study?.kind === 'corr'
-        ? { autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } }) }
-        : {}),
-    },
-    paneIndex,
-  );
-  if (study) s.createPriceLine(ZERO_LINE);
-
-  return s;
-}
+): ISeriesApi<'Line'> => chart.addSeries(LineSeries, { ...opts, lineWidth: 2, priceLineVisible: false }, paneIndex);

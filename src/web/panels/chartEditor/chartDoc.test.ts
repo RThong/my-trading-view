@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import {
   EMPTY_DOC,
   addLayer,
-  addStudy,
   applyLayerFit,
   clearLayerFit,
   setLayerShift,
@@ -22,7 +21,7 @@ import {
   type Layer,
 } from './chartDoc';
 
-const seriesOf = (l: Layer) => ('series' in l ? l.series : `study:${l.id}`);
+const seriesOf = (l: Layer) => l.series;
 
 const twoOnMain = () => addLayer(addLayer(EMPTY_DOC, 'SPY', '#111111'), 'vix', '#222222');
 
@@ -241,53 +240,76 @@ describe('平移 / 倒轴', () => {
   });
 });
 
-describe('派生图层与对齐', () => {
-  const corr = { kind: 'corr' as const, a: 'l1', b: 'l2', window: 60, mode: 'level' as const, horizon: 20 };
-
-  test('同一对线(不分先后)只能有一格相关性', () => {
-    const d = addStudy(twoOnMain(), corr, '#ffffff');
-    expect(addStudy(d, corr, '#ffffff')).toBe(d);
-    expect(addStudy(d, { ...corr, a: 'l2', b: 'l1', window: 20 }, '#ffffff')).toBe(d);
-  });
-
-  test('addStudy 新开一格放在最下面', () => {
-    const d = addStudy(twoOnMain(), corr, '#ffffff');
-    expect(d.panes).toHaveLength(2);
-    expect(d.panes[1].layers[0]).toEqual({ id: 'l3', study: corr, scale: 'right', color: '#ffffff' });
-  });
-
-  test('删掉相关性引用的图层 → 派生层一起没', () => {
-    const d = removeLayer(addStudy(twoOnMain(), corr, '#ffffff'), 'l2');
-    expect(d.panes.flatMap((p) => p.layers.map((l) => l.id))).toEqual(['l1']);
-  });
-
-  test('applyLayerFit:挪进目标格、挂目标的轴,并加劈叉格', () => {
+describe('叠加', () => {
+  test('applyLayerFit:挪进目标格、挂目标对面的内置轴并按需倒轴', () => {
     const base = setLayerScale(moveLayer(twoOnMain(), 'l2', 'new'), 'l1', 'left'); // p1: l1(左轴) / p2: l2
-    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31' };
-    const d = applyLayerFit(base, 'l2', fit, '#ffffff');
+    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: -2, r: -0.9 };
+    const d = applyLayerFit(base, 'l2', fit, true);
+    expect(d.panes).toHaveLength(1);
     expect(d.panes[0].layers.map((l) => l.id)).toEqual(['l1', 'l2']);
-    expect(d.panes[0].layers[1]).toMatchObject({ fit, scale: 'left' });
-    expect(d.panes[1].layers[0]).toMatchObject({ study: { kind: 'gap', of: 'l2' } });
-    // 再对齐一次不重复加劈叉格
-    expect(applyLayerFit(d, 'l2', { ...fit, end: '2022-06-30' }, '#ffffff').panes).toHaveLength(2);
+    expect(d.panes[0].layers[1]).toMatchObject({ fit, scale: 'right' });
+    expect(d.panes[0].scales).toContainEqual({ id: 'right', side: 'right', invert: true });
+    expect(d.panes[0].scales).toContainEqual({ id: 'left', side: 'left' });
+  });
+
+  test('applyLayerFit:两侧内置轴都被别的线占了 → 开独立轴', () => {
+    const base = setLayerScale(addLayer(twoOnMain(), 'dgs10', '#333333'), 'l3', 'left'); // l1 右 / l2 右 / l3 左
+    const d = applyLayerFit(
+      base,
+      'l2',
+      { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: -2, r: -0.9 },
+      false,
+    );
+    expect(d.panes[0].layers.find((l) => l.id === 'l2')).toMatchObject({ scale: 's1' });
+    expect(d.panes[0].scales).toContainEqual({ id: 's1', side: 'overlay' });
+  });
+
+  test('叠加关系被破坏就自动解除:A 挪到别格', () => {
+    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: -2, r: -0.9 };
+    const d = applyLayerFit(twoOnMain(), 'l2', fit, true); // l1 右轴 / l2 左轴(叠加)
+    const moved = moveLayer(d, 'l1', 'new');
+    expect(moved.panes.flatMap((p) => p.layers).find((l) => l.id === 'l2')?.fit).toBeUndefined();
+  });
+
+  test('别的线不能挂上 B 的轴:换轴被拒,加线 / 挪线进来改开独立轴', () => {
+    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: -2, r: -0.9 };
+    // A 挂左轴 → B 叠加后挂右轴(新加的线默认也去右轴)
+    const d = applyLayerFit(setLayerScale(twoOnMain(), 'l1', 'left'), 'l2', fit, true);
+    expect(d.panes[0].layers.find((l) => l.id === 'l2')).toMatchObject({ scale: 'right' });
+
+    const added = addLayer(d, 'dgs10', '#333333');
+    expect(added.panes[0].layers.find((l) => l.id === 'l2')?.fit).toEqual(fit);
+    const l3 = added.panes[0].layers.find((l) => l.id === 'l3')!;
+    expect(added.panes[0].scales.find((sc) => sc.id === l3.scale)?.side).toBe('overlay');
+    expect(setLayerScale(added, 'l3', 'right')).toBe(added);
+
+    const elsewhere = moveLayer(addLayer(d, 'dgs10', '#333333'), 'l3', 'new'); // l3 去新格后改挂右轴,再挪回来
+    const back = moveLayer(setLayerScale(elsewhere, 'l3', 'right'), 'l3', 'p1');
+    expect(back.panes[0].layers.find((l) => l.id === 'l2')?.fit).toEqual(fit);
+    expect(back.panes[0].layers.find((l) => l.id === 'l3')?.scale).not.toBe('right');
+  });
+
+  test('applyLayerFit:B 原来那根轴的对数会被关掉(B 轴按线性比例跟 A 走)', () => {
+    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: 2, r: 0.9 };
+    const base = setScaleLog(setLayerScale(twoOnMain(), 'l2', 'left'), 'p1', 'left', true);
+    const d = applyLayerFit(base, 'l2', fit, false);
+    expect(d.panes[0].scales.find((sc) => sc.id === 'left')).toEqual({ id: 'left', side: 'left' });
   });
 
   test('已是别人换算目标的图层不能再换算(否则那条线的换算会被静默冲掉)', () => {
-    const d = applyLayerFit(
-      addLayer(twoOnMain(), 'dgs10', '#333333'),
-      'l2',
-      { target: 'l1', start: '2018-01-01', end: '2021-12-31' },
-      '#ffffff',
-    );
-    expect(applyLayerFit(d, 'l1', { target: 'l3', start: '2018-01-01', end: '2021-12-31' }, '#ffffff')).toBe(d);
+    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: -2, r: -0.9 };
+    const d = applyLayerFit(addLayer(twoOnMain(), 'dgs10', '#333333'), 'l2', fit, false);
+    expect(applyLayerFit(d, 'l1', { ...fit, target: 'l3' }, false)).toBe(d);
   });
 
-  test('取消对齐 / 删掉换算目标 → 劈叉格跟着没', () => {
-    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31' };
-    const d = applyLayerFit(twoOnMain(), 'l2', fit, '#ffffff');
+  test('取消叠加 / 删掉换算目标 → 改挂独立轴', () => {
+    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: -2, r: -0.9 };
+    const d = applyLayerFit(twoOnMain(), 'l2', fit, true);
+    expect(d.panes[0].layers[1]).toMatchObject({ scale: 'left' });
     const c = clearLayerFit(d, 'l2');
     expect(c.panes).toHaveLength(1);
-    // 取消对齐后改挂本格一根新独立轴,不再占用 target 的轴
+    // 取消叠加后改挂本格一根新独立轴;叠加时用的左轴没人用了被回收,倒轴跟着没
+    expect(c.panes[0].scales.some((sc) => sc.id === 'left')).toBe(false);
     expect(c.panes[0].layers[1]).toMatchObject({ id: 'l2', scale: 's1' });
     expect(c.panes[0].scales).toContainEqual({ id: 's1', side: 'overlay' });
     expect('fit' in c.panes[0].layers[1]).toBe(false);
@@ -297,44 +319,31 @@ describe('派生图层与对齐', () => {
     expect('fit' in e.panes[0].layers[0]).toBe(false);
   });
 
-  test('parseChartDoc 拒绝不存在的日期与重复的相关性对', () => {
-    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31' };
-    const d = applyLayerFit(twoOnMain(), 'l2', fit, '#ffffff');
+  test('parseChartDoc 拒绝不存在的日期、旧版的派生层', () => {
+    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: -2, r: -0.9 };
+    const d = applyLayerFit(twoOnMain(), 'l2', fit, false);
     const badDate = JSON.parse(JSON.stringify(d));
     badDate.panes[0].layers[1].fit.end = '2021-99-01';
     expect(parseChartDoc(badDate)).toBeNull();
 
-    const one = addStudy(twoOnMain(), corr, '#ffffff');
-    const dup = JSON.parse(JSON.stringify(one));
-    const extra = {
-      ...dup.panes[1],
+    // 滚动相关性层已删:旧 JSON 里带 study 的图层不认
+    const study = JSON.parse(JSON.stringify(twoOnMain()));
+    study.panes.push({
       id: 'p9',
-      layers: [{ ...dup.panes[1].layers[0], id: 'l9', study: { ...corr, a: 'l2', b: 'l1' } }],
-    };
-    dup.panes.push(extra);
-    expect(parseChartDoc(dup)).toBeNull();
+      stretch: 1,
+      scales: [{ id: 'right', side: 'right' }],
+      layers: [{ id: 'l9', scale: 'right', color: '#ffffff', study: { kind: 'corr', a: 'l1', b: 'l2' } }],
+    });
+    expect(parseChartDoc(study)).toBeNull();
   });
 
-  test('相关性层不挪;别的线也不能挪进相关性格;第 0 格是相关性格时新线另开主格', () => {
-    const d = addStudy(twoOnMain(), corr, '#ffffff'); // p1: l1 l2 / p2: l3(corr)
-    expect(moveLayer(d, 'l3', 'p1')).toBe(d);
-    expect(moveLayer(d, 'l1', 'p2')).toBe(d);
-    const onlyCorrFirst = { ...d, panes: [d.panes[1], d.panes[0]] };
-    const e = addLayer(onlyCorrFirst, 'dgs10', '#123456');
-    expect(e.panes[0].layers.map(seriesOf)).toEqual(['dgs10']);
-  });
-
-  test('parseChartDoc 往返带平移 / 倒轴 / 换算 / 派生层的文档', () => {
-    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31' };
-    const d = addStudy(
-      setScaleInvert(setLayerShift(applyLayerFit(twoOnMain(), 'l2', fit, '#ffffff'), 'l2', 63), 'p1', 'right', true),
-      corr,
-      '#eeeeee',
-    );
+  test('parseChartDoc 往返带平移 / 倒轴 / 叠加的文档', () => {
+    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: -2, r: -0.9 };
+    const d = setScaleInvert(setLayerShift(applyLayerFit(twoOnMain(), 'l2', fit, true), 'l2', 63), 'p1', 'right', true);
     expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
     // 坏参数被拦
     const bad = JSON.parse(JSON.stringify(d));
-    bad.panes.at(-1).layers[0].study.window = 1;
+    bad.panes[0].layers[1].shift = 99999;
     expect(parseChartDoc(bad)).toBeNull();
   });
 });

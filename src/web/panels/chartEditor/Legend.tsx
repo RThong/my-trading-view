@@ -1,6 +1,6 @@
 import type { Interval } from '../../hooks/interval';
 import { shiftBusinessDays } from './analysis';
-import { isSeriesLayer, type ChartDoc } from './chartDoc';
+import type { ChartDoc } from './chartDoc';
 import { layerLabel, layerUnit } from './layerLabel';
 import type { LayerData } from './layerPoints';
 import { asOfPoint, type LegendLayout } from './useCrosshairLegend';
@@ -36,9 +36,9 @@ export function Legend({ doc, interval, data, hoverTime, layout }: Props) {
         >
           {i === 0 && <span className="text-neutral-500">{hoverTime ?? '最新'}</span>}
           {pane.layers.map((l) => {
-            const pt = asOfPoint(data[l.id]?.raw, hoverTime);
-            const shift = isSeriesLayer(l) ? (l.shift ?? 0) : 0;
-            const unit = layerUnit(doc, l);
+            const pt = asOfPoint(data[l.id]?.display, hoverTime);
+            const shift = l.shift ?? 0;
+            const unit = layerUnit(l);
             return (
               <span key={l.id} className="flex items-center gap-1.5 whitespace-nowrap">
                 <span className="h-0.5 w-3 rounded" style={{ background: l.color }} />

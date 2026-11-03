@@ -1,11 +1,11 @@
-// 图上当前可视的时间区间(防抖后的),给「取当前可视区间作参照期」与「只扫可视区间」用。
+// 图上当前可视的时间区间(防抖后的),给「叠加对比」在视口里选基准段用。
 import { type RefObject, useEffect, useState } from 'react';
 import type { IChartApi, IRange, Time } from 'lightweight-charts';
 import { fmtDate } from '../../lib/chart';
 
 export type DateRange = { from: string; to: string };
 
-// 拖动 / 缩放时每帧都会回调;停下来 250ms 再更新,免得下游(领先滞后扫描)每帧重算
+// 拖动 / 缩放时每帧都会回调;停下来 250ms 再更新,免得每帧触发整页重渲染
 const DEBOUNCE_MS = 250;
 
 export function useVisibleRange(chartRef: RefObject<IChartApi | null>): DateRange | null {

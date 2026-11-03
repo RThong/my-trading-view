@@ -1,4 +1,4 @@
-// 编辑器的分析计算(纯函数):时间平移、两条线按日期配对、相关性(滚动 / 领先滞后扫描)、参照期换算。
+// 编辑器的分析计算(纯函数):时间平移、两条线按日期配对、相关性(领先滞后扫描)、叠加选段与换算。
 // 输入输出都是 { time: 'YYYY-MM-DD', value }[](升序),与渲染层同一种形状。
 import type { LinePoint } from '../../lib/chart';
 
@@ -76,15 +76,11 @@ function alignDays(a: DayPoint[], b: DayPoint[]): DayPair[] {
 export const alignPairs = (a: LinePoint[], b: LinePoint[]): Pair[] =>
   alignDays(toDays(a), toDays(b)).map((p) => ({ time: fromDayNum(p.day), a: p.a, b: p.b }));
 
-export type CorrMode = 'level' | 'change';
-
 /**
- * 相关性的口径。level = 直接拿数值算(两条都有长期趋势时会虚高);
- * change = 各自 horizon 期的变化:全为正的序列取对数收益(≈ 涨跌幅),可能为负的(利率、利差)取差值。
+ * 配对点换成各自 horizon 期的变化(按变化算相关:直接拿数值算,两条都有长期趋势时会虚高)。
+ * 全为正的序列取对数收益(≈ 涨跌幅),可能为负的(利率、利差)取差值。
  */
-export function transformPairs(pairs: Pair[], mode: CorrMode, horizon: number): Pair[] {
-  if (mode === 'level') return pairs;
-
+export function transformPairs(pairs: Pair[], horizon: number): Pair[] {
   const allPos = (k: 'a' | 'b') => pairs.every((p) => p[k] > 0);
   const posA = allPos('a');
   const posB = allPos('b');
@@ -116,44 +112,31 @@ export function pearson(pairs: Pair[]): number {
   return saa > 0 && sbb > 0 ? sab / Math.sqrt(saa * sbb) : Number.NaN;
 }
 
-/** 滚动相关性:每个日期上取最近 window 个配对点算一次。点数 = 配对点数 − window + 1。 */
-export function rollingCorr(
-  a: LinePoint[],
-  b: LinePoint[],
-  window: number,
-  mode: CorrMode,
-  horizon: number,
-): LinePoint[] {
-  const pairs = transformPairs(alignPairs(a, b), mode, horizon);
-
-  return pairs
-    .slice(window - 1)
-    .map((p, i) => ({ time: p.time, value: pearson(pairs.slice(i, i + window)) }))
-    .filter((p) => Number.isFinite(p.value));
-}
-
 export type LagPoint = { lag: number; r: number; n: number };
 
 /**
- * 领先滞后扫描:把 b 从 minLag 平移到 maxLag 个交易日,每一步算一次 a 与平移后 b 的相关性。
+ * 领先滞后扫描:把 b 逐个平移 lags 里的交易日数,每一步算一次 a 与平移后 b 的相关性。
  * lag > 0 = b 往后挪 = 「b 领先 a lag 天」。range 给了就只用 a 的这段日期(看图上当前可视区间)。
  */
 export function lagScan(
   a: LinePoint[],
   b: LinePoint[],
-  opts: { minLag: number; maxLag: number; mode: CorrMode; horizon: number; range?: { from: string; to: string } },
+  opts: { lags: number[]; horizon: number; range?: { from: string; to: string } },
 ): LagPoint[] {
-  const { minLag, maxLag, mode, horizon, range } = opts;
-  const aDays = toDays(a);
-  const bDays = toDays(b);
+  const { lags, horizon, range } = opts;
   const [lo, hi] = range ? [toDayNum(range.from), toDayNum(range.to)] : [-Infinity, Infinity];
+  // a、b 先截到区间附近:每一步都要整段重配,截短后每步只走区间内的点。
+  // b 两头各多留「最大平移的自然日 + 60 天」:平移后要落进区间,配对还会往前取最近值(月频最多隔一个多月)
+  const reach = Math.ceil((Math.max(0, ...lags.map(Math.abs)) * 7) / 5) + 60;
+  const aDays = toDays(a).filter((p) => p.day >= lo && p.day <= hi);
+  const bDays = toDays(b).filter((p) => p.day >= lo - reach && p.day <= hi + reach);
 
-  return Array.from({ length: Math.max(0, maxLag - minLag + 1) }, (_, i) => minLag + i).map((lag) => {
+  return lags.map((lag) => {
     const shifted = bDays.map((p) => ({ day: shiftDay(p.day, lag), value: p.value }));
     const aligned = alignDays(aDays, shifted)
       .filter((p) => p.day >= lo && p.day <= hi)
       .map((p) => ({ time: '', a: p.a, b: p.b }));
-    const pairs = transformPairs(aligned, mode, horizon);
+    const pairs = transformPairs(aligned, horizon);
     return { lag, r: pearson(pairs), n: pairs.length };
   });
 }
@@ -185,9 +168,222 @@ export function fitParams(a: LinePoint[], b: LinePoint[], start: string, end: st
   return { alpha: ma - beta * mb, beta, r: pearson(pairs), n };
 }
 
-export const applyFit = (points: LinePoint[], { alpha, beta }: FitParams): LinePoint[] =>
-  points.map((p) => ({ time: p.time, value: alpha + beta * p.value }));
+/**
+ * 「叠加对比」认定一段「两者有稳定关系」的门槛。数值是拿公认有关 / 无关的组合加随机走势对照回测定的
+ * (calibrateOverlay.ts:随机 200 对只测选段,全时段误报 0、视口 1 年 1.5%、2 年 5.5%),改之前先跑那个脚本。
+ * 按钮还会先找偏移(上百次比较里挑最像的),整个流程的误报更高:随机 100 对,视口 1 年约 16%、2 年约 32%。
+ * 负责人的取舍(2026-11):不为短视口收紧门槛 —— 只看一两年就该自己掂量结果,不是工具替人把关。
+ */
+export const OVERLAY_RULES = {
+  /** 基准段至少占视口的比例:太短的一段代表不了正在看的这段时间 */
+  minFrac: 1 / 3,
+  /** 涨跌相关门槛 = max(floor, k / √月数):段越短要求越强(约 95% 显著,月度涨跌近似独立样本) */
+  k: 2,
+  floor: 0.3,
+  /** 一直成立:段切 4 份,至少 partsMin 份与整段同号且 |r| ≥ partR,挡「平均下来像、其实只有几个月像」 */
+  partsMin: 3,
+  partR: 0.2,
+  /** 整体走势也对得上:按水平的相关至少这么强,且与涨跌相关同号(反号 = 段里关系漂移过,叠出来比例是错的) */
+  levelMin: 0.5,
+  /** 选段:先看吻合度(按水平 |r|)最高能到多少,再在不比它差 tol 的段里挑最长的。直接挑最长会一路伸进失效段、压线才停 */
+  tol: 0.05,
+} as const;
 
-/** 劈叉幅度:a − 换算后的 b(a 的单位)。参照期里应在 0 附近,离开 0 的那段就是劈叉。 */
-export const gapPoints = (a: LinePoint[], fittedB: LinePoint[]): LinePoint[] =>
-  alignPairs(a, fittedB).map((p) => ({ time: p.time, value: p.a - p.b }));
+const DAYS_PER_MONTH = 21;
+// 变化率口径取约一个月(20 个交易日)的变化:日间涨跌噪声太大,偏移会被噪声淹没
+const CHANGE_SPAN = 20;
+// 候选段的起止按这么多个格子走(与数据长短无关):格子越细越准、越慢,240 格约 2 万个候选段,点一下即算完
+const GRID = 240;
+
+export type SegmentFail = 'weak' | 'unstable' | 'level';
+
+export type Segment = {
+  from: string;
+  to: string;
+  months: number;
+  /** 这段长度对应的涨跌相关门槛 */
+  need: number;
+  /** 涨跌相关(约一个月的变化) */
+  rc: number;
+  /** 4 份里过了几份 */
+  parts: number;
+  /** 按水平的相关 */
+  rl: number;
+  fails: SegmentFail[];
+};
+
+/** lo 到 hi(含)每隔 st 一个整数。 */
+const seq = (lo: number, hi: number, st: number) =>
+  Array.from({ length: Math.max(0, Math.floor((hi - lo) / st) + 1) }, (_, k) => lo + k * st);
+
+/** 「约一个月的变化」换成配对点数:按配对点的中位间隔折算,周 / 月频序列照样能算。 */
+const changeHorizon = (pairs: Pair[]) => {
+  // 间隔按交易日量(CHANGE_SPAN 是交易日):日频 1、周频 5、月频约 21
+  const gaps = pairs
+    .slice(1)
+    .map((p, i) => bizDaysBetween(pairs[i].time, p.time))
+    .sort((x, y) => x - y);
+  const gap = Math.max(1, gaps[gaps.length >> 1] ?? 1);
+  return Math.max(1, Math.round(CHANGE_SPAN / gap));
+};
+
+/** 两个日期之间隔了几个交易日(周末算到下周一,同 shiftDay)。 */
+const bizDaysBetween = (from: string, to: string) => {
+  const idx = (date: string) => {
+    const day = toDayNum(date);
+    const week = Math.floor(day / 7);
+    return week * 5 + Math.min(day - week * 7, 5);
+  };
+  return idx(to) - idx(from);
+};
+
+/** 前缀和:之后任意 [i, j) 段的皮尔逊相关 O(1)(候选段上万个,逐段重算太慢)。 */
+function corrPrefix(pairs: Pair[]): (i: number, j: number) => number {
+  const sums = [
+    (p: Pair) => p.a,
+    (p: Pair) => p.b,
+    (p: Pair) => p.a * p.a,
+    (p: Pair) => p.b * p.b,
+    (p: Pair) => p.a * p.b,
+  ];
+  // 累加依赖上一格,命令式更直白
+  const acc = sums.map((f) => {
+    const c = new Float64Array(pairs.length + 1);
+    pairs.forEach((p, i) => {
+      c[i + 1] = c[i] + f(p);
+    });
+    return c;
+  });
+
+  return (i, j) => {
+    const n = j - i;
+    const [sa, sb, saa, sbb, sab] = acc.map((c) => c[j] - c[i]);
+    const va = saa - (sa * sa) / n;
+    const vb = sbb - (sb * sb) / n;
+    return n < 3 || va <= 0 || vb <= 0 ? Number.NaN : (sab - (sa * sb) / n) / Math.sqrt(va * vb);
+  };
+}
+
+/**
+ * 在视口 range(a 的日期)里找基准段:满足 OVERLAY_RULES 全部条件的段里,吻合度接近最高的最长那段。
+ * whole = 整个视口本身的判定(都不达标时用它说明是哪条没过)。配对点太少 → whole 也为 null。
+ */
+export function findBaseSegment(
+  a: LinePoint[],
+  b: LinePoint[],
+  range: { from: string; to: string },
+): { best: Segment | null; whole: Segment | null } {
+  const R = OVERLAY_RULES;
+  // 配对后再按视口截一次:b 比 a 稀疏时配对以 b 的日期为准,视口右端之后几天的 b 点会配上 a 的最后一个值
+  const lev = alignPairs(
+    a.filter((p) => p.time >= range.from && p.time <= range.to),
+    b,
+  ).filter((p) => p.time >= range.from && p.time <= range.to);
+  const horizon = changeHorizon(lev);
+  const chg = transformPairs(lev, horizon);
+  if (chg.length < 12) return { best: null, whole: null };
+
+  const corrL = corrPrefix(lev);
+  const corrC = corrPrefix(chg);
+  // chg[k] 对应 lev[k + horizon]:段 [i, j) 在 chg 里是 [i − horizon, j − horizon)
+  const judge = (i: number, j: number): Segment => {
+    const [ci, cj] = [i - horizon, j - horizon];
+    const months = Math.max(1, bizDaysBetween(lev[i].time, lev[j - 1].time) / DAYS_PER_MONTH);
+    const need = Math.max(R.floor, R.k / Math.sqrt(months));
+    const rc = corrC(ci, cj);
+    const rl = corrL(i, j);
+    const q = (cj - ci) / 4;
+    const parts = [0, 1, 2, 3]
+      .map((k) => corrC(Math.round(ci + k * q), Math.round(ci + (k + 1) * q)))
+      .filter((r) => Math.sign(r) === Math.sign(rc) && Math.abs(r) >= R.partR).length;
+    const fails = [
+      !(Math.abs(rc) >= need) && ('weak' as const),
+      parts < R.partsMin && ('unstable' as const),
+      !(Math.abs(rl) >= R.levelMin && Math.sign(rl) === Math.sign(rc)) && ('level' as const),
+    ].filter((f) => f !== false);
+    return { from: lev[i].time, to: lev[j - 1].time, months, need, rc, parts, rl, fails };
+  };
+
+  const whole = judge(horizon, lev.length);
+  // 段长按日期跨度比(不按点数:数据有缺口时点数会高估跨度);分母是视口里有数据的那段日期
+  const minSpan = bizDaysBetween(lev[0].time, lev[lev.length - 1].time) * R.minFrac;
+  const longEnough = ([i, j]: [number, number]) =>
+    j - i >= 12 && bizDaysBetween(lev[i].time, lev[j - 1].time) >= minSpan;
+  type Cand = { i: number; j: number; sg: Segment };
+  const passing = (spans: [number, number][]): Cand[] =>
+    spans
+      .filter(longEnough)
+      .map(([i, j]) => ({ i, j, sg: judge(i, j) }))
+      .filter((c) => c.sg.fails.length === 0);
+  // 先看吻合度最高能到多少,再在不比它差 tol 的段里挑最长的
+  const pick = (cands: Cand[]): Cand | undefined => {
+    const top = cands.reduce((m, c) => Math.max(m, Math.abs(c.sg.rl)), 0);
+    return cands
+      .filter((c) => Math.abs(c.sg.rl) >= top - R.tol)
+      .map((c) => ({ c, len: bizDaysBetween(c.sg.from, c.sg.to) }))
+      .sort((x, y) => y.len - x.len || Math.abs(y.c.sg.rl) - Math.abs(x.c.sg.rl))[0]?.c;
+  };
+  // ponytail: 起止点先按格子粗找,再在选中段两头各一格内逐点细调;格子之间的其它段不保证遍历到(逐点全找是 O(n²) 上千万次)
+  const step = Math.max(1, Math.round(lev.length / GRID));
+  const ends = [...new Set([...seq(horizon, lev.length, step), lev.length])];
+  const coarse = passing(ends.flatMap((i) => ends.filter((j) => j > i).map((j): [number, number] => [i, j])));
+  const first = pick(coarse);
+  if (!first) return { best: null, whole };
+
+  const near = (x: number, lo: number, hi: number) => seq(Math.max(lo, x - step), Math.min(hi, x + step), 1);
+  const fine = passing(
+    near(first.i, horizon, lev.length - 1).flatMap((i) =>
+      near(first.j, i + 1, lev.length).map((j): [number, number] => [i, j]),
+    ),
+  );
+  const best = pick([...coarse, ...fine])?.sg ?? null;
+
+  return { best, whole };
+}
+
+// 找偏移的范围上限(交易日,约 3 年):每一步都要整段重新配对,范围太大点一下会卡住页面
+const MAX_LAG = 750;
+// 偏移带来的相关性提升不到这个数就不挪:多数组合是同时动的,硬挪几天只是在追噪声
+const MIN_LAG_GAIN = 0.05;
+
+export type Overlay = {
+  /** 基准段(a 的日期) */
+  seg: Segment;
+  /** b 要平移的交易日(相对 a),> 0 = b 领先 a */
+  lag: number;
+  fit: FitParams;
+};
+
+export type OverlayResult =
+  | { kind: 'ok'; overlay: Overlay }
+  /** 视口里没有达标的段;whole 是整个视口(B 按找到的偏移平移后)的判定,null = 配对点太少 */
+  | { kind: 'none'; whole: Segment | null };
+
+/**
+ * 叠加对比(把 b 叠到 a 上),三步:① 在视口里找 b 的最佳偏移 ② 按平移后的 b 找基准段(见 findBaseSegment)③ 在基准段里求比例。
+ * 先找偏移:有领先关系的一对不平移时涨跌相关很弱,先选段会在这一步就被刷掉。
+ * 偏移按变化率找(按水平,两条有趋势的线怎么挪都像),范围限在视口长度的 1/4 内;比例按水平求(要叠的是线本身)。
+ */
+export function bestOverlay(a: LinePoint[], b: LinePoint[], view: { from: string; to: string }): OverlayResult {
+  const maxLag = Math.min(MAX_LAG, Math.floor(bizDaysBetween(view.from, view.to) / 4));
+  // 变化期按配对后的点间隔算(和选段同一口径):B 是周 / 月频时配对点跟着 B 变稀,按 A 的日频算会变成 20 周 / 20 个月
+  const aInView = a.filter((p) => p.time >= view.from && p.time <= view.to);
+  const horizon = changeHorizon(alignPairs(aInView, b));
+  // 先隔几天粗扫、再在最强点前后逐天细扫:相关性随平移天数变化是平滑的(一个月的涨跌重叠很多),
+  // 逐天扫上千步点一下要卡一两秒
+  const step = Math.max(1, Math.round(maxLag / 60));
+  const coarse = lagScan(a, b, { lags: [...new Set([0, ...seq(-maxLag, maxLag, step)])], horizon, range: view });
+  const peak = strongestLag(coarse)?.lag ?? 0;
+  const fineLags = seq(Math.max(-maxLag, peak - step), Math.min(maxLag, peak + step), 1);
+  const scan = [...coarse, ...lagScan(a, b, { lags: fineLags, horizon, range: view })];
+  const r0 = scan.find((p) => p.lag === 0)?.r ?? Number.NaN;
+  const top = strongestLag(scan);
+  const lag = !top || !Number.isFinite(r0) || Math.abs(top.r) - Math.abs(r0) < MIN_LAG_GAIN ? 0 : top.lag;
+
+  const shifted = shiftPoints(b, lag);
+  const { best: seg, whole } = findBaseSegment(a, shifted, view);
+  // 比例用和选段同一套配对点(视口内的 a 配 b):换成全历史的 a,b 是周 / 月频时配对频率会变,点数对不上
+  const fit = seg && fitParams(aInView, shifted, seg.from, seg.to);
+
+  return seg && fit ? { kind: 'ok', overlay: { seg, lag, fit } } : { kind: 'none', whole };
+}
