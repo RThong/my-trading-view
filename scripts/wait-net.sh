@@ -11,7 +11,13 @@ set -euo pipefail
 
 # captive.apple.com 是 macOS 自己判联网用的探针。认响应正文里的 Success,不认 curl 退出码:
 # 门户登录页 / 重定向 / 4xx 也会让 curl 返回 0。
-until [[ "$(/usr/bin/curl -s -m 10 http://captive.apple.com/hotspot-detect.html || true)" == *Success* ]]; do
+# 光靠探针不够:系统常探它、域名一直在本地 DNS 缓存里,上游 DNS 挂着它照样通过。实测 2026-11-03
+# 11:00 探针放行、随后两分半所有源 getaddrinfo ENOTFOUND。故再用 dig 绕过本地缓存直问上游。
+net_ok() {
+  [[ "$(/usr/bin/curl -s -m 10 http://captive.apple.com/hotspot-detect.html || true)" == *Success* ]] &&
+    /usr/bin/dig +short +time=5 +tries=1 apple.com A | grep -qE '^[0-9.]+$'
+}
+until net_ok; do
   [[ -n "${announced:-}" ]] || { echo "$(date '+%F %T') 网络未就绪,等待中…"; announced=1; }
   sleep 60
 done
