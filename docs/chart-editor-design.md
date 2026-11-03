@@ -134,6 +134,8 @@ lightweight-charts 的映射：`right` / `left` 用内置轴，`overlay` 用自�
 
 ## 仍未做
 
-各类变换（起点=100 / 同比）、四则运算、水平线 / 竖线、保存载入、URL 状态、旧图迁移、多图布局。
+各类变换（起点=100 / 同比）、四则运算、水平线 / 竖线、多张图命名保存、URL 状态、旧图迁移、多图布局。
 
-做保存载入时注意：`Fit` 在 2026-11 第三轮多了 `alpha / beta / r`（比例点按钮时算好存下），之前只存 `target / start / end` 的旧 JSON 现在会被 `parseChartDoc` 整份拒掉；届时决定兼容（只丢 fit、其余照常载入）还是重算。
+已做的保存：最后一次显示的图自动存 localStorage（`mtv:chartEditor:doc`，读时走 `parseChartDoc`，坏了 / 校验不过就当空图，并清掉原存档，不留备份——负责人定的）；「查看 JSON」可复制、可粘贴导入。
+
+改文档格式时注意（localStorage 里存着上一版的图，校验不过会静默变空图、原存档被清掉）：`Fit` 在 2026-11 第三轮多了 `alpha / beta / r`（比例点按钮时算好存下），之前只存 `target / start / end` 的旧 JSON 现在会被 `parseChartDoc` 整份拒掉；届时决定兼容（只丢 fit、其余照常载入）还是重算。

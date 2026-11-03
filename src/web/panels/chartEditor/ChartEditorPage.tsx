@@ -1,8 +1,8 @@
 import { useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Copy } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, Upload } from 'lucide-react';
 import type { Interval } from '../../hooks/interval';
 import { AnalysisPanel, pairRequests, resolvePair } from './AnalysisPanel';
-import { EMPTY_DOC } from './chartDoc';
+import { type ChartDoc, EMPTY_DOC, parseChartDoc } from './chartDoc';
 import { EmptyState } from './EmptyState';
 import { layerRequest, useLayerData } from './layerPoints';
 import { LayerList } from './LayerList';
@@ -90,32 +90,84 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
             {showJson ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             查看 JSON
           </button>
-          {showJson && <JsonView json={JSON.stringify(doc, null, 2)} />}
+          {showJson && <JsonView json={JSON.stringify(doc, null, 2)} onLoad={load} />}
         </div>
       </aside>
     </div>
   );
 }
 
-// JSON 原文 + 右上角复制按钮(复制后对勾停留 1.5 秒)
-function JsonView({ json }: { json: string }) {
+const JSON_BTN =
+  'flex items-center gap-1 rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[11px] text-neutral-400 hover:text-neutral-200';
+
+// JSON 原文 + 右上角「复制 / 导入」。导入 = 粘贴一份 JSON 整张图换成它;校验不过就报原因、当前的图不动。
+function JsonView({ json, onLoad }: { json: string; onLoad: (doc: ChartDoc) => void }) {
   const [copied, setCopied] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
   const copy = () =>
     navigator.clipboard.writeText(json).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
+  const cancel = () => {
+    setDraft(null);
+    setError(null);
+  };
+  const load = () => {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(draft ?? '');
+    } catch {
+      return setError('不是合法的 JSON(多半是没复制完整)');
+    }
+    const doc = parseChartDoc(raw);
+    if (!doc) return setError('JSON 结构不对:不是图表编辑器复制出来的,或字段不合法(旧版本复制的叠加信息也认不了)');
+    onLoad(doc);
+    cancel();
+  };
+
+  if (draft !== null) {
+    return (
+      <div className="mt-1 flex flex-col gap-1.5">
+        <textarea
+          // 点「导入」就是要马上粘贴,直接聚焦
+          autoFocus
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setError(null);
+          }}
+          placeholder="把复制的图表 JSON 粘贴到这里"
+          className="h-56 resize-none rounded border border-neutral-800 bg-neutral-900 p-2 font-mono text-[11px] leading-snug text-neutral-300 outline-none focus:border-neutral-600"
+        />
+        {error && <p className="text-xs text-amber-500">{error}</p>}
+        <div className="flex justify-end gap-1.5">
+          <button type="button" onClick={cancel} className={JSON_BTN}>
+            取消
+          </button>
+          <button type="button" onClick={load} disabled={!draft.trim()} className={`${JSON_BTN} disabled:opacity-40`}>
+            <Upload size={12} />
+            载入
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative mt-1">
-      <button
-        type="button"
-        onClick={copy}
-        className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[11px] text-neutral-400 hover:text-neutral-200"
-      >
-        {copied ? <Check size={12} /> : <Copy size={12} />}
-        {copied ? '已复制' : '复制'}
-      </button>
+      <div className="absolute right-1.5 top-1.5 flex gap-1">
+        <button type="button" onClick={() => setDraft('')} className={JSON_BTN} title="粘贴一份 JSON,整张图换成它">
+          <Upload size={12} />
+          导入
+        </button>
+        <button type="button" onClick={copy} className={JSON_BTN}>
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+          {copied ? '已复制' : '复制'}
+        </button>
+      </div>
       <pre className="max-h-72 overflow-auto rounded bg-neutral-900 p-2 text-[11px] leading-snug text-neutral-400">
         {json}
       </pre>

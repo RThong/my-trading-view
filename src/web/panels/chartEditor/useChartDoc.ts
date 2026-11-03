@@ -1,5 +1,6 @@
 // 编辑状态:一份 ChartDoc + 一组编辑动作。动作全部走 chartDoc.ts 的纯函数(updater 形式,不依赖闭包里的旧 doc)。
-import { useState } from 'react';
+// 最后一次显示的图存在 localStorage,刷新 / 切页回来接着用。
+import { useEffect, useState } from 'react';
 import { SERIES_COLORS } from '../../lib/palette';
 import {
   EMPTY_DOC,
@@ -15,6 +16,7 @@ import {
   setLayerShift,
   setScaleInvert,
   setScaleLog,
+  parseChartDoc,
   setStretches,
   type ChartDoc,
   type Fit,
@@ -22,8 +24,39 @@ import {
   type ScaleChoice,
 } from './chartDoc';
 
+const STORAGE_KEY = 'mtv:chartEditor:doc';
+
+/**
+ * 存档原文 → 图:没有 / 坏 JSON / 校验不过(比如格式改过版)一律当空图,绝不抛(localStorage 内容不可信)。
+ * 打不开的存档不另留备份:随后的自动保存会把空图写回去,等于连同原存档一起清掉(负责人 2026-11 定的)。
+ */
+export function parseSaved(raw: string | null): ChartDoc {
+  try {
+    return (raw && parseChartDoc(JSON.parse(raw))) || EMPTY_DOC;
+  } catch {
+    return EMPTY_DOC;
+  }
+}
+
+function loadSaved(): ChartDoc {
+  try {
+    return parseSaved(localStorage.getItem(STORAGE_KEY));
+  } catch {
+    return EMPTY_DOC;
+  }
+}
+
 export function useChartDoc() {
-  const [doc, setDoc] = useState<ChartDoc>(EMPTY_DOC);
+  const [doc, setDoc] = useState<ChartDoc>(loadSaved);
+
+  // 文档每变一次就落盘(文档只经编辑动作或校验过的导入改变,存下来的一定是能显示的图)
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
+    } catch {
+      /* 隐私模式 / 配额满时 setItem 会抛:存不上不影响编辑 */
+    }
+  }, [doc]);
 
   return {
     doc,

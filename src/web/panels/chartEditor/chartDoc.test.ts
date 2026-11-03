@@ -337,6 +337,42 @@ describe('叠加', () => {
     expect(parseChartDoc(study)).toBeNull();
   });
 
+  test('先开对数再开倒轴:复制出去再导入,JSON 文本原样不变', () => {
+    const d = setScaleInvert(setScaleLog(twoOnMain(), 'p1', 'right', true), 'p1', 'right', true);
+    const text = JSON.stringify(d);
+    expect(JSON.stringify(parseChartDoc(JSON.parse(text)))).toBe(text);
+  });
+
+  test('叠加后改偏移再重新叠加:复制出去再导入,JSON 文本原样不变', () => {
+    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: -2, r: -0.9 };
+    const once = applyLayerFit(setLayerShift(twoOnMain(), 'l2', 3), 'l2', fit, true);
+    const again = applyLayerFit(setLayerShift(once, 'l2', 7), 'l2', { ...fit, end: '2022-06-30' }, true);
+    const text = JSON.stringify(again, null, 2);
+    expect(JSON.stringify(parseChartDoc(JSON.parse(text)), null, 2)).toBe(text);
+  });
+
+  test('导入时叠加的线引用了没声明的轴:退回右轴后与 A 共轴 → 叠加解除,且再导入一次结果不变', () => {
+    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: -2, r: -0.9 };
+    const raw = {
+      v: 1,
+      panes: [
+        {
+          id: 'p1',
+          stretch: 2,
+          scales: [{ id: 'right', side: 'right' }],
+          layers: [
+            { id: 'l1', series: 'SPY', scale: 'right', color: '#111111' },
+            { id: 'l2', series: 'vix', scale: 's9', color: '#222222', fit },
+          ],
+        },
+      ],
+    };
+    const once = parseChartDoc(raw)!;
+    expect(once.panes[0].layers.find((l) => l.id === 'l2')?.fit).toBeUndefined();
+    const text = JSON.stringify(once);
+    expect(JSON.stringify(parseChartDoc(JSON.parse(text)))).toBe(text);
+  });
+
   test('parseChartDoc 往返带平移 / 倒轴 / 叠加的文档', () => {
     const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: -2, r: -0.9 };
     const d = setScaleInvert(setLayerShift(applyLayerFit(twoOnMain(), 'l2', fit, true), 'l2', 63), 'p1', 'right', true);

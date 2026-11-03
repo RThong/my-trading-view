@@ -131,13 +131,25 @@ function detachFit(doc: ChartDoc, ids: ReadonlySet<string>): ChartDoc {
  * 引用了不存在的独立轴则退回右轴);图层间引用失效的收拾掉(见 pruneRefs)。每个编辑操作的出口都过一遍。
  */
 export function normalize(doc: ChartDoc): ChartDoc {
-  const panes = pruneRefs(doc)
+  // 先把引用了不存在的独立轴的图层退回右轴,再查叠加关系:顺序反过来的话,退回右轴后和 A 共轴的叠加线
+  // 会漏过 pruneRefs(手写 / 手改的 JSON 导入时会遇到;编辑操作不会留下引用缺失的轴)
+  const fixedRefs: ChartDoc = {
+    ...doc,
+    panes: doc.panes.map((p) => {
+      const known = new Set(p.scales.map((s) => s.id));
+      return {
+        ...p,
+        layers: p.layers.map((l) =>
+          known.has(l.scale) || l.scale === 'right' || l.scale === 'left' ? l : { ...l, scale: 'right' },
+        ),
+      };
+    }),
+  };
+  const panes = pruneRefs(fixedRefs)
     .panes.filter((p) => p.layers.length > 0)
     .map((p) => {
       const known = new Map(p.scales.map((s) => [s.id, s]));
-      const layers = p.layers.map((l) =>
-        known.has(l.scale) || l.scale === 'right' || l.scale === 'left' ? l : { ...l, scale: 'right' },
-      );
+      const { layers } = p;
       const used = new Set(layers.map((l) => l.scale));
       // 保留原顺序,再补上引用了但没声明的内置轴
       // 按 id 去重(moveLayer 带过来的内置轴可能与已有的重复),保留先出现的
@@ -217,11 +229,19 @@ export function setLayerShift(doc: ChartDoc, layerId: string, shift: number): Ch
       layers: p.layers.map((l) => {
         if (l.id !== layerId) return l;
         const { shift: _old, ...rest } = l;
-        return n === 0 ? rest : { ...rest, shift: n };
+        return canonicalLayer(n === 0 ? rest : { ...rest, shift: n });
       }),
     })),
   };
 }
+
+/** 按固定字段顺序重建一根轴(id、side、invert、log):先开哪个开关都一样,复制出去的 JSON 再导入文本原样不变。 */
+const canonicalScale = (sc: Scale): Scale => ({
+  id: sc.id,
+  side: sc.side,
+  ...(sc.invert ? { invert: true as const } : {}),
+  ...(sc.log ? { log: true as const } : {}),
+});
 
 /** 轴的开关型属性(倒轴 / 对数),作用于整根轴;关掉时删字段。 */
 function setScaleFlag(doc: ChartDoc, paneId: string, scaleId: string, flag: 'invert' | 'log', on: boolean): ChartDoc {
@@ -235,7 +255,7 @@ function setScaleFlag(doc: ChartDoc, paneId: string, scaleId: string, flag: 'inv
             scales: p.scales.map((sc) => {
               if (sc.id !== scaleId) return sc;
               const { [flag]: _old, ...rest } = sc;
-              return on ? { ...rest, [flag]: true as const } : rest;
+              return canonicalScale(on ? { ...rest, [flag]: true as const } : rest);
             }),
           },
     ),
@@ -280,7 +300,7 @@ export function applyLayerFit(doc: ChartDoc, layerId: string, fit: Fit, invert: 
         : {
             ...p,
             scales: overlay ? [...p.scales, overlay] : p.scales,
-            layers: p.layers.map((l) => (l.id === layerId ? { ...l, fit, scale: scaleId } : l)),
+            layers: p.layers.map((l) => (l.id === layerId ? canonicalLayer({ ...l, fit, scale: scaleId }) : l)),
           },
     ),
   });
@@ -444,13 +464,16 @@ const isLayer = (x: unknown): x is Layer =>
   (x.shift === undefined || isInt(x.shift, -MAX_SHIFT, MAX_SHIFT)) &&
   (x.fit === undefined || isFit(x.fit));
 
-/** 按字段白名单重建图层:载入的 JSON 里多出来的字段(比如数据)一律丢掉,守住「图层不存数据」。 */
-function cleanLayer(l: Layer): Layer {
+/**
+ * 按字段白名单、固定顺序重建图层(id、series、scale、color、shift、fit):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
+ * 守住「图层不存数据」;编辑操作改 shift / fit 后也走这里,先改哪个字段都一样,复制出去的 JSON 再导入文本原样不变。
+ */
+function canonicalLayer(l: Layer): Layer {
   return {
     id: l.id,
+    series: l.series,
     scale: l.scale,
     color: l.color,
-    series: l.series,
     ...(l.shift ? { shift: l.shift } : {}),
     ...(l.fit
       ? {
@@ -504,13 +527,8 @@ export function parseChartDoc(x: unknown): ChartDoc | null {
   const panes = x.panes.map((p) => ({
     id: p.id,
     stretch: p.stretch,
-    scales: p.scales.map((sc) => ({
-      id: sc.id,
-      side: sc.side,
-      ...(sc.invert ? { invert: true as const } : {}),
-      ...(sc.log ? { log: true as const } : {}),
-    })),
-    layers: p.layers.map(cleanLayer),
+    scales: p.scales.map(canonicalScale),
+    layers: p.layers.map(canonicalLayer),
   }));
 
   return normalize({ v: 1, panes });

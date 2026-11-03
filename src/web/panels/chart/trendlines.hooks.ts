@@ -121,8 +121,11 @@ export function useTrendlines({
     const sel = selectedRef.current?.paneKey === paneKey ? selectedRef.current.index : null;
     entriesRef.current.get(paneKey)?.prim.setLines(lines, sel);
     // 写侧兜底:Safari 隐私模式 / 配额满时 setItem 会抛,别让异常冒进事件回调。
+    // 一条线都没有就删掉这条记录,不存 [](读侧 parseLines(null) 本来就是空数组,省得每张图留一条空记录)
     try {
-      localStorage.setItem(keyOf(storageKey, paneKey), serializeLines(lines));
+      const key = keyOf(storageKey, paneKey);
+      if (lines.length === 0) localStorage.removeItem(key);
+      else localStorage.setItem(key, serializeLines(lines));
     } catch {
       /* 落盘失败不阻断交互 */
     }
