@@ -19,7 +19,9 @@
     "typecheck": "bun node_modules/typescript/lib/tsc.js --noEmit"
   },
   "dependencies": {
+    "@base-ui/react": "1.9.0",
     "@radix-ui/react-popover": "^1.1.19",
+    "clsx": "2.1.1",
     "fflate": "^0.8.3",
     "hono": "^4.13.13",
     "lightweight-charts": "^5.2.0",
@@ -30,6 +32,7 @@
     "react-dom": "^19.2.7",
     "remeda": "^2.39.0",
     "swr": "^2.4.2",
+    "tailwind-merge": "3.7.0",
     "yahoo-finance2": "^4.0.0"
   },
   "devDependencies": {

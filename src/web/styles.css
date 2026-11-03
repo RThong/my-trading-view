@@ -1,6 +1,24 @@
 @import "tailwindcss";
 @import "react-day-picker/style.css";
 
+/*
+ * shadcn/ui 组件用到的颜色变量(src/web/components/ui/ 下的组件引用 bg-popover / text-muted-foreground 这类类名)。
+ * 全站只有深色:直接映射到现有 neutral 色系,不加 :root 明暗两套、也不改 body 的全局样式,旧页面外观不受影响。
+ * 只列组件实际用到的;以后加新组件引用了别的变量,在这里补。
+ */
+@theme inline {
+  --color-foreground: var(--color-neutral-200);
+  --color-popover: var(--color-neutral-900);
+  --color-popover-foreground: var(--color-neutral-200);
+  --color-muted: var(--color-neutral-800);
+  --color-muted-foreground: var(--color-neutral-500);
+  --color-accent: var(--color-neutral-800);
+  --color-accent-foreground: var(--color-neutral-100);
+  --color-border: var(--color-neutral-800);
+  --color-input: var(--color-neutral-800);
+  --color-ring: var(--color-neutral-600);
+}
+
 /* react-day-picker 深色主题:改 --rdp-* 变量最省,配合仪表盘 neutral 色系。 */
 .rdp-root {
   color-scheme: dark; /* 让年月下拉的原生 select 弹窗跟深色 */

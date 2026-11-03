@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -5,6 +6,8 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   root: 'src/web',
   plugins: [react(), tailwindcss()],
+  // 与 tsconfig 的 paths 对齐:shadcn CLI 生成的组件按 @web/... 引用
+  resolve: { alias: { '@web': fileURLToPath(new URL('./src/web', import.meta.url)) } },
   server: {
     port: 5173,
     proxy: {

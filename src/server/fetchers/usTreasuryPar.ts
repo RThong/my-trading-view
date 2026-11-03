@@ -61,7 +61,14 @@ export function parseTreasuryPar(csv: string, colToTenor = COL_TO_TENOR): Record
   return out;
 }
 
-// 拉 HISTORY_START_DATE 那年 → 今年各年并行,合并同期限并按日期升序。
+/** 两张表各自有数的第一年:名义 par 曲线 1990 起,TIPS 实际曲线 2003 起(更早的年份回空 body,会被当失败)。 */
+export const UST_FIRST_YEAR = 1990;
+export const UST_REAL_FIRST_YEAR = 2003;
+const DEFAULT_START_YEAR = Number(HISTORY_START_DATE.slice(0, 4));
+// 拉全历史时一次 37 年,别同时打满财政部:分批并行(只用于长历史版,见 fetchCurve)
+const BATCH = 8;
+
+// 拉 startYear(默认 HISTORY_START_DATE 那年)→ 今年,分批并行,合并同期限并按日期升序。
 // **任一年失败即整体抛**,不跳过:跳过的话缺一段(或缺今年 = 曲线停在去年底)的结果看上去仍然「齐全」,
 // 会被路由缓存当完整结果存 6h 并写盘。整体抛则由调用方降级 —— yield-curve / regime 都会拿上一份成功值顶上。
 async function fetchCurve(
@@ -70,26 +77,34 @@ async function fetchCurve(
   label: string,
   doFetch: typeof fetchWithTimeout,
   now: Date,
+  startYear: number,
 ): Promise<Record<string, Point[]>> {
-  const startYear = Number(HISTORY_START_DATE.slice(0, 4));
   const endYear = now.getUTCFullYear();
   // 1 月上旬今年可能还没有交易日;取 10 号留出元旦假期余量
   const isEarlyJan = now.getUTCMonth() === 0 && now.getUTCDate() <= 10;
   const years = Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
-  const perYear = await Promise.all(
-    years.map(async (y) => {
-      const res = await doFetch(CSV(y, type), { headers: { 'User-Agent': 'Mozilla/5.0' } });
-      if (!res.ok) throw new Error(`${label} ${y}: ${res.status}`);
+  const fetchYear = async (y: number) => {
+    const res = await doFetch(CSV(y, type), { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!res.ok) throw new Error(`${label} ${y}: ${res.status}`);
 
-      // 没有数据的年份财政部回 200 + 空 body:只在 1 月上旬放过今年。
-      // 其余空 body / HTML 错误页(一档都解析不出)一律当失败 —— 只看 HTTP 200 会让缺段结果冒充完整被缓存。
-      // 单档缺(如某档表头改名)不在这里抛,交给调用方把那一档归 unavailable,别让一档拖垮整条曲线。
-      const csv = await res.text();
-      if (!csv.trim() && y === endYear && isEarlyJan) return {};
-      const parsed = parseTreasuryPar(csv, colToTenor);
-      if (!Object.keys(parsed).length) throw new Error(`${label} ${y}: 无数据`);
-      return parsed;
-    }),
+    // 没有数据的年份财政部回 200 + 空 body:只在 1 月上旬放过今年。
+    // 其余空 body / HTML 错误页(一档都解析不出)一律当失败 —— 只看 HTTP 200 会让缺段结果冒充完整被缓存。
+    // 单档缺(如某档表头改名)不在这里抛,交给调用方把那一档归 unavailable,别让一档拖垮整条曲线。
+    const csv = await res.text();
+    if (!csv.trim() && y === endYear && isEarlyJan) return {};
+    const parsed = parseTreasuryPar(csv, colToTenor);
+    if (!Object.keys(parsed).length) throw new Error(`${label} ${y}: 无数据`);
+    return parsed;
+  };
+  // 长历史版(早于全站起点)才分批:批与批串行、批内并行,免得一次打满财政部;
+  // 默认路径(2018 起不到十年)保持原来的一轮全并行,冷启动不多一个往返
+  const size = startYear < DEFAULT_START_YEAR ? BATCH : years.length;
+  const batches = Array.from({ length: Math.ceil(years.length / size) }, (_, i) =>
+    years.slice(i * size, (i + 1) * size),
+  );
+  const perYear = await batches.reduce<Promise<Record<string, Point[]>[]>>(
+    async (acc, batch) => [...(await acc), ...(await Promise.all(batch.map(fetchYear)))],
+    Promise.resolve([]),
   );
 
   const merged: Record<string, Point[]> = {};
@@ -103,10 +118,13 @@ async function fetchCurve(
   return merged;
 }
 
-/** 名义 par yield 曲线(11 档)。 */
-export const fetchTreasuryCurve = (doFetch = fetchWithTimeout, now = new Date()) =>
-  fetchCurve('daily_treasury_yield_curve', COL_TO_TENOR, 'UST', doFetch, now);
+/**
+ * 名义 par yield 曲线(11 档)。startYear 缺省 = 全站起点(2018);图表编辑器要长历史时传 UST_FIRST_YEAR。
+ * 早年有的档位还没发行(1M 2001 起、20Y 1993 前与 30Y 2002–2006 停发),那几年该档自然缺,不算失败。
+ */
+export const fetchTreasuryCurve = (doFetch = fetchWithTimeout, now = new Date(), startYear = DEFAULT_START_YEAR) =>
+  fetchCurve('daily_treasury_yield_curve', COL_TO_TENOR, 'UST', doFetch, now, startYear);
 
-/** TIPS 实际收益率曲线(5Y–30Y 共 5 档),= FRED DFII 同值但早一个工作日。 */
-export const fetchTreasuryRealCurve = (doFetch = fetchWithTimeout, now = new Date()) =>
-  fetchCurve('daily_treasury_real_yield_curve', REAL_COL_TO_TENOR, 'UST real', doFetch, now);
+/** TIPS 实际收益率曲线(5Y–30Y 共 5 档),= FRED DFII 同值但早一个工作日。startYear 同上(长历史传 UST_REAL_FIRST_YEAR)。 */
+export const fetchTreasuryRealCurve = (doFetch = fetchWithTimeout, now = new Date(), startYear = DEFAULT_START_YEAR) =>
+  fetchCurve('daily_treasury_real_yield_curve', REAL_COL_TO_TENOR, 'UST real', doFetch, now, startYear);
