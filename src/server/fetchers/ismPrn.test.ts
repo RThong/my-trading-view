@@ -2,12 +2,13 @@ import { test, expect } from 'bun:test';
 import { parseIsmRelease, parseNewsroom, hintFromSlug } from './ismPrn';
 
 // 表格按真实发布件的形状缩写:标题行 + 表头行 + 数据行。td 里夹 <sup>® 与 &nbsp; 是真实页面的样子。
-const table = (title: string, rows: string[][]) =>
-  `<p>正文里也会出现 Manufacturing PMI registered 99.9 percent 这种句子,不该被取到</p><table>
+function table(title: string, rows: string[][]) {
+  return `<p>正文里也会出现 Manufacturing PMI registered 99.9 percent 这种句子,不该被取到</p><table>
     <tr><td colspan="7"><b>${title}</b></td></tr>
     <tr><td>Index</td><td>Series Index Aug</td><td>Series Index Jul</td><td>Change</td></tr>
     ${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('\n')}
   </table>`;
+}
 
 test('parseIsmRelease:新版制造业 —— 按行首标签取头条与 Prices,不按行号', () => {
   const html = table('MANUFACTURING AT A GLANCE<br>August 2026', [

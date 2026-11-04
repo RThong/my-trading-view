@@ -12,7 +12,9 @@ const W = 1000,
 const PLOT_W = W - PAD_L - PAD_R;
 const PLOT_H = H - PAD_T - PAD_B;
 
-const xOf = (i: number, n: number) => PAD_L + (n <= 1 ? PLOT_W / 2 : (PLOT_W * i) / (n - 1));
+function xOf(i: number, n: number) {
+  return PAD_L + (n <= 1 ? PLOT_W / 2 : (PLOT_W * i) / (n - 1));
+}
 
 /** 收益曲线折线图:x = 期限(序数均匀排开),多条曲线 = 多个日期。hover 竖线 + 左上读值。 */
 export function YieldCurveChart({ tenors, curves }: { tenors: string[]; curves: Curve[] }) {

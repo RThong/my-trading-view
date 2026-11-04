@@ -11,12 +11,15 @@ export type LayerData = {
 
 const EMPTY: LinePoint[] = [];
 
-export const layerRequest = (l: Layer) => ({ series: l.series, shift: l.shift ?? 0 });
+export function layerRequest(l: Layer) {
+  return { series: l.series, shift: l.shift ?? 0 };
+}
 
-export const computeLayerData = (doc: ChartDoc, points: Record<string, LinePoint[]>): Record<string, LayerData> =>
-  Object.fromEntries(
+export function computeLayerData(doc: ChartDoc, points: Record<string, LinePoint[]>): Record<string, LayerData> {
+  return Object.fromEntries(
     doc.panes.flatMap((p) => p.layers).map((l) => [l.id, { display: points[requestKey(layerRequest(l))] ?? EMPTY }]),
   );
+}
 
 /** 文档或数据变了才重算。 */
 export function useLayerData(doc: ChartDoc, points: Record<string, LinePoint[]>): Record<string, LayerData> {
@@ -24,5 +27,8 @@ export function useLayerData(doc: ChartDoc, points: Record<string, LinePoint[]>)
 }
 
 /** 这根轴能不能取对数:挂在上面的图层(画出来的值)全都大于 0。还没数据的图层不算阻碍。 */
-export const canLogScale = (pane: Pane, scaleId: string, data: Record<string, LayerData>): boolean =>
-  pane.layers.filter((l) => l.scale === scaleId).every((l) => (data[l.id]?.display ?? []).every((p) => p.value > 0));
+export function canLogScale(pane: Pane, scaleId: string, data: Record<string, LayerData>): boolean {
+  return pane.layers
+    .filter((l) => l.scale === scaleId)
+    .every((l) => (data[l.id]?.display ?? []).every((p) => p.value > 0));
+}

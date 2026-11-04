@@ -20,7 +20,9 @@ const URL = 'https://openapi.twse.com.tw/v1/opendata/t187ap05_L';
 
 /** 库里的 series_id。与 SEC 侧的 `SEC_*` 平行,前缀标出源 —— 一眼看出这条线的可审计程度不同。 */
 const SERIES_SUFFIX: Record<TwseKind, string> = { revM: 'REV_M', revYoy: 'REV_YOY' };
-export const twseSeriesId = (ticker: string, kind: TwseKind): string => `TWSE_${ticker}_${SERIES_SUFFIX[kind]}`;
+export function twseSeriesId(ticker: string, kind: TwseKind): string {
+  return `TWSE_${ticker}_${SERIES_SUFFIX[kind]}`;
+}
 
 // 民国年月(11506)→ 该月最后一天(2026-06-30)。序列按月末打点:月营收是整月的量,
 // 落在月末才不会和「月初就有这个数」的错觉混淆。
@@ -78,24 +80,24 @@ export type TwseRevenueResult = {
 };
 
 // 千元 → 百万;空串/非数字 → null。源里缺值是空字符串而不是 0,不能当 0 用。
-const toMillion = (raw: string | undefined): number | null => {
+function toMillion(raw: string | undefined): number | null {
   const n = Number(String(raw ?? '').replace(/,/g, ''));
   return raw && Number.isFinite(n) ? n / 1000 : null;
-};
+}
 
 /**
  * 同比(%)。**`Number('') === 0`,不是 NaN** —— 直接 Number 再 isFinite,源把这个字段留空时
  * 会落一个「同比 0%」的假点,而 job 里那条「有营收却一个同比都没有」的守卫正好被这个 0 骗过,
  * 于是字段改名/停发这件事永远没人知道。故先要求非空、再要求是数。
  */
-const parseYoy = (raw: string | undefined): number | null => {
+function parseYoy(raw: string | undefined): number | null {
   const t = String(raw ?? '')
     .replace(/,/g, '')
     .trim();
   const n = Number(t);
 
   return t !== '' && Number.isFinite(n) ? n : null;
-};
+}
 
 type FetchFn = (url: string, init?: RequestInit, timeoutMs?: number) => Promise<Response>;
 

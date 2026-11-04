@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import { fastRegime, ratioSeries } from './attackDefense.hooks';
 
-const bar = (date: string, close: number) => ({ date, open: close, high: close, low: close, close });
+function bar(date: string, close: number) {
+  return { date, open: close, high: close, low: close, close };
+}
 
 describe('ratioSeries', () => {
   it('按日期内联相除,qqq 缺的日期跳过', () => {

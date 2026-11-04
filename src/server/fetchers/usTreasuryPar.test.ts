@@ -42,19 +42,27 @@ describe('parseTreasuryPar', () => {
 
 // 注入 fetch:按 URL 里的年份回 CSV。csvByYear 指定的年份回指定内容,failYears 回 500,
 // 其余年份回 defaultCsv(year)(每年一行占位数据 —— 往年空表现在算失败,见 fetchCurve)。
-const yearOf = (url: string) => url.match(/daily-treasury-rates\.csv\/(\d{4})\//)?.[1] ?? '';
-const fakeFetch =
-  (defaultCsv: (year: string) => string, csvByYear: Record<string, string> = {}, failYears: string[] = []) =>
-  (url: string) => {
+function yearOf(url: string) {
+  return url.match(/daily-treasury-rates\.csv\/(\d{4})\//)?.[1] ?? '';
+}
+function fakeFetch(
+  defaultCsv: (year: string) => string,
+  csvByYear: Record<string, string> = {},
+  failYears: string[] = [],
+) {
+  return (url: string) => {
     const year = yearOf(url);
     const res = failYears.includes(year)
       ? new Response('nope', { status: 500 })
       : new Response(csvByYear[year] ?? defaultCsv(year), { status: 200 });
     return Promise.resolve(res) as Promise<Response>;
   };
+}
 
 // 占位值取 1 / 9,断言时据此滤掉,只看测试指定的那几行
-const nominalRow = (year: string) => `${CSV_OLD.split('\n')[0]}\n01/02/${year},${Array(12).fill(1).join(',')}`;
+function nominalRow(year: string) {
+  return `${CSV_OLD.split('\n')[0]}\n01/02/${year},${Array(12).fill(1).join(',')}`;
+}
 
 // 验「跨年合并后按日期升序」(源 CSV 本身是倒序)+「任一年失败即整体抛」(不让缺段结果冒充齐全)。
 describe('fetchTreasuryCurve(年度聚合 / 失败)', () => {

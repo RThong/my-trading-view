@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { fetchTwseMonthlyRevenue, rocMonthEnd, twseSeriesId } from './twseRevenue';
 
-const json = (body: unknown) =>
-  new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+function json(body: unknown) {
+  return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
 
 // TSMC 2026-06 的真实记录(openapi.twse.com.tw/v1/opendata/t187ap05_L,实测 2026-08-05 取)。
 // 金额单位是千元新台币,年月是民国年月。

@@ -28,7 +28,9 @@ type Options = {
 
 const STRETCH_EPS = 1e-3;
 // 读回的比例只留 3 位小数:JSON 里不出现 0.6734129… 这种噪音,也不影响观感。
-const round3 = (n: number) => Math.round(n * 1000) / 1000;
+function round3(n: number) {
+  return Math.round(n * 1000) / 1000;
+}
 
 export function useEditorChart(
   containerRef: RefObject<HTMLDivElement | null>,
@@ -223,8 +225,10 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LineP
   });
 }
 
-const createLayerSeries = (
+function createLayerSeries(
   chart: IChartApi,
   opts: { color: string; priceScaleId: string },
   paneIndex: number,
-): ISeriesApi<'Line'> => chart.addSeries(LineSeries, { ...opts, lineWidth: 2, priceLineVisible: false }, paneIndex);
+): ISeriesApi<'Line'> {
+  return chart.addSeries(LineSeries, { ...opts, lineWidth: 2, priceLineVisible: false }, paneIndex);
+}

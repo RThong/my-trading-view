@@ -53,19 +53,23 @@ const TYPE_LABEL: Record<string, string> = {
   MUTUALFUND: '基金',
 };
 
-const yahooOption = (h: YahooHit): Option => ({
-  id: yahooId(h.symbol),
-  label: (
-    <>
-      <span className="font-medium text-neutral-200">{h.symbol}</span>{' '}
-      <span className="text-neutral-400">{h.name}</span>
-    </>
-  ),
-  meta: TYPE_LABEL[h.type] ?? h.type,
-  title: [h.symbol, h.name, h.exchange].filter(Boolean).join(' · '),
-});
+function yahooOption(h: YahooHit): Option {
+  return {
+    id: yahooId(h.symbol),
+    label: (
+      <>
+        <span className="font-medium text-neutral-200">{h.symbol}</span>{' '}
+        <span className="text-neutral-400">{h.name}</span>
+      </>
+    ),
+    meta: TYPE_LABEL[h.type] ?? h.type,
+    title: [h.symbol, h.name, h.exchange].filter(Boolean).join(' · '),
+  };
+}
 
-const labelOf = (id: string) => seriesDef(id)?.label ?? id;
+function labelOf(id: string) {
+  return seriesDef(id)?.label ?? id;
+}
 
 // 右侧顶部:标签式多选框(shadcn Combobox)。输入区里一条序列一个标签(带图上的颜色,× 删这一条),最右是清空全部和展开;
 // 下拉里先列内置序列(按分类),再列 Yahoo 搜索结果(任意代码)。勾一条就收起、清空关键字,接着打字搜下一条;

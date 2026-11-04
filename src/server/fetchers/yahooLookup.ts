@@ -41,7 +41,9 @@ export function defaultLookupClient(): YahooLookupClient {
 }
 
 // Yahoo 代码只由这些字符组成(^GSPC、GC=F、BTC-USD、8306.T、BRK-B);别的一律当非法,不往上游转
-export const isYahooSymbol = (s: string): boolean => /^[A-Za-z0-9.^=-]{1,24}$/.test(s);
+export function isYahooSymbol(s: string): boolean {
+  return /^[A-Za-z0-9.^=-]{1,24}$/.test(s);
+}
 
 /**
  * 只留 Yahoo 自己有行情的条目(搜索结果里混着新闻源 / 第三方的条目,取不到日线);

@@ -25,22 +25,25 @@ export type DensityPoint = { date: string; value: number };
 
 const DAY_MS = 86400_000;
 
-const isDay1 = (s: unknown): s is SeriesData => {
+function isDay1(s: unknown): s is SeriesData {
   const o = s as Partial<SeriesData> | null;
   return o?.index === 'day1' && o.start === 0 && Array.isArray(o.data);
-};
+}
 
 // `Date.parse('2026-02-30')` 会滚到 3 月,只靠正则挡不住,要回转一遍比对
-const isRealDay = (d: unknown): d is string => {
+function isRealDay(d: unknown): d is string {
   if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
   const t = Date.parse(d);
 
   return !Number.isNaN(t) && new Date(t).toISOString().startsWith(d);
-};
+}
 
 // 下标即日历日:日期必须真实存在且逐日连续,否则按下标对齐会错位
-const isContiguousDays = (data: unknown[]) =>
-  data.every((d, i) => isRealDay(d) && (i === 0 || Date.parse(d) - Date.parse(data[i - 1] as string) === DAY_MS));
+function isContiguousDays(data: unknown[]) {
+  return data.every(
+    (d, i) => isRealDay(d) && (i === 0 || Date.parse(d) - Date.parse(data[i - 1] as string) === DAY_MS),
+  );
+}
 
 async function fetchDay1(id: string): Promise<unknown> {
   const res = await fetchWithTimeout(`${BASE}/${id}/day1`, undefined, 60_000);

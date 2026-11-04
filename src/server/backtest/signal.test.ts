@@ -1,18 +1,21 @@
 import { test, expect } from 'bun:test';
 import { computeStates, type SpreadPoint, type SignalConfig } from './signal';
 
-const cfg = (over: Partial<SignalConfig> = {}): SignalConfig => ({
-  warmup: 3,
-  panicEntry: 'C',
-  panicEnterRank: 85,
-  panicExitRank: 50,
-  greedEnterRank: 10,
-  greedExitRank: 30,
-  ...over,
-});
+function cfg(over: Partial<SignalConfig> = {}): SignalConfig {
+  return {
+    warmup: 3,
+    panicEntry: 'C',
+    panicEnterRank: 85,
+    panicExitRank: 50,
+    greedEnterRank: 10,
+    greedExitRank: 30,
+    ...over,
+  };
+}
 
-const mkSpread = (vals: number[]): SpreadPoint[] =>
-  vals.map((v, i) => ({ date: `2020-01-${String(i + 1).padStart(2, '0')}`, value: v }));
+function mkSpread(vals: number[]): SpreadPoint[] {
+  return vals.map((v, i) => ({ date: `2020-01-${String(i + 1).padStart(2, '0')}`, value: v }));
+}
 
 test('无未来函数:追加未来数据,历史某天状态不变', () => {
   const base = mkSpread([-3, -2, -1, 0.5, -1, -2, 5, -1]);

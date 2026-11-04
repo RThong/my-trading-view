@@ -110,13 +110,14 @@ export async function fetchReportDoc(
 // ── 解析原语 ──────────────────────────────────────────────────────────────────
 
 /** HTML → 以 `|` 保留单元格边界的扁平文本。表格结构全靠这些竖线定位。 */
-export const flattenHtml = (html: string): string =>
-  html
+export function flattenHtml(html: string): string {
+  return html
     .replace(/<[^>]+>/g, '|')
     .replace(/&nbsp;|&#160;/g, ' ')
     .replace(/&#\d+;/g, ' ')
     .replace(/\|+/g, '|')
     .replace(/[ \t\r\n]+/g, ' ');
+}
 
 /**
  * 一个行标签和它的第一个数字之间最多隔几个单元格。表格里通常是 `标签|$|数字`(隔 1~2 格)。
@@ -212,7 +213,9 @@ const DAY_MS = 86_400_000;
 const MAX_QUARTER_DAYS = 120;
 const NOMINAL_QUARTER_DAYS = 91;
 
-const shiftDays = (iso: string, days: number) => new Date(Date.parse(iso) + days * DAY_MS).toISOString().slice(0, 10);
+function shiftDays(iso: string, days: number) {
+  return new Date(Date.parse(iso) + days * DAY_MS).toISOString().slice(0, 10);
+}
 
 /**
  * 单季行的起始日 = **上一期期末的次日**。

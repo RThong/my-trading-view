@@ -18,6 +18,7 @@ import {
   CHART_OPTIONS,
   expandAutoscaleProvider,
   fmtDate,
+  isWeekend,
   type Bar,
   type LinePoint,
 } from '../../lib/chart';
@@ -60,11 +61,9 @@ export function tenorSeriesData(rows: YPoint[] | undefined, interval: Interval):
  * 缩到 2020 年中,等于为两根周末柱子丢掉两年半的曲线历史(1W 及以上无此问题,聚合后根数够少)。
  * 代价:周末行情不单独成柱。这一格是**参照物**(利率在动时风险资产在哪),不是拿来交易 BTC 的。
  */
-const weekdayOnly = <T extends { date: string }>(rows: T[]): T[] =>
-  rows.filter((b) => {
-    const dow = new Date(`${b.date}T00:00:00Z`).getUTCDay();
-    return dow !== 0 && dow !== 6;
-  });
+function weekdayOnly<T extends { date: string }>(rows: T[]): T[] {
+  return rows.filter((b) => !isWeekend(b.date));
+}
 
 export function spotBars(
   rows:

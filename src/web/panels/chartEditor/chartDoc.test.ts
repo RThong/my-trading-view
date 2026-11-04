@@ -21,9 +21,13 @@ import {
   type Layer,
 } from './chartDoc';
 
-const seriesOf = (l: Layer) => l.series;
+function seriesOf(l: Layer) {
+  return l.series;
+}
 
-const twoOnMain = () => addLayer(addLayer(EMPTY_DOC, 'SPY', '#111111'), 'vix', '#222222');
+function twoOnMain() {
+  return addLayer(addLayer(EMPTY_DOC, 'SPY', '#111111'), 'vix', '#222222');
+}
 
 describe('addLayer', () => {
   test('空图新建主格(stretch 2、右轴)', () => {

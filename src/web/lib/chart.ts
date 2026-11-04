@@ -39,10 +39,16 @@ export const CHART_OPTIONS = {
  * 29500 倍)。ETF 现货拉到上市日后(2026-10 实测)其余标的最宽:USO 56.5 倍(2020 合股前后)、QQQ 38.6、
  * SPY 18.3,都还在 100 以下 —— 但 USO 只差不到 2 倍,再接长历史或新标的时要重看这个阈值。
  */
-export const needsLogScale = (bars: Bar[]): boolean => {
+export function needsLogScale(bars: Bar[]): boolean {
   const lows = bars.map((b) => b.low).filter((v) => v > 0);
   return lows.length > 0 && Math.max(...bars.map((b) => b.high)) / Math.min(...lows) > 100;
-};
+}
+
+/** 'YYYY-MM-DD' 是否周六 / 周日。按 UTC 解析,免得本地时区把日期推到前一天。 */
+export function isWeekend(date: string): boolean {
+  const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return dow === 0 || dow === 6;
+}
 
 /** 周期键:同一周期内所有日期映射到同一个规范日期(周一 / 月初 / 季初 / 年初)。
  *  **导出是刻意的**:成交量必须和 OHLC 用同一个键分组,各写一份必然漂。 */

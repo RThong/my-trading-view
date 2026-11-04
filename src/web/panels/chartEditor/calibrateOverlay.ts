@@ -1,6 +1,7 @@
 // 回测「叠加对比」的选段门槛(OVERLAY_RULES):拿公认有关 / 无关的组合看判得对不对,再拿随机走势量误报率。
 // 改门槛前后各跑一次比对:bun run src/web/panels/chartEditor/calibrateOverlay.ts(要先起 dev server,读 localhost:3000)。
 // 只读接口、不写库。判断逻辑与按钮共用 findBaseSegment,不另写一套。
+import { isWeekend } from '../../lib/chart';
 import { findBaseSegment, type Segment } from './analysis';
 
 type P = { time: string; value: number };
@@ -8,27 +9,39 @@ type Row = { date: string; value: number };
 type View = { from: string; to: string };
 
 const API = process.env.API ?? 'http://localhost:3000';
-const get = async <T>(path: string): Promise<T> => {
+async function get<T>(path: string): Promise<T> {
   const r = await fetch(API + path);
   if (!r.ok) throw new Error(`${path}: ${r.status}`);
   return r.json() as Promise<T>;
-};
+}
 
 const regime = await get<{ series: Record<string, Row[]>; ohlc: Record<string, { time: string; close: number }[]> }>(
   '/api/regime',
 );
 const real = await get<{ series: Record<string, Row[]> }>('/api/yield-curve?source=real&history=full');
-const rows = (r: Row[]): P[] => r.map((x) => ({ time: x.date, value: x.value }));
-const price = async (s: string): Promise<P[]> =>
-  (await get<{ date: string; close: number }[]>(`/api/price/${s}`)).map((x) => ({ time: x.date, value: x.close }));
-const ohlc = (k: string): P[] => regime.ohlc[k].map((x) => ({ time: x.time, value: x.close }));
-const weekday = (p: P[]) => p.filter((x) => ![0, 6].includes(new Date(`${x.time}T00:00:00Z`).getUTCDay()));
+function rows(r: Row[]): P[] {
+  return r.map((x) => ({ time: x.date, value: x.value }));
+}
+async function price(s: string): Promise<P[]> {
+  return (await get<{ date: string; close: number }[]>(`/api/price/${s}`)).map((x) => ({
+    time: x.date,
+    value: x.close,
+  }));
+}
+function ohlc(k: string): P[] {
+  return regime.ohlc[k].map((x) => ({ time: x.time, value: x.close }));
+}
+function weekday(p: P[]) {
+  return p.filter((x) => !isWeekend(x.time));
+}
 
 const ALL: View = { from: '1900-01-01', to: '2100-01-01' };
 const [gld, spy, tlt, uso] = await Promise.all(['GLD', 'SPY', 'TLT', 'USO'].map(price));
 const real10 = rows(real.series['10Y']);
 const btc = weekday(ohlc('btc'));
-const s = (k: string) => rows(regime.series[k]);
+function s(k: string) {
+  return rows(regime.series[k]);
+}
 
 /** expect:应当选出段(有稳定关系)还是选不出;note 写预期的大致时段,人工核对 */
 const CASES: { name: string; a: P[]; b: P[]; view: View; expect: boolean; note?: string }[] = [
@@ -43,9 +56,12 @@ const CASES: { name: string; a: P[]; b: P[]; view: View; expect: boolean; note?:
   { name: 'SPY × TLT(全时段,正负翻过几次)', a: spy, b: tlt, view: ALL, expect: false },
 ];
 
-const f = (x: number) => (Number.isFinite(x) ? x.toFixed(2) : 'NaN');
-const describe = (sg: Segment) =>
-  `${sg.from}~${sg.to} ${(sg.months / 12).toFixed(1)}年 涨跌r ${f(sg.rc)}(需≥${f(sg.need)}) 4份过${sg.parts} 水平r ${f(sg.rl)}`;
+function f(x: number) {
+  return Number.isFinite(x) ? x.toFixed(2) : 'NaN';
+}
+function describe(sg: Segment) {
+  return `${sg.from}~${sg.to} ${(sg.months / 12).toFixed(1)}年 涨跌r ${f(sg.rc)}(需≥${f(sg.need)}) 4份过${sg.parts} 水平r ${f(sg.rl)}`;
+}
 
 console.log('## 已知组合');
 const results = CASES.map(({ name, a, b, view, expect, note }) => {

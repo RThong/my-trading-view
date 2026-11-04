@@ -3,6 +3,7 @@ import useSWR from 'swr';
 import { zigzagRegimes, type Regime } from '../../lib/zigzag';
 import type { Spec } from '../chart/paneChart.types';
 import type { PriceBar } from '../asset/assetChart.hooks';
+import { getJson, SWR_OPTS } from '../../lib/http';
 
 // 参数均按 2018-01~2026-09 实测选定:以 QQQ ≥10% 回撤(16 次)为靶,量「接住几次 / 滞后 / 假警报」。
 // 20% 阈值只接住 2 次(2025-02、2025-10 两轮回撤比值涨 15~19% 都没到 20%);10% 接住 11 次且实时翻防守 9/9 都在回撤期内。
@@ -57,13 +58,6 @@ const STRIP: Record<Regime, string> = {
 };
 export const RATIO_COLOR = '#d4d4d8'; // 中性亮线,压在红绿背景上清楚
 export const MA_COLOR = '#f59e0b';
-
-const getJson = (url: string) =>
-  fetch(url).then((r) => {
-    if (!r.ok) throw new Error(String(r.status));
-    return r.json();
-  });
-const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
 
 /** 攻防数据层:拉 QQQ + NOBL,算 NOBL/QQQ 比值 + ZigZag 攻防 regime 分区 + 快线。 */
 export function useAttackDefenseData() {

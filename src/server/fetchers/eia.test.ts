@@ -2,8 +2,9 @@ import { describe, test, expect } from 'bun:test';
 import { createEiaFetcher, weeksToFetch } from './eia';
 import { HISTORY_START_DATE, SEASONAL_BASELINE_YEARS } from '../config';
 
-const body = (data: Array<{ period: string; value: number | null }>) =>
-  new Response(JSON.stringify({ response: { data } }), { status: 200 });
+function body(data: Array<{ period: string; value: number | null }>) {
+  return new Response(JSON.stringify({ response: { data } }), { status: 200 });
+}
 
 describe('eia fetcher', () => {
   test('fetchWeekly 拼 PET.{id}.W、带 length、翻成升序、丢 null', async () => {

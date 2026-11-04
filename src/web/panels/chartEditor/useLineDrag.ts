@@ -52,8 +52,9 @@ type Drag =
     };
 
 /** 原生拖动会挪的那根:右轴上有图层就是右轴,否则左轴(同 lw-charts 的 defaultPriceScale)。 */
-export const nativeScale = (pane: Pane): 'right' | 'left' =>
-  pane.layers.some((l) => l.scale === 'right') ? 'right' : 'left';
+export function nativeScale(pane: Pane): 'right' | 'left' {
+  return pane.layers.some((l) => l.scale === 'right') ? 'right' : 'left';
+}
 
 /**
  * 按像素位移平移(线性)纵轴范围:内容跟着手往下走 dy 像素。perPx = 往下 1px 数值减少多少(倒轴为负)。
@@ -88,11 +89,11 @@ function coversTime(s: ISeriesApi<'Line'>, time: string | null): boolean {
 }
 
 /** 鼠标 y 到一段竖条 [min(ys), max(ys)] 的距离;落在竖条里为 0。 */
-export const distToSpan = (y: number, ys: number[]): number => {
+export function distToSpan(y: number, ys: number[]): number {
   const top = Math.min(...ys);
   const bottom = Math.max(...ys);
   return y < top ? top - y : y > bottom ? y - bottom : 0;
-};
+}
 
 /** 一组候选里离鼠标最近、且在 GRAB_PX 以内的那个;都太远 → undefined。 */
 export function nearest<T>(cands: { item: T; dist: number }[]): T | undefined {

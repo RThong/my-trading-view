@@ -4,12 +4,13 @@ import { CalendarIcon } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 
 // YYYY-MM-DD <-> Date(本地日历日,避免 UTC 偏移)。
-const toISO = (d: Date) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const fromISO = (s: string) => {
+function toISO(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function fromISO(s: string) {
   const [y, m, d] = s.split('-').map(Number);
   return new Date(y, m - 1, d);
-};
+}
 
 type Props = {
   value: string; // YYYY-MM-DD

@@ -232,37 +232,59 @@ export const ACTIVE_TICKERS = [
   'ASML',
 ];
 
-const find = (ticker: string) => SEC_COMPANIES.find((c) => c.ticker === ticker);
+function find(ticker: string) {
+  return SEC_COMPANIES.find((c) => c.ticker === ticker);
+}
 
 /** sources 省略即 ['sec'] —— 多数公司只走 companyfacts,不必每行都写。 */
-export const sourcesOf = (ticker: string): ChainSource[] => find(ticker)?.sources ?? ['sec'];
-export const hasSource = (ticker: string, source: ChainSource): boolean => sourcesOf(ticker).includes(source);
+export function sourcesOf(ticker: string): ChainSource[] {
+  return find(ticker)?.sources ?? ['sec'];
+}
+export function hasSource(ticker: string, source: ChainSource): boolean {
+  return sourcesOf(ticker).includes(source);
+}
 
 /** cik 只在这家真的走某个吃 cik 的源时才给 —— 否则 SEC job 会拿它去 companyfacts 白打一轮。 */
-export const cikOf = (ticker: string): string | undefined => (hasSource(ticker, 'sec') ? find(ticker)?.cik : undefined);
+export function cikOf(ticker: string): string | undefined {
+  return hasSource(ticker, 'sec') ? find(ticker)?.cik : undefined;
+}
 /** sec6k 也吃 cik,但走的是 EDGAR Archives 而不是 companyfacts,故单独一个取值口。 */
-export const sec6kCikOf = (ticker: string): string | undefined =>
-  hasSource(ticker, 'sec6k') ? find(ticker)?.cik : undefined;
-export const twseCodeOf = (ticker: string): string | undefined =>
-  hasSource(ticker, 'twse') ? find(ticker)?.twseCode : undefined;
-export const dartCorpCodeOf = (ticker: string): string | undefined =>
-  hasSource(ticker, 'dart') ? find(ticker)?.dartCorpCode : undefined;
+export function sec6kCikOf(ticker: string): string | undefined {
+  return hasSource(ticker, 'sec6k') ? find(ticker)?.cik : undefined;
+}
+export function twseCodeOf(ticker: string): string | undefined {
+  return hasSource(ticker, 'twse') ? find(ticker)?.twseCode : undefined;
+}
+export function dartCorpCodeOf(ticker: string): string | undefined {
+  return hasSource(ticker, 'dart') ? find(ticker)?.dartCorpCode : undefined;
+}
 
-export const sideOf = (ticker: string): SecSide | undefined => find(ticker)?.side;
-export const groupOf = (ticker: string): ChainGroup | undefined => find(ticker)?.group;
+export function sideOf(ticker: string): SecSide | undefined {
+  return find(ticker)?.side;
+}
+export function groupOf(ticker: string): ChainGroup | undefined {
+  return find(ticker)?.group;
+}
 /** 某组里当前启用的标的,保持名单原顺序。 */
-export const activeByGroup = (group: ChainGroup): string[] => ACTIVE_TICKERS.filter((t) => groupOf(t) === group);
-export const currencyOf = (ticker: string): 'USD' | 'TWD' | 'EUR' | 'KRW' => find(ticker)?.currency ?? 'USD';
+export function activeByGroup(group: ChainGroup): string[] {
+  return ACTIVE_TICKERS.filter((t) => groupOf(t) === group);
+}
+export function currencyOf(ticker: string): 'USD' | 'TWD' | 'EUR' | 'KRW' {
+  return find(ticker)?.currency ?? 'USD';
+}
 
 /** 某个源下、当前启用的标的(job 分派用)。一家可能出现在多个源里。 */
-export const activeBySource = (source: ChainSource): string[] => ACTIVE_TICKERS.filter((t) => hasSource(t, source));
+export function activeBySource(source: ChainSource): string[] {
+  return ACTIVE_TICKERS.filter((t) => hasSource(t, source));
+}
 
 /**
  * 原始行落在 `sec_fundamentals` 表里的那些源 —— 派生量(TTM / 毛利率 / FCF)对它们是同一套算法,
  * 所以 writeDerived 的范围是这个并集,不是单个源。少了 sec6k 那家的线永远不出。
  */
-export const activeInSecTable = (): string[] =>
-  ACTIVE_TICKERS.filter((t) => hasSource(t, 'sec') || hasSource(t, 'sec6k') || hasSource(t, 'dart'));
+export function activeInSecTable(): string[] {
+  return ACTIVE_TICKERS.filter((t) => hasSource(t, 'sec') || hasSource(t, 'sec6k') || hasSource(t, 'dart'));
+}
 
 // ── 对外序列键(路由与面板必须用同一套,故在此定义一次)────────────────────────
 
@@ -333,7 +355,9 @@ export const KIND_RENDER: Record<FundKind, 'line' | 'bar'> = {
 };
 
 /** 这条线要不要裁断档。判据只有一个:**它是不是折线**。 */
-export const trimsGaps = (kind: FundKind): boolean => KIND_RENDER[kind] === 'line';
+export function trimsGaps(kind: FundKind): boolean {
+  return KIND_RENDER[kind] === 'line';
+}
 
 /**
  * 这家会有哪几个格子 = 它各个源的格子并集(去重,按 sources 顺序)。
@@ -341,29 +365,36 @@ export const trimsGaps = (kind: FundKind): boolean => KIND_RENDER[kind] === 'lin
  */
 /** 分部科目 → 它那一格。面板/守卫都从这里取,**别在别处写死 kind 名** —— 写死的地方
  *  加第二个分部科目时不会编译报错,只会生成两个同 key 的格子,新那格永不出现。 */
-export const segmentKindOf = (concept: SegmentConcept): SecKind => SEGMENT_KIND[concept];
+export function segmentKindOf(concept: SegmentConcept): SecKind {
+  return SEGMENT_KIND[concept];
+}
 
 /** 这家的**分部格**(可能为空)。守卫要单独对待它们:见 jobs/secFundamentals 的断档告警。 */
-export const segmentKindsOf = (ticker: string): SecKind[] =>
-  segmentFactsOf(ticker).map((s) => segmentKindOf(s.concept));
+export function segmentKindsOf(ticker: string): SecKind[] {
+  return segmentFactsOf(ticker).map((s) => segmentKindOf(s.concept));
+}
 
-export const kindsOf = (ticker: string): readonly FundKind[] => [
-  ...new Set([
-    ...sourcesOf(ticker).flatMap((s) => SOURCE_KINDS[s] as readonly FundKind[]),
-    // 分部格不挂在源上而挂在**这家披露了哪几个分部科目**上:同一个源(sec)下只有 GOOGL 报云收入。
-    ...segmentFactsOf(ticker).map((s) => SEGMENT_KIND[s.concept] as FundKind),
-  ]),
-];
+export function kindsOf(ticker: string): readonly FundKind[] {
+  return [
+    ...new Set([
+      ...sourcesOf(ticker).flatMap((s) => SOURCE_KINDS[s] as readonly FundKind[]),
+      // 分部格不挂在源上而挂在**这家披露了哪几个分部科目**上:同一个源(sec)下只有 GOOGL 报云收入。
+      ...segmentFactsOf(ticker).map((s) => SEGMENT_KIND[s.concept] as FundKind),
+    ]),
+  ];
+}
 
 /** 因果链内的标的(面板文案列出这些,不列备查的那几家)。 */
-export const chainTickers = (side: SecSide): string[] =>
-  SEC_COMPANIES.filter((c) => c.inChain && c.side === side).map((c) => c.ticker);
+export function chainTickers(side: SecSide): string[] {
+  return SEC_COMPANIES.filter((c) => c.inChain && c.side === side).map((c) => c.ticker);
+}
 
 /** 能进买方合计线的标的:**必须同时是 buyer 且在因果链内**。
  *  把它做成判据而不是靠「备查的那几家恰好都是 seller」这个巧合 —— 哪天往目录里加个
  *  非链内的 buyer(如 AAPL 那种 FCF 由本业主导的),它会静默把零轴垫高、判据直接失效。 */
-export const isAggregateMember = (ticker: string): boolean =>
-  SEC_COMPANIES.some((c) => c.ticker === ticker && c.inChain && c.side === 'buyer');
+export function isAggregateMember(ticker: string): boolean {
+  return SEC_COMPANIES.some((c) => c.ticker === ticker && c.inChain && c.side === 'buyer');
+}
 
 // ── 各 side 的**必需科目**与已知结构性缺口 ────────────────────────────────────
 
@@ -399,7 +430,9 @@ export const KNOWN_GAPS: Record<string, string> = {
     '留着是为可审计,不是遗漏。',
 };
 
-export const knownGap = (ticker: string, concept: string): string | undefined => KNOWN_GAPS[`${ticker}.${concept}`];
+export function knownGap(ticker: string, concept: string): string | undefined {
+  return KNOWN_GAPS[`${ticker}.${concept}`];
+}
 
 /**
  * 各家用**公司自定义(extension)概念**报的科目。键 `TICKER.concept`,值是实例里的元素全名。
@@ -418,8 +451,9 @@ export const EXTENSION_TAGS: Record<string, string[]> = {
   'NVDA.capex': ['nvda:PurchasesOfPropertyAndEquipmentAndIntangibleAssets'],
 };
 
-export const extensionTags = (ticker: string, concept: string): string[] =>
-  EXTENSION_TAGS[`${ticker}.${concept}`] ?? [];
+export function extensionTags(ticker: string, concept: string): string[] {
+  return EXTENSION_TAGS[`${ticker}.${concept}`] ?? [];
+}
 
 /**
  * **分部(segment)科目**:哪家报了分部收入,以及它在申报实例里的元素与维度成员。
@@ -534,11 +568,12 @@ export const SEGMENT_FACTS: Record<string, Partial<Record<SegmentConcept, Segmen
   },
 };
 
-export const segmentFactsOf = (ticker: string): readonly SegmentFact[] =>
-  Object.entries(SEGMENT_FACTS[ticker] ?? {}).map(([concept, def]) => ({
+export function segmentFactsOf(ticker: string): readonly SegmentFact[] {
+  return Object.entries(SEGMENT_FACTS[ticker] ?? {}).map(([concept, def]) => ({
     ...(def as SegmentFactDef),
     concept: concept as SegmentConcept,
   }));
+}
 
 /**
  * 各家 capex 的**已知口径**(analytics 的 CapexScope 值)。未列出的按 `ppe`。
@@ -556,7 +591,9 @@ export const CAPEX_SCOPE_EXPECTED: Record<string, string> = {
   AMZN: 'productive_assets',
 };
 
-export const expectedCapexScope = (ticker: string): string => CAPEX_SCOPE_EXPECTED[ticker] ?? 'ppe';
+export function expectedCapexScope(ticker: string): string {
+  return CAPEX_SCOPE_EXPECTED[ticker] ?? 'ppe';
+}
 
 /**
  * 各买方「融资租赁新增 ROU / 该财年现金 capex」的**已声明档位**(上限)。只报**超出声明**的。
@@ -586,7 +623,9 @@ export const FINANCE_LEASE_SHARE_CEILING: Record<string, number> = {
   META: 0.05,
 };
 
-export const financeLeaseCeiling = (ticker: string): number | undefined => FINANCE_LEASE_SHARE_CEILING[ticker];
+export function financeLeaseCeiling(ticker: string): number | undefined {
+  return FINANCE_LEASE_SHARE_CEILING[ticker];
+}
 
 /**
  * 「这一格的线被断档裁短了」。**必须让读图的人看见**:裁剪本身是对的(折线只连点,断档两端
@@ -626,7 +665,9 @@ export type SecFiled = { periodEnd: string; filed: string };
  * 早先叫 `sec:`,加了 TWSE 源之后那个前缀就成了谎(`sec:TSM:revM` 的数据来自台湾证交所)。
  * 路由的缓存规则也按这个前缀判断,改前缀时两处要一起改。
  */
-export const fundKey = (ticker: string, kind: FundKind): FundSeries => `fund:${ticker}:${kind}`;
+export function fundKey(ticker: string, kind: FundKind): FundSeries {
+  return `fund:${ticker}:${kind}`;
+}
 export const FUND_KEY_PREFIX = 'fund:';
 export const SEC_BUYER_FCF_KEY: FundSeries = 'fund:buyerFcf';
 export const SEC_BUYER_FCFQ_KEY: FundSeries = 'fund:buyerFcfQ';

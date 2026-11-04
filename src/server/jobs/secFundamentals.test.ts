@@ -13,74 +13,82 @@ function freshDb(): Database {
 
 // 一年四期 YTD(四个科目齐全),够算出一个 TTM 点。四期累计 → 单季各为 1/4。
 // accn 与 filingOf 生成的一致 —— 真实 companyfacts 里两者本就是同一个号。
-const ytd = (vals: [number, number, number, number]) => ({
-  units: {
-    USD: [
-      {
-        start: '2025-01-27',
-        end: '2025-04-27',
-        val: vals[0],
-        accn: 'accn-2025-05-28',
-        form: '10-Q',
-        filed: '2025-05-28',
-      },
-      {
-        start: '2025-01-27',
-        end: '2025-07-27',
-        val: vals[1],
-        accn: 'accn-2025-08-27',
-        form: '10-Q',
-        filed: '2025-08-27',
-      },
-      {
-        start: '2025-01-27',
-        end: '2025-10-26',
-        val: vals[2],
-        accn: 'accn-2025-11-19',
-        form: '10-Q',
-        filed: '2025-11-19',
-      },
-      {
-        start: '2025-01-27',
-        end: '2026-01-25',
-        val: vals[3],
-        accn: 'accn-2026-02-25',
-        form: '10-K',
-        filed: '2026-02-25',
-      },
-    ],
-  },
-});
+function ytd(vals: [number, number, number, number]) {
+  return {
+    units: {
+      USD: [
+        {
+          start: '2025-01-27',
+          end: '2025-04-27',
+          val: vals[0],
+          accn: 'accn-2025-05-28',
+          form: '10-Q',
+          filed: '2025-05-28',
+        },
+        {
+          start: '2025-01-27',
+          end: '2025-07-27',
+          val: vals[1],
+          accn: 'accn-2025-08-27',
+          form: '10-Q',
+          filed: '2025-08-27',
+        },
+        {
+          start: '2025-01-27',
+          end: '2025-10-26',
+          val: vals[2],
+          accn: 'accn-2025-11-19',
+          form: '10-Q',
+          filed: '2025-11-19',
+        },
+        {
+          start: '2025-01-27',
+          end: '2026-01-25',
+          val: vals[3],
+          accn: 'accn-2026-02-25',
+          form: '10-K',
+          filed: '2026-02-25',
+        },
+      ],
+    },
+  };
+}
 
 /** 上一年四期 + 新的一季(2026-04-26),用来验「真的吃进了新一期」。 */
-const nextQ = (fy: number) => ({
-  units: {
-    USD: [
-      ...ytd([fy / 4, fy / 2, (fy * 3) / 4, fy]).units.USD,
-      {
-        start: '2026-01-26',
-        end: '2026-04-26',
-        val: fy / 4,
-        accn: 'accn-2026-05-20',
-        form: '10-Q',
-        filed: '2026-05-20',
-      },
-    ],
-  },
-});
-
-const cumulative = (fy: number): [number, number, number, number] => [fy / 4, fy / 2, (fy * 3) / 4, fy];
-
-const facts = (ocfFy: number, capexFy: number): CompanyFacts => ({
-  facts: {
-    'us-gaap': {
-      Revenues: ytd([25e9, 50e9, 75e9, 100e9]),
-      CostOfRevenue: ytd([10e9, 20e9, 30e9, 40e9]),
-      NetCashProvidedByUsedInOperatingActivities: ytd(cumulative(ocfFy)),
-      PaymentsToAcquirePropertyPlantAndEquipment: ytd(cumulative(capexFy)),
+function nextQ(fy: number) {
+  return {
+    units: {
+      USD: [
+        ...ytd([fy / 4, fy / 2, (fy * 3) / 4, fy]).units.USD,
+        {
+          start: '2026-01-26',
+          end: '2026-04-26',
+          val: fy / 4,
+          accn: 'accn-2026-05-20',
+          form: '10-Q',
+          filed: '2026-05-20',
+        },
+      ],
     },
-  },
-});
+  };
+}
+
+function cumulative(fy: number): [number, number, number, number] {
+  return [fy / 4, fy / 2, (fy * 3) / 4, fy];
+}
+
+function facts(ocfFy: number, capexFy: number): CompanyFacts {
+  return {
+    facts: {
+      'us-gaap': {
+        Revenues: ytd([25e9, 50e9, 75e9, 100e9]),
+        CostOfRevenue: ytd([10e9, 20e9, 30e9, 40e9]),
+        NetCashProvidedByUsedInOperatingActivities: ytd(cumulative(ocfFy)),
+        PaymentsToAcquirePropertyPlantAndEquipment: ytd(cumulative(capexFy)),
+      },
+    },
+  };
+}
 
 // NVDA 是卖方、MSFT 是买方(见 shared/aiChain 的 side):两家给不同 FCF,才能验出合计只汇买方。
 const NVDA_FACTS = facts(80e9, 4e9); // FCF = 76,000 百万
@@ -92,32 +100,35 @@ const NVDA_CIK = '1045810';
 const EMPTY_INSTANCE = '<?xml version="1.0"?><xbrl xmlns="http://www.xbrl.org/2003/instance"></xbrl>';
 
 /** 带一条 Google Cloud 分部收入的最小实例(真实形态:单维度、分部轴、单季 context)。 */
-const cloudInstance = (
-  start: string,
-  end: string,
-) => `<?xml version="1.0"?><xbrl xmlns="http://www.xbrl.org/2003/instance">
+function cloudInstance(start: string, end: string) {
+  return `<?xml version="1.0"?><xbrl xmlns="http://www.xbrl.org/2003/instance">
 <unit id="usd"><measure>iso4217:USD</measure></unit>
 <context id="c-cloud"><entity><identifier scheme="s">0001652044</identifier><segment>
   <xbrldi:explicitMember dimension="us-gaap:StatementBusinessSegmentsAxis">goog:GoogleCloudMember</xbrldi:explicitMember>
 </segment></entity><period><startDate>${start}</startDate><endDate>${end}</endDate></period></context>
 <us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax contextRef="c-cloud" unitRef="usd">17664000000</us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax>
 </xbrl>`;
+}
 
 /** 无实例可读:兜底分支若被触发就抛,让「本该不走兜底」的测试失败而不是静默通过。 */
-const noInstance = async (): Promise<string> => {
+async function noInstance(): Promise<string> {
   throw new Error('本轮不该读申报实例');
-};
+}
 
-const filingOf = (filed: string | null) => (filed ? { filed, form: '10-Q', accn: `accn-${filed}` } : null);
+function filingOf(filed: string | null) {
+  return filed ? { filed, form: '10-Q', accn: `accn-${filed}` } : null;
+}
 
-const stubFetcher = (filed: string | null, onFacts?: (cik: string) => void) => ({
-  latestFiling: async () => filingOf(filed),
-  companyFacts: async (cik: string) => {
-    onFacts?.(cik);
-    return cik === MSFT_CIK ? MSFT_FACTS : NVDA_FACTS;
-  },
-  filingInstance: noInstance,
-});
+function stubFetcher(filed: string | null, onFacts?: (cik: string) => void) {
+  return {
+    latestFiling: async () => filingOf(filed),
+    companyFacts: async (cik: string) => {
+      onFacts?.(cik);
+      return cik === MSFT_CIK ? MSFT_FACTS : NVDA_FACTS;
+    },
+    filingInstance: noInstance,
+  };
+}
 
 // 一卖一买,且两者都在启用名单里。
 const BOTH = { tickers: ['NVDA', 'MSFT'], activeTickers: ['NVDA', 'MSFT'] };

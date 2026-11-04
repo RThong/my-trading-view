@@ -1,0 +1,45 @@
+language js
+
+// 顶层具名函数统一用 function 声明(提升、堆栈带名、读起来像定义);回调 / 内联 / 局部函数仍用箭头。
+// Biome 内置 nursery/useConsistentFunctionStyle 没有 fix,且会连函数体内的局部箭头一起报,故自写带 rewrite 的插件。
+// 只认「单个声明符、无类型注解」:`const f: Handler = …` 改不成声明;`const a = …, b = …` 整句替换会丢掉 b。
+// 用例见同目录 function-declaration.test.ts,改这里先加 case。
+`const $name = $fn` as $decl where {
+  // 代码块 / switch 里的函数声明是块级的,作用域语义与 const 不同,只管真正的顶层
+  $decl <: not within or {
+    JsFunctionBody(),
+    JsClassDeclaration(),
+    JsClassExpression(),
+    JsBlockStatement(),
+    JsSwitchStatement()
+  } ,
+  $fn <: JsArrowFunctionExpression(type_parameters=$tp, parameters=$params, return_type_annotation=$ret, body=$body),
+  // 箭头的 this / super / arguments 是词法绑定,改成 function 会变义
+  $fn <: not contains or {
+    JsThisExpression(),
+    JsSuperExpression(),
+    `arguments`
+  },
+  // async 不是可取的字段,只能看源码前缀;要求后跟空白或括号,免得把 `asyncX => …` 认成 async。
+  // ⚠️ 本文件的正则一律不用 `(…)` 分组:grit 把分组当捕获,写了会让整条匹配静默失败
+  if ($fn <: r"async[\s(<][\s\S]*") { $async = `async ` } else { $async = `` },
+  // 单参数可省括号:`x => …`
+  if ($params <: JsParameters()) { $p = $params } else { $p = `($params)` },
+  // 表达式体补 return;`({ … })` 的括号留给格式化去掉,括号里的注释才不丢
+  if ($body <: JsFunctionBody()) { $b = $body } else { $b = `{ return $body; }` },
+  // rewrite 只搬各部件的文本,部件之间的注释(= 后、=> 前后)会丢 → 只报错不改,留给人手改
+  // 宁可误判(块体里别处出现 `=> //` 也会算)也不丢注释:误判只是少一次自动修复
+  if (or {
+    $decl <: r"const\s+[\w$]+\s*=\s*//[\s\S]*",
+    $decl <: r"const\s+[\w$]+\s*=\s*/\*[\s\S]*",
+    $fn <: r"[\s\S]*\*/\s*=>[\s\S]*",
+    $fn <: r"[\s\S]*//[^\n]*\n\s*=>[\s\S]*",
+    $fn <: r"[\s\S]*=>\s*//[\s\S]*",
+    $fn <: r"[\s\S]*=>\s*/\*[\s\S]*"
+  }) {
+    register_diagnostic(span=$name, message="顶层具名函数用 function 声明(此处有注释会被搬丢,请手改)", severity="error")
+  } else {
+    register_diagnostic(span=$name, message="顶层具名函数用 function 声明(`bun run format` 可自动修复)", severity="error", fix_kind="safe"),
+    $decl => `$async function $name$tp$p$ret $b`
+  }
+}

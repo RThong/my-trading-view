@@ -16,11 +16,13 @@ function freshDb(): Database {
  * 消失了 —— 公司把它标成了自定义概念 `nvda:PurchasesOfPropertyAndEquipmentAndIntangibleAssets`,
  * 而 companyfacts 只聚合标准 taxonomy。
  */
-const ytd = (tag: string, vals: Array<[string, number]>) => ({
-  units: {
-    USD: vals.map(([end, val]) => ({ start: '2022-01-31', end, val, accn: 'cf', form: '10-Q', filed: '2022-11-18' })),
-  },
-});
+function ytd(tag: string, vals: Array<[string, number]>) {
+  return {
+    units: {
+      USD: vals.map(([end, val]) => ({ start: '2022-01-31', end, val, accn: 'cf', form: '10-Q', filed: '2022-11-18' })),
+    },
+  };
+}
 
 const FACTS: CompanyFacts = {
   facts: {
@@ -43,12 +45,14 @@ const FACTS: CompanyFacts = {
 };
 
 /** 只含 extension 那个元素的实例(结构照真实 inline XBRL 抽出来的最小片段)。 */
-const instance = (end: string, val: number) => `<?xml version="1.0"?>
+function instance(end: string, val: number) {
+  return `<?xml version="1.0"?>
 <xbrl xmlns:us-gaap="http://fasb.org/us-gaap" xmlns:nvda="http://nvidia.com">
   <context id="c1"><period><startDate>2022-01-31</startDate><endDate>${end}</endDate></period></context>
   <unit id="usd"><measure>iso4217:USD</measure></unit>
   <nvda:PurchasesOfPropertyAndEquipmentAndIntangibleAssets contextRef="c1" unitRef="usd">${val}</nvda:PurchasesOfPropertyAndEquipmentAndIntangibleAssets>
 </xbrl>`;
+}
 
 const INSTANCES: Record<string, string> = {
   q1: instance('2022-05-01', 361e6),

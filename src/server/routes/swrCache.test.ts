@@ -22,7 +22,9 @@ function setup(results: ({ value: string; complete: boolean } | Error)[], snapsh
   return { cache, prevs, tick: (ms: number) => (t += ms) };
 }
 
-const flush = () => new Promise((r) => setTimeout(r, 0));
+function flush() {
+  return new Promise((r) => setTimeout(r, 0));
+}
 
 test('真冷:等一次 load;未过期再取不重拉', async () => {
   const { cache, prevs } = setup([{ value: 'a', complete: true }]);

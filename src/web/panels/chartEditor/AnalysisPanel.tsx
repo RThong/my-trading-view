@@ -43,9 +43,12 @@ export function resolvePair(doc: ChartDoc, pair: { a?: string; b?: string }): { 
 }
 
 /** A / B 未平移、未聚合的日线原序列请求(找偏移要逐交易日平移;页面据此多取一份数据)。 */
-const rawRequest = (l: Layer) => ({ series: l.series, shift: 0, daily: true as const });
-export const pairRequests = (pair: { a?: Layer; b?: Layer }) =>
-  [pair.a, pair.b].filter((l) => l !== undefined).map(rawRequest);
+function rawRequest(l: Layer) {
+  return { series: l.series, shift: 0, daily: true as const };
+}
+export function pairRequests(pair: { a?: Layer; b?: Layer }) {
+  return [pair.a, pair.b].filter((l) => l !== undefined).map(rawRequest);
+}
 
 // 右侧「分析」区:选两条线 A / B,叠加对比(B 按 A 的刻度叠上去)。
 export function AnalysisPanel({ doc, points, visibleRange, pair, onPair, actions }: Props) {
@@ -170,7 +173,9 @@ const FAIL_TEXT: Record<Segment['fails'][number], (sg: Segment) => string> = {
   level: (sg) => `整体走势 ${sg.rl.toFixed(2)}(要求同向且 ≥ ${OVERLAY_RULES.levelMin})`,
 };
 
-const yearsText = (months: number) => (months >= 12 ? `${(months / 12).toFixed(1)} 年` : `${Math.round(months)} 个月`);
+function yearsText(months: number) {
+  return months >= 12 ? `${(months / 12).toFixed(1)} 年` : `${Math.round(months)} 个月`;
+}
 
 // 结果分行:一行一项,标签一列、数值一列,扫一眼就能找到要看的那项
 function Rows({ rows }: { rows: [keyof typeof ROW_HELP, string][] }) {
@@ -200,10 +205,13 @@ const ROW_HELP = {
 } as const;
 
 /** 方向的说法按 B 轴实际倒没倒:A 轴本来就倒着时,反向的 B 反而不用倒。 */
-export const directionText = (beta: number, bInverted: boolean, b: string) =>
-  beta >= 0 ? '同向' : bInverted ? `反向,${b} 的轴已倒过来` : `反向(A 的轴已倒,${b} 不用倒)`;
+export function directionText(beta: number, bInverted: boolean, b: string) {
+  return beta >= 0 ? '同向' : bInverted ? `反向,${b} 的轴已倒过来` : `反向(A 的轴已倒,${b} 不用倒)`;
+}
 
-const pairKey = (a: Layer, b: Layer) => `${a.series}|${b.series}`;
+function pairKey(a: Layer, b: Layer) {
+  return `${a.series}|${b.series}`;
+}
 
 function OverlayNote({ shown: { res, aShift, invert }, a, b }: { shown: ShownResult; a: string; b: string }) {
   const date = (d: string) => shiftBusinessDays(d, aShift);

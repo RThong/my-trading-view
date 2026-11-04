@@ -2,12 +2,14 @@ import { expect, test } from 'bun:test';
 import type { Pane } from './chartDoc';
 import { distToSpan, nativeScale, nearest, shiftRange } from './useLineDrag';
 
-const pane = (scales: string[]): Pane => ({
-  id: 'p1',
-  stretch: 1,
-  scales: [],
-  layers: scales.map((scale, i) => ({ id: `l${i}`, series: 'SPY', scale, color: '#000000' })),
-});
+function pane(scales: string[]): Pane {
+  return {
+    id: 'p1',
+    stretch: 1,
+    scales: [],
+    layers: scales.map((scale, i) => ({ id: `l${i}`, series: 'SPY', scale, color: '#000000' })),
+  };
+}
 
 test('nativeScale:右轴有线就是右轴,否则左轴', () => {
   expect(nativeScale(pane(['left', 'right']))).toBe('right');

@@ -3,6 +3,8 @@
   // 复用 .gitignore;再显式排除 vendor(第三方二进制)/ data(数据库)/ dist(构建产物)
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": { "includes": ["**", "!!**/dist", "!!**/vendor", "!!**/data"] },
+  // 顶层具名函数用 function 声明,带自动修复(规则与豁免见插件文件头注释)
+  "plugins": ["./biome-plugins/function-declaration.grit"],
   // 对齐项目现有风格:2 空格缩进、行宽 120(比默认 80 宽,少折密集行)
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 120 },
   // 认 Tailwind v4 的 @theme 等指令(styles.css 里给 shadcn 组件定义颜色变量)

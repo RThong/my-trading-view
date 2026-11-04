@@ -58,11 +58,13 @@ export function staleSectors(latest: Record<IsmSector, string | null>, now: Date
 
 type Fetcher = ReturnType<typeof createIsmFetcher>;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 /** 发布件 → 四行(上月在前、当月在后;调用方已按报告月升序排好)。 */
-const rowsOf = (r: IsmRelease) =>
-  [
+function rowsOf(r: IsmRelease) {
+  return [
     { month: r.prevMonth, v: r.pmi.prev, id: ISM_SERIES[r.sector].pmi },
     { month: r.prevMonth, v: r.prices.prev, id: ISM_SERIES[r.sector].prices },
     { month: r.month, v: r.pmi.cur, id: ISM_SERIES[r.sector].pmi },
@@ -70,6 +72,7 @@ const rowsOf = (r: IsmRelease) =>
   ]
     .filter((x) => x.month >= HISTORY_START_DATE)
     .map((x) => ({ seriesId: x.id, obsDate: x.month, value: x.v }));
+}
 
 export async function updateIsm(
   db: Database,

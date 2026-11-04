@@ -2,14 +2,18 @@ import { describe, test, expect } from 'bun:test';
 import { fetchBitstampBtcDaily } from './bitstampBtcHistory';
 
 const DAY = 86_400;
-const ts = (date: string) => Math.floor(Date.parse(`${date}T00:00:00Z`) / 1000);
-const bar = (t: number) => ({
-  timestamp: String(t),
-  open: '100',
-  high: '110',
-  low: '90',
-  close: '105',
-});
+function ts(date: string) {
+  return Math.floor(Date.parse(`${date}T00:00:00Z`) / 1000);
+}
+function bar(t: number) {
+  return {
+    timestamp: String(t),
+    open: '100',
+    high: '110',
+    low: '90',
+    close: '105',
+  };
+}
 
 /** 打桩 fetch:每页从 start 起连发 n 根日线;pageRows 决定第几页给几根(0 = 空页)。 */
 function stubFetch(pageRows: number[]) {

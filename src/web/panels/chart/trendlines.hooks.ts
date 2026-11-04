@@ -22,7 +22,9 @@ import { useStable } from '../../hooks/useStable';
 const HIT_PX = 6; // 命中线(hover/选中)阈值
 const HANDLE_PX = 9; // 命中端点手柄(拖拽)阈值
 // v2:锚点用 logical(线能画进空白区),旧 time 格式不兼容,换 key。
-const keyOf = (base: string, paneKey: string) => `mtv:trendlines2:${base}:${paneKey}`;
+function keyOf(base: string, paneKey: string) {
+  return `mtv:trendlines2:${base}:${paneKey}`;
+}
 
 type Hot = { paneKey: string; index: number; end: 'a' | 'b' };
 

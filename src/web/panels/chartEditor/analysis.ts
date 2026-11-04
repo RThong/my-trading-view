@@ -6,8 +6,12 @@ const DAY_MS = 86_400_000;
 // 1970-01-05 是周一:以它为原点数「第几个工作日」
 const MONDAY_EPOCH = Date.UTC(1970, 0, 5);
 
-const toDayNum = (date: string) => Math.round((Date.parse(`${date}T00:00:00Z`) - MONDAY_EPOCH) / DAY_MS);
-const fromDayNum = (n: number) => new Date(MONDAY_EPOCH + n * DAY_MS).toISOString().slice(0, 10);
+function toDayNum(date: string) {
+  return Math.round((Date.parse(`${date}T00:00:00Z`) - MONDAY_EPOCH) / DAY_MS);
+}
+function fromDayNum(n: number) {
+  return new Date(MONDAY_EPOCH + n * DAY_MS).toISOString().slice(0, 10);
+}
 
 /** 按交易日平移(日序号版,内部批量用)。周六 / 周日先当下周一,再挪 n 个工作日。 */
 function shiftDay(day: number, n: number): number {
@@ -23,7 +27,9 @@ function shiftDay(day: number, n: number): number {
  * 按交易日(周一~周五,不管节假日)平移 n 天,n > 0 往后。周末日期先顺延到周一再平移 ——
  * 按自然日平移会落到周末,时间轴上凭空多出周末空位(见 tenorHistory 的 weekdayOnly 说明)。
  */
-export const shiftBusinessDays = (date: string, n: number): string => fromDayNum(shiftDay(toDayNum(date), n));
+export function shiftBusinessDays(date: string, n: number): string {
+  return fromDayNum(shiftDay(toDayNum(date), n));
+}
 
 /** 整条序列平移 n 个交易日。周末顺延可能让两点撞到同一天,保留后一个(lw-charts 不许时间重复)。 */
 export function shiftPoints(points: LinePoint[], n: number): LinePoint[] {
@@ -37,15 +43,17 @@ export type Pair = { time: string; a: number; b: number };
 
 // 内部批量计算用日序号,避免扫描时每步重复解析日期字符串
 type DayPoint = { day: number; value: number };
-const toDays = (points: LinePoint[]): DayPoint[] => points.map((p) => ({ day: toDayNum(p.time), value: p.value }));
+function toDays(points: LinePoint[]): DayPoint[] {
+  return points.map((p) => ({ day: toDayNum(p.time), value: p.value }));
+}
 
-const medianGapDays = (points: DayPoint[]): number => {
+function medianGapDays(points: DayPoint[]): number {
   const gaps = points
     .slice(1)
     .map((p, i) => p.day - points[i].day)
     .sort((x, y) => x - y);
   return gaps.length ? gaps[gaps.length >> 1] : 1;
-};
+}
 
 type DayPair = { day: number; a: number; b: number };
 
@@ -73,8 +81,9 @@ function alignDays(a: DayPoint[], b: DayPoint[]): DayPair[] {
  * 两条线按日期配对。以点少(频率低)的那条为基准日期,另一条取「当天或之前最近的值」;
  * 最近值太旧(超过 7 天,或超过它自身中位间隔的 1.6 倍)就跳过这一天,免得拿几个月前的值硬配。
  */
-export const alignPairs = (a: LinePoint[], b: LinePoint[]): Pair[] =>
-  alignDays(toDays(a), toDays(b)).map((p) => ({ time: fromDayNum(p.day), a: p.a, b: p.b }));
+export function alignPairs(a: LinePoint[], b: LinePoint[]): Pair[] {
+  return alignDays(toDays(a), toDays(b)).map((p) => ({ time: fromDayNum(p.day), a: p.a, b: p.b }));
+}
 
 /**
  * 配对点换成各自 horizon 期的变化(按变化算相关:直接拿数值算,两条都有长期趋势时会虚高)。
@@ -142,10 +151,11 @@ export function lagScan(
 }
 
 /** 扫描结果里相关性绝对值最大的那一步(正负都算「像」)。全是 NaN → undefined。 */
-export const strongestLag = (scan: LagPoint[]): LagPoint | undefined =>
-  scan
+export function strongestLag(scan: LagPoint[]): LagPoint | undefined {
+  return scan
     .filter((p) => Number.isFinite(p.r))
     .reduce<LagPoint | undefined>((best, p) => (!best || Math.abs(p.r) > Math.abs(best.r) ? p : best), undefined);
+}
 
 export type FitParams = { alpha: number; beta: number; r: number; n: number };
 
@@ -213,11 +223,12 @@ export type Segment = {
 };
 
 /** lo 到 hi(含)每隔 st 一个整数。 */
-const seq = (lo: number, hi: number, st: number) =>
-  Array.from({ length: Math.max(0, Math.floor((hi - lo) / st) + 1) }, (_, k) => lo + k * st);
+function seq(lo: number, hi: number, st: number) {
+  return Array.from({ length: Math.max(0, Math.floor((hi - lo) / st) + 1) }, (_, k) => lo + k * st);
+}
 
 /** 「约一个月的变化」换成配对点数:按配对点的中位间隔折算,周 / 月频序列照样能算。 */
-const changeHorizon = (pairs: Pair[]) => {
+function changeHorizon(pairs: Pair[]) {
   // 间隔按交易日量(CHANGE_SPAN 是交易日):日频 1、周频 5、月频约 21
   const gaps = pairs
     .slice(1)
@@ -225,17 +236,17 @@ const changeHorizon = (pairs: Pair[]) => {
     .sort((x, y) => x - y);
   const gap = Math.max(1, gaps[gaps.length >> 1] ?? 1);
   return Math.max(1, Math.round(CHANGE_SPAN / gap));
-};
+}
 
 /** 两个日期之间隔了几个交易日(周末算到下周一,同 shiftDay)。 */
-const bizDaysBetween = (from: string, to: string) => {
+function bizDaysBetween(from: string, to: string) {
   const idx = (date: string) => {
     const day = toDayNum(date);
     const week = Math.floor(day / 7);
     return week * 5 + Math.min(day - week * 7, 5);
   };
   return idx(to) - idx(from);
-};
+}
 
 /** 前缀和:之后任意 [i, j) 段的皮尔逊相关 O(1)(候选段上万个,逐段重算太慢)。 */
 function corrPrefix(pairs: Pair[]): (i: number, j: number) => number {

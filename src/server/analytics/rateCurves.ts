@@ -7,8 +7,9 @@ export { AI_CDS, CREDIT_RATING, CREDIT_TERM, ERIS_OIS_TENORS } from '../../share
 
 // 已抓到的 ticker 集合里,缺哪些 core 标的(→ 显示名)。空 = 默认篮子齐,job success;
 // 非空 = ICE 端点可能改了 ticker,让 job failed 告警(非 core 的 Broadcom/Dell/Intel/CoreWeave/SpaceX 缺失容忍)。
-export const missingCoreCds = (gotTickers: Set<string>): string[] =>
-  AI_CDS.filter((c) => c.core && !gotTickers.has(c.ticker)).map((c) => c.name);
+export function missingCoreCds(gotTickers: Set<string>): string[] {
+  return AI_CDS.filter((c) => c.core && !gotTickers.has(c.ticker)).map((c) => c.name);
+}
 
 // ICE 给的是「价」(eodPrice,固定票息合约,平价 100)。换成市场报价口径的约定 spread(bp),
 // 按 ISDA 报价惯例的思路:违约强度恒定 λ = s / (1 − R),回收率 R = 40%;
@@ -21,16 +22,16 @@ const CDS_RECOVERY = 0.4;
 const CDS_RATE = 0.04;
 const CDS_TENOR_Y = 5;
 
-const cdsPrice = (spreadBp: number, coupon: number): number => {
+function cdsPrice(spreadBp: number, coupon: number): number {
   const k = CDS_RATE + spreadBp / 1e4 / (1 - CDS_RECOVERY);
   const rpv01 = (1 - Math.exp(-k * CDS_TENOR_Y)) / k;
 
   return 100 - ((spreadBp - coupon) / 100) * rpv01;
-};
+}
 
 // s → ∞ 时价趋近回收价 100×R:价 ≤ 回收价 = 模型无解(市场已按即刻违约定价)→ NaN,由调用方丢点。
 // 上界按需倍增,深困境区不被截断。
-export const cdsPriceToSpreadBp = (price: number, coupon = 100): number => {
+export function cdsPriceToSpreadBp(price: number, coupon = 100): number {
   // 价 ≥ s=0 的理论价 = 负 spread,同样无解(多半是源数据错位),不静默吐 0bp。
   if (!(price > 100 * CDS_RECOVERY) || price >= cdsPrice(0, coupon)) return Number.NaN;
 
@@ -44,7 +45,7 @@ export const cdsPriceToSpreadBp = (price: number, coupon = 100): number => {
   }
 
   return (lo + hi) / 2;
-};
+}
 
 // 通胀预期曲线:BEI 盈亏平衡通胀 = 名义国债 − 同期限 TIPS 实际收益 = 市场为通胀定的价
 // (前瞻,领先 CPI)。FRED 只现成发布 5Y/10Y breakeven,故各档两腿自减现算,拼出完整 5–30Y 曲线。

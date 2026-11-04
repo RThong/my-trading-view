@@ -98,7 +98,9 @@ test('DB_BACKED_KEYS 等于 readDbBacked 实际产出的 key 全集', () => {
   }
 });
 
-const ok = (u: string[], hasEiaKey: boolean, hasEstatKey = true) => shouldCache(u, { hasEiaKey, hasEstatKey });
+function ok(u: string[], hasEiaKey: boolean, hasEstatKey = true) {
+  return shouldCache(u, { hasEiaKey, hasEstatKey });
+}
 
 test('shouldCache:全成功 → 缓存', () => {
   expect(ok([], true)).toBe(true);

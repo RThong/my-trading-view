@@ -8,7 +8,9 @@ const prices: AlignedRow[] = [
   { date: 'd2', qqq: 99, tqqq: 10.4 }, // qqq -10%, tqqq -20%
 ];
 
-const st = (panic: boolean, greed: boolean): DayState => ({ date: '', panic, greed });
+function st(panic: boolean, greed: boolean): DayState {
+  return { date: '', panic, greed };
+}
 const base: EngineConfig = {
   tqqqSleeve: 0.3,
   cashSleeve: 0.2,

@@ -1,7 +1,9 @@
 import { describe, test, expect } from 'bun:test';
 import { monthlyExpiry, nextMonthlyExpiry } from './monthlyExpiry';
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+function iso(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
 
 describe('monthlyExpiry', () => {
   test('ETF:第三个周五', () => {

@@ -2,8 +2,12 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { listQuarterly6K, numsInRow, toCompanyFacts, type FsFiling } from './sec6k';
 import { extractFundamentals } from '../analytics/secFundamentals';
 
-const filing = (periodEnd: string, accn = 'a', filed = '2026-01-01'): FsFiling => ({ accn, filed, periodEnd });
-const vals = (revenue: number) => ({ revenue, cogs: 1, ocf: 1, capex: 1 });
+function filing(periodEnd: string, accn = 'a', filed = '2026-01-01'): FsFiling {
+  return { accn, filed, periodEnd };
+}
+function vals(revenue: number) {
+  return { revenue, cogs: 1, ocf: 1, capex: 1 };
+}
 
 describe('toCompanyFacts:单季口径的起始日', () => {
   test('起点取上一期期末的次日 —— 13 周财季的季末不落在月末', () => {

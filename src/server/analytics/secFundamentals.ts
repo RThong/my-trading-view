@@ -130,7 +130,9 @@ const CAPEX_SCOPE: Record<string, CapexScope> = {
   PaymentsToAcquirePropertyPlantAndEquipment: 'ppe',
   PaymentsToAcquireProductiveAssets: 'productive_assets',
 };
-export const capexScopeOf = (tagUsed: string): CapexScope | undefined => CAPEX_SCOPE[tagUsed];
+export function capexScopeOf(tagUsed: string): CapexScope | undefined {
+  return CAPEX_SCOPE[tagUsed];
+}
 
 /** 四个科目缺一个就算不出 FCF(ocf−capex)或毛利率((revenue−cogs)/revenue)。job 的完整性守卫用。
  *  从 TAG_CHAINS 的键派生而非手写:加第 5 个科目时漏改会变成「静默不抽取」,正是要防的那类错。 */
@@ -159,13 +161,19 @@ export const SEGMENT_CONCEPTS = Object.keys(SEGMENT_TAG) as SegmentConcept[];
  * 放开 6-K 对本土申报人零影响:它们不交 6-K。8-K 仍然挡着(那是事件报告,
  * 里面的数常是未经核阅的初步值)。
  */
-const isPeriodicForm = (form: string): boolean => /^(10-[QK](\/A)?|20-F(\/A)?|6-K)$/.test(form);
+function isPeriodicForm(form: string): boolean {
+  return /^(10-[QK](\/A)?|20-F(\/A)?|6-K)$/.test(form);
+}
 const DAY_MS = 86_400_000;
 
-const durationDays = (start: string, end: string): number => (Date.parse(end) - Date.parse(start)) / DAY_MS;
+function durationDays(start: string, end: string): number {
+  return (Date.parse(end) - Date.parse(start)) / DAY_MS;
+}
 
 /** 一个季度 80~100 天(13~14 周,各家财年周历不同)。YTD 各档为 181 / 272 / 363,差分后同样落这个区间。 */
-const isQuarterLength = (d: number): boolean => d >= 80 && d <= 100;
+function isQuarterLength(d: number): boolean {
+  return d >= 80 && d <= 100;
+}
 
 type Period = { start: string; end: string; val: number; tag: string; form: string; accn: string; filed: string };
 
@@ -221,7 +229,9 @@ const CONFLICT_EXEMPT = new Set([
   'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations|NetCashProvidedByUsedInOperatingActivities',
 ]);
 
-const exemptPair = (a: string, b: string) => CONFLICT_EXEMPT.has(`${a}|${b}`) || CONFLICT_EXEMPT.has(`${b}|${a}`);
+function exemptPair(a: string, b: string) {
+  return CONFLICT_EXEMPT.has(`${a}|${b}`) || CONFLICT_EXEMPT.has(`${b}|${a}`);
+}
 
 /**
  * 同一期间被链里两个 tag 同时覆盖、**值还不一样** → 口径可能变了(或某档是子项 / 同名不同义),
@@ -281,7 +291,9 @@ export function tagConflicts(facts: CompanyFacts): TagConflict[] {
 const FINANCE_LEASE_ADD_TAG = 'RightOfUseAssetObtainedInExchangeForFinanceLeaseLiability';
 
 /** 一个财年 350~380 天(各家财年周历不同,52/53 周都有)。 */
-const isFiscalYearLength = (d: number): boolean => d >= 350 && d <= 380;
+function isFiscalYearLength(d: number): boolean {
+  return d >= 350 && d <= 380;
+}
 
 /**
  * 最近一个完整财年的「融资租赁新增 ROU / 现金 capex」。任一方缺该财年 → undefined(不猜)。
@@ -398,7 +410,9 @@ const EXPLICIT_MEMBER_RE = /<(?:[\w.-]+:)?explicitMember[^>]*\sdimension=["']([^
 const ANY_DIMENSION_RE = /\sdimension\s*=\s*["']/g;
 
 /** 维度标识 = `轴|成员`。两者必须成对比,别拆开。 */
-const dimKey = (axis: string, member: string) => `${axis}|${member}`;
+function dimKey(axis: string, member: string) {
+  return `${axis}|${member}`;
+}
 
 type Ctx = { start: string; end: string; member?: string };
 
@@ -693,7 +707,9 @@ function yoyByQuarter(quarters: QuarterPoint[]): QuarterPoint[] {
  * 上限:某家真有一季 capex 恰好为 0 会被误丢。当前名单全是重资产大盘股,四个科目都不可能。
  * 哪天进了轻资产标的,这里要改成按 concept 区分。
  */
-const dropSuspectZero = (rows: SecFundamentalRow[]): SecFundamentalRow[] => rows.filter((r) => r.value !== 0);
+function dropSuspectZero(rows: SecFundamentalRow[]): SecFundamentalRow[] {
+  return rows.filter((r) => r.value !== 0);
+}
 
 /** 单季行 → 三条 TTM 派生量。毛利率单位百分点,金额单位百万美元。 */
 export function deriveSeries(rows: SecFundamentalRow[]): DerivedSeries {
@@ -741,7 +757,9 @@ const SERIES_SUFFIX: Record<SeriesKind, string> = {
   CAPEXCLOUD: 'CAPEX_CLOUD_Q',
 };
 
-export const seriesId = (ticker: string, kind: SeriesKind): string => `SEC_${ticker}_${SERIES_SUFFIX[kind]}`;
+export function seriesId(ticker: string, kind: SeriesKind): string {
+  return `SEC_${ticker}_${SERIES_SUFFIX[kind]}`;
+}
 /** §6.14 判据线:**只汇总买方**(见 shared/aiChain 的 side)。卖方混进来会让「跌破零轴」永远不成立。 */
 export const BUYER_FCF_SERIES = 'SEC_BUYER_FCF_TTM';
 /** 买方**单季** FCF 合计:判据「跌破零轴」的早期读数(TTM 晚半年)。 */

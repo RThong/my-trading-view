@@ -57,13 +57,15 @@ export type SeriesMeta = {
   chartable?: false;
 };
 
-const daily = (category: SeriesCategory, label: string, unit?: string, aliases?: string[]): SeriesMeta => ({
-  label,
-  category,
-  freq: '日',
-  ...(unit && { unit }),
-  ...(aliases && { aliases }),
-});
+function daily(category: SeriesCategory, label: string, unit?: string, aliases?: string[]): SeriesMeta {
+  return {
+    label,
+    category,
+    freq: '日',
+    ...(unit && { unit }),
+    ...(aliases && { aliases }),
+  };
+}
 
 export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   // ── 资产

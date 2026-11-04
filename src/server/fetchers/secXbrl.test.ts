@@ -1,8 +1,9 @@
 import { describe, test, expect, beforeEach, afterAll } from 'bun:test';
 import { createSecFetcher } from './secXbrl';
 
-const json = (body: unknown) =>
-  new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+function json(body: unknown) {
+  return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+}
 
 // UA 从 env 读:测试自己设,别依赖本机 .env(否则 CI / 干净环境上会莫名其妙失败)。
 const REAL_UA = process.env.SEC_USER_AGENT;

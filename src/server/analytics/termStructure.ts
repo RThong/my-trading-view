@@ -23,8 +23,9 @@ export function computeSpread(
  *
  * 同一 tab 里的两格(VX1−V3 与 VIX−VIX3M)都走这里,方向因此不可能不一致。
  */
-export const nearMinusFar = (legs: {
+export function nearMinusFar(legs: {
   near: Array<{ date: string; value: number }>;
   far: Array<{ date: string; value: number }>;
-}): Array<{ date: string; value: number }> =>
-  computeSpread(legs.near, legs.far).map((r) => ({ date: r.date, value: r.spread }));
+}): Array<{ date: string; value: number }> {
+  return computeSpread(legs.near, legs.far).map((r) => ({ date: r.date, value: r.spread }));
+}

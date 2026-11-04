@@ -10,7 +10,9 @@ function freshDb(): Database {
   return db;
 }
 
-const bar = (date: string, close: number) => ({ date, open: close, high: close, low: close, close });
+function bar(date: string, close: number) {
+  return { date, open: close, high: close, low: close, close };
+}
 
 describe('updateBtcPrice', () => {
   let db: Database;

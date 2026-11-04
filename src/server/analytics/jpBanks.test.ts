@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { betaLegs, depositBeta, jpBankSpreads, monthlyMean } from './jpBanks';
 
-const m = (date: string, value: number) => ({ date, value });
+function m(date: string, value: number) {
+  return { date, value };
+}
 
 describe('monthlyMean', () => {
   test('按月分组,记当月 1 日', () => {

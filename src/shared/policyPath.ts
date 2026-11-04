@@ -56,7 +56,9 @@ function addMonths(iso: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-const act360 = (from: string, to: string) => (Date.parse(to) - Date.parse(from)) / 86_400_000 / 360;
+function act360(from: string, to: string) {
+  return (Date.parse(to) - Date.parse(from)) / 86_400_000 / 360;
+}
 
 /**
  * par 曲线(期限 → 百分点)→ 分段远期。某档缺失则从那一档起截断(后面的 bootstrap 依赖它)。
@@ -109,7 +111,9 @@ export function oisForwards(par: Readonly<Record<string, number>>, asOf: string)
 }
 
 /** 相对基准累计计入几次 25bp(负 = 降息)。 */
-export const hikesPriced = (forward: number, base: number) => (forward - base) / HIKE_SIZE;
+export function hikesPriced(forward: number, base: number) {
+  return (forward - base) / HIKE_SIZE;
+}
 
 /**
  * 某日的远期:在相邻两段的**中点**之间线性插值(首段中点之前 / 末段中点之后取该段值);超出曲线 → null。

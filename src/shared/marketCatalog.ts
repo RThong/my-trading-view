@@ -71,34 +71,40 @@ export const MARKET_CATALOG: MarketAsset[] = [
 ];
 
 /** 期权链要另抓第二档(月度)到期日的标的。 */
-export const secondExpiryUnderlyings = (): string[] =>
-  MARKET_CATALOG.filter((a) => a.secondExpiry).map((a) => a.underlying);
+export function secondExpiryUnderlyings(): string[] {
+  return MARKET_CATALOG.filter((a) => a.secondExpiry).map((a) => a.underlying);
+}
 
 /** 某期权源的标的清单(moomoo / deribit 白名单;none = 仅价格如 NOBL)。 */
-export const optionUnderlyings = (source: MarketAsset['optionSource']): string[] =>
-  MARKET_CATALOG.filter((a) => a.optionSource === source).map((a) => a.underlying);
+export function optionUnderlyings(source: MarketAsset['optionSource']): string[] {
+  return MARKET_CATALOG.filter((a) => a.optionSource === source).map((a) => a.underlying);
+}
 
 export type VrpRecipe = { iv: string; spot: string; window: number; periodsPerYear: number };
 
 /** VRP 配方:underlying → { iv 指数, spot(=underlying), RV 窗口, 年化周期 }。 */
-export const vrpRecipes = (): Record<string, VrpRecipe> =>
-  Object.fromEntries(
+export function vrpRecipes(): Record<string, VrpRecipe> {
+  return Object.fromEntries(
     MARKET_CATALOG.filter((a) => a.vrp).map((a) => [
       a.underlying,
       { iv: a.vrp!.ivIndex, spot: a.underlying, window: a.vrp!.window, periodsPerYear: a.vrp!.periodsPerYear },
     ]),
   );
+}
 
 /** 前端图例:underlying → IV 指数名(SPY→VIX 等)。 */
-export const ivIndexByUnderlying = (): Record<string, string> =>
-  Object.fromEntries(MARKET_CATALOG.filter((a) => a.vrp).map((a) => [a.underlying, a.vrp!.ivIndex]));
+export function ivIndexByUnderlying(): Record<string, string> {
+  return Object.fromEntries(MARKET_CATALOG.filter((a) => a.vrp).map((a) => [a.underlying, a.vrp!.ivIndex]));
+}
 
 /** 走 Yahoo 抓现货价的标的:非指数、非 deribit(BTC 价由 crypto job 单独抓)。 */
-export const priceLegUnderlyings = (): string[] =>
-  MARKET_CATALOG.filter((a) => !a.index && a.optionSource !== 'deribit').map((a) => a.underlying);
+export function priceLegUnderlyings(): string[] {
+  return MARKET_CATALOG.filter((a) => !a.index && a.optionSource !== 'deribit').map((a) => a.underlying);
+}
 
 /** 从 CBOE 抓的 IV 指数腿:moomoo VRP 标的的 ivIndex,排除 VIX(它另经 VX 链路双写,不走这条)。 */
-export const cboeIvLegs = (): string[] =>
-  MARKET_CATALOG.filter((a) => a.vrp && a.optionSource === 'moomoo' && a.vrp.ivIndex !== 'VIX').map(
+export function cboeIvLegs(): string[] {
+  return MARKET_CATALOG.filter((a) => a.vrp && a.optionSource === 'moomoo' && a.vrp.ivIndex !== 'VIX').map(
     (a) => a.vrp!.ivIndex,
   );
+}

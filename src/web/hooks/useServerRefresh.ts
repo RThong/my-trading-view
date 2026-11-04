@@ -11,8 +11,9 @@ import { useEffect } from 'react';
 type ServerFlags = { refreshing?: boolean; partial?: boolean };
 
 /** 轮询间隔(ms,0 = 不轮询)。refreshing:后台刷新一般几秒~几十秒就完;partial:服务端 10 分钟一试,这边 5 分钟取一次把重试带起来。 */
-export const serverRefreshMs = (flags: ServerFlags): number =>
-  flags.refreshing ? 5000 : flags.partial ? 5 * 60 * 1000 : 0;
+export function serverRefreshMs(flags: ServerFlags): number {
+  return flags.refreshing ? 5000 : flags.partial ? 5 * 60 * 1000 : 0;
+}
 
 // 同一个 key 上次真正发出重取的时刻。keep-alive 的 tab 只藏不卸,同一 key 常有 N 个实例同时挂着,
 // 每个实例各开一个定时器;而 SWR 的 mutate 会先清掉在途标记、**不去重**(swr 2.4 MUTATE_EVENT → revalidate()),

@@ -6,6 +6,7 @@ import type { Interval } from '../../hooks/interval';
 import { aggregate, type LinePoint, type Bar } from '../../lib/chart';
 import { ivIndexByUnderlying } from '../../../shared/marketCatalog';
 import type { PaneDef, Spec, LineSpec } from '../chart/paneChart.types';
+import { getJson, SWR_OPTS } from '../../lib/http';
 
 export type OptRow = { date: string; callIv: number; putIv: number; skew: number };
 export type VrpRow = { date: string; iv: number; rv: number; vrp: number };
@@ -32,14 +33,6 @@ const HISTORY_DAYS = 3650;
 const NO_OPT: OptRow[] = [];
 const NO_VRP: VrpRow[] = [];
 const NO_PRICE: PriceBar[] = [];
-// EOD 数据一会话内视为不变:关掉全部自动重验。模块级常量,引用稳定。
-const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
-
-async function getJson<T>(url: string): Promise<T> {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(String(r.status));
-  return r.json() as Promise<T>;
-}
 
 /** pane 元数据 + series 短名(右轴 tag / 左上图例同一命名源)。所有 tab 顶部都有现货 pane;
  *  有 vrpUnderlying 的再加 隐含/RV + VRP 两个 pane。 */
@@ -80,17 +73,19 @@ export function paneConfig(vrpUnderlying?: string) {
   return { seriesName, paneDefs, desc, paneCount: paneDefs.length };
 }
 
-const toLine = (rows: Array<Record<string, unknown>>, key: string): LinePoint[] =>
-  rows.map((r) => ({ time: r.date as string, value: r[key] as number }));
+function toLine(rows: Array<Record<string, unknown>>, key: string): LinePoint[] {
+  return rows.map((r) => ({ time: r.date as string, value: r[key] as number }));
+}
 // OHLC 缺失(个别源)时退化成 close 的一字蜡烛,避免 setData 报错。
-export const toBars = (rows: PriceBar[]): Bar[] =>
-  rows.map((r) => ({
+export function toBars(rows: PriceBar[]): Bar[] {
+  return rows.map((r) => ({
     time: r.date,
     open: r.open ?? r.close,
     high: r.high ?? r.close,
     low: r.low ?? r.close,
     close: r.close,
   }));
+}
 
 /** 把数据按 interval 聚合成各 series 的 spec;pane 下标从 paneDefs 派生(谁含此 series)。 */
 export function buildSpecs(

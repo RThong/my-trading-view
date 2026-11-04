@@ -18,7 +18,9 @@ export function fetchWithTimeout(
 /** 标记「不该重试」的错误:源明确拒绝了(参数错、找不到标的),重试不会自愈。 */
 export class NonRetryableError extends Error {}
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 /**
  * 有限重试(再试 1 次,默认 1.5s 后)。**只给快照型源用** —— 那类源不可回填,

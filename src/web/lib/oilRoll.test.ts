@@ -2,11 +2,12 @@ import { describe, expect, it } from 'bun:test';
 import { rollMismatchDates, wtiExpiryByMonth } from './oilRoll';
 
 // 某月的交易日:工作日扣掉给定休市日
-const tradingDays = (month: string, holidays: string[] = [], upTo = 31) =>
-  Array.from({ length: upTo }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`).filter((d) => {
+function tradingDays(month: string, holidays: string[] = [], upTo = 31) {
+  return Array.from({ length: upTo }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`).filter((d) => {
     const dt = new Date(`${d}T00:00:00Z`);
     return dt.getUTCMonth() + 1 === Number(month.slice(5)) && dt.getUTCDay() % 6 !== 0 && !holidays.includes(d);
   });
+}
 
 describe('wtiExpiryByMonth', () => {
   it('25 号是周日 → 从周五往前数 3 个交易日(2026-10:11 月合约 10-20 到期,10-21 Yahoo 换月实测)', () => {

@@ -8,8 +8,9 @@ import type { ChartDoc } from './chartDoc';
 /** 各格绘图区顶边 + 绘图区左边(开了左轴时要让开刻度),相对图表容器的像素。 */
 export type LegendLayout = { tops: number[]; left: number };
 
-const sameLayout = (a: LegendLayout, b: LegendLayout) =>
-  a.left === b.left && a.tops.length === b.tops.length && a.tops.every((x, i) => x === b.tops[i]);
+function sameLayout(a: LegendLayout, b: LegendLayout) {
+  return a.left === b.left && a.tops.length === b.tops.length && a.tops.every((x, i) => x === b.tops[i]);
+}
 
 export function useCrosshairLegend(
   containerRef: RefObject<HTMLDivElement | null>,
@@ -75,8 +76,9 @@ export function useCrosshairLegend(
 }
 
 /** time 当天或之前最近一点的值(周 / 月频序列在日线十字线上按「截至当日」读)。time 为 null = 最新值。 */
-export const asOfValue = (points: LinePoint[] | undefined, time: string | null): number | undefined =>
-  asOfPoint(points, time)?.value;
+export function asOfValue(points: LinePoint[] | undefined, time: string | null): number | undefined {
+  return asOfPoint(points, time)?.value;
+}
 
 /** 同 asOfValue,但返回整个点(平移过的图层要靠它的日期反推原始日期)。 */
 export function asOfPoint(points: LinePoint[] | undefined, time: string | null): LinePoint | undefined {
