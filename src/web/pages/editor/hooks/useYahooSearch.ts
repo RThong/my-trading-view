@@ -1,7 +1,7 @@
 // 搜索框里的 Yahoo 代码搜索:停止输入 300ms 后才发请求,同一关键字 SWR 去重缓存。
 import { useEffect, useState } from 'react';
 import useSWR from 'swr';
-import { SWR_OPTS } from '../../lib/http';
+import { SWR_OPTS } from '../../../lib/http';
 
 export type YahooHit = { symbol: string; name: string; type: string; exchange: string };
 

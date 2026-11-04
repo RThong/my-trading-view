@@ -1,7 +1,7 @@
 // 从「文档 + 取到的序列数据」算出每个图层最终要画的点(平移后的序列)。渲染层与图例只认这里的结果,不再自己拼。
 import { useMemo } from 'react';
-import type { LinePoint } from '../../chart/core';
-import type { ChartDoc, Layer, Pane } from '../../views/chartDoc/chartDoc';
+import type { LinePoint } from '../../../chart/core';
+import type { ChartDoc, Layer, Pane } from '../../../views/chartDoc/chartDoc';
 import { requestKey } from './useEditorSeriesData';
 
 export type LayerData = {

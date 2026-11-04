@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { addLayer, EMPTY_DOC } from '../../views/chartDoc/chartDoc';
+import { addLayer, EMPTY_DOC } from '../../../views/chartDoc/chartDoc';
 import { parseSaved } from './useChartDoc';
 
 test('parseSaved:没有存档 / 坏 JSON / 校验不过都当空图,合法的原样还原', () => {

@@ -2,7 +2,7 @@
 // 不管 A 的轴是怎么变的(缩放时间触发的自动缩放、手动拖轴),照着它当前的范围换算,两条线就一直叠得上。
 import { type RefObject, useEffect, useRef } from 'react';
 import type { IChartApi, IPaneApi, Time } from 'lightweight-charts';
-import type { ChartDoc } from '../../views/chartDoc/chartDoc';
+import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
 import type { LayerSeries } from './useEditorChart';
 
 /** a ≈ alpha + beta × b 反过来:A 轴的范围对应的 B 轴范围(beta < 0 时上下颠倒,由 B 轴的倒轴抵消)。 */

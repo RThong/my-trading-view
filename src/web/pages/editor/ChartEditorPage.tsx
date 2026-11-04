@@ -1,22 +1,22 @@
 import { useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Copy, Upload } from 'lucide-react';
 import type { Interval } from '../../hooks/interval';
-import { AnalysisPanel, pairRequests, resolvePair } from './AnalysisPanel';
+import { AnalysisPanel, pairRequests, resolvePair } from './components/AnalysisPanel';
 import { type ChartDoc, EMPTY_DOC, parseChartDoc } from '../../views/chartDoc/chartDoc';
-import { EmptyState } from './EmptyState';
-import { layerRequest, useLayerData } from './layerPoints';
-import { LayerList } from './LayerList';
-import { Legend } from './Legend';
-import { SeriesPicker } from './SeriesPicker';
+import { EmptyState } from './components/EmptyState';
+import { layerRequest, useLayerData } from './hooks/layerPoints';
+import { LayerList } from './components/LayerList';
+import { Legend } from './components/Legend';
+import { SeriesPicker } from './components/SeriesPicker';
 import { seriesDef } from '../../views/chartDoc/registry';
-import { useChartDoc } from './useChartDoc';
-import { useCrosshairLegend } from './useCrosshairLegend';
-import { useEditorChart } from './useEditorChart';
-import { useEditorSeriesData } from './useEditorSeriesData';
-import { useBaseBand } from './useBaseBand';
-import { useFitSync } from './useFitSync';
-import { useLineDrag } from './useLineDrag';
-import { useVisibleRange } from './useVisibleRange';
+import { useChartDoc } from './hooks/useChartDoc';
+import { useCrosshairLegend } from './hooks/useCrosshairLegend';
+import { useEditorChart } from './hooks/useEditorChart';
+import { useEditorSeriesData } from './hooks/useEditorSeriesData';
+import { useBaseBand } from './hooks/useBaseBand';
+import { useFitSync } from './hooks/useFitSync';
+import { useLineDrag } from './hooks/useLineDrag';
+import { useVisibleRange } from './hooks/useVisibleRange';
 
 // 图表编辑页:空白图上自己挑序列、分格叠放、把一条线叠到另一条上看劈叉。只负责组装 ——
 // 状态见 useChartDoc,取数见 useEditorSeriesData,各图层最终数据见 layerPoints,渲染见 useEditorChart。

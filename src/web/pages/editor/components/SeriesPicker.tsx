@@ -26,9 +26,9 @@ import {
   searchSeries,
   seriesDef,
   yahooId,
-} from '../../views/chartDoc/registry';
-import { useVxContracts } from './useVxContracts';
-import { searchable, type YahooHit, useYahooSearch } from './useYahooSearch';
+} from '../../../views/chartDoc/registry';
+import { useVxContracts } from '../hooks/useVxContracts';
+import { searchable, type YahooHit, useYahooSearch } from '../hooks/useYahooSearch';
 
 type Props = {
   /** 已在图上的序列(按图层顺序),每条带图上的颜色 —— 输入区里一条一个标签 */

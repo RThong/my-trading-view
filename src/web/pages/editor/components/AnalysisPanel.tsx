@@ -1,13 +1,19 @@
 import { type ReactNode, useState } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { ChevronDown, ChevronRight, CircleHelp } from 'lucide-react';
-import type { LinePoint } from '../../chart/core';
-import { bestOverlay, OVERLAY_RULES, shiftBusinessDays, type OverlayResult, type Segment } from '../../chart/analysis';
-import { isFitTarget, type ChartDoc, type Layer } from '../../views/chartDoc/chartDoc';
-import { baseLabel } from './layerLabel';
-import type { ChartDocActions } from './useChartDoc';
-import { requestKey } from './useEditorSeriesData';
-import type { DateRange } from './useVisibleRange';
+import type { LinePoint } from '../../../chart/core';
+import {
+  bestOverlay,
+  OVERLAY_RULES,
+  shiftBusinessDays,
+  type OverlayResult,
+  type Segment,
+} from '../../../chart/analysis';
+import { isFitTarget, type ChartDoc, type Layer } from '../../../views/chartDoc/chartDoc';
+import { baseLabel } from '../layerLabel';
+import type { ChartDocActions } from '../hooks/useChartDoc';
+import { requestKey } from '../hooks/useEditorSeriesData';
+import type { DateRange } from '../hooks/useVisibleRange';
 
 type Props = {
   doc: ChartDoc;

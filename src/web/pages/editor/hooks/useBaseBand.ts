@@ -3,7 +3,7 @@
 // 线本身不画)。不用柱状图:柱与柱之间有缝,深色底上只剩一排细竖纹,看不出是一整段。
 import { type RefObject, useEffect } from 'react';
 import { AreaSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
-import type { ChartDoc } from '../../views/chartDoc/chartDoc';
+import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
 import type { LayerData } from './layerPoints';
 
 // 暖色:和蓝 / 绿等线色都拉得开,深色底上一眼能分出段内段外
