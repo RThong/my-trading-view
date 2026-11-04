@@ -38,6 +38,17 @@ describe('parseTreasuryPar', () => {
     expect(out['3M'][0]).toEqual({ date: '2018-12-31', value: 2.45 });
     expect(out['2M' as string]).toBeUndefined(); // 2Mo 非目标档,不收
   });
+
+  it('两列映射到同一期限时合并,不是后一列盖掉前一列', () => {
+    const csv = 'Date,"5 Yr","5 YR"\n07/29/2026,4.10,\n07/28/2026,,4.20';
+    const out = parseTreasuryPar(csv, { '5 Yr': '5Y', '5 YR': '5Y' });
+    expect(out).toEqual({
+      '5Y': [
+        { date: '2026-07-29', value: 4.1 },
+        { date: '2026-07-28', value: 4.2 },
+      ],
+    });
+  });
 });
 
 // 注入 fetch:按 URL 里的年份回 CSV。csvByYear 指定的年份回指定内容,failYears 回 500,

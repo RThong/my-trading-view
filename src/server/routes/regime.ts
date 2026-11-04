@@ -363,11 +363,9 @@ function oisParByDate(db: Database): Map<string, Record<string, number>> {
     getMarketSeries(db, `ERIS_OIS_${tenor}`).map((p) => ({ tenor, ...p })),
   );
 
-  // 已有日期 set 不改位置,故 Map 顺序 = 各日期首次出现的顺序(即 1D 那档的日期升序)
-  return points.reduce(
-    (byDate, p) => byDate.set(p.date, { ...byDate.get(p.date), [p.tenor]: p.value }),
-    new Map<string, Record<string, number>>(),
-  );
+  // groupBy 的 Map 顺序 = 各日期首次出现的顺序(即 1D 那档的日期升序)
+  const byDate = Map.groupBy(points, (p) => p.date);
+  return new Map([...byDate].map(([date, ps]) => [date, Object.fromEntries(ps.map((p) => [p.tenor, p.value]))]));
 }
 
 /** 这一批的 key 全集:缓存命中时要先把旧条目按 key 剔掉,再塞新读到的。 */

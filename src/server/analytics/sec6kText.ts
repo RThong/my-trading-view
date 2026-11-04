@@ -29,20 +29,18 @@ export function numsAfter(txt: string, label: string, n: number, from = 0): numb
   if (i < 0) return [];
 
   const cells = txt.slice(i + label.length, i + label.length + 1500).split('|');
-  const numIdx = cells
-    .flatMap((cell, k) => {
-      const c = cell.trim();
-      return /^\(?[\d,]+(\.\d+)?\)?$/.test(c) && /\d/.test(c) ? [k] : [];
-    })
-    .slice(0, n);
-  // 第一个数字离标签太远 = 这不是那一行,是标签撞进了散文里。宁可空着让上层抛。
-  if (numIdx.length && numIdx[0] > MAX_CELLS_TO_FIRST_NUMBER) return [];
-
-  return numIdx.map((k) => {
+  const out: number[] = [];
+  // 命令式:拿够 n 个就停,不把 1500 字窗口里的格子全分类一遍(每个标签、每份报表都要跑)
+  for (let k = 0; k < cells.length && out.length < n; k++) {
     const c = cells[k].trim();
+    if (!/^\(?[\d,]+(\.\d+)?\)?$/.test(c) || !/\d/.test(c)) continue;
+    // 第一个数字离标签太远 = 这不是那一行,是标签撞进了散文里。宁可空着让上层抛。
+    if (out.length === 0 && k > MAX_CELLS_TO_FIRST_NUMBER) return [];
+
     const neg = c.startsWith('(') || cells[k + 1]?.trim() === ')';
-    return (neg ? -1 : 1) * Number(c.replace(/[(),]/g, ''));
-  });
+    out.push((neg ? -1 : 1) * Number(c.replace(/[(),]/g, '')));
+  }
+  return out;
 }
 
 /**
