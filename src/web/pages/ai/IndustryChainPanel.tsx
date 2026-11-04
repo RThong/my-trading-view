@@ -3,11 +3,19 @@ import { TabBar } from '../../components/TabBar';
 import { RegimeChart } from '../../views/regime/RegimeChart';
 import type { Interval } from '../../hooks/interval';
 import { GROUP_ORDER, GROUP_LABELS, activeByGroup } from '../../../shared/aiChain';
+import { dimPanes } from '../regimeDims';
 
 // 产业链公司明细的内部公司选择器,按 GROUP_ORDER 分组(资金流向:云厂商花钱 → 算力芯片 → 上游产能)。
-// 独立收进「AI」视角自己的一个横 tab(见 perspectives.tsx),不跟算力价格/买方合计/AI CDS 挤同一条 tab 条。
+// 独立收进「AI」视角自己的一个横 tab(见 pages/ai/index.tsx),不跟算力价格/买方合计/AI CDS 挤同一条 tab 条。
+// panes 在这里查一次:RegimeChart 要求引用稳定,按名单现算的 panes 每次调用都是新引用。
 const COMPANY_TABS = GROUP_ORDER.flatMap((g) =>
-  activeByGroup(g).map((ticker) => ({ id: ticker, label: ticker, group: GROUP_LABELS[g] })),
+  activeByGroup(g).map((ticker) => ({
+    id: ticker,
+    label: ticker,
+    group: GROUP_LABELS[g],
+    dim: `fundamentals:${ticker}` as const,
+    panes: dimPanes(`fundamentals:${ticker}`),
+  })),
 );
 
 /**
@@ -43,7 +51,7 @@ export function IndustryChainPanel({ interval }: { interval: Interval }) {
       <div className="min-h-0 flex-1">
         {COMPANY_TABS.filter((t) => seen.has(t.id)).map((t) => (
           <div key={t.id} className={t.id === ticker ? 'h-full' : 'hidden'}>
-            <RegimeChart dim={`fundamentals:${t.id}`} interval={interval} />
+            <RegimeChart dim={t.dim} panes={t.panes} interval={interval} />
           </div>
         ))}
       </div>

@@ -61,7 +61,7 @@ lightweight-charts 的映射：`right` / `left` 用内置轴，`overlay` 用自�
 
 ## 2. 目录与文件
 
-新代码全部放在 `src/web/panels/chartEditor/`：
+新代码全部放在 `src/web/pages/editor/`：
 
 | 文件 | 职责 |
 |---|---|
@@ -76,8 +76,8 @@ lightweight-charts 的映射：`right` / `left` 用内置轴，`overlay` 用自�
 | `LayerList.tsx` | 右侧下半部分：一格一个区块，区块里是图层卡片。卡片整张可拖：拖到另一张卡片上 = 插到它前面（同格即调顺序）；拖到区块空白处 = 追加到该格末尾；拖到「新开一格」虚线框 = 新开一格。卡片上可选纵轴（右 / 左 / 本格已有独立轴 / 新独立轴）、改颜色、删除。同格卡片顺序 = 图例顺序，最上面那张画在最上层（同 TradingView） |
 | `EmptyState.tsx` | 空白起步时的引导 |
 
-**复用（只 import、不修改）**：`lib/chart`（`CHART_OPTIONS`、`aggregate`、`fmtDate`、`LinePoint`）、`lib/palette`（`SERIES_COLORS`）、`regimeChart.hooks` 里的 `useRegimeData`（只用这个数据 hook）、`hooks/interval`。
-**不 import**：`panels/chart/` 下的任何东西。
+**复用（只 import、不修改）**：`chart/core`（`CHART_OPTIONS`、`aggregate`、`fmtDate`、`LinePoint`）、`chart/palette`（`SERIES_COLORS`）、`regimeChart.hooks` 里的 `useRegimeData`（只用这个数据 hook）、`hooks/interval`。
+**不 import**：`chart/` 下的多 pane 图表栈（`paneChart.*`、`PaneChartView` 等）。
 **唯一会改的共用文件**：`perspectives.tsx`，加一个「图表编辑」竖 tab，用 `React.lazy` + `Suspense` 懒加载。
 
 > 关于「独立路由」：这个应用目前**没有 URL 路由**，所有页面都是竖 tab + 横 tab（`usePerspectiveNavigation`）。为一个页面引入路由库属于范围外的改动，所以入口做成一个懒加载的竖 tab，和其它页面一致。（我的决定，有异议请提）

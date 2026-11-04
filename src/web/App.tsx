@@ -5,7 +5,7 @@ import { PERSPECTIVES } from './perspectives';
 import { usePerspectiveNavigation } from './hooks/usePerspectiveNavigation';
 import type { Interval } from './hooks/interval';
 
-// 外壳:Header + 竖 tab(视角)+ 横 tab + keep-alive 内容区。视角/tab 配置见 perspectives.tsx,
+// 外壳:Header + 竖 tab(视角)+ 横 tab + keep-alive 内容区。视角/tab 配置见 pages/<视角>/index(perspectives.tsx 组装),
 // 导航状态见 usePerspectiveNavigation;App 只负责组装与渲染。
 export function App() {
   const [interval, setInterval] = useState<Interval>('1D');

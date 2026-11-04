@@ -1,5 +1,5 @@
 // 「能源」视角各 regime tab 的 pane 配置(合进 views/regime 的 REGIME_DIMS)。
-import type { RollMismatchKind } from '../../lib/oilRoll';
+import type { RollMismatchKind } from '../../../shared/calc/oilRoll';
 import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
 
 // 背景带的颜色含义。**只有颜色、图上没有图例** —— 而红色直觉上像「涨」,第一次看极易读反。
@@ -8,7 +8,7 @@ import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
 // 别看到这条注释就以为已经全覆盖了。
 const BG_LEGEND =
   '背景带:红 = 已在风险那一侧的极端(超出 P5/P95),绿 = 在相反那一侧的极端。方向由本格的风险端决定,不是「红涨绿跌」。';
-// 错月背景的读法(两种 kind 的错月时段正好相反,各写一句)。依据与量级见 lib/oilRoll。
+// 错月背景的读法(两种 kind 的错月时段正好相反,各写一句)。依据与量级见 shared/calc/oilRoll。
 const ROLL_NOTE: Record<RollMismatchKind, string> = {
   crack:
     '灰蓝背景 = 期货错月:每月 WTI 到期(25 号或其前最近一个营业日,再往前数第 3 个营业日)之后到月底,WTI 已换下月合约,柴油 / 汽油还是本月合约。' +

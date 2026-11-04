@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { type ChartDoc, moveLayer, parseChartDoc } from '../chartDoc/chartDoc';
 import { CONCENTRATION } from '../../pages/featured/concentration';
-import { REGIME_DOCS, dimPanes, docToPaneSpecs } from './regimeChart.hooks';
+import { docToPaneSpecs } from './regimeChart.hooks';
+import { dimPanes, REGIME_DOCS } from '../../pages/regimeDims';
 
 // 固定面板迁成 ChartDoc 后,编译期的拼写检查只剩一半(序列 id 是字符串):这里补回来。
 describe('固定面板的 ChartDoc', () => {
