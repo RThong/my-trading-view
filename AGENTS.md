@@ -170,9 +170,11 @@
 
 ## 约定
 
-- 改完代码跑 `bun run check`(= typecheck + `bun test` + `bun run lint`)(**Biome**:lint + format 二合一;
-  `react-hooks/exhaustive-deps` 为 error)。因 typescript-eslint 不支持项目用的 TS7,lint 用 Biome/oxlint
-  这类 Rust 工具(不依赖 typescript 包)。**不要自动 git commit**,等用户发话。
+- 改完代码跑 `bun run check`(= typecheck + `bun test` + `bun run lint`)。lint 是 **Biome**(lint + format 二合一,
+  `react-hooks/exhaustive-deps` 为 error;带 `--error-on-warnings`,有 warning 也算失败)。因 typescript-eslint 不支持项目用的 TS7,
+  lint 用 Biome/oxlint 这类 Rust 工具(不依赖 typescript 包)。**不要自动 git commit**,等用户发话。
+- `git push` 前 `.githooks/pre-push` 自动跑 `bun run check`,不过就拦下(`bun install` 时 `prepare` 脚本设 `core.hooksPath`,
+  已设过别的值则不覆盖;临时跳过用 `--no-verify`)。⚠️ 它检查的是**工作区**,不是要推送的提交 —— 工作区不干净时会提示。
 - 注释用中文。声明式优先于命令式 `for` 循环。
 - **目录按「纯计算 / 业务」划界,业务再按视角(路由)分**:纯计算放 `web/chart`、`shared/calc`、
   `server/analytics`、`server/backtest`(允许循环);前端业务里跨视角复用的视图放 `web/views/`,
@@ -188,7 +190,14 @@
   ⚠️ 模板按新版 Base UI 写,对不上已装的 1.9:①`data-vertical:` / `group-data-horizontal/…` 匹配不上(1.9 只输出 `data-orientation`),
   要改写成 `data-[orientation=…]:`;②tabs / toggle-group 的 `orientation` 只写进 `data-orientation`、没传给 Base UI(竖排键盘导航和 aria 都错)。
   加完组件在浏览器里量**激活 / 悬停 / 禁用 / 展开**各态的计算样式,别只看能不能点。手写组件正在分批迁到组件库。
-- **有意锁死版本的依赖**(package.json 写不了注释,记在这里,别顺手改成 `^`):`@base-ui/react` —— shadcn 模板跟着
+- **有意锁死版本的依赖**(package.json 写不了注释,记在这里,别顺手改成 `^`):`@biomejs/biome` —— lint 带
+  `--error-on-warnings`,新的小版本若新增 / 升级 warning 规则,代码没动也会让 check 和 pre-push 失败;两个 Grit 插件也只在这个版本测过,
+  升级前先跑 `bun test biome-plugins`。`@base-ui/react` —— shadcn 模板跟着
   Base UI 版本写,自动升级可能悄悄弄坏组件样式(1.9 就和模板的 `data-vertical` 对不上),升级要手动做并在浏览器里过一遍组件;
   `fancy-canvas` —— 必须和 `lightweight-charts` 依赖的版本完全一致(升 lightweight-charts 时一起核对),否则装出两份、类型对不上。
+- **`bun audit` 剩下的只有 `moomoo-api › protobufjs@6`**(1 critical + 若干 high):修复在 7.x,moomoo-api 锁 `^6.8.8`,
+  跨主版本强改可能弄坏期权解析、且本机没 OpenD 验证不了 → **不修**;风险低(只解析 moomoo 自己的固定协议、只连本机 OpenD)。
+  等 moomoo-api 升 protobufjs。yahoo-finance2 自带的 MCP SDK 链(express / qs / body-parser 等)上的漏洞,修复版都在上游声明的
+  范围内,lock 已刷到修复版,不需要 `overrides`;再报出来就 `bun update <直接依赖>` 刷 lock,别加全局 overrides(它会悄悄压住
+  以后其它依赖要的别的主版本)。
 - 秘密只在 `.env`(gitignored):`FRED_API_KEY`、`EIA_API_KEY`、`ESTAT_APP_ID`、`MOOMOO_WS_*`、`SEC_USER_AGENT`(SEC 要求真实联系方式)。

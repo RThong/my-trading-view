@@ -1,0 +1,17 @@
+#!/bin/sh
+# 推送前跑一遍 typecheck + 测试 + lint,任一失败就拦下推送(约 5 秒)。临时跳过:git push --no-verify
+# 钩子目录由 package.json 的 prepare 脚本在 bun install 时设好(git config core.hooksPath .githooks)。
+#
+# ⚠️ 检查的是**工作区**,不是要推送的那几个提交:未提交的改动(含未跟踪文件)也算进去。
+# 不在干净的 checkout 里跑,是因为那要每次另装一遍依赖;所以工作区不干净时先提示,别把结果当成对提交的保证。
+if [ -n "$(git status --porcelain)" ]; then
+  echo "⚠️  pre-push:工作区有未提交的改动,下面检查的是工作区,不完全等于要推送的提交。" >&2
+fi
+
+# GUI 里的 git 客户端(VS Code 源代码管理、从 Dock 启动的 Fork / SourceTree)常不加载 shell 配置,PATH 里没有 bun
+BUN=$(command -v bun || echo "$HOME/.bun/bin/bun")
+if [ ! -x "$BUN" ]; then
+  echo "pre-push:找不到 bun(PATH 里没有,也没有 ~/.bun/bin/bun),跳不过检查就先 git push --no-verify" >&2
+  exit 1
+fi
+exec "$BUN" run check
