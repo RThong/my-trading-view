@@ -209,7 +209,7 @@ TradingView：数据是平台提供的，个人项目借不了。
 本项目现状
 - `shared/regimeSeries.ts`：名字用联合类型，前后端拼错就是编译错误。这个设计很好。
 - `backtest/signal.ts` 的分位数用扩张窗口（只含过去和当天），并有锁死测试。
-- 问题：图表编辑器另有一份注册表 `chartEditor/registry.ts`（约 30 条），和 `REGIME_SERIES` 是两套。
+- 问题：图表编辑器另有一份注册表 `views/chartDoc/registry.ts`（约 30 条），和 `REGIME_SERIES` 是两套。
 
 参考站
 - 可借：成分股按 point-in-time 逐日重建，包含退市股，用来消除幸存者偏差。「制作图表」的四则运算会先按「统一频率」做 as-of 对齐再代入公式，默认对齐到频率最低那条序列的日期；最近值太旧（> 7 天或 > 该线中位间隔 × 1.6）就跳过这一天。
@@ -235,8 +235,8 @@ TradingView：Pine 是逐根 K 线执行的，天然不容易用到未来数据�
 - 不需要：图表数量。
 
 本项目现状
-- 固定面板：`perspectives.tsx` 定义了 12 个竖向视角；`PaneSpec`（`src/web/panels/regime/regimeChart.hooks.ts:200`）已经是集中式的单格定义，包括 `desc`、`band`、`refLines`、`percentile`、`overlays`、`events`、`clamp/expandVisibleTo`、`rollMismatch`。
-- 图表编辑器（`src/web/panels/chartEditor/`，ChartDoc v1）：格、纵轴、图层三级结构（对标 TradingView 的窗格 / Pin to scale）；支持平移、倒轴、对数轴；分析区只留「叠加对比」：先找偏移，再按规则自动选两者同步的基准段、定比例，B 轴每帧跟 A 轴对齐（滚动相关、领先滞后扫描曲线、参照期日期框已在第三轮 60aa49f 删除）；可以加载任意 Yahoo 代码。**分析能力比参考站强。**
+- 固定面板：`perspectives.tsx` 定义了 12 个竖向视角；`PaneSpec`（`src/web/views/regime/regimeChart.hooks.ts`）已经是集中式的单格定义，包括 `desc`、`band`、`refLines`、`percentile`、`overlays`、`events`、`clamp/expandVisibleTo`、`rollMismatch`。
+- 图表编辑器（`src/web/pages/editor/`，ChartDoc v1）：格、纵轴、图层三级结构（对标 TradingView 的窗格 / Pin to scale）；支持平移、倒轴、对数轴；分析区只留「叠加对比」：先找偏移，再按规则自动选两者同步的基准段、定比例，B 轴每帧跟 A 轴对齐（滚动相关、领先滞后扫描曲线、参照期日期框已在第三轮 60aa49f 删除）；可以加载任意 Yahoo 代码。**分析能力比参考站强。**
 - 问题：固定面板和编辑器是两套引擎，互不相通；ChartDoc 还表达不了 PaneSpec 的大部分字段；编辑器不能持久化。
 - 长期方向：旧图表映射成 ChartDoc，**旧图往新格式上映射，不是新格式迁就旧代码**。
 

@@ -2,20 +2,20 @@
 // 取代原 App 里"tabs 只声明 id/label + 相邻 render(tabId) 用字符串分支决定内容"的分离写法——
 // 新增 tab = 往数组加一条工厂调用,不再牵动 render 分支,两者也不会漂移。
 import { lazy, Suspense, type ReactNode } from 'react';
-import { AssetChart } from './panels/asset/AssetChart';
-import { RegimeChart } from './panels/regime/RegimeChart';
-import { YieldCurvePanel } from './panels/rates/YieldCurvePanel';
-import { TenorHistoryPanel, type SpreadDef } from './panels/rates/TenorHistoryPanel';
-import { PolicyPathPanel } from './panels/rates/PolicyPathPanel';
-import { AttackDefensePanel } from './panels/attackDefense/AttackDefensePanel';
-import { IndustryChainPanel } from './panels/regime/IndustryChainPanel';
-import type { RegimeDim } from './panels/regime/regimeChart.hooks';
+import { AssetChart } from './views/asset/AssetChart';
+import { RegimeChart } from './views/regime/RegimeChart';
+import { YieldCurvePanel } from './views/curve/YieldCurvePanel';
+import { TenorHistoryPanel, type SpreadDef } from './views/curve/TenorHistoryPanel';
+import { PolicyPathPanel } from './pages/rates/PolicyPathPanel';
+import { AttackDefensePanel } from './pages/featured/AttackDefensePanel';
+import { IndustryChainPanel } from './pages/ai/IndustryChainPanel';
+import type { RegimeDim } from './views/regime/regimeChart.hooks';
 import type { Interval } from './hooks/interval';
 import { MARKET_CATALOG } from '../shared/marketCatalog';
 
 // 图表编辑器懒加载:不进首屏包,点到这个竖 tab 才拉。
 const ChartEditorPage = lazy(() =>
-  import('./panels/chartEditor/ChartEditorPage').then((m) => ({ default: m.ChartEditorPage })),
+  import('./pages/editor/ChartEditorPage').then((m) => ({ default: m.ChartEditorPage })),
 );
 
 export type TabDef = { id: string; label: string; group?: string; render: (interval: Interval) => ReactNode };
@@ -206,7 +206,7 @@ export const PERSPECTIVES: Perspective[] = [
     ],
   },
   {
-    // 自由组图:空白图上挑现有序列、分格叠放(见 panels/chartEditor)。单视图,无横 tab。
+    // 自由组图:空白图上挑现有序列、分格叠放(见 pages/editor)。单视图,无横 tab。
     id: 'editor',
     label: '图表编辑',
     tabs: [
