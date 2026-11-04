@@ -12,7 +12,7 @@ language js
     JsClassExpression(),
     JsBlockStatement(),
     JsSwitchStatement()
-  } ,
+  },
   $fn <: JsArrowFunctionExpression(type_parameters=$tp, parameters=$params, return_type_annotation=$ret, body=$body),
   // 箭头的 this / super / arguments 是词法绑定,改成 function 会变义
   $fn <: not contains or {

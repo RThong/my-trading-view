@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { cn } from '@web/lib/utils';
-import { DayPicker, getDefaultClassNames, type DayButton, type Locale } from 'react-day-picker';
+import { type CustomComponents, DayPicker, type DayButton, getDefaultClassNames, useDayPicker } from 'react-day-picker';
 
 import { Button, buttonVariants } from '@web/components/ui/button';
 import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from 'lucide-react';
@@ -23,6 +23,7 @@ function Calendar({
   const defaultClassNames = getDefaultClassNames();
 
   return (
+    // ⚠️ 改 --cell-size / 内边距 / captionLayout 会改变日历尺寸:DatePickerWithPresets 的加载占位写死了实测值,要同步改
     <DayPicker
       showOutsideDays={showOutsideDays}
       className={cn(
@@ -104,28 +105,7 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        Root: ({ className, rootRef, ...props }) => {
-          return <div data-slot="calendar" ref={rootRef} className={cn(className)} {...props} />;
-        },
-        Chevron: ({ className, orientation, ...props }) => {
-          if (orientation === 'left') {
-            return <ChevronLeftIcon className={cn('size-4', className)} {...props} />;
-          }
-
-          if (orientation === 'right') {
-            return <ChevronRightIcon className={cn('size-4', className)} {...props} />;
-          }
-
-          return <ChevronDownIcon className={cn('size-4', className)} {...props} />;
-        },
-        DayButton: ({ ...props }) => <CalendarDayButton locale={locale} {...props} />,
-        WeekNumber: ({ children, ...props }) => {
-          return (
-            <td {...props}>
-              <div className="flex size-(--cell-size) items-center justify-center text-center">{children}</div>
-            </td>
-          );
-        },
+        ...CALENDAR_COMPONENTS,
         ...components,
       }}
       {...props}
@@ -133,14 +113,10 @@ function Calendar({
   );
 }
 
-function CalendarDayButton({
-  className,
-  day,
-  modifiers,
-  locale,
-  ...props
-}: React.ComponentProps<typeof DayButton> & { locale?: Partial<Locale> }) {
+function CalendarDayButton({ className, day, modifiers, ...props }: React.ComponentProps<typeof DayButton>) {
   const defaultClassNames = getDefaultClassNames();
+  // locale 从 DayPicker 的 context 取,不靠外层闭包传进来 —— 这样这个组件才能放在模块顶层(见 CALENDAR_COMPONENTS)
+  const { locale } = useDayPicker().dayPickerProps;
 
   const ref = React.useRef<HTMLButtonElement>(null);
   React.useEffect(() => {
@@ -167,5 +143,24 @@ function CalendarDayButton({
     />
   );
 }
+
+// 传给 DayPicker 的子组件放模块顶层:写在 Calendar 的 render 里的话,每次渲染都是新的组件类型,
+// React 会把整个日历(42 个日期按钮 + 年月下拉)卸载重挂,焦点丢失、展开的原生下拉也会被关掉。
+const CALENDAR_COMPONENTS: Partial<CustomComponents> = {
+  Root: ({ className, rootRef, ...props }) => (
+    <div data-slot="calendar" ref={rootRef} className={cn(className)} {...props} />
+  ),
+  Chevron: ({ className, orientation, ...props }) => {
+    if (orientation === 'left') return <ChevronLeftIcon className={cn('size-4', className)} {...props} />;
+    if (orientation === 'right') return <ChevronRightIcon className={cn('size-4', className)} {...props} />;
+    return <ChevronDownIcon className={cn('size-4', className)} {...props} />;
+  },
+  DayButton: CalendarDayButton,
+  WeekNumber: ({ children, ...props }) => (
+    <td {...props}>
+      <div className="flex size-(--cell-size) items-center justify-center text-center">{children}</div>
+    </td>
+  ),
+};
 
 export { Calendar, CalendarDayButton };

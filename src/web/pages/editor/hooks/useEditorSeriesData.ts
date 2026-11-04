@@ -16,6 +16,7 @@ import {
   type SeriesSource,
 } from '../../../views/chartDoc/registry';
 import { SWR_OPTS } from '../../../lib/http';
+import { latestIso } from '../../../../shared/calc/isoDate';
 
 const RETRY_SWR_OPTS = { ...SWR_OPTS, revalidateIfStale: true };
 /**
@@ -187,8 +188,8 @@ export function commonRange(series: LinePoint[][]): { from: string; to: string }
   const withData = series.filter((p) => p.length > 0);
   if (withData.length === 0) return null;
 
-  const from = withData.map((p) => p[0].time).reduce((a, b) => (a > b ? a : b));
-  const to = withData.map((p) => p.at(-1)!.time).reduce((a, b) => (a > b ? a : b));
+  const from = latestIso(withData.map((p) => p[0].time));
+  const to = latestIso(withData.map((p) => p.at(-1)!.time));
 
   return from < to ? { from, to } : null;
 }
