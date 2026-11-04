@@ -170,7 +170,7 @@
 
 ## 约定
 
-- 改完代码跑 `bunx tsc --noEmit` + `bun test` + `bun run lint`(**Biome**:lint + format 二合一;
+- 改完代码跑 `bun run check`(= typecheck + `bun test` + `bun run lint`)(**Biome**:lint + format 二合一;
   `react-hooks/exhaustive-deps` 为 error)。因 typescript-eslint 不支持项目用的 TS7,lint 用 Biome/oxlint
   这类 Rust 工具(不依赖 typescript 包)。**不要自动 git commit**,等用户发话。
 - 注释用中文。声明式优先于命令式 `for` 循环。
@@ -188,4 +188,7 @@
   ⚠️ 模板按新版 Base UI 写,对不上已装的 1.9:①`data-vertical:` / `group-data-horizontal/…` 匹配不上(1.9 只输出 `data-orientation`),
   要改写成 `data-[orientation=…]:`;②tabs / toggle-group 的 `orientation` 只写进 `data-orientation`、没传给 Base UI(竖排键盘导航和 aria 都错)。
   加完组件在浏览器里量**激活 / 悬停 / 禁用 / 展开**各态的计算样式,别只看能不能点。手写组件正在分批迁到组件库。
+- **有意锁死版本的依赖**(package.json 写不了注释,记在这里,别顺手改成 `^`):`@base-ui/react` —— shadcn 模板跟着
+  Base UI 版本写,自动升级可能悄悄弄坏组件样式(1.9 就和模板的 `data-vertical` 对不上),升级要手动做并在浏览器里过一遍组件;
+  `fancy-canvas` —— 必须和 `lightweight-charts` 依赖的版本完全一致(升 lightweight-charts 时一起核对),否则装出两份、类型对不上。
 - 秘密只在 `.env`(gitignored):`FRED_API_KEY`、`EIA_API_KEY`、`ESTAT_APP_ID`、`MOOMOO_WS_*`、`SEC_USER_AGENT`(SEC 要求真实联系方式)。
