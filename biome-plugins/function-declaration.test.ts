@@ -1,12 +1,8 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { describe, expect, test } from 'bun:test';
+import { resolve } from 'node:path';
+import { runPlugin } from './runPlugin';
 
-// 端到端:用真 biome 跑插件的 rewrite,再格式化成项目同款缩进,比对输出。
-// grit 没法单独调用,能测的最小单位就是「输入源码 → biome check --write → 输出源码」。
 const PLUGIN = resolve(import.meta.dir, 'function-declaration.grit');
-const BIOME = resolve(import.meta.dir, '../node_modules/.bin/biome');
 
 // expected 省略 = 不该改动
 interface Case {
@@ -95,66 +91,33 @@ const MANUAL: Case[] = [
   { name: '=> 之前的注释', input: 'const n = (x: number) /* 说明 */ => x;' },
 ];
 
-let dir: string;
-const output = new Map<string, string>();
-const messages = new Map<string, string[]>();
 const ALL = [...CONVERTED, ...UNCHANGED, ...MANUAL];
-
-beforeAll(() => {
-  dir = mkdtempSync(join(tmpdir(), 'grit-fn-'));
-  writeFileSync(
-    join(dir, 'biome.json'),
-    JSON.stringify({
-      plugins: [PLUGIN],
-      linter: { rules: { preset: 'none' } },
-      formatter: { indentStyle: 'space' },
-    }),
-  );
-  ALL.forEach((c, i) => {
-    writeFileSync(join(dir, fileOf(i)), `${c.input}\n`);
-  });
-
-  // 先收诊断(改写前),再一次跑完全部 case 的 --write;未修复的诊断会让退出码非 0,不看退出码
-  const lint = Bun.spawnSync([BIOME, 'lint', '--reporter=json', `--config-path=${dir}`, '.'], { cwd: dir });
-  const { diagnostics } = JSON.parse(lint.stdout.toString()) as {
-    diagnostics: { message: string; location: { path: string } }[];
-  };
-  Bun.spawnSync([BIOME, 'check', '--write', `--config-path=${dir}`, '.'], { cwd: dir });
-
-  ALL.forEach((c, i) => {
-    output.set(c.name, readFileSync(join(dir, fileOf(i)), 'utf8').trimEnd());
-    messages.set(
-      c.name,
-      diagnostics.filter((d) => d.location.path.endsWith(fileOf(i))).map((d) => d.message),
-    );
-  });
-});
-
-function fileOf(i: number) {
-  return `case${i}.ts`;
-}
-
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+const results = new Map(
+  runPlugin(
+    PLUGIN,
+    ALL.map((c) => c.input),
+  ).map((r, i) => [ALL[i].name, r]),
+);
 
 // 未改动的 case 也会被 biome 格式化,故 input 都按格式化后的样子写
 describe('改写成 function 声明', () => {
   test.each(CONVERTED)('$name', (c) => {
-    expect(output.get(c.name)).toBe(c.expected!);
-    expect(messages.get(c.name)).toEqual([expect.stringContaining('可自动修复')]);
+    expect(results.get(c.name)?.output).toBe(c.expected!);
+    expect(results.get(c.name)?.messages).toEqual([expect.stringContaining('可自动修复')]);
   });
 });
 
 describe('不该改动、也不报', () => {
   test.each(UNCHANGED)('$name', (c) => {
-    expect(output.get(c.name)).toBe(c.input);
-    expect(messages.get(c.name)).toEqual([]);
+    expect(results.get(c.name)?.output).toBe(c.input);
+    expect(results.get(c.name)?.messages).toEqual([]);
   });
 });
 
 // 防「匹配静默失败」冒充「识别出注释」:必须真的报了请手改
 describe('有注释:只报不改', () => {
   test.each(MANUAL)('$name', (c) => {
-    expect(output.get(c.name)).toBe(c.input);
-    expect(messages.get(c.name)).toEqual([expect.stringContaining('请手改')]);
+    expect(results.get(c.name)?.output).toBe(c.input);
+    expect(results.get(c.name)?.messages).toEqual([expect.stringContaining('请手改')]);
   });
 });

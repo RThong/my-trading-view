@@ -40,17 +40,15 @@ export function excelSerialToIso(serial: number): string | null {
  * 靠这一条就把它们过滤掉了,不必按行号硬编码数据起始行(官方加一行说明就会错位)。
  */
 export function parseHlwSheet(sheetXml: string, since: string): { date: string; value: number }[] {
-  const out: { date: string; value: number }[] = [];
-
-  for (const [, body] of sheetXml.matchAll(/<row[^>]*>(.*?)<\/row>/gs)) {
+  const out = [...sheetXml.matchAll(/<row[^>]*>(.*?)<\/row>/gs)].flatMap(([, body]) => {
     const a = /<c r="A\d+"(?![^>]*\bt=)[^>]*><v>([\d.]+)<\/v>/.exec(body);
     const k = new RegExp(`<c r="${RSTAR_COL}\\d+"(?![^>]*\\bt=)[^>]*><v>(-?[\\d.eE+-]+)</v>`).exec(body);
-    if (!a || !k) continue;
+    if (!a || !k) return [];
 
     const date = excelSerialToIso(Number(a[1]));
     const value = Number(k[1]);
-    if (date && date >= since && Number.isFinite(value)) out.push({ date, value });
-  }
+    return date && date >= since && Number.isFinite(value) ? [{ date, value }] : [];
+  });
 
   // 源已升序,但 lightweight-charts 对乱序 setData 会抛;显式排序对齐其它 fetcher。
   return out.sort((x, y) => x.date.localeCompare(y.date));

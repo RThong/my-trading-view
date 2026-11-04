@@ -95,10 +95,11 @@ async function fetchSnapshots(ws: any, gate: Gate, codes: string[]): Promise<Map
     const res = await ws.GetSecuritySnapshot({
       c2s: { securityList: batch.map((code) => ({ market: QOT_MARKET_US, code })) },
     });
-    for (const s of res?.s2c?.snapshotList ?? []) {
-      const code = s.basic?.security?.code;
-      if (code) byCode.set(code, s);
-    }
+    (res?.s2c?.snapshotList ?? [])
+      .filter((s: any) => s.basic?.security?.code)
+      .forEach((s: any) => {
+        byCode.set(s.basic.security.code, s);
+      });
   }
 
   return byCode;

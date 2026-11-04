@@ -42,7 +42,9 @@ function bulkUpsert<T>(db: Database, sql: string, rows: T[], bind: (row: T, fetc
   const stmt = db.prepare<unknown, [NamedParams]>(sql);
   const fetched = new Date().toISOString();
   db.transaction((batch: T[]) => {
-    for (const r of batch) stmt.run(bind(r, fetched)); // 逐行写库,副作用循环保留
+    batch.forEach((r) => {
+      stmt.run(bind(r, fetched)); // 逐行写库
+    });
   })(rows);
 }
 

@@ -1,0 +1,27 @@
+language js
+
+// 业务代码禁用循环语句,用 map / filter / find / some / reduce 等声明式写法。
+// 生效范围在 biome.jsonc 的 includes 里:纯计算目录(坐标、指标、数值算法,临时变量多)放行,测试不管。
+// 带 await 的循环豁免:限频的顺序请求 / 分页「一个接一个」没法用 map 表达,改成 reduce 串 Promise 反而难读。
+// 需要循环的多半是计算:拆到单独文件、加进放行名单;实在拆不开的业务个例才用 `// biome-ignore lint/plugin: 理由`。
+// 用例见同目录 no-loop.test.ts。
+or {
+  JsForStatement(),
+  JsForOfStatement(),
+  JsForInStatement(),
+  JsWhileStatement(),
+  JsDoWhileStatement()
+} as $loop where {
+  // `for await (…)` 的 await 是语句关键字,不是 JsAwaitExpression,只能看源码前缀
+  $loop <: not r"for\s+await[\s\S]*",
+  $loop <: not contains JsAwaitExpression(),
+  // 嵌套循环只报最外层:是同一段逻辑,一条忽略注释管整段;外层改写掉后内层自然浮上来再报
+  $loop <: not within or {
+    JsForStatement(body=contains $loop),
+    JsForOfStatement(body=contains $loop),
+    JsForInStatement(body=contains $loop),
+    JsWhileStatement(body=contains $loop),
+    JsDoWhileStatement(body=contains $loop)
+  } ,
+  register_diagnostic(span=$loop, message="业务代码不用循环,改用 map / filter / find / some / reduce(顺序 await 除外)", severity="error")
+}

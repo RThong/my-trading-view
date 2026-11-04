@@ -40,14 +40,14 @@ const doFetch0 = fetchWithTimeout;
  * 别把「换粒度恰好卡在日界」当成保证 —— 它只在后来那两次成立。
  */
 export function toDailyAverages(points: CgiHistoryPoint[]): CgiDailyPoint[] {
-  const byDate = new Map<string, number[]>();
-  for (const p of points) {
-    if (p.status !== 'ok' || p.value_usd_gpu_hr == null) continue;
-    const date = p.observed_at.slice(0, 10);
-    (byDate.get(date) ?? byDate.set(date, []).get(date)!).push(p.value_usd_gpu_hr);
-  }
+  const ok = points.flatMap((p) =>
+    p.status === 'ok' && p.value_usd_gpu_hr != null
+      ? [{ date: p.observed_at.slice(0, 10), v: p.value_usd_gpu_hr }]
+      : [],
+  );
+  const byDate = Map.groupBy(ok, (p) => p.date);
   return [...byDate.entries()]
-    .map(([date, vs]) => ({ date, value: vs.reduce((a, b) => a + b, 0) / vs.length }))
+    .map(([date, ps]) => ({ date, value: ps.reduce((a, p) => a + p.v, 0) / ps.length }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 

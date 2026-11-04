@@ -35,6 +35,9 @@ export function lastClosedFrom(tradingDays: string[], now: Date = new Date()): s
   return eligible.length ? eligible[eligible.length - 1] : null;
 }
 
+/** getUTCDay() → 退回到上一个周五要减几天(0 = 周日、6 = 周六),工作日不在表里。 */
+const WEEKEND_BACK_TO_FRIDAY: Record<number, number> = { 0: 2, 6: 1 };
+
 /**
  * 兜底:无权威列表时,按 ET 本地推算最近已收盘交易日。
  * 规则:ET 未到 16:00 先回退一天;再跨过周六/周日。**不认交易所节假日**
@@ -45,6 +48,6 @@ export function lastClosedTradingDate(now: Date = new Date()): string {
   const [y, mo, d] = date.split('-').map(Number);
   const dt = new Date(Date.UTC(y, mo - 1, d));
   if (hour < 16) dt.setUTCDate(dt.getUTCDate() - 1);
-  while (dt.getUTCDay() === 0 || dt.getUTCDay() === 6) dt.setUTCDate(dt.getUTCDate() - 1);
+  dt.setUTCDate(dt.getUTCDate() - (WEEKEND_BACK_TO_FRIDAY[dt.getUTCDay()] ?? 0));
   return dt.toISOString().slice(0, 10);
 }

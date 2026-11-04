@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { listQuarterly6K, numsInRow, toCompanyFacts, type FsFiling } from './sec6k';
+import { listQuarterly6K, toCompanyFacts, type FsFiling } from './sec6k';
+import { numsInRow } from './sec6kText';
 import { extractFundamentals } from '../analytics/secFundamentals';
 
 function filing(periodEnd: string, accn = 'a', filed = '2026-01-01'): FsFiling {

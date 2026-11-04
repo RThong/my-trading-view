@@ -1,12 +1,5 @@
-import {
-  fetchReportDoc,
-  flattenHtml,
-  listQuarterly6K,
-  numsInRow,
-  type FetchFn,
-  type FsFiling,
-  type Sec6kValues,
-} from './sec6k';
+import { fetchReportDoc, listQuarterly6K, type FetchFn, type FsFiling, type Sec6kValues } from './sec6k';
+import { flattenHtml, numsInRow } from './sec6kText';
 import { fetchWithTimeout } from './http';
 
 /**

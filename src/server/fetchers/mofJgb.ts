@@ -26,20 +26,22 @@ export function parseMofJgbCsv(text: string, since: string): JgbCurve {
     .split(',')
     .slice(1)
     .map((s) => s.trim());
-  const series: Record<string, { date: string; value: number }[]> = {};
-  for (const t of tenors) series[t] = [];
-
-  for (const line of lines.slice(headerIdx + 1)) {
+  const rows = lines.slice(headerIdx + 1).flatMap((line) => {
     const cols = line.split(',');
     const date = toIso(cols[0]);
-    if (!date || date < since) continue;
-    tenors.forEach((t, i) => {
-      const raw = cols[i + 1]?.trim();
-      if (!raw || raw === '-') return;
-      const v = Number(raw);
-      if (Number.isFinite(v)) series[t].push({ date, value: v });
-    });
-  }
+    return date && date >= since ? [{ date, cols }] : [];
+  });
+  const series: Record<string, { date: string; value: number }[]> = Object.fromEntries(
+    tenors.map((t, i) => [
+      t,
+      rows.flatMap(({ date, cols }) => {
+        const raw = cols[i + 1]?.trim();
+        if (!raw || raw === '-') return [];
+        const v = Number(raw);
+        return Number.isFinite(v) ? [{ date, value: v }] : [];
+      }),
+    ]),
+  );
   return { tenors, series };
 }
 
@@ -56,12 +58,12 @@ export async function fetchJgbCurve(since = '2018-01-01'): Promise<JgbCurve> {
   const c = parseMofJgbCsv(cur, since);
 
   const tenors = h.tenors.length ? h.tenors : c.tenors;
-  const series: Record<string, { date: string; value: number }[]> = {};
-  for (const t of tenors) {
-    const byDate = new Map<string, number>();
-    for (const p of h.series[t] ?? []) byDate.set(p.date, p.value);
-    for (const p of c.series[t] ?? []) byDate.set(p.date, p.value); // 当月覆盖
-    series[t] = [...byDate].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }));
-  }
+  const series: Record<string, { date: string; value: number }[]> = Object.fromEntries(
+    tenors.map((t) => {
+      // 当月排在后面,同日覆盖全历史
+      const byDate = new Map([...(h.series[t] ?? []), ...(c.series[t] ?? [])].map((p) => [p.date, p.value]));
+      return [t, [...byDate].sort(([a], [b]) => a.localeCompare(b)).map(([date, value]) => ({ date, value }))];
+    }),
+  );
   return { tenors, series };
 }

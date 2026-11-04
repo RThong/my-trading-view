@@ -73,18 +73,16 @@ export function readRows(
   cols: readonly string[],
   since: string,
 ): { date: string; values: (number | null)[] }[] {
-  const out: { date: string; values: (number | null)[] }[] = [];
-
-  for (const [, body] of sheetXml.matchAll(/<row[^>]*>(.*?)<\/row>/gs)) {
+  const out = [...sheetXml.matchAll(/<row[^>]*>(.*?)<\/row>/gs)].flatMap(([, body]) => {
     const label = cellLabel(body, shared);
     const date = label ? labelToIso(label) : null;
-    if (!date || date < since) continue;
+    if (!date || date < since) return [];
 
     const values = cols.map((c) => cellNumber(body, c));
-    if (values[0] === null) continue; // 待发布行:有标签、没数
+    if (values[0] === null) return []; // 待发布行:有标签、没数
 
-    out.push({ date, values });
-  }
+    return [{ date, values }];
+  });
 
   // 源已升序,但 lightweight-charts 对乱序 setData 会抛;显式排序对齐其它 fetcher。
   return out.sort((a, b) => a.date.localeCompare(b.date));
