@@ -1,6 +1,7 @@
 import type { DragEvent, ReactNode } from 'react';
 import { CircleAlert, GripVertical, X } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
+import { NativeSelect, NativeSelectOption } from '../../../components/ui/native-select';
 import {
   fitScaleIds,
   isFitTarget,
@@ -26,8 +27,6 @@ function decodeScale(v: string): ScaleChoice {
   return v === 'right' || v === 'left' ? v : v === 'new' ? 'newOverlay' : { overlay: v.slice(3) };
 }
 
-const SELECT =
-  'rounded border border-neutral-800 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-300 hover:border-neutral-600';
 const LOCKED_TITLE = '叠加中由「叠加对比」设定,先取消叠加才能改';
 
 type Props = {
@@ -110,24 +109,24 @@ export function LayerCard({
         )}
         <span className="flex-1" />
         {!fixed && (
-          <select
+          <NativeSelect
+            size="xs"
             value={encodeScale(layer.scale)}
             onChange={(e) => actions.setScale(layer.id, decodeScale(e.target.value))}
-            className={SELECT}
             title="挂哪根纵轴"
           >
             {/* 被叠加的线占着的轴不列:挂上去会被强行按 A 的比例缩放(chartDoc 也会拒绝) */}
-            {!fitScales.has('right') && <option value="right">右轴</option>}
-            {!fitScales.has('left') && <option value="left">左轴</option>}
+            {!fitScales.has('right') && <NativeSelectOption value="right">右轴</NativeSelectOption>}
+            {!fitScales.has('left') && <NativeSelectOption value="left">左轴</NativeSelectOption>}
             {overlays.map((s, i) =>
               fitScales.has(s.id) ? null : (
-                <option key={s.id} value={`ov:${s.id}`}>
+                <NativeSelectOption key={s.id} value={`ov:${s.id}`}>
                   独立轴 {i + 1}
-                </option>
+                </NativeSelectOption>
               ),
             )}
-            <option value="new">新独立轴</option>
-          </select>
+            <NativeSelectOption value="new">新独立轴</NativeSelectOption>
+          </NativeSelect>
         )}
         <Button
           variant="ghost"

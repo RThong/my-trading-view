@@ -19,6 +19,7 @@ import { spreadSeries } from './rateSpread.hooks';
 import { aggregate } from '../../chart/core';
 import { InfoTip } from '../../components/InfoTip';
 import { Button } from '../../components/ui/button';
+import { NativeSelect, NativeSelectOption } from '../../components/ui/native-select';
 import type { Interval } from '../../hooks/interval';
 
 // 视图说明(按 source):同一曲线换时间横轴看各期限走势 + 利差。
@@ -225,19 +226,20 @@ export function TenorHistoryPanel({
             <InfoTip text={view.desc} />
           </div>
         )}
-        <select
+        <NativeSelect
+          size="xs"
+          className="[&_select]:border-neutral-700"
           value={focus}
           onChange={(e) => setFocus(e.target.value)}
           title="只看一条线"
-          className="rounded border border-neutral-700 bg-neutral-900 px-1 py-0.5 text-neutral-300"
         >
-          <option value="">聚焦:全部</option>
+          <NativeSelectOption value="">聚焦:全部</NativeSelectOption>
           {data.tenors.map((t) => (
-            <option key={t} value={t}>
+            <NativeSelectOption key={t} value={t}>
               {t}
-            </option>
+            </NativeSelectOption>
           ))}
-        </select>
+        </NativeSelect>
         {spreadDefs.map((d) => {
           const shown = !hiddenSpreads.has(d.label);
           const desc = SPREAD_DESC[source]?.[d.label];

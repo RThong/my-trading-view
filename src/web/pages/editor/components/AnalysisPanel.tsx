@@ -2,6 +2,7 @@ import { type ReactNode, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
 import { ChevronDown, ChevronRight, CircleHelp } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
+import { NativeSelect, NativeSelectOption } from '../../../components/ui/native-select';
 import type { LinePoint } from '../../../chart/core';
 import {
   bestOverlay,
@@ -28,8 +29,6 @@ type Props = {
 };
 
 const PAIR_LOCKED = '已叠加,先取消叠加才能换线';
-const SELECT =
-  'min-w-0 flex-1 rounded border border-neutral-800 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-300 hover:border-neutral-600 disabled:cursor-not-allowed disabled:opacity-50';
 
 /** 点「叠加对比」的结果,记着是哪一对、按 A 多少平移算的(换了 A / B 就不显示;日期是 A 未平移的) */
 type ShownResult = { a: string; b: string; key: string; aShift: number; invert: boolean; res: OverlayResult };
@@ -114,35 +113,37 @@ export function AnalysisPanel({ doc, points, visibleRange, pair, onPair, actions
     <Section open={open} onToggle={() => setOpen((v) => !v)}>
       <div className="flex items-center gap-1.5 text-xs text-neutral-400">
         A
-        <select
+        <NativeSelect
+          size="xs"
+          className="min-w-0 flex-1"
           value={a?.id}
           disabled={pairLocked}
           title={pairLocked ? PAIR_LOCKED : undefined}
           onChange={(e) => onPair({ ...pair, a: e.target.value })}
-          className={SELECT}
         >
           {series.map((l) => (
-            <option key={l.id} value={l.id}>
+            <NativeSelectOption key={l.id} value={l.id}>
               {name(l)}
-            </option>
+            </NativeSelectOption>
           ))}
-        </select>
+        </NativeSelect>
         B
-        <select
+        <NativeSelect
+          size="xs"
+          className="min-w-0 flex-1"
           value={b?.id}
           disabled={pairLocked}
           title={pairLocked ? PAIR_LOCKED : undefined}
           onChange={(e) => onPair({ ...pair, b: e.target.value })}
-          className={SELECT}
         >
           {series
             .filter((l) => l.id !== a?.id)
             .map((l) => (
-              <option key={l.id} value={l.id}>
+              <NativeSelectOption key={l.id} value={l.id}>
                 {name(l)}
-              </option>
+              </NativeSelectOption>
             ))}
-        </select>
+        </NativeSelect>
       </div>
 
       <div className="flex flex-col gap-1.5 rounded border border-neutral-800 p-1.5">
