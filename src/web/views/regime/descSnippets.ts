@@ -9,3 +9,8 @@ export const SIGMA_ID = '近似关系 σ指数 ≈ σ个股 × √平均相关�
 // 「低离散是真分化还是被按住」的交叉清单:VIXEQ 与 COR1M 是同一件事的两种写法,判据同一套。
 export const BREADTH_CHECK =
   '判别看宽度(RSP/SPY、200 日线上占比)+ 头部权重 + 流动性松紧:宽度塌 + 权重高 = 被少数巨头按住,不是健康分化。';
+
+export const FICC_TRIANGLE =
+  'FICC 低波三角(油价 / 10Y / 美元)之一:三者低波本身 = 资金敢极端集中到核心的安全垫,防线一松传导极快。';
+
+export const RESONANCE = '共振清单:低波 + 高 CAPE + RXM/SPX 低 + 利率 / 总量流动性收紧,四项同亮 = 降杠杆 / 买保险。';
