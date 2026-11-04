@@ -33,7 +33,7 @@ export const REGIME_SERIES = [
   't5yifr',
   'tp10Kw',
 
-  // ── 库里读(daily job 写)。与 routes/regime.ts 的 JOB_WRITTEN_SERIES 对应
+  // ── 库里读(daily job 写)。与 routes/regimeKeys.ts 的 JOB_WRITTEN_SERIES 对应
   'vix',
   'vxn',
   'skew',

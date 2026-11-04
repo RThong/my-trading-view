@@ -239,7 +239,7 @@ CI / DI 的**先行指数**，日本景气拐点的标准判据。
 
 ```
 BUILDERS            (routes/yieldCurve.ts)   加一条曲线源 = 加一行
-JOB_WRITTEN_SERIES  (routes/regime.ts)       库里序列 → 对外名
+JOB_WRITTEN_SERIES  (routes/regimeKeys.ts)   库里序列 → 对外名
 REGIME_DIMS         (web/pages/<视角>/dims) 面板维度
 MARKET_CATALOG      (shared/marketCatalog)   标的目录
 ```
