@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Copy, Upload } from 'lucide-react';
 import type { Interval } from '../../hooks/interval';
 import { Button } from '../../components/ui/button';
+import { Textarea } from '../../components/ui/textarea';
 import { AnalysisPanel, pairRequests, resolvePair } from './components/AnalysisPanel';
 import { type ChartDoc, EMPTY_DOC, parseChartDoc } from '../../views/chartDoc/chartDoc';
 import { EmptyState } from './components/EmptyState';
@@ -133,7 +134,7 @@ function JsonView({ json, onLoad }: { json: string; onLoad: (doc: ChartDoc) => v
   if (draft !== null) {
     return (
       <div className="mt-1 flex flex-col gap-1.5">
-        <textarea
+        <Textarea
           // 点「导入」就是要马上粘贴,直接聚焦
           autoFocus
           value={draft}
@@ -142,7 +143,7 @@ function JsonView({ json, onLoad }: { json: string; onLoad: (doc: ChartDoc) => v
             setError(null);
           }}
           placeholder="把复制的图表 JSON 粘贴到这里"
-          className="h-56 resize-none rounded border border-neutral-800 bg-neutral-900 p-2 font-mono text-[11px] leading-snug text-neutral-300 outline-none focus:border-neutral-600"
+          className="h-56 resize-none rounded bg-neutral-900 p-2 font-mono text-[11px] leading-snug text-neutral-300"
         />
         {error && <p className="text-xs text-amber-500">{error}</p>}
         <div className="flex justify-end gap-1.5">

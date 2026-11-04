@@ -4,6 +4,7 @@ import { YieldCurveChart, type Curve } from './YieldCurveChart';
 import { DatePickerWithPresets } from '../../components/DatePickerWithPresets';
 import { InfoTip } from '../../components/InfoTip';
 import { Button } from '../../components/ui/button';
+import { Checkbox } from '../../components/ui/checkbox';
 import { SERIES_COLORS } from '../../chart/palette';
 
 type Row = { id: number; date: string; visible: boolean };
@@ -131,7 +132,11 @@ export function YieldCurvePanel({ source }: { source: string }) {
               <tr key={row.id} className="border-t border-neutral-800">
                 <td className="whitespace-nowrap px-2 py-1">
                   <div className="flex items-center gap-1.5">
-                    <input type="checkbox" checked={row.visible} onChange={() => toggle(row.id)} />
+                    <Checkbox
+                      checked={row.visible}
+                      onCheckedChange={() => toggle(row.id)}
+                      aria-label={`显示 ${row.date} 这条曲线`}
+                    />
                     <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: color }} />
                     {/* 融合预设 + 日历的选择器(shadcn Popover + react-day-picker) */}
                     <DatePickerWithPresets

@@ -5,6 +5,12 @@
  * CSS 里 dark: 排在后面,调用方就盖不掉(见 ui/button.tsx 顶部)。 */
 @custom-variant dark (&:is(*));
 
+/* 原生控件(select 的选项列表、日历年月下拉、滚动条)与 Canvas / CanvasText 系统色跟着取深色。
+ * 不设的话 shadcn NativeSelect 的选项是白底黑字(Windows / Linux 的 Chrome、Firefox 上尤其明显) */
+:root {
+  color-scheme: dark;
+}
+
 /*
  * shadcn/ui 组件用到的颜色变量(src/web/components/ui/ 下的组件引用 bg-popover / text-muted-foreground 这类类名)。
  * 全站只有深色:直接映射到现有 neutral 色系,不加 :root 明暗两套、也不改 body 的全局样式,旧页面外观不受影响。

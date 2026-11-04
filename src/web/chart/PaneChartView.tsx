@@ -1,5 +1,6 @@
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { Button } from '../components/ui/button';
+import { Checkbox } from '../components/ui/checkbox';
 import type { LegendCell, PaneDef } from './paneChart.types';
 import { InfoTip } from '../components/InfoTip';
 
@@ -169,11 +170,10 @@ export function PaneChartView({
                         off ? 'cursor-not-allowed text-neutral-600' : 'cursor-pointer hover:bg-neutral-800'
                       }`}
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         disabled={off}
                         checked={!off && indicators.active.includes(o.id)}
-                        onChange={() => indicators.toggle(o.id)}
+                        onCheckedChange={() => indicators.toggle(o.id)}
                       />
                       {o.label}
                     </label>

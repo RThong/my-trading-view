@@ -56,9 +56,7 @@ export function DatePickerWithPresets({ value, presets, min, max, snap, onChange
           ))}
         </div>
         <div className="border-l border-neutral-800 pl-1">
-          {/* color-scheme:年月下拉是原生 select,弹出的选项列表跟着深色 */}
           <Calendar
-            className="[color-scheme:dark]"
             mode="single"
             captionLayout="dropdown"
             fixedWeeks

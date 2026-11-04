@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { Input } from '../../../components/ui/input';
+import { cn } from '../../../lib/utils';
 
 type Props = {
   value: number;
@@ -25,7 +27,7 @@ export function NumberField({ value, onCommit, className, title, disabled }: Pro
   };
 
   return (
-    <input
+    <Input
       type="text"
       inputMode="numeric"
       value={draft}
@@ -34,10 +36,10 @@ export function NumberField({ value, onCommit, className, title, disabled }: Pro
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => e.key === 'Enter' && commit()}
-      className={
-        'rounded border border-neutral-800 bg-neutral-900 px-1 py-0.5 text-center text-xs tabular-nums text-neutral-200 outline-none focus:border-neutral-500 disabled:cursor-not-allowed disabled:opacity-40 ' +
-        (className ?? 'w-12')
-      }
+      className={cn(
+        'h-5 rounded bg-neutral-900 px-1 py-0 text-center text-xs tabular-nums text-neutral-200 disabled:opacity-40',
+        className ?? 'w-12',
+      )}
     />
   );
 }
