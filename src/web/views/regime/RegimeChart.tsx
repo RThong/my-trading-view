@@ -9,15 +9,15 @@ import {
   secFiledNote,
   secLagNote,
   secTrimNote,
-  type PaneSpec,
-  type RegimeDim,
+  type RegimeView,
 } from './regimeChart.hooks';
 import { PaneChartView } from '../../chart/PaneChartView';
 
 // 一个 regime 维度(信用/流动性/情绪)的多 pane 堆叠图。薄壳:取数 → build specs → 三个通用 hook → 展示壳。
-// 实例与维度绑定一辈子(App keep-alive)。panes 由页面层查好传进来(pages/regimeDims 的 dimPanes),
-// 要求引用稳定:基本面维度按名单现算、每次新引用,所以 tab 工厂建 tab 时就查好。
-export function RegimeChart({ dim, panes, interval }: { dim: RegimeDim; panes: PaneSpec[]; interval: Interval }) {
+// 实例与维度绑定一辈子(App keep-alive)。配置由页面层查好传进来(pages/regimeDims 的 regimeView),
+// 要求引用稳定 —— regimeView 按 dim 缓存,保证了这一点。
+export function RegimeChart({ view, interval }: { view: RegimeView; interval: Interval }) {
+  const { dim, panes } = view;
   const { paneDefs, seriesName, colors, desc } = derivePaneMeta(panes);
   const paneCount = paneDefs.length;
   const containerRef = useRef<HTMLDivElement>(null);

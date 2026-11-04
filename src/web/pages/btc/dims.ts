@@ -1,4 +1,4 @@
-// 「BTC」视角各 regime tab 的 pane 配置(合进 views/regime 的 REGIME_DIMS)。
+// 「BTC」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
 import type { PaneSpec, RegimeDims } from '../../views/regime/regimeChart.hooks';
 
 /**

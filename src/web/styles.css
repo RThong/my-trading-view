@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* 全站只有深色:dark: 变体恒定生效。默认它跟系统 prefers-color-scheme 走,系统切浅色时 shadcn 组件会掉回浅色样式 */
+@custom-variant dark (&:is(*));
+
 /*
  * shadcn/ui 组件用到的颜色变量(src/web/components/ui/ 下的组件引用 bg-popover / text-muted-foreground 这类类名)。
  * 全站只有深色:直接映射到现有 neutral 色系,不加 :root 明暗两套、也不改 body 的全局样式,旧页面外观不受影响。
