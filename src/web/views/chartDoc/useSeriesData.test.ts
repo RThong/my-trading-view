@@ -1,17 +1,22 @@
 import { describe, expect, test } from 'bun:test';
-import type { RegimeData } from '../../../views/regime/regimeChart.hooks';
+import type { RegimeData } from '../regime/regimeChart.hooks';
 import {
   CURVE_SOURCES,
   REGISTRY,
+  familyHints,
   libraryIdForYahoo,
   rememberYahooName,
   seriesDef,
   searchSeries,
+  seriesLabel,
+  vxContractDefs,
   yahooId,
-} from '../../../views/chartDoc/registry';
-import { asOfValue } from './useCrosshairLegend';
-import { commonRange, seriesPoints, weekdayOnly } from './useEditorSeriesData';
-import { REGIME_SERIES, isSeriesKey } from '../../../../shared/regimeSeries';
+} from './registry';
+import { asOfValue } from '../../pages/editor/hooks/useCrosshairLegend';
+import { calcPoints, commonRange, requestKey, seriesPoints, weekdayOnly } from './useSeriesData';
+import { layerUnit } from '../../pages/editor/layerLabel';
+import { REGIME_SERIES, isSeriesKey } from '../../../shared/regimeSeries';
+import { DERIVED } from '../../../shared/seriesMeta';
 
 const regime: RegimeData = {
   series: {
@@ -119,7 +124,7 @@ describe('registry', () => {
     expect(seriesDef('dgs10')?.source).toEqual({ kind: 'curve', curve: 'treasury', tenor: '10Y' });
   });
 
-  test('regime 序列除了不可画的都进名单', () => {
+  test('regime 序列除了不可画的都能解析;能用 calc 拼的派生量不进下拉,calc 拼不了的标「派生」', () => {
     const ids = new Set(REGISTRY.map((d) => d.id));
     expect(REGIME_SERIES.filter((k) => !ids.has(k))).toEqual([
       'bojHikeDates',
@@ -127,13 +132,47 @@ describe('registry', () => {
       'coreCpiRelease',
       'corePceRelease',
     ]);
+    // 旧图引用的派生 id 照样能解析(取得到数),只是下拉里不列
+    const calcDerived = Object.keys(DERIVED).filter((k) => DERIVED[k as keyof typeof DERIVED] === 'calc');
+    expect(calcDerived.every((k) => seriesDef(k)?.hidden)).toBe(true);
+    const listed = new Set(searchSeries('vix').map((d) => d.id));
+    expect(listed.has('vixeqVix')).toBe(false);
+    expect(seriesDef('netLiquidity')?.label).toBe('净流动性(派生)');
+    expect(seriesDef('reserves')?.label).toBe('准备金(派生)');
+    expect(seriesDef('vix')?.label).toBe('VIX');
   });
 
   test('搜索命中名称 / 别名,不区分大小写', () => {
     expect(searchSeries('dxy').map((d) => d.id)).toEqual(['usd']);
     expect(searchSeries('us10y').map((d) => d.id)).toEqual(['dgs10']);
     expect(searchSeries('比特币').map((d) => d.id)).toEqual(expect.arrayContaining(['IBIT', 'btc', 'btcSharpe1y']));
-    expect(searchSeries('  ')).toBe(REGISTRY);
+  });
+
+  test('同族序列默认收起:不打字只列常显的那几条,打了关键字才列出来', () => {
+    const ids = (q: string, extra = []) => searchSeries(q, extra).map((d) => d.id);
+    expect(ids('')).toContain('opt:SPY:skew');
+    expect(ids('')).not.toContain('opt:QQQ:skew');
+    expect(ids('')).toContain('vrp:SPY:vrp');
+    expect(ids('')).not.toContain('vrp:TLT:rv');
+    expect(ids('qqq 25')).toEqual(['opt:QQQ:putIv', 'opt:QQQ:callIv', 'opt:QQQ:skew']);
+    expect(ids('tlt vrp')).toEqual(['vrp:TLT:vrp']);
+    // 曲线各期限、各家财报同理:默认只留常用的几档
+    expect(ids('')).toEqual(expect.arrayContaining(['ust2y', 'dgs10', 'real10y', 'ois:12M', 'fund:buyerFcf']));
+    expect(ids('')).not.toContain('ust5y');
+    expect(ids('')).not.toContain('fund:NVDA:gm');
+    expect(ids('美债 5Y')).toEqual(['ust5y']);
+    expect(ids('ois 3m')).toEqual(['ois:3M']);
+  });
+
+  test('VX 单月合约:按月份代码(VXZ26 / VXZ2026)或日期搜,光打 vx 只给连续合约', () => {
+    const contracts = vxContractDefs(['VX:2026-11-18', 'VX:2026-12-16']);
+    expect(seriesDef('db:VX:2026-12-16')?.code).toBe('VXZ26');
+    const ids = (q: string) => searchSeries(q, contracts).map((d) => d.id);
+    expect(ids('vxz26')).toEqual(['db:VX:2026-12-16']);
+    expect(ids('VXZ2026')).toEqual(['db:VX:2026-12-16']);
+    expect(ids('vx 2026-1')).toEqual(['db:VX:2026-12-16', 'db:VX:2026-11-18']);
+    expect(ids('vx').filter((id) => id.startsWith('db:VX:'))).toEqual([]);
+    expect(familyHints('', contracts)['VX 合约']).toContain('单月合约 2 份');
   });
 
   test('VX 单月合约不在静态表里,按 id 现生成定义', () => {
@@ -191,5 +230,123 @@ describe('commonRange', () => {
     expect(commonRange([pts('2020-01-01', '2021-01-01'), []])).toEqual({ from: '2020-01-01', to: '2021-01-01' });
     expect(commonRange([[], []])).toBeNull();
     expect(commonRange([pts('2020-01-01'), pts('2020-01-01')])).toBeNull();
+  });
+});
+
+describe('计算图层', () => {
+  const pts = (vals: [string, number][]) => vals.map(([date, value]) => ({ date, value }));
+  const data = {
+    regime: {
+      series: {
+        vix: pts([
+          ['2026-10-01', 20],
+          ['2026-10-02', 0],
+          ['2026-10-05', 25],
+          ['2026-10-06', 11],
+        ]),
+        vixeq: pts([
+          ['2026-10-01', 40],
+          ['2026-10-05', 50],
+          ['2026-10-06', 55],
+          ['2026-10-07', 60],
+        ]),
+        coreCpiYoy: pts([
+          ['2026-09-01', 2.5],
+          ['2026-10-01', 2.0],
+        ]),
+      },
+      unavailable: [],
+    } as RegimeData,
+    curves: {},
+  };
+  const def = (id: string) => seriesDef(id)!;
+
+  test('两条都是日频:只算两边同一天都有数的日子,除数为 0 跳过', () => {
+    expect(calcPoints(def('vixeq'), { op: '/', series: 'vix' }, def('vix'), data, '1D')).toEqual([
+      { time: '2026-10-01', value: 2 },
+      { time: '2026-10-05', value: 2 },
+      { time: '2026-10-06', value: 5 },
+    ]);
+  });
+
+  test('日频 − 月频:对齐到月频那条的日期,日频取当天或之前最近的值', () => {
+    // 09-01 那天 vix 还没有数 → 跳过;10-01 取当天 20
+    expect(calcPoints(def('vix'), { op: '-', series: 'coreCpiYoy' }, def('coreCpiYoy'), data, '1D')).toEqual([
+      { time: '2026-10-01', value: 18 },
+    ]);
+  });
+
+  test('异频按发布间隔认低频,不按点数:历史长的月频 ÷ 历史短的日频,对齐到月频日期', () => {
+    const monthly = pts(
+      [...Array(24)].map(
+        (_, i) => [`${2024 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-01`, 2] as [string, number],
+      ),
+    );
+    const dailyShort = pts([
+      ['2025-11-28', 10],
+      ['2025-12-01', 20],
+      ['2025-12-02', 30],
+    ]);
+    const d2 = { ...data, regime: { ...data.regime, series: { coreCpiYoy: monthly, vix: dailyShort } } as RegimeData };
+    // 月频 24 点 > 日频 3 点,按点数会错锚到日频;按间隔锚到月频:只有 2025-12-01 那天配得上(取当天 vix = 20)
+    expect(calcPoints(def('vix'), { op: '/', series: 'coreCpiYoy' }, def('coreCpiYoy'), d2, '1D')).toEqual([
+      { time: '2025-12-01', value: 10 },
+    ]);
+  });
+
+  test('同为周频但发布日不同(周三对周二):取最近值配上,不因「同频」就要求同一天', () => {
+    const wed = pts([
+      ['2026-10-07', 100],
+      ['2026-10-14', 110],
+      ['2026-10-21', 120],
+    ]);
+    const tue = pts([
+      ['2026-10-06', 1],
+      ['2026-10-13', 2],
+      ['2026-10-20', 3],
+    ]);
+    const d3 = { ...data, regime: { ...data.regime, series: { netLiquidity: wed, vixCotAm: tue } } as RegimeData };
+    expect(calcPoints(def('netLiquidity'), { op: '-', series: 'vixCotAm' }, def('vixCotAm'), d3, '1D')).toEqual([
+      { time: '2026-10-07', value: 99 },
+      { time: '2026-10-14', value: 108 },
+      { time: '2026-10-21', value: 117 },
+    ]);
+  });
+
+  test('fill:日期取并集、各自沿用最近值', () => {
+    expect(calcPoints(def('vixeq'), { op: '-', series: 'vix', fill: true }, def('vix'), data, '1D')).toEqual([
+      { time: '2026-10-01', value: 20 },
+      { time: '2026-10-02', value: 40 },
+      { time: '2026-10-05', value: 25 },
+      { time: '2026-10-06', value: 44 },
+      { time: '2026-10-07', value: 49 },
+    ]);
+  });
+
+  test('请求键区分计算与否、运算与第二条序列', () => {
+    const keys = [
+      { series: 'dgs10', shift: 0 },
+      { series: 'dgs10', calc: { op: '-' as const, series: 'ust2y' }, shift: 0 },
+      { series: 'dgs10', calc: { op: '/' as const, series: 'ust2y' }, shift: 0 },
+      { series: 'dgs10', calc: { op: '-' as const, series: 'ust2y' }, shift: 3, daily: true as const },
+      { series: 'dgs10', calc: { op: '-' as const, series: 'ust2y', fill: true as const }, shift: 0 },
+    ].map(requestKey);
+    expect(new Set(keys).size).toBe(5);
+  });
+
+  test('名称与单位:% − % 是百分点,比值没有单位,单位不同的相减也没有单位', () => {
+    expect(seriesLabel('dgs10', { op: '-', series: 'ust2y' })).toBe('美债 10Y − 美债 2Y');
+    expect(seriesLabel('vixeq', { op: '/', series: 'vix' })).toBe('VIXEQ 成分股波动率 ÷ VIX');
+    const layer = (calc?: { op: '-' | '/'; series: string }) => ({
+      id: 'l1',
+      series: 'dgs10',
+      scale: 'right',
+      color: '#111111',
+      ...(calc && { calc }),
+    });
+    expect(layerUnit(layer())).toBe('%');
+    expect(layerUnit(layer({ op: '-', series: 'ust2y' }))).toBe('pp');
+    expect(layerUnit(layer({ op: '/', series: 'ust2y' }))).toBeUndefined();
+    expect(layerUnit(layer({ op: '-', series: 'vix' }))).toBeUndefined();
   });
 });

@@ -30,13 +30,23 @@ export type RefLine = { price: number; title: string; color?: string };
 /** 按图层自身历史算 P5 / P95 参考线;riskTail = 哪一端是风险(背景染红 / 绿);since = 只用这天起的数据算分位 */
 export type PercentileBand = { riskTail?: 'low' | 'high'; since?: string };
 
+/**
+ * 计算图层:本图层画的不是 series 本身,而是「series 运算 calc.series」(A − B 价差、A ÷ B 比值)。
+ * 两条按日期对齐后现算(同频取同一天、异频锚低频那条、fill 取并集,见 web/chart/analysis 的 combineSeries;
+ * 取数入口是 views/chartDoc/useSeriesData 的 calcPoints),注册表里不必为每个组合另登一条。
+ */
+export type CalcOp = '-' | '/';
+/** fill:两条日期取并集、各自沿用最近值(跨市场利差用,一边休市时那边确实没变);缺省按频率自动对齐 */
+export type Calc = { op: CalcOp; series: string; fill?: true };
+
 export type Layer = {
   id: string;
   /** 引用同一格 scales 里的某个 id */
   scale: string;
   color: string;
-  /** 注册表 id */
+  /** 注册表 id(计算图层里是被减数 / 被除数 A) */
   series: string;
+  calc?: Calc;
   /** 平移的交易日数,> 0 往后(右)挪 —— 看它是不是领先别的线 */
   shift?: number;
   fit?: Fit;
@@ -236,9 +246,29 @@ export function removeSeries(doc: ChartDoc, series: string): ChartDoc {
     ...doc,
     panes: doc.panes.map((p) => ({
       ...p,
-      layers: p.layers.filter((l) => l.series !== series),
+      // 计算图层不算「这条序列」:搜索框取消勾选 A 时不该连带删掉 A − B,它在卡片上单独删
+      layers: p.layers.filter((l) => l.series !== series || !!l.calc),
     })),
   });
+}
+
+/** 设 / 去掉计算(undefined = 还原成序列本身)。 */
+export function setLayerCalc(doc: ChartDoc, layerId: string, calc: Calc | undefined): ChartDoc {
+  const cur = findLayer(doc, layerId)?.layer;
+  if (!cur || (cur.calc?.op === calc?.op && cur.calc?.series === calc?.series && cur.calc?.fill === calc?.fill))
+    return doc;
+
+  return {
+    ...doc,
+    panes: doc.panes.map((p) => ({
+      ...p,
+      layers: p.layers.map((l) => {
+        if (l.id !== layerId) return l;
+        const { calc: _old, ...rest } = l;
+        return canonicalLayer(calc ? { ...rest, calc } : rest);
+      }),
+    })),
+  };
 }
 
 /** 平移(交易日)。0 = 不平移,字段删掉;超过上限按上限截。 */
@@ -527,13 +557,26 @@ function isPercentile(x: unknown): x is PercentileBand {
   );
 }
 
+// 序列 id 里不能有取数请求键的分隔符(| @ #,见 useSeriesData 的 requestKey):
+// 否则 "ust2y@5" 这种导入后会被拆成「ust2y、平移 5 天」,图上画的和 JSON 写的不是一回事
+function isSeriesId(x: unknown): x is string {
+  return isStr(x) && !/[|@#]/.test(x);
+}
+
+function isCalc(x: unknown): x is Calc {
+  return (
+    isObj(x) && (x.op === '-' || x.op === '/') && isSeriesId(x.series) && (x.fill === undefined || x.fill === true)
+  );
+}
+
 function isLayer(x: unknown): x is Layer {
   return (
     isObj(x) &&
     isStr(x.id) &&
     isStr(x.scale) &&
     isColor(x.color) &&
-    isStr(x.series) &&
+    isSeriesId(x.series) &&
+    (x.calc === undefined || isCalc(x.calc)) &&
     (x.shift === undefined || isInt(x.shift, -MAX_SHIFT, MAX_SHIFT)) &&
     (x.fit === undefined || isFit(x.fit)) &&
     (x.title === undefined || isStr(x.title)) &&
@@ -565,13 +608,14 @@ function canonicalPercentile(p: PercentileBand): PercentileBand {
 }
 
 /**
- * 按字段白名单、固定顺序重建图层(id、series、scale、color、shift、fit、title、render、refLines、percentile):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
+ * 按字段白名单、固定顺序重建图层(id、series、calc、scale、color、shift、fit、title、render、refLines、percentile):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
  * 守住「图层不存数据」;编辑操作改 shift / fit 后也走这里,先改哪个字段都一样,复制出去的 JSON 再导入文本原样不变。
  */
 function canonicalLayer(l: Layer): Layer {
   return {
     id: l.id,
     series: l.series,
+    ...(l.calc ? { calc: { op: l.calc.op, series: l.calc.series, ...(l.calc.fill && { fill: true as const }) } } : {}),
     scale: l.scale,
     color: l.color,
     ...(l.shift ? { shift: l.shift } : {}),

@@ -10,18 +10,17 @@ import { layerRequest, useLayerData } from './hooks/layerPoints';
 import { LayerList } from './components/LayerList';
 import { Legend } from './components/Legend';
 import { SeriesPicker } from './components/SeriesPicker';
-import { seriesDef } from '../../views/chartDoc/registry';
 import { useChartDoc } from './hooks/useChartDoc';
 import { useCrosshairLegend } from './hooks/useCrosshairLegend';
 import { useEditorChart } from './hooks/useEditorChart';
-import { useEditorSeriesData } from './hooks/useEditorSeriesData';
+import { useSeriesData } from '../../views/chartDoc/useSeriesData';
 import { useBaseBand } from './hooks/useBaseBand';
 import { useFitSync } from './hooks/useFitSync';
 import { useLineDrag } from './hooks/useLineDrag';
 import { useVisibleRange } from './hooks/useVisibleRange';
 
 // 图表编辑页:空白图上自己挑序列、分格叠放、把一条线叠到另一条上看劈叉。只负责组装 ——
-// 状态见 useChartDoc,取数见 useEditorSeriesData,各图层最终数据见 layerPoints,渲染见 useEditorChart。
+// 状态见 useChartDoc,取数见 views/chartDoc/useSeriesData,各图层最终数据见 layerPoints,渲染见 useEditorChart。
 // 全部编辑状态就是 doc 这一份 JSON(右下角可查看)。
 export function ChartEditorPage({ interval }: { interval: Interval }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -33,7 +32,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
 
   const seriesLayers = doc.panes.flatMap((p) => p.layers);
   const requests = [...seriesLayers.map(layerRequest), ...pairRequests(resolvePair(doc, pair))];
-  const { points, isLoading, error, missing } = useEditorSeriesData(requests, interval);
+  const { points, isLoading, error, missing } = useSeriesData(requests, interval);
   const data = useLayerData(doc, points);
   const { chartRef, seriesRef } = useEditorChart(containerRef, doc, data, { onStretches: setStretches, interval });
   const { hoverTime, layout } = useCrosshairLegend(containerRef, chartRef, doc);
@@ -46,7 +45,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
   const status = [
     isLoading && !empty ? '加载中…' : undefined,
     error ? `取数失败:${error.message}` : undefined,
-    missing.length ? `暂无数据:${missing.map((id) => seriesDef(id)?.label ?? id).join(', ')}` : undefined,
+    missing.length ? `暂无数据:${missing.join(', ')}` : undefined,
   ].filter((s) => s !== undefined);
 
   return (
@@ -68,7 +67,9 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
       {/* 侧栏本身不滚:下拉框要能盖住下面的图层区;只有图层区自己滚 */}
       <aside className="flex w-80 shrink-0 flex-col gap-3 border-l border-neutral-800 pl-3">
         <SeriesPicker
-          selected={seriesLayers.map((l) => ({ series: l.series, color: l.color }))}
+          // 计算图层(A − B)不进标签:标签代表「这条序列在图上」,勾掉 A 不该连带删掉 A − B
+          selected={seriesLayers.filter((l) => !l.calc).map((l) => ({ series: l.series, color: l.color }))}
+          canClear={seriesLayers.length > 0}
           onToggle={toggleSeries}
           onClear={() => load(EMPTY_DOC)}
         />

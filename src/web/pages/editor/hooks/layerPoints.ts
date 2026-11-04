@@ -2,7 +2,7 @@
 import { useMemo } from 'react';
 import type { LinePoint } from '../../../chart/core';
 import type { ChartDoc, Layer, Pane } from '../../../views/chartDoc/chartDoc';
-import { requestKey } from './useEditorSeriesData';
+import { requestKey } from '../../../views/chartDoc/useSeriesData';
 
 export type LayerData = {
   /** 画在图上的点 */
@@ -12,7 +12,7 @@ export type LayerData = {
 const EMPTY: LinePoint[] = [];
 
 export function layerRequest(l: Layer) {
-  return { series: l.series, shift: l.shift ?? 0 };
+  return { series: l.series, ...(l.calc && { calc: l.calc }), shift: l.shift ?? 0 };
 }
 
 export function computeLayerData(doc: ChartDoc, points: Record<string, LinePoint[]>): Record<string, LayerData> {

@@ -56,6 +56,7 @@ export const OIL_DIMS = {
     panes: [
       {
         key: 'brentWti',
+        from: { series: 'brent', calc: { op: '-', series: 'wti' } },
         label: 'Brent−WTI',
         title: 'Brent − WTI ($/桶)',
         color: '#38bdf8',
@@ -339,6 +340,7 @@ export const OIL_DIMS = {
       },
       {
         key: 'dieselRetailMargin',
+        from: { series: 'dieselRetail', calc: { op: '-', series: 'ulsd' } },
         label: '柴油零售加价',
         title: '柴油零售加价 (零售 − ULSD 批发, $/gal)',
         color: '#f97316',
@@ -358,6 +360,7 @@ export const OIL_DIMS = {
       },
       {
         key: 'gasRetailMargin',
+        from: { series: 'gasRetail', calc: { op: '-', series: 'rbob' } },
         label: '汽油零售加价',
         title: '汽油零售加价 (零售 − RBOB 批发, $/gal)',
         color: '#22c55e',

@@ -11,7 +11,16 @@ export const CONCENTRATION: ChartDoc = {
       stretch: 1,
       scales: [{ id: 'right', side: 'right' }],
       // 不套分位:2023 起结构性上行,水位不平稳,分位永远贴着最高处,没有信息。读方向与拐点。
-      layers: [{ id: 'l1', series: 'spxEqw', scale: 'right', color: '#38bdf8', title: '标普500 ÷ 等权' }],
+      layers: [
+        {
+          id: 'l1',
+          series: 'spx',
+          calc: { op: '/', series: 'spxew' },
+          scale: 'right',
+          color: '#38bdf8',
+          title: '标普500 ÷ 等权',
+        },
+      ],
       label: '市值 / 等权',
       desc: [
         '定义:标普 500(市值加权)÷ 标普 500 等权指数(^GSPC / ^SPXEW,都是价格指数,不含分红)。',
@@ -29,7 +38,8 @@ export const CONCENTRATION: ChartDoc = {
       layers: [
         {
           id: 'l2',
-          series: 'vixeqVix',
+          series: 'vixeq',
+          calc: { op: '/', series: 'vixSpot' },
           scale: 'right',
           color: '#ec4899',
           title: 'VIXEQ / VIX 隐含集中度',

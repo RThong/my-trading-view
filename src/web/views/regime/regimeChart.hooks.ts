@@ -9,8 +9,8 @@ import type { SeriesKey } from '../../../shared/regimeSeries';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../../chart/paneChart.types';
 import { rollMismatchDates, type RollMismatchKind } from '../../../shared/calc/oilRoll';
-import type { ChartDoc } from '../chartDoc/chartDoc';
-import { seriesDef } from '../chartDoc/registry';
+import type { Calc, ChartDoc } from '../chartDoc/chartDoc';
+import { seriesDef, seriesLabel } from '../chartDoc/registry';
 import { isAggregateMember, type FundTrim, type SecFiled, type SecLag } from '../../../shared/aiChain';
 import { getJson, SWR_OPTS } from '../../lib/http';
 
@@ -89,9 +89,18 @@ export type FixedDim = Exclude<RegimeDim, `fundamentals:${string}`>;
 // 每个 pane 自带完整定义:单一 key 既是 pane 身份,也是 data.series[key]/data.ohlc[key] 的数据键。
 // 取代原来 ~10 张按同一 key 索引的平行 map(paneDefs/seriesName/colors/baseline/riskTail/
 // signed/candle/pctlSince/bands/desc)——避免 key desync 与"signed 却忘配颜色"这类不可表达状态。
+/** 计算格的身份键(「A|运算|B」,见 docToPaneSpecs):只有 ChartDoc 里的计算图层会生成这种键。 */
+export type CalcPaneKey = `${string}|${string}|${string}`;
+
 export type PaneSpec = {
   /** 既是 pane 身份,也是 data.series[key] 的数据键 —— 收窄成后端对外名的全集,拼错即编译错误。 */
-  key: SeriesKey;
+  key: SeriesKey | CalcPaneKey;
+  /**
+   * 计算格:这一格的数不读服务端的 key,而是前端按注册表取两条腿现算「series 运算 calc.series」
+   * (写法同 ChartDoc 图层,两条腿都是注册表 id;算好填回 data.series[key],见 RegimeChart)。
+   * 手写的格子用它时 key 仍是原来的派生名(格子顺序 / 折叠的存档按 key 认,不丢)。
+   */
+  from?: { series: string; calc: Calc };
   label: string; // 工具条 chip 名
   title: string; // 图例 / 命名
   color?: string; // 线色 / 图例色;符号柱与部分蜡烛不需要(留空则图例用默认色)
@@ -146,17 +155,26 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
     if (p.layers.length !== 1) throw new Error(`ChartDoc 格 ${p.id}:固定面板目前只支持一格一条线`);
     const [l] = p.layers;
     const def = seriesDef(l.series);
-    if (def?.source.kind !== 'regime') throw new Error(`ChartDoc 图层 ${l.id}:${l.series} 不是 /api/regime 的序列`);
+    // 普通图层读 /api/regime 的现成键;计算图层两条腿按注册表取数现算,只要都在注册表里
+    const legsOk = l.calc ? !!def && !!seriesDef(l.calc.series) : def?.source.kind === 'regime';
+    if (!def || !legsOk)
+      throw new Error(
+        `ChartDoc 图层 ${l.id}:${l.series}${l.calc ? ` / ${l.calc.series}` : ''} 不在注册表里或不是 /api/regime 的序列`,
+      );
     // 固定面板画不了的设定:写了却不照画比报错更糟(看图的人以为生效了)。
     // 格高(stretch)不在此列(用户定):只关乎好不好看、不影响读数,固定面板各格一律等高,高度靠折叠 / 展开调
     const scale = p.scales.find((sc) => sc.id === l.scale);
     if (l.shift || l.fit || l.scale !== 'right' || scale?.invert || scale?.log)
       throw new Error(`ChartDoc 图层 ${l.id}:固定面板只画右轴原值,不支持平移 / 叠加 / 左轴 / 独立轴 / 倒轴 / 对数`);
 
+    const name = seriesLabel(l.series, l.calc);
     return {
-      key: def.source.key,
-      label: p.label ?? def.label,
-      title: l.title ?? def.label,
+      key: l.calc
+        ? (`${l.series}|${l.calc.op}${l.calc.fill ? 'f' : ''}|${l.calc.series}` as const)
+        : (def.source as { key: SeriesKey }).key,
+      ...(l.calc && { from: { series: l.series, calc: l.calc } }),
+      label: p.label ?? name,
+      title: l.title ?? name,
       color: l.color,
       ...(p.desc !== undefined && { desc: p.desc }),
       ...(l.render && { render: l.render }),

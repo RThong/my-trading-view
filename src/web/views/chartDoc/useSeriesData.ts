@@ -1,22 +1,24 @@
-// 编辑器的取数层:按注册表把各序列统一成 { time, value }[],再按 Header 的周期聚合。
+// 注册表的取数层(图表编辑器与固定面板的计算格共用):按注册表把各序列统一成 { time, value }[],再按 Header 的周期聚合。
 // 只读复用现有接口与数据 hook(/api/regime 的 useRegimeData、/api/yield-curve,以及 /api/price、25Δ、VRP、/api/series),保证同一序列和旧图表数字一致;
 // 任意 Yahoo 代码走 /api/yahoo/history。
 import { useMemo } from 'react';
 import useSWR from 'swr';
-import { aggregate, isWeekend, type LinePoint } from '../../../chart/core';
-import type { Interval } from '../../../hooks/interval';
-import { useServerRefresh } from '../../../hooks/useServerRefresh';
-import { useRegimeData, type RegimeData } from '../../../views/regime/regimeChart.hooks';
-import { shiftPoints } from '../../../chart/analysis';
+import { aggregate, isWeekend, type LinePoint } from '../../chart/core';
+import type { Interval } from '../../hooks/interval';
+import { useServerRefresh } from '../../hooks/useServerRefresh';
+import { useRegimeData, type RegimeData } from '../regime/regimeChart.hooks';
+import { combineSeries, shiftPoints } from '../../chart/analysis';
+import type { Calc } from './chartDoc';
 import {
   rememberYahooName,
+  seriesLabel,
   seriesDef,
   type CurveSource,
   type SeriesDef,
   type SeriesSource,
-} from '../../../views/chartDoc/registry';
-import { SWR_OPTS } from '../../../lib/http';
-import { latestIso } from '../../../../shared/calc/isoDate';
+} from './registry';
+import { SWR_OPTS } from '../../lib/http';
+import { latestIso } from '../../../shared/calc/isoDate';
 
 const RETRY_SWR_OPTS = { ...SWR_OPTS, revalidateIfStale: true };
 /**
@@ -31,18 +33,25 @@ export function weekdayOnly(points: LinePoint[]): LinePoint[] {
  * 一次取数请求:哪条序列、平移多少交易日;daily = 不按页头周期聚合、固定日线
  * (领先滞后扫描要逐交易日平移,周 / 月线聚合过的序列扫不出日级领先)。同一序列参数不同就是不同请求。
  */
-export type SeriesRequest = { series: string; shift: number; daily?: true };
+export type SeriesRequest = { series: string; calc?: Calc; shift: number; daily?: true };
 
-/** 请求的键(也是 points 的键)。注册表 id 里没有 '@' / '#'。 */
-export function requestKey({ series, shift, daily }: SeriesRequest): string {
-  return `${series}${shift ? `@${shift}` : ''}${daily ? '#d' : ''}`;
+/** 请求的键(也是 points 的键)。序列 id 里不会有 '|' / '@' / '#'(parseChartDoc 拒收,注册表也没有)。 */
+export function requestKey({ series, calc, shift, daily }: SeriesRequest): string {
+  const c = calc ? `|${calc.op}${calc.fill ? 'f' : ''}|${calc.series}` : '';
+  return `${series}${c}${shift ? `@${shift}` : ''}${daily ? '#d' : ''}`;
 }
 
 function parseKey(key: string): SeriesRequest {
   const daily = key.endsWith('#d');
   const body = daily ? key.slice(0, -2) : key;
   const at = body.lastIndexOf('@');
-  const req = at < 0 ? { series: body, shift: 0 } : { series: body.slice(0, at), shift: Number(body.slice(at + 1)) };
+  const head = at < 0 ? body : body.slice(0, at);
+  const shift = at < 0 ? 0 : Number(body.slice(at + 1));
+  const [series, op, b] = head.split('|');
+  const calc: Calc | undefined = op
+    ? { op: op[0] as Calc['op'], series: b, ...(op[1] === 'f' && { fill: true as const }) }
+    : undefined;
+  const req = { series, shift, ...(calc && { calc }) };
   return daily ? { ...req, daily: true } : req;
 }
 
@@ -116,6 +125,8 @@ type CurveData = {
   series: Record<string, { date: string; value: number }[]>;
   refreshing?: boolean;
   partial?: boolean;
+  /** 本次现拉失败、服务端拿上一份顶上的期限(见 server 的 fillFromPrev) */
+  fallback?: string[];
 };
 const NO_CURVE: CurveData = { series: {} };
 
@@ -170,6 +181,27 @@ const EXTRACT: {
  * 先平移再聚合:反过来的话周线键(周一)平移后落在周中,时间轴上会多出空位。
  */
 export function seriesPoints(def: SeriesDef, data: SourceData, interval: Interval, shift = 0): LinePoint[] {
+  return aggregate(shiftPoints(dailyPoints(def, data), shift), interval);
+}
+
+/**
+ * 计算图层:A、B 各自按日线取出,按 calc 的对齐口径相减 / 相除(见 combineSeries),再平移、聚合。
+ * 先算后聚合:对齐必须在日线上做才不会错位。
+ */
+export function calcPoints(
+  a: SeriesDef,
+  calc: Calc,
+  b: SeriesDef,
+  data: SourceData,
+  interval: Interval,
+  shift = 0,
+): LinePoint[] {
+  const values = combineSeries(dailyPoints(a, data), dailyPoints(b, data), calc.op, calc.fill);
+  return aggregate(shiftPoints(values, shift), interval);
+}
+
+/** 单条序列的日线:从原始响应取出 → 统一形状 → 丢非有限值 → (7×24 的)去周末。 */
+function dailyPoints(def: SeriesDef, data: SourceData): LinePoint[] {
   const src = def.source;
   const raw = (EXTRACT[src.kind] as (s: SeriesSource, d: SourceData) => LinePoint[])(src, data);
 
@@ -177,7 +209,7 @@ export function seriesPoints(def: SeriesDef, data: SourceData, interval: Interva
 
   // 静态表里的 7×24 序列已标 weekends;Yahoo 任意代码事先不知道,按数据判
   const weekends = def.weekends || (src.kind === 'yahoo' && hasWeekends(finite));
-  return aggregate(shiftPoints(weekends ? weekdayOnly(finite) : finite, shift), interval);
+  return weekends ? weekdayOnly(finite) : finite;
 }
 
 /**
@@ -194,23 +226,27 @@ export function commonRange(series: LinePoint[][]): { from: string; to: string }
   return from < to ? { from, to } : null;
 }
 
-export type EditorSeriesData = {
+export type SeriesData = {
   /** 请求键(requestKey)→ 点。只含本次请求到的。 */
   points: Record<string, LinePoint[]>;
   isLoading: boolean;
   error?: Error;
-  /** 用到了、但源这次没给数据的序列 id(注册表 id,不带平移) */
+  /** 用到了、但这次没有数据的序列名(计算图层是「A − B」,含两条没有重叠日期的情况) */
   missing: string[];
+  /** 用到了「源这次没拉到、服务端拿上一份顶上」的腿的请求键(线照画,但不是最新;计算图层任一腿是这样就算) */
+  stale: string[];
 };
 
-export function useEditorSeriesData(requests: SeriesRequest[], interval: Interval): EditorSeriesData {
+export function useSeriesData(requests: SeriesRequest[], interval: Interval): SeriesData {
   // 用 join 后的字符串当依赖:调用方每次渲染给新数组,内容不变就不重算(稳定化责任放在 hook 内)。
   const keysStr = [...new Set(requests.map(requestKey))].sort().join(',');
   const sources = useMemo(
     () =>
       keysStr
         .split(',')
-        .map((k) => seriesDef(parseKey(k).series)?.source)
+        .map(parseKey)
+        .flatMap((r) => [r.series, ...(r.calc ? [r.calc.series] : [])])
+        .map((id) => seriesDef(id)?.source)
         .filter((s) => s !== undefined),
     [keysStr],
   );
@@ -268,7 +304,12 @@ export function useEditorSeriesData(requests: SeriesRequest[], interval: Interva
             const req = parseKey(k);
             const def = seriesDef(req.series);
             const data = { regime, yahoo, endpoints, curves };
-            return def ? [[k, seriesPoints(def, data, req.daily ? '1D' : interval, req.shift)]] : [];
+            const iv = req.daily ? '1D' : interval;
+            if (!def) return [];
+            if (!req.calc) return [[k, seriesPoints(def, data, iv, req.shift)]];
+
+            const b = seriesDef(req.calc.series);
+            return b ? [[k, calcPoints(def, req.calc, b, data, iv, req.shift)]] : [];
           }),
       ),
     [keysStr, regime, yahoo, endpoints, curves, interval],
@@ -282,10 +323,27 @@ export function useEditorSeriesData(requests: SeriesRequest[], interval: Interva
         ...new Set(
           Object.keys(points)
             .filter((k) => points[k].length === 0)
-            .map((k) => parseKey(k).series),
+            .map((k) => parseKey(k))
+            .map((r) => seriesLabel(r.series, r.calc)),
         ),
       ];
   const error = regimeError ?? curveStates.find((c) => c.error)?.error;
 
-  return { points, isLoading, error, missing };
+  const stale = useMemo(() => {
+    function legStale(id: string): boolean {
+      const src = seriesDef(id)?.source;
+      if (src?.kind === 'regime' || src?.kind === 'regimeOhlc') return !!regime.fallback?.includes(src.key);
+      if (src?.kind === 'curve') return !!curves[src.curve]?.fallback?.includes(src.tenor);
+      return false;
+    }
+    return keysStr
+      .split(',')
+      .filter(Boolean)
+      .filter((k) => {
+        const r = parseKey(k);
+        return [r.series, ...(r.calc ? [r.calc.series] : [])].some(legStale);
+      });
+  }, [keysStr, regime, curves]);
+
+  return { points, isLoading, error, missing, stale };
 }

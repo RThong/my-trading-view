@@ -15,7 +15,7 @@ import { CHART_OPTIONS, type LinePoint } from '../../../chart/core';
 import type { Interval } from '../../../hooks/interval';
 import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
 import { canLogScale, type LayerData } from './layerPoints';
-import { commonRange } from './useEditorSeriesData';
+import { commonRange } from '../../../views/chartDoc/useSeriesData';
 
 export type LayerSeries = Map<string, ISeriesApi<'Line'>>;
 

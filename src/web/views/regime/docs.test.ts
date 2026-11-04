@@ -29,15 +29,18 @@ describe('固定面板的 ChartDoc', () => {
   });
 
   test('固定面板画不了的设定(多线 / 非 regime 源 / 平移 / 叠加 / 左轴 / 独立轴 / 倒轴 / 对数 / 同一序列占两格)直接报错,不静默', () => {
+    // 底子用第三格(普通的 regime 序列,不是计算格)
     const withLayer = (patch: object, scale: object = { id: 'right', side: 'right' }): ChartDoc => ({
       v: 1,
       panes: [
-        { id: 'p1', stretch: 1, scales: [scale as never], layers: [{ ...CONCENTRATION.panes[0].layers[0], ...patch }] },
+        { id: 'p1', stretch: 1, scales: [scale as never], layers: [{ ...CONCENTRATION.panes[2].layers[0], ...patch }] },
       ],
     });
     expect(() => docToPaneSpecs(withLayer({ series: 'SPY' }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({ series: 'nope' }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({ shift: 5 }))).toThrow();
+    // 计算图层支持了,但两条腿都得在注册表里
+    expect(() => docToPaneSpecs(withLayer({ calc: { op: '-', series: 'nope' } }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({ scale: 'left' }, { id: 'left', side: 'left' }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({}, { id: 'right', side: 'right', log: true }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({}, { id: 'right', side: 'right', invert: true }))).toThrow();
@@ -57,7 +60,10 @@ describe('固定面板的 ChartDoc', () => {
     expect(() => docToPaneSpecs(samePaneTwice)).toThrow();
   });
 
-  test('集中度:三格依次是 市值/等权、隐含集中度、回撤差', () => {
-    expect(dimPanes('concentration').map((p) => p.key)).toEqual(['spxEqw', 'vixeqVix', 'eqwDdSpread']);
+  test('集中度:比值两格是计算格(前端现算),回撤差仍读服务端', () => {
+    const panes = dimPanes('concentration');
+    expect(panes.map((p) => p.key)).toEqual(['spx|/|spxew', 'vixeq|/|vixSpot', 'eqwDdSpread']);
+    expect(panes[0].from).toEqual({ series: 'spx', calc: { op: '/', series: 'spxew' } });
+    expect(panes[1].title).toBe('VIXEQ / VIX 隐含集中度');
   });
 });

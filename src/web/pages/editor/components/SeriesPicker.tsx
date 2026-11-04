@@ -1,144 +1,66 @@
-import { type ReactNode, useState } from 'react';
-import { Check, Search } from 'lucide-react';
+import { useState } from 'react';
+import { Search, X } from 'lucide-react';
+import { Button } from '@web/components/ui/button';
 import {
   Combobox,
   ComboboxChip,
   ComboboxChips,
   ComboboxChipsInput,
-  ComboboxClear,
-  ComboboxCollection,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxGroup,
-  ComboboxItem,
-  ComboboxLabel,
-  ComboboxList,
   ComboboxTrigger,
   ComboboxValue,
   useComboboxAnchor,
 } from '@web/components/ui/combobox';
-import {
-  CATEGORIES,
-  REGISTRY,
-  YAHOO_PREFIX,
-  libraryIdForYahoo,
-  rememberYahooName,
-  searchSeries,
-  seriesDef,
-  yahooId,
-} from '../../../views/chartDoc/registry';
-import { useVxContracts } from '../hooks/useVxContracts';
-import { searchable, type YahooHit, useYahooSearch } from '../hooks/useYahooSearch';
+import { YAHOO_PREFIX } from '../../../views/chartDoc/registry';
+import { type Group, labelOf, SeriesOptionList, useSeriesSearch } from './seriesSearch';
 
 type Props = {
   /** 已在图上的序列(按图层顺序),每条带图上的颜色 —— 输入区里一条一个标签 */
   selected: { series: string; color: string }[];
   /** 勾选 = 加到第 1 格;取消勾选 = 从图上拿掉 */
   onToggle: (seriesId: string) => void;
-  /** 一键清空图上所有序列 */
+  /** 图上有没有线(含不在标签里的计算线):有就显示清空按钮 */
+  canClear: boolean;
+  /** 一键清空整张图 */
   onClear: () => void;
 };
-
-/** 下拉里的一行:id 是选中值,其余只管显示 */
-type Option = { id: string; label: ReactNode; meta: string; title?: string };
-type Group = { value: string; items: Option[] };
-
-const TYPE_LABEL: Record<string, string> = {
-  EQUITY: '股票',
-  ETF: 'ETF',
-  INDEX: '指数',
-  FUTURE: '期货',
-  CURRENCY: '汇率',
-  CRYPTOCURRENCY: '加密',
-  MUTUALFUND: '基金',
-};
-
-function yahooOption(h: YahooHit): Option {
-  return {
-    id: yahooId(h.symbol),
-    label: (
-      <>
-        <span className="font-medium text-neutral-200">{h.symbol}</span>{' '}
-        <span className="text-neutral-400">{h.name}</span>
-      </>
-    ),
-    meta: TYPE_LABEL[h.type] ?? h.type,
-    title: [h.symbol, h.name, h.exchange].filter(Boolean).join(' · '),
-  };
-}
-
-function labelOf(id: string) {
-  return seriesDef(id)?.label ?? id;
-}
 
 // 右侧顶部:标签式多选框(shadcn Combobox)。输入区里一条序列一个标签(带图上的颜色,× 删这一条),最右是清空全部和展开;
 // 下拉里先列内置序列(按分类),再列 Yahoo 搜索结果(任意代码)。勾一条就收起、清空关键字,接着打字搜下一条;
 // 输入框为空时按退格删掉最后一个标签。搜索 / 分组都自己算好再交给组件(filter=null),组件内置的过滤不用。
-export function SeriesPicker({ selected, onToggle, onClear }: Props) {
+export function SeriesPicker({ selected, canClear, onToggle, onClear }: Props) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const anchor = useComboboxAnchor();
 
-  const q = query.trim();
-  const yahoo = useYahooSearch(query);
   const used = new Set(selected.map((s) => s.series));
   const colorOf = new Map(selected.map((s) => [s.series, s.color]));
-  // 库里已有的 Yahoo 代码(SPY、^VIX…)归到库里那条:并进内置结果,不在 Yahoo 组里再列一条
-  const yahooOnly = yahoo.hits.filter((h) => !libraryIdForYahoo(h.symbol));
-  const vxContracts = useVxContracts();
-  const hitIds = new Set([
-    ...searchSeries(query, vxContracts).map((d) => d.id),
-    ...(q ? yahoo.hits.map((h) => libraryIdForYahoo(h.symbol)) : []),
-  ]);
-  const hits = [...REGISTRY, ...vxContracts].filter((d) => hitIds.has(d.id));
-  const builtin: Group[] = CATEGORIES.map((c) => ({
-    value: c,
-    items: hits.filter((d) => d.category === c).map((d) => ({ id: d.id, label: d.label, meta: d.freq })),
-  }));
-  // Yahoo:有关键字时列搜索结果;没关键字时列图上已有的,方便取消勾选
-  const yahooItems: Option[] = q
-    ? yahooOnly.map(yahooOption)
-    : [...used].filter((id) => id.startsWith(YAHOO_PREFIX)).map((id) => ({ id, label: labelOf(id), meta: '日' }));
-  const groups = [...builtin, { value: 'Yahoo', items: yahooItems }].filter((g) => g.items.length > 0);
-  const yahooStatus = !q
-    ? yahooItems.length === 0
-      ? '输入代码或英文名搜索 Yahoo 上的任意品种'
-      : null
-    : !searchable(q)
-      ? 'Yahoo 只能用英文名或代码搜'
-      : yahoo.isLoading
-        ? 'Yahoo · 搜索中…'
-        : yahoo.hits.length > 0
-          ? null
-          : yahoo.error
-            ? 'Yahoo · 搜索失败,稍后再试'
-            : 'Yahoo 上没搜到(用英文名或代码搜,如 gold、GC=F、^N225)';
+  // 没关键字时 Yahoo 组列图上已有的代码,方便取消勾选
+  const search = useSeriesSearch(
+    query,
+    [...used].filter((id) => id.startsWith(YAHOO_PREFIX)),
+  );
 
-  // 选中值的增减翻译成逐条勾选 / 取消;清空走 onClear(一次清掉,不逐条删)。
+  // 选中值的增减翻译成逐条勾选 / 取消(标签上的 × 与退格都只动一条)。
   // Esc 引起的不算:Base UI 在下拉已收起时按 Esc 会清空选中值,这里 Esc 只该收起下拉,照这个处理会清空整张图
-  const onValueChange = (next: string[], { reason }: { reason: string }) => {
+  function onValueChange(next: string[], { reason }: { reason: string }) {
     if (reason === 'escape-key') return;
-    if (next.length === 0 && used.size > 1) onClear();
-    else {
-      next
-        .filter((id) => !used.has(id))
-        .forEach((id) => {
-          const hit = yahoo.hits.find((h) => yahooId(h.symbol) === id);
-          if (hit) rememberYahooName(hit.symbol, hit.name);
-          onToggle(id);
-        });
-      [...used].filter((id) => !next.includes(id)).forEach(onToggle);
-    }
+    next
+      .filter((id) => !used.has(id))
+      .forEach((id) => {
+        search.remember(id);
+        onToggle(id);
+      });
+    [...used].filter((id) => !next.includes(id)).forEach(onToggle);
     // 勾完收起、清空关键字(焦点组件自己留在输入框):接着打字就重新展开搜下一条
     setQuery('');
     setOpen(false);
-  };
+  }
 
   return (
     <Combobox<string, true, Group>
       multiple
       autoHighlight
-      items={groups}
+      items={search.groups}
       filter={null}
       value={[...used]}
       onValueChange={onValueChange}
@@ -173,47 +95,22 @@ export function SeriesPicker({ selected, onToggle, onClear }: Props) {
           </ComboboxValue>
         </div>
         <div className="flex shrink-0 items-center gap-0.5 pt-0.5">
-          {used.size > 0 && <ComboboxClear title="清空图上所有序列" />}
+          {/* 不用组件自带的清空(它只清标签):计算线(A − B)不在标签里,清不掉;图上只剩计算线时它还不显示 */}
+          {canClear && (
+            <Button variant="ghost" size="icon-xs" className="text-neutral-500" onClick={onClear} title="清空整张图">
+              <X />
+            </Button>
+          )}
           <ComboboxTrigger title={open ? '收起' : '展开'} />
         </div>
       </ComboboxChips>
 
-      <ComboboxContent anchor={anchor} className="ring-neutral-700">
-        {/* Yahoo 还在搜时先不说「没有匹配」,免得和下面的「搜索中」打架 */}
-        {!yahoo.isLoading && <ComboboxEmpty>没有匹配的序列</ComboboxEmpty>}
-        {/* 最高 28rem,窗口矮时按可用高度收(留出下面那行 Yahoo 提示),否则列表底部被裁掉、滚不到 */}
-        <ComboboxList className="max-h-[min(28rem,calc(var(--available-height)-2.5rem))]">
-          {(group: Group) => (
-            <ComboboxGroup key={group.value} items={group.items}>
-              <ComboboxLabel>{group.value}</ComboboxLabel>
-              <ComboboxCollection>
-                {(o: Option) => (
-                  <ComboboxItem
-                    key={o.id}
-                    value={o.id}
-                    title={o.title}
-                    showIndicator={false}
-                    className="text-neutral-300"
-                  >
-                    {/* 选中标记放最左:复选框样式,同改版前 */}
-                    <span
-                      className={
-                        'flex size-3.5 shrink-0 items-center justify-center rounded-sm border ' +
-                        (used.has(o.id) ? 'border-sky-500 bg-sky-500 text-neutral-950' : 'border-neutral-600')
-                      }
-                    >
-                      {used.has(o.id) && <Check className="size-2.75" strokeWidth={3} />}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">{o.label}</span>
-                    <span className="shrink-0 text-[11px] text-neutral-600">{o.meta}</span>
-                  </ComboboxItem>
-                )}
-              </ComboboxCollection>
-            </ComboboxGroup>
-          )}
-        </ComboboxList>
-        {yahooStatus && <p className="px-3 pb-2 pt-1 text-xs text-neutral-600">{yahooStatus}</p>}
-      </ComboboxContent>
+      <SeriesOptionList
+        status={search.status}
+        yahooLoading={search.yahooLoading}
+        anchor={anchor}
+        checked={(id) => used.has(id)}
+      />
     </Combobox>
   );
 }

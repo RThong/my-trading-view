@@ -193,6 +193,17 @@ export const REGIME_SERIES = [
   'oisHikes6m',
   'oisHikes12m',
   'oisHikes2y',
+
+  // ── 派生量的原始腿(前端用 ChartDoc 的 calc 现算差 / 比值时要它们)
+  'iorb',
+  'vixSpot',
+  'vix3m',
+  'rxm',
+  'spx',
+  'spxew',
+  'wti',
+  'brent',
+  'rbob',
 ] as const;
 
 export type RegimeSeries = (typeof REGIME_SERIES)[number];

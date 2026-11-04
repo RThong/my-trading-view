@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import type { Interval } from '../../hooks/interval';
 import { usePaneChartStack } from '../../chart/paneChart.hooks';
 import {
@@ -9,8 +9,11 @@ import {
   secFiledNote,
   secLagNote,
   secTrimNote,
+  type PaneSpec,
+  type RegimeData,
   type RegimeView,
 } from './regimeChart.hooks';
+import { requestKey, type SeriesData, type SeriesRequest, useSeriesData } from '../chartDoc/useSeriesData';
 import { PaneChartView } from '../../chart/PaneChartView';
 
 // 一个 regime 维度(信用/流动性/情绪)的多 pane 堆叠图。薄壳:取数 → build specs → 三个通用 hook → 展示壳。
@@ -22,7 +25,16 @@ export function RegimeChart({ view, interval }: { view: RegimeView; interval: In
   const paneCount = paneDefs.length;
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { data, error, isLoading } = useRegimeData();
+  const { data: regime, error, isLoading: regimeLoading } = useRegimeData();
+  // 计算格(PaneSpec.from):按注册表取两条腿、日线现算,填回这格的 key;下游(规格、分位、缺失提示)照旧按 key 读
+  const calcPanes = useMemo(() => panes.filter((p) => p.from), [panes]);
+  const calc = useSeriesData(calcPanes.map(calcRequest), '1D');
+  const data = useMemo(
+    () => withCalc(regime, calcPanes, calc.points, calc.isLoading, calc.stale),
+    // 依赖 calc 里的三个字段(各自引用稳定),不依赖 calc 整个对象:它每次渲染都是新的
+    [regime, calcPanes, calc.points, calc.isLoading, calc.stale],
+  );
+  const isLoading = regimeLoading || calc.isLoading;
   const specs = buildRegimeSpecs(data, panes, interval);
   const { order, collapsed, move, toggle, cells, hovering, tops, drawing, toggleDrawing, selection, deleteSelected } =
     usePaneChartStack(containerRef, paneDefs, paneCount, specs, { storageKey: `regime:${dim}` });
@@ -74,4 +86,45 @@ export function RegimeChart({ view, interval }: { view: RegimeView; interval: In
       deleteSelected={deleteSelected}
     />
   );
+}
+
+export function calcRequest(p: PaneSpec): SeriesRequest {
+  const { series, calc } = p.from!;
+  return { series, calc, shift: 0, daily: true };
+}
+
+/**
+ * 计算格的结果填回 data:有数就覆盖这个 key(服务端若也发了同名派生量,以前端现算为准),算完仍没数就记缺失;
+ * 任一条腿是服务端「沿用上次数据」的,这格也记进 fallback(提示里照样说明不是最新)。
+ * 算不出来、但服务端发了同名派生量的(代码刚升级、盘上缓存里还没有新腿的那一会儿),先沿用服务端的,不报缺。
+ */
+export function withCalc(
+  data: RegimeData,
+  calcPanes: PaneSpec[],
+  points: SeriesData['points'],
+  loading: boolean,
+  staleKeys: string[],
+): RegimeData {
+  if (calcPanes.length === 0) return data;
+
+  const keyOf = (p: PaneSpec) => requestKey(calcRequest(p));
+  const computed = calcPanes.map((p) => [p.key, points[keyOf(p)] ?? []] as const);
+  const keys = new Set<string>(computed.map(([k]) => k));
+  const filled = computed
+    .filter(([, pts]) => pts.length > 0)
+    .map(([k, pts]) => [k, pts.map((pt) => ({ date: pt.time, value: pt.value }))]);
+  // 取数中先不判缺(服务端同名派生量还在就先画它,算好再换),免得一闪「暂不可用」
+  const empty = loading
+    ? []
+    : computed.filter(([k, pts]) => pts.length === 0 && !data.series[k]?.length).map(([k]) => k);
+  const filledKeys = new Set<string>(filled.map(([k]) => k as string));
+  const stale = calcPanes.filter((p) => staleKeys.includes(keyOf(p))).map((p) => p.key);
+
+  return {
+    ...data,
+    series: { ...data.series, ...Object.fromEntries(filled) },
+    unavailable: [...data.unavailable.filter((k) => !keys.has(k)), ...empty],
+    // 只剔掉真正换成现算结果的格子;没算出来、沿用服务端同名派生量的,保留服务端「沿用上次数据」的标记
+    fallback: [...(data.fallback ?? []).filter((k) => !filledKeys.has(k)), ...stale],
+  };
 }

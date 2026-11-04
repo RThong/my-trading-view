@@ -1,10 +1,11 @@
-import type { DragEvent, ReactNode } from 'react';
+import { type DragEvent, type ReactNode, useState } from 'react';
 import { CircleAlert, GripVertical, X } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { NativeSelect, NativeSelectOption } from '../../../components/ui/native-select';
 import {
   fitScaleIds,
   isFitTarget,
+  type CalcOp,
   type ChartDoc,
   type Layer,
   type Pane,
@@ -12,11 +13,12 @@ import {
 } from '../../../views/chartDoc/chartDoc';
 import { baseLabel, layerLabel } from '../layerLabel';
 import { NumberField } from './NumberField';
+import { SeriesSelect } from './SeriesSelect';
 import type { ChartDocActions } from '../hooks/useChartDoc';
 
 export type CardActions = Pick<
   ChartDocActions,
-  'setScale' | 'setColor' | 'remove' | 'setShift' | 'setInvert' | 'setLog' | 'clearFit'
+  'setScale' | 'setColor' | 'remove' | 'setShift' | 'setCalc' | 'setInvert' | 'setLog' | 'clearFit'
 >;
 
 // <select> 的 value 只能是字符串:挂轴选择编码成 right / left / new / ov:<轴 id>
@@ -165,7 +167,47 @@ export function LayerCard({
         </Toggle>
         {log && !canLog && <span className="text-amber-500">这根轴上有 ≤0 的值,暂按普通坐标显示</span>}
       </div>
+      <CalcRow layer={layer} locked={fixed} actions={actions} />
     </li>
+  );
+}
+
+/**
+ * 计算:这条线改画成「它 − / ÷ 另一条序列」。先选运算再选第二条;两样齐了才写进文档(文档里的计算必须完整),
+ * 只选了运算的那一步先记在卡片上。叠加中的线锁住:算出来的值一变,按点按钮时定的比例就对不上了。
+ */
+function CalcRow({ layer, locked, actions }: { layer: Layer; locked: boolean; actions: CardActions }) {
+  // 暂存的运算绑定到当时那个图层对象:图层一变(导入整张图换了文档、或这条线被改过)就作废,
+  // 否则导入一份同 id 的图会在没有计算的卡片上留下半截计算控件
+  const [pending, setPending] = useState<{ layer: Layer; op: CalcOp }>();
+  const op = layer.calc?.op ?? (pending?.layer === layer ? pending.op : undefined);
+
+  function onOp(v: string) {
+    setPending(v ? { layer, op: v as CalcOp } : undefined);
+    if (!v) actions.setCalc(layer.id, undefined);
+    else if (layer.calc) actions.setCalc(layer.id, { ...layer.calc, op: v as CalcOp });
+  }
+
+  return (
+    <div
+      className="mt-1 flex items-center gap-1.5 pl-5 text-xs text-neutral-500"
+      title={locked ? LOCKED_TITLE : '计算:把这条线换成它与另一条序列的差(−)或比值(÷),两条按日期对齐后现算'}
+    >
+      计算
+      <NativeSelect size="xs" value={op ?? ''} disabled={locked} onChange={(e) => onOp(e.target.value)}>
+        <NativeSelectOption value="">无</NativeSelectOption>
+        <NativeSelectOption value="-">− 相减</NativeSelectOption>
+        <NativeSelectOption value="/">÷ 相除</NativeSelectOption>
+      </NativeSelect>
+      {op && (
+        <SeriesSelect
+          value={layer.calc?.series}
+          onChange={(id) => actions.setCalc(layer.id, { ...layer.calc, op, series: id })}
+          placeholder={op === '-' ? '减去哪条序列' : '除以哪条序列'}
+          disabled={locked}
+        />
+      )}
+    </div>
   );
 }
 

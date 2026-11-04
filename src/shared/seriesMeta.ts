@@ -55,6 +55,8 @@ export type SeriesMeta = {
   weekends?: true;
   /** 不能当一条线画:事件日期(值无意义)或日期不是观测日(点阵图的日期是预测年份)。 */
   chartable?: false;
+  /** 不进编辑器下拉(id 照常能解析):与另一条同值、只是取法不同的腿,下拉里只该有一条 */
+  hidden?: true;
 };
 
 function daily(category: SeriesCategory, label: string, unit?: string, aliases?: string[]): SeriesMeta {
@@ -248,4 +250,77 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   gpuH200: { ...daily('AI 链', 'GPU 租赁价 H200', '$/GPU·时', ['gpu', '算力']), weekends: true },
   gpuB200: { ...daily('AI 链', 'GPU 租赁价 B200', '$/GPU·时', ['gpu', '算力']), weekends: true },
   gpuB300: { ...daily('AI 链', 'GPU 租赁价 B300', '$/GPU·时', ['gpu', '算力']), weekends: true },
+
+  // ── 派生量的原始腿(前端 calc 现算差 / 比值用;以前只在服务端内部用)
+  iorb: { ...daily('利率', 'IORB 准备金利率', '%', ['联储', 'fed']), weekends: true },
+  vix3m: daily('波动率', 'VIX3M 3 个月隐含波动率'),
+  // 与 vix 同值(都是 CBOE 收盘),但现拉、当天就有;给与现拉腿内连接的计算格用,下拉里只留 vix
+  vixSpot: { ...daily('波动率', 'VIX(CBOE 现拉)'), hidden: true },
+  rxm: daily('情绪·持仓', 'RXM 风险逆转指数', undefined, ['风险逆转']),
+  spx: daily('资产', '标普 500', undefined, ['spx', 's&p', 'gspc']),
+  spxew: daily('资产', '标普 500 等权', undefined, ['等权', 'rsp']),
+  wti: daily('能源', 'WTI 原油期货', '$/桶', ['原油', 'oil', 'cl']),
+  brent: daily('能源', 'Brent 原油期货', '$/桶', ['原油', 'oil', 'bz']),
+  rbob: daily('能源', 'RBOB 汽油期货', '$/gal', ['汽油']),
+};
+
+/**
+ * 服务端算出来的派生量(不是数据源直接给的数),值 = 能不能用 ChartDoc 的 calc 现算:
+ *  · 'calc'   = 就是两条原始序列的差 / 比值 → 不进编辑器下拉(要看就在编辑器里用 calc 拼),固定面板也改成 calc 现算
+ *  · 'server' = calc 表达不了(多项相加、乘常数、同比、z、均线、锚在第三条序列日期上…)→ 暂留下拉、名称标「派生」
+ * 两种都照常由 /api/regime 发出:知识库的 skill 还在读接口,也留着给前端现算结果对账。
+ */
+export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
+  // ── calc:A − B / A ÷ B
+  vixeqVix: 'calc', // vixeq ÷ vixSpot(现拉 VIX,不等 daily job)
+  corTermSpread: 'calc', // cor3m − cor1m
+  vxTermSpread: 'calc', // VX1 − VX3(注册表的 db:VX1 / db:VX3)
+  vixSpotTerm: 'calc', // vixSpot − vix3m
+  rxmSpx: 'calc', // rxm ÷ spx
+  repoStress: 'calc', // iorb − sofr
+  spxEqw: 'calc', // spx ÷ spxew
+  brentWti: 'calc', // brent − wti
+  dieselRetailMargin: 'calc', // dieselRetail − ulsd(锚在周一零售)
+  gasRetailMargin: 'calc', // gasRetail − rbob
+  usjp2y: 'calc', // 美债 2Y − 日债 2Y(注册表的曲线腿;两国假日错开时沿用旧值,calc 带 fill)
+  // ── server:calc 表达不了
+  netLiquidity: 'server', // WALCL − TGA − RRP,只取周三
+  reserves: 'server', // 源是百万美元,÷1000 换成十亿美元(乘常数)
+  dieselCrack: 'server', // ULSD × 42 − WTI
+  rbobCrack: 'server', // RBOB × 42 − WTI
+  crack321: 'server', // (2 × RBOB + ULSD) × 42 / 3 − WTI
+  distYield: 'server', // 馏分油产量 ÷ 加工量 × 100
+  crudeRunsYoy: 'server', // 同比
+  distProdYoy: 'server',
+  rbobYoy: 'server',
+  coreCpiYoy: 'server', // 由 CPI 指数算同比 / 3 个月年化
+  coreCpi3m: 'server',
+  corePceYoy: 'server',
+  corePce3m: 'server',
+  jpCgpiYoy: 'server',
+  refUtilZ5y: 'server', // 季节 z
+  distStocksZ5y: 'server',
+  gasStocksZ5y: 'server',
+  distExportsZ5y: 'server',
+  eqwDdSpread: 'server', // 两条各算 252 日回撤再相减
+  btcSharpe1y: 'server', // 滚动一年夏普
+  btcSupplyDensity: 'server', // 7 日均线
+  jpCallRate: 'server', // 日频拆借利率求月均
+  jpDepositBeta: 'server', // 累计变动之比
+  jpDepositDelta: 'server',
+  jpCallDelta60: 'server',
+  jpLoanDepositSpread: 'server', // 日本银行利差四条:锚在 JGB 2Y 的日期上、月频腿前向填充
+  jp2yMinusDeposit: 'server',
+  jpCallMinusDeposit: 'server',
+  jp2yMinusCall: 'server',
+  oisHikes3m: 'server', // 由 OIS 曲线推算
+  oisHikes6m: 'server',
+  oisHikes12m: 'server',
+  oisHikes2y: 'server',
+  rstarSepImplied: 'server', // 点阵图长期利率 − 2%
+  lProxyHlwT5yifr: 'server', // HLW r* + 5y5y
+  expShort10Kw: 'server', // KW 拟合 10Y − 期限溢价(拟合那条没对外发)
+  cftcJpy: 'server', // 多头 − 空头
+  vixCotAm: 'server', // 净持仓占未平仓 %
+  vixCotLm: 'server',
 };

@@ -57,10 +57,10 @@ function medianGapDays(points: DayPoint[]): number {
 
 type DayPair = { day: number; a: number; b: number };
 
-function alignDays(a: DayPoint[], b: DayPoint[]): DayPair[] {
+// baseIsA:以哪条的日期为准。叠加对比按点数挑(点少的那条);计算图层按频率挑(见 combineSeries)
+function alignDays(a: DayPoint[], b: DayPoint[], baseIsA = a.length <= b.length): DayPair[] {
   if (a.length === 0 || b.length === 0) return [];
 
-  const baseIsA = a.length <= b.length;
   const [base, other] = baseIsA ? [a, b] : [b, a];
   const maxStale = Math.max(7, medianGapDays(other) * 1.6);
 
@@ -79,10 +79,72 @@ function alignDays(a: DayPoint[], b: DayPoint[]): DayPair[] {
 
 /**
  * 两条线按日期配对。以点少(频率低)的那条为基准日期,另一条取「当天或之前最近的值」;
- * 最近值太旧(超过 7 天,或超过它自身中位间隔的 1.6 倍)就跳过这一天,免得拿几个月前的值硬配。
+ * 最近值太旧就跳过这一天,免得拿几个月前的值硬配。容忍度取「7 天」与「它自身中位间隔的 1.6 倍」中**较大**的:
+ * 日频按 7 天算(跨周末、两地假日错开都配得上),月频按约 7 周算(季末配上一个月初的值)。
+ * 取较小的话,季频 ÷ 月频会因为季末离月初 30 天而一个点都配不上。
  */
 export function alignPairs(a: LinePoint[], b: LinePoint[]): Pair[] {
   return alignDays(toDays(a), toDays(b)).map((p) => ({ time: fromDayNum(p.day), a: p.a, b: p.b }));
+}
+
+/** 日频(中位间隔不超过 2 天:含不含周末都算)。 */
+function isDaily(points: DayPoint[]): boolean {
+  return medianGapDays(points) <= 2;
+}
+
+function innerPairs(a: DayPoint[], b: DayPoint[]): DayPair[] {
+  const bAt = new Map(b.map((p) => [p.day, p.value]));
+  return a.flatMap((p) => {
+    const v = bAt.get(p.day);
+    return v === undefined ? [] : [{ day: p.day, a: p.value, b: v }];
+  });
+}
+
+/** 日期取并集、各自前向填充,从两条都出现过值的那天起(同服务端 subtractAligned)。 */
+function filledPairs(a: DayPoint[], b: DayPoint[]): DayPair[] {
+  const aAt = new Map(a.map((p) => [p.day, p.value]));
+  const bAt = new Map(b.map((p) => [p.day, p.value]));
+  const days = [...new Set([...a, ...b].map((p) => p.day))].sort((x, y) => x - y);
+
+  // 两条各自的「最近一个值」随日期往前推,每步依赖上一步,命令式更直白
+  const pairs: DayPair[] = [];
+  let lastA: number | undefined;
+  let lastB: number | undefined;
+  for (const day of days) {
+    lastA = aAt.get(day) ?? lastA;
+    lastB = bAt.get(day) ?? lastB;
+    if (lastA !== undefined && lastB !== undefined) pairs.push({ day, a: lastA, b: lastB });
+  }
+  return pairs;
+}
+
+export type CombineOp = '-' | '/';
+
+/**
+ * 两条序列逐日运算 a op b(ChartDoc 的 calc)。对齐口径与服务端那几条派生量一一对得上(见 server/analytics/regime):
+ *  · 默认、两条都是日频:只算两边同一天都有数的日子(同 subtractAt / divideAligned)—— 不前向填充,
+ *    免得造出「昨天的 a 对今天的 b」(Brent 感恩节有行、WTI 没有那天)
+ *  · 默认、其余(频率不同,或同为周 / 月 / 季频但发布日不同:周三对周二、季末对季初):以低频那条(按间隔认)
+ *    的日期为准,另一条取当天或之前最近的值,太旧跳过(同 alignPairs;即服务端零售加价「锚在周一零售、
+ *    批发取最近收盘」)。低频同频若也要求同一天,发布日错开的两条会一个点都配不上
+ *  · fill:日期取并集、各自前向填充(同 subtractAligned)—— 跨市场利差用,一边休市时那边利率确实没变
+ * 除数为 0 的那天跳过。
+ */
+export function combineSeries(a: LinePoint[], b: LinePoint[], op: CombineOp, fill = false): LinePoint[] {
+  if (a.length === 0 || b.length === 0) return [];
+
+  const da = toDays(a);
+  const db = toDays(b);
+  // 锚哪条按发布间隔认低频,不按点数:历史长的月频序列点数可能比历史短的日频还多
+  const pairs = fill
+    ? filledPairs(da, db)
+    : isDaily(da) && isDaily(db)
+      ? innerPairs(da, db)
+      : alignDays(da, db, medianGapDays(da) >= medianGapDays(db));
+
+  return pairs
+    .filter((p) => op === '-' || p.b !== 0)
+    .map((p) => ({ time: fromDayNum(p.day), value: op === '-' ? p.a - p.b : p.a / p.b }));
 }
 
 /**
