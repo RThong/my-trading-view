@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
 import { ChevronDown, ChevronRight, CircleHelp } from 'lucide-react';
+import { Button } from '../../../components/ui/button';
 import type { LinePoint } from '../../../chart/core';
 import {
   bestOverlay,
@@ -29,8 +30,6 @@ type Props = {
 const PAIR_LOCKED = '已叠加,先取消叠加才能换线';
 const SELECT =
   'min-w-0 flex-1 rounded border border-neutral-800 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-300 hover:border-neutral-600 disabled:cursor-not-allowed disabled:opacity-50';
-const BTN =
-  'rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:border-neutral-500 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-40';
 
 /** 点「叠加对比」的结果,记着是哪一对、按 A 多少平移算的(换了 A / B 就不显示;日期是 A 未平移的) */
 type ShownResult = { a: string; b: string; key: string; aShift: number; invert: boolean; res: OverlayResult };
@@ -152,9 +151,9 @@ export function AnalysisPanel({ doc, points, visibleRange, pair, onPair, actions
           <span className="text-neutral-600"> · 看两线从哪里分开</span>
           <Help text={OVERLAY_HELP} />
         </h3>
-        <button type="button" className={`${BTN} self-start`} disabled={!canOverlay} onClick={overlay}>
+        <Button variant="outline" size="xs" className="self-start" disabled={!canOverlay} onClick={overlay}>
           叠加 {name(b)} 到 {name(a)}
-        </button>
+        </Button>
         {shown && <OverlayNote shown={shown} a={name(a)} b={name(b)} />}
         {/* 按钮点不了的原因留在面板上(不收进说明浮层):不说就不知道为什么是灰的 */}
         {(a?.fit || aScale?.log || bIsTarget) && (
@@ -266,14 +265,15 @@ const OVERLAY_HELP = `自动选两者同步的一段(黄底),按它的比例叠�
 function Section({ open, onToggle, children }: { open: boolean; onToggle: () => void; children: ReactNode }) {
   return (
     <section className="flex flex-col gap-2 border-t border-neutral-800 pt-2">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="xs"
         onClick={onToggle}
-        className="flex items-center gap-1 px-1 text-xs font-medium text-neutral-400 hover:text-neutral-200"
+        className="self-start text-neutral-400 hover:text-neutral-200"
       >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {open ? <ChevronDown /> : <ChevronRight />}
         分析
-      </button>
+      </Button>
       {open && <div className="flex flex-col gap-2 px-1">{children}</div>}
     </section>
   );

@@ -1,4 +1,5 @@
 import { ChartLine } from 'lucide-react';
+import { Button } from '../../../components/ui/button';
 import { SERIES_COLORS } from '../../../chart/palette';
 import {
   EMPTY_DOC,
@@ -52,15 +53,15 @@ export function EmptyState({ onLoad }: { onLoad: (doc: ChartDoc) => void }) {
         </p>
         <div className="mt-2 flex flex-col gap-1.5 self-stretch">
           {PRESETS.map((p) => (
-            <button
+            <Button
               key={p.label}
-              type="button"
+              variant="outline"
               onClick={() => onLoad(p.build())}
-              className="flex items-baseline justify-between rounded border border-neutral-800 px-3 py-2 text-left hover:border-neutral-600 hover:bg-neutral-900"
+              className="h-auto items-baseline justify-between px-3 py-2 text-left font-normal hover:border-neutral-600"
             >
               <span className="text-sm text-neutral-200">{p.label}</span>
               <span className="text-xs text-neutral-500">{p.hint}</span>
-            </button>
+            </Button>
           ))}
         </div>
       </div>

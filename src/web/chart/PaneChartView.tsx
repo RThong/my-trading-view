@@ -1,9 +1,16 @@
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
+import { Button } from '../components/ui/button';
 import type { LegendCell, PaneDef } from './paneChart.types';
 import { InfoTip } from '../components/InfoTip';
 
 // 多 pane 堆叠图的通用展示壳:pane 工具条(↑↓ 换位 / ▾ 折叠)+ 竖线图例 + 容器 + loading/error。
 // 与数据源无关——期权(AssetChart)与宏观(RegimeChart)共用,靠 props 注入 paneDefs/图例/命名/配色。
+
+// 格子 chip 里的 ↑ ↓ ▸:禁用时压到几乎看不见(半透明的灰箭头看着像能点)
+const CHIP_BTN = 'text-neutral-300 disabled:text-neutral-700 disabled:opacity-100';
+// 开关打开时的蓝框(只看现货 / 指标)
+const ACTIVE_SKY = 'border-sky-600 text-sky-300 hover:text-sky-200';
+
 type Props = {
   containerRef: React.RefObject<HTMLDivElement | null>;
   paneDefs: PaneDef[];
@@ -79,23 +86,38 @@ export function PaneChartView({
           const isCollapsed = collapsed.has(key);
           // 唯一展开的那个不能再收(收了全员等权=没收起)。
           const lastExpanded = !isCollapsed && collapsed.size === paneCount - 1;
-          const btn = 'px-1 text-neutral-300 disabled:cursor-not-allowed disabled:text-neutral-700';
           return (
             <div key={key} className="flex items-center gap-0.5 rounded border border-neutral-700 px-1 py-0.5 text-xs">
-              <button onClick={() => move(key, -1)} disabled={pos === 0} title="上移" className={btn}>
+              <Button
+                variant="ghost"
+                size="icon-2xs"
+                className={CHIP_BTN}
+                onClick={() => move(key, -1)}
+                disabled={pos === 0}
+                title="上移"
+              >
                 ↑
-              </button>
-              <button onClick={() => move(key, 1)} disabled={pos === order.length - 1} title="下移" className={btn}>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-2xs"
+                className={CHIP_BTN}
+                onClick={() => move(key, 1)}
+                disabled={pos === order.length - 1}
+                title="下移"
+              >
                 ↓
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-2xs"
+                className={CHIP_BTN}
                 onClick={() => toggle(key)}
                 disabled={lastExpanded}
                 title={lastExpanded ? '至少保留一个' : isCollapsed ? '展开' : '收起'}
-                className={btn}
               >
                 {isCollapsed ? '▸' : '▾'}
-              </button>
+              </Button>
               <span className={isCollapsed ? 'text-neutral-600' : 'text-neutral-300'}>{pl}</span>
               {desc?.[key] && <InfoTip text={desc[key]} />}
             </div>
@@ -106,33 +128,33 @@ export function PaneChartView({
       {(toggleDrawing || indicators || solo) && (
         <div className="mb-2 flex items-center gap-1.5 text-xs">
           {solo && (
-            <button
+            <Button
+              variant="outline"
+              size="xs"
               onClick={solo.onClick}
-              className={`rounded border px-2 py-0.5 ${
-                solo.active ? 'border-sky-600 text-sky-300' : 'border-neutral-700 text-neutral-300'
-              }`}
+              className={solo.active ? ACTIVE_SKY : undefined}
               title={solo.active ? '再点一下恢复之前的布局' : '收起其它格,只看这一格'}
             >
               {solo.label}
-            </button>
+            </Button>
           )}
           {toggleDrawing && (
-            <button
+            <Button
+              variant="outline"
+              size="xs"
               onClick={toggleDrawing}
-              className={`rounded border px-2 py-0.5 ${
-                drawing ? 'border-yellow-500 text-yellow-400' : 'border-neutral-700 text-neutral-300'
-              }`}
+              className={drawing ? 'border-yellow-500 text-yellow-400 hover:text-yellow-300' : undefined}
               title="画趋势线:开启后点两点成线(有预览跟手)。关闭后:点线选中→按 Delete 删除,或点端点抓起→移动→再点放下调整。"
             >
               ✏ 画线{drawing ? '中' : ''}
-            </button>
+            </Button>
           )}
           {indicators && (
             <Popover>
               <PopoverTrigger
-                className={`rounded border px-2 py-0.5 ${
-                  indicators.active.length ? 'border-sky-600 text-sky-300' : 'border-neutral-700 text-neutral-300'
-                }`}
+                render={
+                  <Button variant="outline" size="xs" className={indicators.active.length ? ACTIVE_SKY : undefined} />
+                }
               >
                 指标{indicators.active.length ? ` (${indicators.active.length})` : ''} ▾
               </PopoverTrigger>
@@ -170,13 +192,9 @@ export function PaneChartView({
             className="absolute z-20 flex -translate-x-1/2 -translate-y-full gap-1 rounded border border-neutral-600 bg-neutral-900/95 px-1 py-0.5 shadow-lg"
             style={{ left: selection.x, top: selection.y - 6 }}
           >
-            <button
-              onClick={deleteSelected}
-              className="px-1.5 py-0.5 text-xs text-red-400 hover:text-red-300"
-              title="删除这条线"
-            >
+            <Button variant="destructive" size="xs" onClick={deleteSelected} title="删除这条线">
               🗑 删除
-            </button>
+            </Button>
           </div>
         )}
         {/* 每个 pane 顶部图例:指标名 + 竖线对应值。仅悬停时显示,不悬停不挡线
