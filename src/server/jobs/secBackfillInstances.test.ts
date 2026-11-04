@@ -16,7 +16,7 @@ function freshDb(): Database {
  * 消失了 —— 公司把它标成了自定义概念 `nvda:PurchasesOfPropertyAndEquipmentAndIntangibleAssets`,
  * 而 companyfacts 只聚合标准 taxonomy。
  */
-function ytd(tag: string, vals: Array<[string, number]>) {
+function ytd(vals: Array<[string, number]>) {
   return {
     units: {
       USD: vals.map(([end, val]) => ({ start: '2022-01-31', end, val, accn: 'cf', form: '10-Q', filed: '2022-11-18' })),
@@ -27,15 +27,15 @@ function ytd(tag: string, vals: Array<[string, number]>) {
 const FACTS: CompanyFacts = {
   facts: {
     'us-gaap': {
-      Revenues: ytd('Revenues', [
+      Revenues: ytd([
         ['2022-05-01', 8_288e6],
         ['2022-07-31', 15_992e6],
       ]),
-      CostOfRevenue: ytd('CostOfRevenue', [
+      CostOfRevenue: ytd([
         ['2022-05-01', 2_857e6],
         ['2022-07-31', 6_646e6],
       ]),
-      NetCashProvidedByUsedInOperatingActivities: ytd('ocf', [
+      NetCashProvidedByUsedInOperatingActivities: ytd([
         ['2022-05-01', 1_731e6],
         ['2022-07-31', 3_001e6],
       ]),
@@ -130,7 +130,7 @@ describe('backfillFromInstances', () => {
     let pulls = 0;
     const counting = {
       ...stub,
-      filingInstance: async (c: string, a: string) => {
+      filingInstance: async (_c: string, a: string) => {
         pulls += 1;
         return INSTANCES[a]!;
       },

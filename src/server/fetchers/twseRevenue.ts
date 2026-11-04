@@ -115,12 +115,12 @@ export async function fetchTwseMonthlyRevenue(
   const all = (await res.json()) as Record05[];
   if (!Array.isArray(all) || all.length === 0) throw new Error('TWSE t187ap05_L 返回空数组(源结构可能变了)');
 
-  const row = all.find((r) => r['公司代號'] === twseCode);
+  const row = all.find((r) => r.公司代號 === twseCode);
   // 找不到不是「本月没数」而是配置/源出问题:2330 是上市股,必然在这张表里。
   if (!row) throw new Error(`TWSE t187ap05_L 里没有代号 ${twseCode}(共 ${all.length} 家)`);
 
-  const latestMonthEnd = rocMonthEnd(row['資料年月'] ?? '');
-  if (!latestMonthEnd) throw new Error(`TWSE ${twseCode}: 资料年月无法解析(${row['資料年月']})`);
+  const latestMonthEnd = rocMonthEnd(row.資料年月 ?? '');
+  if (!latestMonthEnd) throw new Error(`TWSE ${twseCode}: 资料年月无法解析(${row.資料年月})`);
 
   // 三个月一次拿齐:当月、上月(−1)、去年当月(−12)。
   const candidates: Array<[string | null, number | null]> = [
@@ -143,10 +143,10 @@ export async function fetchTwseMonthlyRevenue(
   }
 
   return {
-    company: row['公司名稱'] ?? twseCode,
+    company: row.公司名稱 ?? twseCode,
     points,
     yoyPct: parseYoy(row['營業收入-去年同月增減(%)']),
     latestMonthEnd,
-    note: row['備註'] && row['備註'] !== '-' ? row['備註'] : null,
+    note: row.備註 && row.備註 !== '-' ? row.備註 : null,
   };
 }
