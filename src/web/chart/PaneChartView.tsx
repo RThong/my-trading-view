@@ -1,4 +1,4 @@
-import * as Popover from '@radix-ui/react-popover';
+import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import type { LegendCell, PaneDef } from './paneChart.types';
 import { InfoTip } from '../components/InfoTip';
 
@@ -128,43 +128,37 @@ export function PaneChartView({
             </button>
           )}
           {indicators && (
-            <Popover.Root>
-              <Popover.Trigger
+            <Popover>
+              <PopoverTrigger
                 className={`rounded border px-2 py-0.5 ${
                   indicators.active.length ? 'border-sky-600 text-sky-300' : 'border-neutral-700 text-neutral-300'
                 }`}
               >
                 指标{indicators.active.length ? ` (${indicators.active.length})` : ''} ▾
-              </Popover.Trigger>
-              <Popover.Portal>
-                <Popover.Content
-                  align="start"
-                  sideOffset={4}
-                  className="z-50 flex flex-col gap-0.5 rounded-md border border-neutral-700 bg-neutral-900 p-1.5 text-xs text-neutral-200 shadow-md outline-none"
-                >
-                  {indicators.options.map((o) => {
-                    const off = indicators.disabled?.ids.includes(o.id) ?? false;
-                    return (
-                      <label
-                        key={o.id}
-                        title={off ? indicators.disabled?.hint : undefined}
-                        className={`flex items-center gap-2 rounded px-2 py-1 ${
-                          off ? 'cursor-not-allowed text-neutral-600' : 'cursor-pointer hover:bg-neutral-800'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          disabled={off}
-                          checked={!off && indicators.active.includes(o.id)}
-                          onChange={() => indicators.toggle(o.id)}
-                        />
-                        {o.label}
-                      </label>
-                    );
-                  })}
-                </Popover.Content>
-              </Popover.Portal>
-            </Popover.Root>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto gap-0.5 p-1.5 text-xs">
+                {indicators.options.map((o) => {
+                  const off = indicators.disabled?.ids.includes(o.id) ?? false;
+                  return (
+                    <label
+                      key={o.id}
+                      title={off ? indicators.disabled?.hint : undefined}
+                      className={`flex items-center gap-2 rounded px-2 py-1 ${
+                        off ? 'cursor-not-allowed text-neutral-600' : 'cursor-pointer hover:bg-neutral-800'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={off}
+                        checked={!off && indicators.active.includes(o.id)}
+                        onChange={() => indicators.toggle(o.id)}
+                      />
+                      {o.label}
+                    </label>
+                  );
+                })}
+              </PopoverContent>
+            </Popover>
           )}
         </div>
       )}

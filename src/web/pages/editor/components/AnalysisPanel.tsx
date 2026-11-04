@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from 'react';
-import * as Popover from '@radix-ui/react-popover';
+import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
 import { ChevronDown, ChevronRight, CircleHelp } from 'lucide-react';
 import type { LinePoint } from '../../../chart/core';
 import {
@@ -282,21 +282,19 @@ function Section({ open, onToggle, children }: { open: boolean; onToggle: () => 
 // 说明收进问号浮层。走 Portal 挂到 body 上:侧栏是滚动容器,浮层画在里面会被裁掉
 function Help({ text }: { text: string }) {
   return (
-    <Popover.Root>
-      <Popover.Trigger aria-label="说明" className="ml-1 text-neutral-500 hover:text-neutral-200">
+    <Popover>
+      <PopoverTrigger aria-label="说明" className="ml-1 text-neutral-500 hover:text-neutral-200">
         <CircleHelp size={13} />
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Content
-          side="left"
-          align="start"
-          sideOffset={6}
-          collisionPadding={8}
-          className="z-50 w-max max-w-80 whitespace-pre-wrap rounded-md border border-neutral-700 bg-neutral-900 p-3 text-xs leading-relaxed text-neutral-300 shadow-lg outline-none"
-        >
-          {text}
-        </Popover.Content>
-      </Popover.Portal>
-    </Popover.Root>
+      </PopoverTrigger>
+      <PopoverContent
+        side="left"
+        align="start"
+        sideOffset={6}
+        collisionPadding={8}
+        className="block w-max max-w-80 whitespace-pre-wrap p-3 text-xs leading-relaxed text-neutral-300"
+      >
+        {text}
+      </PopoverContent>
+    </Popover>
   );
 }
