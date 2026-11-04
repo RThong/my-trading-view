@@ -39,7 +39,7 @@ import {
   eqwDdSpread,
   type Point,
 } from '../analytics/regime';
-import { OIS_INPUT_TENORS, hikesByTenor } from '../../shared/policyPath';
+import { OIS_INPUT_TENORS, hikesByTenor } from '../../shared/calc/policyPath';
 import type { RegimeSeries, FundSeries, SeriesKey } from '../../shared/regimeSeries';
 import { nearMinusFar } from '../analytics/termStructure';
 import { rollingSharpe } from '../analytics/sharpe';
@@ -349,7 +349,7 @@ export function readDbBacked(
   return { series, unavailable, ohlc };
 }
 
-/** OIS 隐含累计加息次数:对外名 → 以哪个期限结尾的那一段远期(见 shared/policyPath)。 */
+/** OIS 隐含累计加息次数:对外名 → 以哪个期限结尾的那一段远期(见 shared/calc/policyPath)。 */
 const OIS_HIKE_HORIZONS = [
   ['oisHikes3m', '3M'],
   ['oisHikes6m', '6M'],
@@ -496,7 +496,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     // (交接文档留的开放问题「KW 有没有配套预期短端序列」:没有直发,但 拟合 − 溢价 就是它,
     // 所以纽约联储 ACM 那个 10MB BIFF8 .xls 的 fetcher 不必为这条腿而写。)
     kwFitted10: fredSeries('THREEFY10'),
-    // 政策利率目标区间(日频 %)。只当参照:算加息次数的基准是 SOFR 隔夜,不是区间中值(见 shared/policyPath)。
+    // 政策利率目标区间(日频 %)。只当参照:算加息次数的基准是 SOFR 隔夜,不是区间中值(见 shared/calc/policyPath)。
     fedTargetUpper: fredSeries('DFEDTARU'),
     fedTargetLower: fredSeries('DFEDTARL'),
     // SEP 点阵图中值。⚠️ FEDTARMD 的日期轴是「预测哪一年」(YYYY-01-01),FRED 只留最新一版 → 下面改记为年底。

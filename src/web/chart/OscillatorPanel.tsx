@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import type { IChartApi } from 'lightweight-charts';
-import type { Bar } from '../../lib/chart';
+import type { Bar } from './core';
 import { type AxisSync, type OscId, useMainChartForOscillators, useOscillatorChart } from './oscillator.hooks';
 
 // 主图下方的副图指标区(MACD / RSI),逐张叠放;同步与对齐逻辑见 ./oscillator.hooks。

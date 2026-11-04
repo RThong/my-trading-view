@@ -1,5 +1,5 @@
 import type { Interval } from '../../hooks/interval';
-import { shiftBusinessDays } from './analysis';
+import { shiftBusinessDays } from '../../chart/analysis';
 import type { ChartDoc } from './chartDoc';
 import { layerLabel, layerUnit } from './layerLabel';
 import type { LayerData } from './layerPoints';

@@ -1,7 +1,7 @@
 // 编辑状态:一份 ChartDoc + 一组编辑动作。动作全部走 chartDoc.ts 的纯函数(updater 形式,不依赖闭包里的旧 doc)。
 // 最后一次显示的图存在 localStorage,刷新 / 切页回来接着用。
 import { useEffect, useState } from 'react';
-import { SERIES_COLORS } from '../../lib/palette';
+import { SERIES_COLORS } from '../../chart/palette';
 import {
   EMPTY_DOC,
   addLayer,

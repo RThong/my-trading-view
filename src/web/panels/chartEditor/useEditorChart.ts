@@ -1,6 +1,6 @@
 // 编辑器的渲染层:只吃「ChartDoc + 取到的数据」,直接用 lightweight-charts v5 API。
 // 图只建一次;之后每次文档变化按图层 id 增量对账(加 / 删 / 换格 / 换轴 / 改色 / 倒轴 / 对数),不重建整张图,
-// 所以加格删格时缩放与十字线状态都还在。不依赖旧图表引擎(panels/chart/)。
+// 所以加格删格时缩放与十字线状态都还在。不依赖旧图表引擎(chart/ 下的 PaneChart*)。
 import { type RefObject, useEffect, useRef } from 'react';
 import {
   createChart,
@@ -11,7 +11,7 @@ import {
   type ISeriesApi,
   type Time,
 } from 'lightweight-charts';
-import { CHART_OPTIONS, type LinePoint } from '../../lib/chart';
+import { CHART_OPTIONS, type LinePoint } from '../../chart/core';
 import type { Interval } from '../../hooks/interval';
 import type { ChartDoc } from './chartDoc';
 import { canLogScale, type LayerData } from './layerPoints';

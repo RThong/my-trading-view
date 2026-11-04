@@ -6,7 +6,7 @@ import {
   clampAutoscaleProvider,
   expandAutoscaleProvider,
   type Bar,
-} from './chart';
+} from './core';
 
 describe('changeStats', () => {
   test('正常涨幅', () => {

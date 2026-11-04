@@ -21,7 +21,7 @@ import {
   isWeekend,
   type Bar,
   type LinePoint,
-} from '../../lib/chart';
+} from '../../chart/core';
 import type { YPoint } from './yieldCurve.hooks';
 import type { Interval } from '../../hooks/interval';
 import { useStable } from '../../hooks/useStable';

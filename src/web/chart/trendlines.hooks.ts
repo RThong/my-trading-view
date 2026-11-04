@@ -17,7 +17,7 @@ import {
   type TrendLine,
 } from './trendlines';
 import type { PaneDef, AnySeries } from './paneChart.types';
-import { useStable } from '../../hooks/useStable';
+import { useStable } from '../hooks/useStable';
 
 const HIT_PX = 6; // 命中线(hover/选中)阈值
 const HANDLE_PX = 9; // 命中端点手柄(拖拽)阈值

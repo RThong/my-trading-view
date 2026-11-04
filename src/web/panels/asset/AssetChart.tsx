@@ -1,12 +1,12 @@
 import { useMemo, useRef } from 'react';
 import type { Interval } from '../../hooks/interval';
 import { COLORS, buildSpecs, paneConfig, toBars, useAssetData } from './assetChart.hooks';
-import { aggregateBars } from '../../lib/chart';
-import { usePaneChartStack } from '../chart/paneChart.hooks';
-import { PaneChartView } from '../chart/PaneChartView';
-import { INDICATORS, computeIndicatorLines, useIndicatorSelection, withIndicators } from '../chart/priceIndicators';
-import { OscillatorPanel } from '../chart/OscillatorPanel';
-import { OSC_IDS, OSC_OPTIONS } from '../chart/oscillator.hooks';
+import { aggregateBars } from '../../chart/core';
+import { usePaneChartStack } from '../../chart/paneChart.hooks';
+import { PaneChartView } from '../../chart/PaneChartView';
+import { INDICATORS, computeIndicatorLines, useIndicatorSelection, withIndicators } from '../../chart/priceIndicators';
+import { OscillatorPanel } from '../../chart/OscillatorPanel';
+import { OSC_IDS, OSC_OPTIONS } from '../../chart/oscillator.hooks';
 
 const ALL_INDICATOR_IDS = [...INDICATORS.map((d) => d.id), ...OSC_IDS];
 

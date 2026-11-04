@@ -3,7 +3,7 @@ import { useYieldCurve, curveForDate, snapToTradingDay } from './yieldCurve.hook
 import { YieldCurveChart, type Curve } from './YieldCurveChart';
 import { DatePickerWithPresets } from '../../components/DatePickerWithPresets';
 import { InfoTip } from '../../components/InfoTip';
-import { SERIES_COLORS } from '../../lib/palette';
+import { SERIES_COLORS } from '../../chart/palette';
 
 type Row = { id: number; date: string; visible: boolean };
 

@@ -1,6 +1,6 @@
 // K 线技术指标纯函数:输入按时间升序的蜡烛,输出与 time 对齐的点;预热不足的开头不出点。
 // 口径对齐 TradingView(ta.ema / ta.bb / ta.rsi),MACD 柱按国内软件 ×2;均已与 moomoo 03-30 读数逐位对账。
-import type { Bar, LinePoint } from './chart';
+import type { Bar, LinePoint } from './core';
 
 type Closes = { time: string; close: number }[];
 

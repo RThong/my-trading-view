@@ -2,7 +2,7 @@
 import { useRef, useState } from 'react';
 import useSWR from 'swr';
 import { useYieldCurve } from './yieldCurve.hooks';
-import { SERIES_COLORS } from '../../lib/palette';
+import { SERIES_COLORS } from '../../chart/palette';
 import { getJson, SWR_OPTS } from '../../lib/http';
 
 import {
@@ -16,7 +16,7 @@ import {
 } from './tenorHistory.hooks';
 import type { PriceBar } from '../asset/assetChart.hooks';
 import { spreadSeries } from './rateSpread.hooks';
-import { aggregate } from '../../lib/chart';
+import { aggregate } from '../../chart/core';
 import { InfoTip } from '../../components/InfoTip';
 import type { Interval } from '../../hooks/interval';
 

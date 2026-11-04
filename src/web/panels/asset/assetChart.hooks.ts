@@ -3,9 +3,9 @@
 // 切 tab 不卸载),所以这里所有 effect 都是「挂载建/卸载销」,不再按标的 reset。
 import useSWR from 'swr';
 import type { Interval } from '../../hooks/interval';
-import { aggregate, type LinePoint, type Bar } from '../../lib/chart';
+import { aggregate, type LinePoint, type Bar } from '../../chart/core';
 import { ivIndexByUnderlying } from '../../../shared/marketCatalog';
-import type { PaneDef, Spec, LineSpec } from '../chart/paneChart.types';
+import type { PaneDef, Spec, LineSpec } from '../../chart/paneChart.types';
 import { getJson, SWR_OPTS } from '../../lib/http';
 
 export type OptRow = { date: string; callIv: number; putIv: number; skew: number };

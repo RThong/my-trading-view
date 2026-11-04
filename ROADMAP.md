@@ -278,8 +278,8 @@ TradingView
 - **L2-6（P2）MCP 出图：自然语言叠加**。外部（Claude Desktop、claude.ai、知识库会话）说一句「把黄金和 10Y 实际利率叠一起，看近 5 年」，直接拿到叠好的清晰图。
   - 分工：自然语言理解和选序列由**客户端大模型**做；本项目 MCP 只做确定性计算（取数 → 叠加 → 出图），同样输入永远同样输出，符合 §0.5 分工。
   - 工具：`search_series(query)` 搜注册表 → `get_series(id, from, to)` 取数 → `overlay(a, b, from, to)` 跑 `bestOverlay`（找偏移 + 自动选基准段 + 定比例），返回带 `shift` / `fit` 的 ChartDoc → `render_chart(doc)` 返回 PNG + 编辑器链接（点开可接着改）。
-  - 已具备：叠加结果可序列化（图层的 `shift`、`fit` 存了基准段与 alpha / beta / r，渲染时不重算）；`analysis.ts` 是纯函数，只引一个类型，搬到服务端即可跑。
-  - 前置：① `chartDoc.ts` / `analysis.ts` / `registry.ts` 搬到 `src/shared/`，服务端补一份按 id 取数（同 L1-1）；② URL 带 ChartDoc（L2-2）；③ 服务端出 PNG（Playwright 打开链接截图）；④ 包 MCP。③ + ④ 约 1 天。
+  - 已具备：叠加结果可序列化（图层的 `shift`、`fit` 存了基准段与 alpha / beta / r，渲染时不重算）；`chart/analysis.ts` 是纯函数，只引一个类型，搬到服务端即可跑。
+  - 前置：① `chartDoc.ts` / `chart/analysis.ts` / `registry.ts` 搬到 `src/shared/`，服务端补一份按 id 取数（同 L1-1）；② URL 带 ChartDoc（L2-2）；③ 服务端出 PNG（Playwright 打开链接截图）；④ 包 MCP。③ + ④ 约 1 天。
   - 为何这次 MCP 值得：之前判 MCP 冗余（moomoo 自建 MCP 建过又删）是因为 Claude Code 有 Bash；这里的使用方是没有 Bash 的外部客户端。只在 Claude Code 内用的话，①②③ 加 curl 就够，不必包 MCP。
 - 边界：非时间轴的图不进 ChartDoc，包括 `YieldCurvePanel`（横轴是期限）、期权微笑和期限结构、`PolicyPathPanel`、各种表格。等真出现第二种横轴的需求再扩展。
 
@@ -297,7 +297,7 @@ TradingView
 - 后话：表达式图层、指标模块（参见第 4 节「后话」）。
 
 本项目现状
-- 规则就在 PaneSpec 里：22 格配了 `percentile.riskTail`，11 格配了 `refLines` 或 `band`。分位数用 `shared/stats.ts` 计算。
+- 规则就在 PaneSpec 里：22 格配了 `percentile.riskTail`，11 格配了 `refLines` 或 `band`。分位数用 `shared/calc/stats.ts` 计算。
 - 问题：`regimeChart.hooks.ts` 依赖 swr 和 React，服务端用不了这些规则，所以规则只能在你打开页面时生效。
 - `backtest/signal.ts` 的 panic/greed 状态机已经有滞后带（进入 85 / 退出 50，进入 10 / 退出 30）和互斥规则，写法可以作为模板。
 

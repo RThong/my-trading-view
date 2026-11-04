@@ -3,11 +3,11 @@
 // 任意 Yahoo 代码走 /api/yahoo/history。
 import { useMemo } from 'react';
 import useSWR from 'swr';
-import { aggregate, isWeekend, type LinePoint } from '../../lib/chart';
+import { aggregate, isWeekend, type LinePoint } from '../../chart/core';
 import type { Interval } from '../../hooks/interval';
 import { useServerRefresh } from '../../hooks/useServerRefresh';
 import { useRegimeData, type RegimeData } from '../regime/regimeChart.hooks';
-import { shiftPoints } from './analysis';
+import { shiftPoints } from '../../chart/analysis';
 import { rememberYahooName, seriesDef, type CurveSource, type SeriesDef, type SeriesSource } from './registry';
 import { SWR_OPTS } from '../../lib/http';
 

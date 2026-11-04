@@ -1,7 +1,13 @@
 import { useYieldCurve, valueAt } from './yieldCurve.hooks';
 import { useRegimeData } from '../regime/regimeChart.hooks';
 import { InfoTip } from '../../components/InfoTip';
-import { OIS_INPUT_TENORS, dotGaps, hikesPriced, oisForwards, type ForwardSegment } from '../../../shared/policyPath';
+import {
+  OIS_INPUT_TENORS,
+  dotGaps,
+  hikesPriced,
+  oisForwards,
+  type ForwardSegment,
+} from '../../../shared/calc/policyPath';
 
 const DESC = [
   '定义:最新一天的 SOFR OIS(Eris)反推的分段远期,对照当前政策利率与最新一版 SEP 点阵图。',

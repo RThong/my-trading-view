@@ -1,5 +1,5 @@
 import { ChartLine } from 'lucide-react';
-import { SERIES_COLORS } from '../../lib/palette';
+import { SERIES_COLORS } from '../../chart/palette';
 import { EMPTY_DOC, addLayer, moveLayer, nextColor, setLayerScale, type ChartDoc } from './chartDoc';
 
 // 起手示例:各演示一种用法(同格独立轴叠加 / 同格同轴 / 分两格比先后)。只是快捷入口,载入后照常编辑。

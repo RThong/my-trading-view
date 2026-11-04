@@ -1,7 +1,7 @@
 // 通用多 pane 图表栈的类型(与数据源无关)。原在 assetChart.hooks.ts,因被
 // AssetChart / RegimeChart / AttackDefensePanel 三方复用,抽到中立模块,校正依赖方向。
 import type { ISeriesApi } from 'lightweight-charts';
-import type { LinePoint, Bar } from '../../lib/chart';
+import type { LinePoint, Bar } from './core';
 
 export type PaneDef = { key: string; label: string; series: string[] };
 export type LineSpec = {
@@ -22,7 +22,7 @@ export type LineSpec = {
   /** 与另一条线(key)之间填色,画在蜡烛下层(布林带通道底色)。两条线须同一时间轴,配不上的时间点跳过。 */
   fillTo?: { key: string; color: string };
   /**
-   * 价格轴的**上限框** `[lo, hi]`:自动缩放出来的范围与它求交(见 `lib/chart` 的 `clampPriceRange`)。
+   * 价格轴的**上限框** `[lo, hi]`:自动缩放出来的范围与它求交(见 `chart/core` 的 `clampPriceRange`)。
    * 只影响可视轴范围 —— 不改数据、不改 hover 读数、不改导出。
    *
    * 给「日常波动很窄、但带真实极端单点」的序列用(开工率季节 z 的 Uri 寒潮 −27、
@@ -31,7 +31,7 @@ export type LineSpec = {
    * 等于让每个调用方自己去实现「求交 + 倒挂退回」那套语义,迟早各写各的。
    */
   clampVisibleTo?: [number, number];
-  /** 价格轴的**下限框**:自动缩放范围撑到至少覆盖 `[lo, hi]`(见 `lib/chart` 的 `expandAutoscaleProvider`)。与 clampVisibleTo 互斥。 */
+  /** 价格轴的**下限框**:自动缩放范围撑到至少覆盖 `[lo, hi]`(见 `chart/core` 的 `expandAutoscaleProvider`)。与 clampVisibleTo 互斥。 */
   expandVisibleTo?: [number, number];
 };
 export type CandleSpec = { key: string; pane: number; kind: 'candle'; title: string; data: Bar[] };

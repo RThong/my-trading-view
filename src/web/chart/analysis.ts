@@ -1,6 +1,6 @@
 // 编辑器的分析计算(纯函数):时间平移、两条线按日期配对、相关性(领先滞后扫描)、叠加选段与换算。
 // 输入输出都是 { time: 'YYYY-MM-DD', value }[](升序),与渲染层同一种形状。
-import type { LinePoint } from '../../lib/chart';
+import type { LinePoint } from './core';
 
 const DAY_MS = 86_400_000;
 // 1970-01-05 是周一:以它为原点数「第几个工作日」

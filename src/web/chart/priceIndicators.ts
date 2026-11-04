@@ -1,8 +1,8 @@
 // K 线叠加指标(EMA / 布林带):注册表 + 勾选状态 + 挂到蜡烛 pane。
 // 每个指标是表里一行,彼此解耦;只做叠加在蜡烛上的(不新开 pane,pane 数每实例固定)。
 import { useMemo, useState } from 'react';
-import { ema, bollinger } from '../../lib/indicators';
-import { needsLogScale, type Bar, type LinePoint } from '../../lib/chart';
+import { ema, bollinger } from './indicators';
+import { needsLogScale, type Bar, type LinePoint } from './core';
 import type { PaneDef, Spec } from './paneChart.types';
 
 type IndicatorDef = {

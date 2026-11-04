@@ -1,7 +1,7 @@
 // 攻防指标数据层:NOBL/QQQ 比值 + ZigZag 攻防 regime 分区(慢/事后确认)+ 均线滞回快线 + specs 构造。纯逻辑,便于单测。
 import useSWR from 'swr';
-import { zigzagRegimes, type Regime } from '../../lib/zigzag';
-import type { Spec } from '../chart/paneChart.types';
+import { zigzagRegimes, type Regime } from '../../chart/zigzag';
+import type { Spec } from '../../chart/paneChart.types';
 import type { PriceBar } from '../asset/assetChart.hooks';
 import { getJson, SWR_OPTS } from '../../lib/http';
 

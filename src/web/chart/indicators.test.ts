@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import { ema, bollinger, macd, rsi } from './indicators';
-import type { Bar } from './chart';
+import type { Bar } from './core';
 
 function bars(closes: number[]): Bar[] {
   return closes.map((c, i) => ({

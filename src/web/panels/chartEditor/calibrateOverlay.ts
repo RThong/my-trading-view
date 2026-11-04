@@ -1,8 +1,8 @@
 // 回测「叠加对比」的选段门槛(OVERLAY_RULES):拿公认有关 / 无关的组合看判得对不对,再拿随机走势量误报率。
 // 改门槛前后各跑一次比对:bun run src/web/panels/chartEditor/calibrateOverlay.ts(要先起 dev server,读 localhost:3000)。
 // 只读接口、不写库。判断逻辑与按钮共用 findBaseSegment,不另写一套。
-import { isWeekend } from '../../lib/chart';
-import { findBaseSegment, type Segment } from './analysis';
+import { isWeekend } from '../../chart/core';
+import { findBaseSegment, type Segment } from '../../chart/analysis';
 
 type P = { time: string; value: number };
 type Row = { date: string; value: number };

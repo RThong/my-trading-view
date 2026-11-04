@@ -1,6 +1,6 @@
 // VX1−V3 期限结构信号 → 每日 {panic, greed} 状态。纯函数,输入 spread 按日期升序。
 // 无未来函数:第 t 天的 rank 只用 spread[0..t](含当天);见 signal.test.ts 的锁死测试。
-import { percentileRank } from '../../shared/stats';
+import { percentileRank } from '../../shared/calc/stats';
 
 export type SpreadPoint = { date: string; value: number };
 export type PanicEntry = 'A' | 'B' | 'C'; // A: spread>0(backwardation);B: rank≥阈值;C: A||B

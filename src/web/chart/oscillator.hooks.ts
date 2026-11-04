@@ -4,8 +4,8 @@
 // 故两图逻辑序号只差副图预热掉的那几根(offset)。
 import { useEffect, useMemo, useState } from 'react';
 import type { IChartApi, LogicalRange, MouseEventParams, Time } from 'lightweight-charts';
-import { fmtDate, type Bar } from '../../lib/chart';
-import { macd, rsi } from '../../lib/indicators';
+import { fmtDate, type Bar } from './core';
+import { macd, rsi } from './indicators';
 import { usePaneChart } from './paneChart.hooks';
 import type { Spec } from './paneChart.types';
 

@@ -2,11 +2,11 @@
 // 图表引擎(usePaneChart/usePaneLayout/useCrosshairLegend)与展示壳(PaneChartView)全复用期权侧。
 import useSWR from 'swr';
 import { useServerRefresh } from '../../hooks/useServerRefresh';
-import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../lib/chart';
-import { percentile, percentileRank } from '../../../shared/stats';
+import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../chart/core';
+import { percentile, percentileRank } from '../../../shared/calc/stats';
 import type { SeriesKey } from '../../../shared/regimeSeries';
 import type { Interval } from '../../hooks/interval';
-import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../chart/paneChart.types';
+import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../../chart/paneChart.types';
 import { rollMismatchDates, type RollMismatchKind } from '../../lib/oilRoll';
 import { BREADTH_CHECK, SIGMA_ID } from './descSnippets';
 import type { ChartDoc } from '../chartEditor/chartDoc';

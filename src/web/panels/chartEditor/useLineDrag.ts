@@ -14,7 +14,7 @@ import {
   MismatchDirection,
   PriceScaleMode,
 } from 'lightweight-charts';
-import { fmtDate } from '../../lib/chart';
+import { fmtDate } from '../../chart/core';
 import { findLayer, type ChartDoc, type Pane } from './chartDoc';
 import type { LayerSeries } from './useEditorChart';
 
