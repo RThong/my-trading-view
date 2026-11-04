@@ -5,23 +5,42 @@ language js
 // 带 await 的循环豁免:限频的顺序请求 / 分页「一个接一个」没法用 map 表达,改成 reduce 串 Promise 反而难读。
 // 需要循环的多半是计算:拆到单独文件、加进放行名单;实在拆不开的业务个例才用 `// biome-ignore lint/plugin: 理由`。
 // 用例见同目录 no-loop.test.ts。
-or {
-  JsForStatement(),
-  JsForOfStatement(),
-  JsForInStatement(),
-  JsWhileStatement(),
-  JsDoWhileStatement()
-} as $loop where {
-  // `for await (…)` 的 await 是语句关键字,不是 JsAwaitExpression,只能看源码前缀
-  $loop <: not r"for\s+await[\s\S]*",
-  $loop <: not contains JsAwaitExpression(),
-  // 嵌套循环只报最外层:是同一段逻辑,一条忽略注释管整段;外层改写掉后内层自然浮上来再报
+
+pattern any_loop() {
+  or {
+    JsForStatement(),
+    JsForOfStatement(),
+    JsForInStatement(),
+    JsWhileStatement(),
+    JsDoWhileStatement()
+  }
+}
+
+// 要报的循环:不是 for await,且自身没有顺序 await。
+// 找 await 时在函数边界停下:回调里的 await 不让外层循环「一个接一个」跑,不算豁免理由
+pattern sync_loop() {
+  any_loop() as $l where {
+    // `for await (…)` 的 await 是语句关键字,不是 JsAwaitExpression,只能看源码前缀
+    $l <: not r"for\s+await[\s\S]*",
+    $l <: not contains JsAwaitExpression() until or {
+      JsArrowFunctionExpression(),
+      JsFunctionExpression(),
+      JsFunctionDeclaration(),
+      JsMethodClassMember(),
+      JsMethodObjectMember()
+    }
+  }
+}
+
+sync_loop() as $loop where {
+  // 嵌套循环只报最外层的「要报的循环」:同一段逻辑,一条忽略注释管整段;外层改写掉后内层自然浮上来再报。
+  // 外层是豁免的顺序 await 循环时,内层同步循环照样报 —— 否则套一层 await 循环就能绕过规则
   $loop <: not within or {
     JsForStatement(body=contains $loop),
     JsForOfStatement(body=contains $loop),
     JsForInStatement(body=contains $loop),
     JsWhileStatement(body=contains $loop),
     JsDoWhileStatement(body=contains $loop)
-  } ,
+  } as $outer where { $outer <: sync_loop() } ,
   register_diagnostic(span=$loop, message="业务代码不用循环,改用 map / filter / find / some / reduce(顺序 await 除外)", severity="error")
 }
