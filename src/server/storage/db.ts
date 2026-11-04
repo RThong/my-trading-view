@@ -29,9 +29,9 @@ function columns(db: Database, table: string): string[] {
 // 使旧库迁移后与全新库 schema.sql 的 DDL 完全一致。列探测保证幂等(新库无此表则跳过,
 // 交给 schema.sql 建;已迁过的库自然跳过)。
 function migrateOptionSource(db: Database): void {
-  for (const table of ['option_snapshot_25delta', 'option_chain_raw']) {
+  ['option_snapshot_25delta', 'option_chain_raw'].forEach((table) => {
     const cols = columns(db, table);
-    if (!cols.length) continue; // 新库尚无此表
+    if (!cols.length) return; // 新库尚无此表
     if (!cols.includes('source')) {
       db.exec(`ALTER TABLE ${table} ADD COLUMN source TEXT NOT NULL DEFAULT 'moomoo'`);
       db.exec(`UPDATE ${table} SET source = 'deribit' WHERE underlying = 'BTC'`);
@@ -39,7 +39,7 @@ function migrateOptionSource(db: Database): void {
     if (cols.includes('is_mock')) {
       db.exec(`ALTER TABLE ${table} DROP COLUMN is_mock`); // 仅 25Δ 表曾有,旧遗留列
     }
-  }
+  });
 }
 
 // v4:market_series 收敛为「只放波动率指数」,标的现货价挪到 price_eod。

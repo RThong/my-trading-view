@@ -17,23 +17,27 @@ const COUPON = new Map(AI_CDS.map((c) => [c.ticker, String(c.coupon ?? 100)]));
 // 每名取标准 5Y 基准合约:SNRFOR + USD + 该名配置的票息档(默认 100bp,高收益名 500bp)。同名若多档到期,取最长到期
 // (= on-the-run 5Y,短档是历史残留)。maturity 为 YYYY-MM-DD,字典序即时间序。
 export function parseIceCds(rows: IceRow[]): CdsSnapshot {
-  let date = '';
-  const best = new Map<string, { maturity: string; price: number }>();
-
-  for (const r of rows) {
+  const valid = rows.flatMap((r) => {
     const [ticker, tier, ccy, , coupon, maturity] = r.instrumentName.split('.');
-    if (!COUPON.has(ticker) || coupon !== COUPON.get(ticker) || tier !== 'SNRFOR' || ccy !== 'USD') continue;
+    if (!COUPON.has(ticker) || coupon !== COUPON.get(ticker) || tier !== 'SNRFOR' || ccy !== 'USD') return [];
 
     // price<=0 一并挡:Number(null)/Number('') 都得 0,缺价的行会伪装成有效价(→ 约 2228bp 假数据)。
     const price = Number(r.eodPrice);
-    if (!Number.isFinite(price) || price <= 0) continue;
+    if (!Number.isFinite(price) || price <= 0) return [];
 
-    if (!date) date = r.clearingDate;
-    const prev = best.get(ticker);
-    if (!prev || maturity > prev.maturity) best.set(ticker, { maturity, price });
-  }
+    return [{ ticker, maturity, price, clearingDate: r.clearingDate }];
+  });
 
-  return { date, points: [...best].map(([ticker, v]) => ({ ticker, price: v.price })) };
+  const best = valid.reduce((acc, v) => {
+    const prev = acc.get(v.ticker);
+    if (!prev || v.maturity > prev.maturity) acc.set(v.ticker, v);
+    return acc;
+  }, new Map<string, { maturity: string; price: number }>());
+
+  return {
+    date: valid.find((v) => v.clearingDate)?.clearingDate ?? '',
+    points: [...best].map(([ticker, v]) => ({ ticker, price: v.price })),
+  };
 }
 
 export async function fetchIceCds(doFetch = fetchWithTimeout): Promise<CdsSnapshot> {

@@ -24,12 +24,11 @@ export async function fetchDvolHistory(
     if (!res.ok) throw new Error(`Deribit DVOL → HTTP ${res.status}`);
     const j = (await res.json()) as { result?: { data?: number[][] }; error?: unknown };
     if (j.error) throw new Error(`Deribit DVOL → ${JSON.stringify(j.error)}`);
-    for (const row of j.result?.data ?? []) {
-      const [ts, , , , close] = row;
-      if (typeof ts === 'number' && typeof close === 'number') {
+    (j.result?.data ?? [])
+      .filter(([ts, , , , close]) => typeof ts === 'number' && typeof close === 'number')
+      .forEach(([ts, , , , close]) => {
         byDate.set(new Date(ts).toISOString().slice(0, 10), close);
-      }
-    }
+      });
   }
   return [...byDate.entries()].map(([date, value]) => ({ date, value })).sort((a, b) => a.date.localeCompare(b.date));
 }

@@ -25,16 +25,14 @@ export function parseJgbVixXlsx(
   const ss = [...sharedStringsXml.matchAll(/<si>(.*?)<\/si>/gs)].map(
     (m) => /<t[^>]*>([^<]*)<\/t>/.exec(m[1])?.[1] ?? '',
   );
-  const out: { date: string; value: number }[] = [];
-
-  for (const [, body] of sheetXml.matchAll(/<row[^>]*>(.*?)<\/row>/gs)) {
+  const out = [...sheetXml.matchAll(/<row[^>]*>(.*?)<\/row>/gs)].flatMap(([, body]) => {
     const a = /<c r="A\d+"[^>]*t="s"[^>]*><v>(\d+)<\/v>/.exec(body);
     const b = /<c r="B\d+"[^>]*><v>([\d.]+)<\/v>/.exec(body);
-    if (!a || !b) continue;
+    if (!a || !b) return [];
     const date = dotDateToIso(ss[Number(a[1])] ?? '');
     const value = Number(b[1]);
-    if (date && date >= since && Number.isFinite(value)) out.push({ date, value });
-  }
+    return date && date >= since && Number.isFinite(value) ? [{ date, value }] : [];
+  });
   // 源已升序,但 lightweight-charts 对乱序 setData 会抛;显式排序对齐 mofJgb,防源变序静默炸图。
   return out.sort((x, y) => x.date.localeCompare(y.date));
 }

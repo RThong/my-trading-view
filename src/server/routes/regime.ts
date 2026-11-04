@@ -290,7 +290,9 @@ export function readDbBacked(
     else unavailable.push(name);
   };
 
-  for (const [out, sym] of JOB_WRITTEN_SERIES) put(out, getMarketSeries(db, sym));
+  JOB_WRITTEN_SERIES.forEach(([out, sym]) => {
+    put(out, getMarketSeries(db, sym));
+  });
 
   // QQQ 现货:波动率与情绪两个视角的价格参照 —— 那些指标只有对着价格才读得出「背离还是同步」。
   // 同 DXY 的处理:close 进 series 管存在性,OHLC 进 ohlc 画蜡烛。
@@ -334,7 +336,7 @@ export function readDbBacked(
     par,
     base: sofrLive.findLast((p) => p.date <= date)?.value,
   }));
-  for (const [out, tenor] of OIS_HIKE_HORIZONS)
+  OIS_HIKE_HORIZONS.forEach(([out, tenor]) => {
     put(
       out,
       oisPar.flatMap(({ date, par, base }) => {
@@ -342,6 +344,7 @@ export function readDbBacked(
         return v === null ? [] : [{ date, value: v }];
       }),
     );
+  });
 
   return { series, unavailable, ohlc };
 }
@@ -356,16 +359,15 @@ const OIS_HIKE_HORIZONS = [
 
 /** 库里 Eris 各档按日拼成整条曲线(期限 → 百分点)。插入顺序跟 1D 的日期升序走。 */
 function oisParByDate(db: Database): Map<string, Record<string, number>> {
-  const byDate = new Map<string, Record<string, number>>();
+  const points = OIS_INPUT_TENORS.flatMap((tenor) =>
+    getMarketSeries(db, `ERIS_OIS_${tenor}`).map((p) => ({ tenor, ...p })),
+  );
 
-  for (const tenor of OIS_INPUT_TENORS)
-    for (const p of getMarketSeries(db, `ERIS_OIS_${tenor}`)) {
-      const par = byDate.get(p.date) ?? {};
-      par[tenor] = p.value;
-      byDate.set(p.date, par);
-    }
-
-  return byDate;
+  // 已有日期 set 不改位置,故 Map 顺序 = 各日期首次出现的顺序(即 1D 那档的日期升序)
+  return points.reduce(
+    (byDate, p) => byDate.set(p.date, { ...byDate.get(p.date), [p.tenor]: p.value }),
+    new Map<string, Record<string, number>>(),
+  );
 }
 
 /** 这一批的 key 全集:缓存命中时要先把旧条目按 key 剔掉,再塞新读到的。 */
@@ -401,25 +403,25 @@ function readSecSeries(db: Database): {
     { out: SEC_BUYER_FCFQ_KEY, id: BUYER_FCFQ_SERIES, trim: trimsGaps('fcfq') },
   ];
 
-  const series: Record<string, Point[]> = {};
-  const unavailable: string[] = [];
-  const trims: FundTrim[] = [];
-
-  for (const { out, id, trim } of defs) {
+  const read = defs.map(({ out, id, trim }) => {
     const raw = getMarketSeries(db, id);
-    const rows = trim ? trailingContiguous(raw) : raw;
+    return { out, raw, rows: trim ? trailingContiguous(raw) : raw };
+  });
 
-    // 裁掉了多少必须回报:裁本身是对的,**静默才是问题** —— 用户只看到一条短线,
-    // 分不清是「这家上市晚」还是「中间缺了几季、TTM 整段作废」(见 FundTrim)。
-    // trailingContiguous 保留的是尾段,所以被裁掉的是前 dropped 个点。
-    const dropped = raw.length - rows.length;
-    if (dropped > 0) {
-      trims.push({ key: out, dropped, gapFrom: raw[dropped - 1]!.date, gapTo: rows[0]!.date });
-    }
+  // 裁掉了多少必须回报:裁本身是对的,**静默才是问题** —— 用户只看到一条短线,
+  // 分不清是「这家上市晚」还是「中间缺了几季、TTM 整段作废」(见 FundTrim)。
+  // trailingContiguous 保留的是尾段,所以被裁掉的是前 dropped 个点。
+  const trims: FundTrim[] = read
+    .filter(({ raw, rows }) => raw.length > rows.length)
+    .map(({ out, raw, rows }) => {
+      const dropped = raw.length - rows.length;
+      return { key: out, dropped, gapFrom: raw[dropped - 1]!.date, gapTo: rows[0]!.date };
+    });
 
-    if (rows.length) series[out] = rows;
-    else unavailable.push(out);
-  }
+  const series: Record<string, Point[]> = Object.fromEntries(
+    read.filter(({ rows }) => rows.length).map(({ out, rows }) => [out, rows]),
+  );
+  const unavailable = read.filter(({ rows }) => !rows.length).map(({ out }) => out);
 
   // 只保留启用名单里的:名单外的公司(曾启用过、水位还留在库里)不该在面板上冒出来。
   const lag = getSecLag(db).filter((l) => ACTIVE_TICKERS.includes(l.ticker));
@@ -735,7 +737,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   };
   // 空数组归 unavailable 由 put 统一兜(见其注释),这里直接传。
   // Object.entries 会把 key 拓宽回 string,这里断言回来 —— 真正的校验发生在上面的对象字面量。
-  for (const [out, s] of Object.entries(direct) as [RegimeSeries, keyof typeof src][]) put(out, raw[s!]);
+  (Object.entries(direct) as [RegimeSeries, keyof typeof src][]).forEach(([out, s]) => {
+    put(out, raw[s!]);
+  });
 
   // 市值 / 等权比值:两腿按日期内连接(同一指数公司、同一交易日历,缺日就跳过,不前向填充)。任一腿缺 → unavailable。
   const eqwAt = new Map((spxEqw ?? []).map((b) => [b.tradeDate, b.close]));
@@ -964,7 +968,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
 
     const sec = readSecSeries(db);
     // 基本面是按名单派生的动态键(fund:NVDA:fcf / fund:buyerFcf),枚举不了,由 FundSeries 覆盖。
-    for (const [out, rows] of Object.entries(sec.series) as [FundSeries, Point[]][]) put(out, rows);
+    (Object.entries(sec.series) as [FundSeries, Point[]][]).forEach(([out, rows]) => {
+      put(out, rows);
+    });
     unavailable.push(...sec.unavailable);
     secLag = sec.lag;
     secTrim = sec.trims;

@@ -25,10 +25,9 @@ type FngBody = { fear_and_greed_historical?: { data?: Array<{ x: number; y: numb
 export function parseFearGreed(body: FngBody): FngPoint[] {
   // CNN 常把当天的点重复(日内多点塌缩到同一天)→ 按日期去重保留最后一个,保证升序无重复
   // (图表库要求严格升序)。输入已升序,Map 保留首次位置 + 最新值。
-  const byDate = new Map<string, number>();
-  for (const d of body.fear_and_greed_historical?.data ?? []) {
-    byDate.set(new Date(d.x).toISOString().slice(0, 10), d.y);
-  }
+  const byDate = new Map(
+    (body.fear_and_greed_historical?.data ?? []).map((d) => [new Date(d.x).toISOString().slice(0, 10), d.y]),
+  );
   return [...byDate].map(([date, value]) => ({ date, value }));
 }
 

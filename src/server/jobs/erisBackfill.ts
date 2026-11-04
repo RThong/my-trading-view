@@ -10,14 +10,14 @@ export async function backfillEris(
   fetchHistory: () => Promise<ErisCurve[]> = fetchErisHistory,
 ): Promise<{ days: number; total: number }> {
   const curves = await fetchHistory();
-  let total = 0;
-  for (const curve of curves) {
+  curves.forEach((curve) => {
     insertMarketSeries(
       db,
       curve.points.map((p) => ({ seriesId: `ERIS_OIS_${p.tenor}`, obsDate: curve.date, value: p.rate })),
     );
-    total += curve.points.length;
-  }
+  });
+
+  const total = curves.reduce((sum, curve) => sum + curve.points.length, 0);
   return { days: curves.length, total };
 }
 

@@ -77,21 +77,24 @@ export function parseSeries(
   const idx = wanted.map((w) => table.cols.indexOf(w));
   if (idx.some((i) => i < 0)) return null; // 少了要的列 = 表结构改版,交给调用方抛错
 
-  const out: Record<string, Point[]> = Object.fromEntries(wanted.map((w) => [w, [] as Point[]]));
-  for (const row of table.rows) {
+  const rows = table.rows.flatMap((row) => {
     const date = toIso(row[0] ?? '');
-    if (!date || date < since) continue;
+    return date && date >= since ? [{ date, row }] : [];
+  });
+  const out: Record<string, Point[]> = Object.fromEntries(
+    wanted.map((w, k) => [
+      w,
+      rows
+        .flatMap(({ date, row }) => {
+          const v = Number(row[idx[k]]);
+          return row[idx[k]]?.length && Number.isFinite(v) ? [{ date, value: v }] : [];
+        })
+        // 源已升序,但 lightweight-charts 对乱序 setData 会抛;显式排序对齐其它 fetcher。
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    ]),
+  );
 
-    wanted.forEach((w, k) => {
-      const v = Number(row[idx[k]]);
-      if (row[idx[k]]?.length && Number.isFinite(v)) out[w].push({ date, value: v });
-    });
-  }
-
-  if (Object.values(out).some((rows) => !rows.length)) return null;
-
-  // 源已升序,但 lightweight-charts 对乱序 setData 会抛;显式排序对齐其它 fetcher。
-  for (const s of Object.values(out)) s.sort((a, b) => a.date.localeCompare(b.date));
+  if (Object.values(out).some((pts) => !pts.length)) return null;
   return out;
 }
 

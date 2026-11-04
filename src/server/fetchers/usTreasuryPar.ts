@@ -22,22 +22,25 @@ export function parseTreasuryPar(csv: string, colToTenor = COL_TO_TENOR): Record
   const header = lines[0].split(',').map((h) => h.replace(/"/g, '').trim());
   const cols = header.flatMap((name, i) => (colToTenor[name] ? [{ i, tenor: colToTenor[name] }] : []));
 
-  const out: Record<string, Point[]> = {};
-  for (const line of lines.slice(1)) {
+  const rows = lines.slice(1).flatMap((line) => {
     const c = line.split(',');
     const [m, d, y] = c[0].split('/');
-    if (!y) continue;
-    const date = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    return y ? [{ c, date: `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}` }] : [];
+  });
 
-    for (const { i, tenor } of cols) {
-      const raw = c[i]?.trim();
-      const v = Number(raw);
-      if (!raw || !Number.isFinite(v)) continue;
-      out[tenor] ??= [];
-      out[tenor].push({ date, value: v });
-    }
-  }
-  return out;
+  // 一个点都没有的期限不出键(调用方靠「键数为 0」判整张表没解析出来)
+  return Object.fromEntries(
+    cols
+      .map(({ i, tenor }): [string, Point[]] => [
+        tenor,
+        rows.flatMap(({ c, date }) => {
+          const raw = c[i]?.trim();
+          const v = Number(raw);
+          return raw && Number.isFinite(v) ? [{ date, value: v }] : [];
+        }),
+      ])
+      .filter(([, pts]) => pts.length),
+  );
 }
 
 /** 两张表各自有数的第一年:名义 par 曲线 1990 起,TIPS 实际曲线 2003 起(更早的年份回空 body,会被当失败)。 */
@@ -86,15 +89,13 @@ async function fetchCurve(
     Promise.resolve([]),
   );
 
-  const merged: Record<string, Point[]> = {};
-  for (const parsed of perYear) {
-    for (const [tenor, pts] of Object.entries(parsed)) {
-      merged[tenor] ??= [];
-      merged[tenor].push(...pts);
-    }
-  }
-  for (const pts of Object.values(merged)) pts.sort((a, b) => a.date.localeCompare(b.date));
-  return merged;
+  const tenors = [...new Set(perYear.flatMap((parsed) => Object.keys(parsed)))];
+  return Object.fromEntries(
+    tenors.map((tenor) => [
+      tenor,
+      perYear.flatMap((parsed) => parsed[tenor] ?? []).sort((a, b) => a.date.localeCompare(b.date)),
+    ]),
+  );
 }
 
 /**

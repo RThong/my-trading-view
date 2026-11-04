@@ -38,21 +38,18 @@ export function parseErisParCoupon(csv: string): ErisCurve {
   const iFair = header.indexOf('FairCoupon (%)');
   if (iSym < 0 || iDate < 0 || iFair < 0) throw new Error('Eris CSV: 缺列(Symbol/EvaluationDate/FairCoupon (%))');
 
-  const points: ErisPoint[] = [];
-  let date = '';
-  for (const line of lines.slice(1)) {
+  const rows = lines.slice(1).flatMap((line) => {
     const c = line.split(',');
     const sym = c[iSym]?.trim();
     const rate = Number(c[iFair]?.trim());
-    if (!sym?.startsWith('SOFR') || !Number.isFinite(rate)) continue;
-    if (!date) {
-      const [m, d, y] = c[iDate].trim().split('/');
-      date = `${y}-${m}-${d}`;
-    }
-    points.push({ tenor: sym.slice(4), rate }); // 去 'SOFR' 前缀
-  }
-  if (!date) throw new Error('Eris CSV: 无有效数据行');
-  return { date, points };
+    return sym?.startsWith('SOFR') && Number.isFinite(rate) ? [{ c, tenor: sym.slice(4), rate }] : []; // 去 'SOFR' 前缀
+  });
+  if (!rows.length) throw new Error('Eris CSV: 无有效数据行');
+
+  // 整份 CSV 同一个评估日,取首个有效行的
+  const [m, d, y] = rows[0].c[iDate].trim().split('/');
+  const points: ErisPoint[] = rows.map(({ tenor, rate }) => ({ tenor, rate }));
+  return { date: `${y}-${m}-${d}`, points };
 }
 
 export async function fetchErisHistory(doFetch = doFetch0): Promise<ErisCurve[]> {

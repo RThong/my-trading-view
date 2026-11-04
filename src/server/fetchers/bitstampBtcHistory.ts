@@ -36,15 +36,20 @@ export async function fetchBitstampBtcDaily(startDate: string, endDate: string):
     // 提前 break 会静默截掉尾巴,而带洞的结果一旦落库、洞就永久留在那儿(见下面的校验)。
     const rows = ((await res.json()) as { data?: { ohlc?: Ohlc[] } }).data?.ohlc ?? [];
 
-    for (const r of rows) {
-      const ts = Number(r.timestamp);
-      if (ts > endTs) continue;
-      const close = Number(r.close);
+    rows
+      .filter((r) => Number(r.timestamp) <= endTs)
       // 早年有零成交日,Bitstamp 会回 0 价 —— 落进去会让对数收益出 -Infinity,整段 RV/夏普作废。
-      if (!(close > 0)) continue;
-      const date = new Date(ts * 1000).toISOString().slice(0, 10);
-      byDate.set(date, { date, open: Number(r.open), high: Number(r.high), low: Number(r.low), close });
-    }
+      .filter((r) => Number(r.close) > 0)
+      .forEach((r) => {
+        const date = new Date(Number(r.timestamp) * 1000).toISOString().slice(0, 10);
+        byDate.set(date, {
+          date,
+          open: Number(r.open),
+          high: Number(r.high),
+          low: Number(r.low),
+          close: Number(r.close),
+        });
+      });
   }
 
   const bars = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));

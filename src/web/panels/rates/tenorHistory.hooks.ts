@@ -163,13 +163,13 @@ export function useTenorChart(
     if (!chart) return;
 
     const keysNow = new Set(specs.map((s) => s.tenor));
-    for (const [k, s] of seriesRef.current) {
-      if (!keysNow.has(k)) {
+    [...seriesRef.current]
+      .filter(([k]) => !keysNow.has(k))
+      .forEach(([k, s]) => {
         chart.removeSeries(s);
         seriesRef.current.delete(k);
-      }
-    }
-    for (const spec of specs) {
+      });
+    specs.forEach((spec) => {
       let s = seriesRef.current.get(spec.tenor);
       if (!s) {
         s = chart.addSeries(LineSeries, {
@@ -187,7 +187,7 @@ export function useTenorChart(
         s.applyOptions({ color: spec.color });
       }
       s.setData(spec.data);
-    }
+    });
 
     chart.timeScale().fitContent();
   }, [specs, zeroBase]);
@@ -224,16 +224,18 @@ export function useTenorChart(
 
     const live = spreadsRef.current;
     const keysNow = new Set(spreads.map((s) => s.label));
-    for (const [k, series] of live) {
-      if (keysNow.has(k)) continue;
-      // 只 removeSeries:pane 空了 v5.2 会自动摘掉(addPane 默认不 preserveEmptyPane)。
-      // 再手动 removePane 会拿到已失效的下标 → `Invalid pane index` 崩整个面板。
-      chart.removeSeries(series);
-      live.delete(k);
-    }
+    [...live]
+      .filter(([k]) => !keysNow.has(k))
+      .forEach(([k, series]) => {
+        // 只 removeSeries:pane 空了 v5.2 会自动摘掉(addPane 默认不 preserveEmptyPane)。
+        // 再手动 removePane 会拿到已失效的下标 → `Invalid pane index` 崩整个面板。
+        chart.removeSeries(series);
+        live.delete(k);
+      });
 
-    let added = false;
-    for (const spec of spreads) {
+    // 建格之前先判:下面的 forEach 会把新格写进 live
+    const added = spreads.some((spec) => !live.has(spec.label));
+    spreads.forEach((spec) => {
       let series = live.get(spec.label);
       if (!series) {
         const pane = chart.addPane();
@@ -259,12 +261,11 @@ export function useTenorChart(
           title: '',
         });
         live.set(spec.label, series);
-        added = true;
       }
       // 复用的线不会重读 spec 颜色:颜色由调用方决定(现为中性常量),仍每次同步,改色不必重建。
       series.applyOptions({ color: spec.color });
       series.setData(spec.data);
-    }
+    });
 
     // addPane 总是追加到末尾:收起再展开会排到别的格(甚至现货)后面。按定义序归位到 1..n,现货自然落在最后。
     // 已在位的不调 moveTo:新建的 pane 控件要等下一帧才同步,对它调 moveTo 会撞库里的下标断言。

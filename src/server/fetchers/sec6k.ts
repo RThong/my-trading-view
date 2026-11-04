@@ -9,7 +9,7 @@ import type { CompanyFacts, FactRow } from '../analytics/secFundamentals';
  * 所以 companyfacts 对这两家只有年频 —— 季度数据存在,但只以 HTML 形式存在。
  *
  * 各家的**文档命名与报表措辞都不同**,故解析器一家一个(见 tsmcReports / asmlReports);
- * 这里只放三件共用的事:找申报、挑正文、把抽出的数字装成 CompanyFacts。
+ * 这里只放三件共用的事:找申报、挑正文、把抽出的数字装成 CompanyFacts(抽数字的原语在 sec6kText)。
  */
 
 const ARCHIVES = 'https://www.sec.gov/Archives/edgar/data';
@@ -105,82 +105,6 @@ export async function fetchReportDoc(
   if (!doc?.name) throw new Error(`6-K ${accn}: 目录里没有报表正文(排除规则可能把它滤掉了)`);
 
   return { name: doc.name, html: await (await get(`${dir}/${doc.name}`, doFetch, REPORT_TIMEOUT_MS)).text() };
-}
-
-// ── 解析原语 ──────────────────────────────────────────────────────────────────
-
-/** HTML → 以 `|` 保留单元格边界的扁平文本。表格结构全靠这些竖线定位。 */
-export function flattenHtml(html: string): string {
-  return html
-    .replace(/<[^>]+>/g, '|')
-    .replace(/&nbsp;|&#160;/g, ' ')
-    .replace(/&#\d+;/g, ' ')
-    .replace(/\|+/g, '|')
-    .replace(/[ \t\r\n]+/g, ' ');
-}
-
-/**
- * 一个行标签和它的第一个数字之间最多隔几个单元格。表格里通常是 `标签|$|数字`(隔 1~2 格)。
- * **这个上限是必需的守卫**:没有它,标签匹配到散文时会一路扫到下一张表,把别人的数字当成
- * 自己的 —— 实测踩过:「Gross profit」先命中指引句「Gross profit margin is expected to be
- * between 65% and 67%」,然后扫到表格里 Net sales 的 1,270,381,算出 cogs = 0。
- */
-const MAX_CELLS_TO_FIRST_NUMBER = 8;
-
-/**
- * 从某个行标签起,顺序取前 n 个「数字单元格」的值。
- * 负号有**两种写法**,都得吃:`(350,762,799)` 与 `(628,052,531|)`(右括号被拆到下一格)。
- * 小数点也要吃:ASML 的报表是 `9,326.5` 这种一位小数。
- */
-export function numsAfter(txt: string, label: string, n: number, from = 0): number[] {
-  const i = txt.indexOf(label, from);
-  if (i < 0) return [];
-
-  const cells = txt.slice(i + label.length, i + label.length + 1500).split('|');
-  const out: number[] = [];
-  for (let k = 0; k < cells.length && out.length < n; k++) {
-    const c = cells[k]!.trim();
-    if (!/^\(?[\d,]+(\.\d+)?\)?$/.test(c) || !/\d/.test(c)) continue;
-    // 第一个数字离标签太远 = 这不是那一行,是标签撞进了散文里。宁可空着让上层抛。
-    if (out.length === 0 && k > MAX_CELLS_TO_FIRST_NUMBER) return [];
-
-    const neg = c.startsWith('(') || cells[k + 1]?.trim() === ')';
-    out.push((neg ? -1 : 1) * Number(c.replace(/[(),]/g, '')));
-  }
-  return out;
-}
-
-/**
- * `numsAfter` 的**另一种表格编码**版本:数字和标签在**同一个文本块**里,靠空格分隔而不是
- * 单元格分隔。实测 ASML 2025Q2 起的报表就是这样(整份文档 `<table>` 数为 0),而 2025Q1
- * 及更早是单元格式的 —— 同一家公司换过编码,所以两种都得吃。
- *
- * 规则:标签后连续吃数字,**遇到第一个带字母的词就停**(那是下一行的标签)。
- * 允许 `$` `€` `%` 这类符号夹在中间。标签后连着 3 个以上非数字词还没见到数字 → 判定
- * 「标签撞进散文」,返回空。
- *
- * ⚠️ 不能拿它去解析 TSM 那种:那边行标签后跟着 `(Notes 20, 31 and 37)`,
- * 拆词后 `20,` `31` `37)` 全是数字样,会被当成数值。那边必须用整格判定的 numsAfter。
- */
-export function numsInRow(txt: string, label: string, n: number, from = 0): number[] {
-  const i = txt.indexOf(label, from);
-  if (i < 0) return [];
-
-  const out: number[] = [];
-  let skipped = 0;
-  for (const raw of txt.slice(i + label.length, i + label.length + 800).split(/[\s|]+/)) {
-    const t = raw.trim();
-    if (!t || t === '$' || t === '€' || t === '%' || t === ')') continue;
-
-    if (/^\(?-?[\d,]+(\.\d+)?\)?$/.test(t) && /\d/.test(t)) {
-      out.push((t.startsWith('(') ? -1 : 1) * Number(t.replace(/[(),]/g, '')));
-      if (out.length >= n) break;
-      continue;
-    }
-    if (out.length > 0) break; // 数字串结束 = 这一行读完了
-    if (++skipped > 3) return []; // 标签后一直没数字 → 不是那一行
-  }
-  return out;
 }
 
 // ── CompanyFacts 合成 ─────────────────────────────────────────────────────────

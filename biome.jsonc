@@ -3,8 +3,29 @@
   // 复用 .gitignore;再显式排除 vendor(第三方二进制)/ data(数据库)/ dist(构建产物)
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": { "includes": ["**", "!!**/dist", "!!**/vendor", "!!**/data"] },
-  // 顶层具名函数用 function 声明,带自动修复(规则与豁免见插件文件头注释)
-  "plugins": ["./biome-plugins/function-declaration.grit"],
+  // 规则与豁免见各插件文件头注释
+  "plugins": [
+    // 顶层具名函数用 function 声明,带自动修复
+    "./biome-plugins/function-declaration.grit",
+    // 业务代码禁循环;纯计算(坐标 / 指标 / 数值算法 / 文本扫描)与测试放行。
+    // 计算逻辑夹在业务文件里时,拆成单独文件再加进放行名单,别在业务规则下逐个 biome-ignore。
+    // ⚠️ 插件的 includes 要写成 `**/src/…`:`src/**` 这种相对写法在 2.5.4 匹配不上,插件静默不生效
+    {
+      "path": "./biome-plugins/no-loop.grit",
+      "includes": [
+        "**/src/**",
+        "!**/src/web/lib/**",
+        "!**/src/web/panels/chart/**",
+        "!**/src/server/analytics/**",
+        "!**/src/server/backtest/**",
+        "!**/src/web/panels/chartEditor/analysis.ts",
+        "!**/src/shared/policyPath.ts",
+        "!**/src/server/fetchers/sec6kText.ts",
+        "!**/*.test.ts",
+        "!**/*.test.tsx"
+      ]
+    }
+  ],
   // 对齐项目现有风格:2 空格缩进、行宽 120(比默认 80 宽,少折密集行)
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 120 },
   // 认 Tailwind v4 的 @theme 等指令(styles.css 里给 shadcn 组件定义颜色变量)

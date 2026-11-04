@@ -1,15 +1,14 @@
 import {
   AS_TAG,
   fetchReportDoc,
-  flattenHtml,
   get,
   listQuarterly6K,
-  numsAfter,
   toCompanyFacts as packFacts,
   type FetchFn,
   type FsFiling,
   type Sec6kValues,
 } from './sec6k';
+import { flattenHtml, numsAfter } from './sec6kText';
 import { fetchWithTimeout } from './http';
 import type { CompanyFacts } from '../analytics/secFundamentals';
 
