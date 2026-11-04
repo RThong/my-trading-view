@@ -5,7 +5,7 @@
  * 数据从哪来、要不要落库仍在 `AGENTS.md` 的取数总览表里,不进这张表。
  *
  * 类型是 `Record<RegimeSeries, …>`:后端加一个名字却没在这里登记 = 编译错误。
- * 图表编辑器的序列名单由这张表生成(见 web/panels/chartEditor/registry.ts),登记完就能搜到。
+ * 图表编辑器的序列名单由这张表生成(见 web/views/chartDoc/registry.ts),登记完就能搜到。
  * `freq` 以后也给按序列频率判过期(ROADMAP L0-1)用。
  */
 import type { RegimeSeries } from './regimeSeries';

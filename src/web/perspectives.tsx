@@ -1,224 +1,38 @@
 // 竖 tab = 视角;每个视角自带横 tab 列表,每个 tab 自带渲染闭包(label/source/render 一处配置)。
 // 取代原 App 里"tabs 只声明 id/label + 相邻 render(tabId) 用字符串分支决定内容"的分离写法——
-// 新增 tab = 往数组加一条工厂调用,不再牵动 render 分支,两者也不会漂移。
-import { lazy, Suspense, type ReactNode } from 'react';
-import { AssetChart } from './panels/asset/AssetChart';
-import { RegimeChart } from './panels/regime/RegimeChart';
-import { YieldCurvePanel } from './panels/rates/YieldCurvePanel';
-import { TenorHistoryPanel, type SpreadDef } from './panels/rates/TenorHistoryPanel';
-import { PolicyPathPanel } from './panels/rates/PolicyPathPanel';
-import { AttackDefensePanel } from './panels/attackDefense/AttackDefensePanel';
-import { IndustryChainPanel } from './panels/regime/IndustryChainPanel';
-import type { RegimeDim } from './panels/regime/regimeChart.hooks';
-import type { Interval } from './hooks/interval';
-import { MARKET_CATALOG } from '../shared/marketCatalog';
+// 新增 tab = 往所属视角(pages/<视角>/index)的数组加一条工厂调用,不再牵动 render 分支,两者也不会漂移。
+// 这里只管组装与竖 tab 的先后顺序;工厂与类型在 pages/tabs。
+import { AI } from './pages/ai';
+import { BTC } from './pages/btc';
+import { CREDIT } from './pages/credit';
+import { EDITOR } from './pages/editor';
+import { FEATURED } from './pages/featured';
+import { INFLATION } from './pages/inflation';
+import { JAPAN } from './pages/japan';
+import { LIQUIDITY } from './pages/liquidity';
+import { MACRO } from './pages/macro';
+import { OIL } from './pages/oil';
+import { OPTIONS } from './pages/options';
+import { RATES } from './pages/rates';
+import { SENTIMENT } from './pages/sentiment';
+import type { Perspective } from './pages/tabs';
+import { VALUATION } from './pages/valuation';
 
-// 图表编辑器懒加载:不进首屏包,点到这个竖 tab 才拉。
-const ChartEditorPage = lazy(() =>
-  import('./panels/chartEditor/ChartEditorPage').then((m) => ({ default: m.ChartEditorPage })),
-);
-
-export type TabDef = { id: string; label: string; group?: string; render: (interval: Interval) => ReactNode };
-export type Perspective = { id: string; label: string; tabs: TabDef[] };
-
-// ── tab 工厂:注意 tab id 与面板 source 是两回事(如收益曲线 / 期限走势可指向同一 source)──
-function assetTab(id: string, label: string, underlying: string, vrpUnderlying?: string): TabDef {
-  return {
-    id,
-    label,
-    render: (interval) => <AssetChart interval={interval} underlying={underlying} vrpUnderlying={vrpUnderlying} />,
-  };
-}
-function regimeTab(id: string, label: string, dim: RegimeDim, group?: string): TabDef {
-  return {
-    id,
-    label,
-    group,
-    render: (interval) => <RegimeChart dim={dim} interval={interval} />,
-  };
-}
-function curveTab(id: string, label: string, source: string): TabDef {
-  return {
-    id,
-    label,
-    render: () => <YieldCurvePanel source={source} />,
-  };
-}
-function historyTab(
-  id: string,
-  label: string,
-  source: string,
-  /** 差值 pane,每条一格。省略 = 不画。 */
-  spreads?: SpreadDef[],
-  /** 现货参照标的。只给真的相关的那个 tab 配 —— 不是每格都该挂一条风险资产。 */
-  spot?: string,
-): TabDef {
-  return {
-    id,
-    label,
-    render: (interval) => <TenorHistoryPanel source={source} interval={interval} spreads={spreads} spot={spot} />,
-  };
-}
-
-// 单视图 regime 视角:无横 tab 条(tab 与视角同 id,TabBar 单 tab 时不渲染横条)。
-function regimePersp(id: RegimeDim, label: string): Perspective {
-  return { id, label, tabs: [regimeTab(id, label, id)] };
-}
+export type { Perspective, TabDef } from './pages/tabs';
 
 export const PERSPECTIVES: Perspective[] = [
-  {
-    id: 'options',
-    label: '期权',
-    // 期权标的 tab 由标的目录派生(有 tab 的条目);vrpUnderlying 有 VRP 才传(否则只 2-pane)。
-    tabs: MARKET_CATALOG.filter((a) => a.tab).map((a) =>
-      assetTab(a.tab!.id, a.tab!.label, a.underlying, a.vrp ? a.underlying : undefined),
-    ),
-  },
-  {
-    // 信用三 tab:利差走势(日频时间序列)+ 评级利差 / 期限结构(两条截面曲线,AI CDS 在「AI」视角)。
-    id: 'credit',
-    label: '信用',
-    tabs: [
-      regimeTab('credit', '利差走势', 'credit'),
-      curveTab('credit_rating', '评级利差', 'credit_rating'),
-      curveTab('credit_term', '期限结构', 'credit_term'),
-    ],
-  },
-  regimePersp('liquidity', '流动性'),
-  {
-    id: 'sentiment',
-    label: '情绪',
-    tabs: [regimeTab('vol', '波动率', 'vol'), regimeTab('sentiment', '情绪', 'sentiment')],
-  },
-  {
-    id: 'macro',
-    label: '宏观',
-    tabs: [regimeTab('macro', '美元', 'macro'), regimeTab('ism', 'ISM 景气', 'ism')],
-  },
-  {
-    // 能源三 tab:价差(市场怎么定价)、实物(EIA 周报的开工率 / 库存 / 出口)、泵价(链条末端 + 零售加价)。
-    // 分开是因为三边频率与读法都不同 —— 价差日频看拐点,实物周三周频 + 季节 z 看因果,
-    // 泵价周一周频、看的是批发到零售那一段的传导(涨快跌慢)。
-    id: 'oil',
-    label: '能源',
-    tabs: [
-      regimeTab('oil', '油市结构', 'oil'),
-      regimeTab('refinery', '炼厂·库存', 'refinery'),
-      regimeTab('pump', '泵价·加价', 'pump'),
-    ],
-  },
-  {
-    id: 'btc',
-    label: 'BTC',
-    // BTC 的全部格子收在这一个视角里(现货/夏普 + 链上 + 期权),不在「期权」视角另开一个 BTC 横 tab ——
-    // 见 marketCatalog 里 BTC 条目为何不配 tab。
-    tabs: [
-      regimeTab('btc', '现货/夏普', 'btc'),
-      regimeTab('btc_onchain', '链上', 'btcOnchain'),
-      assetTab('btc_options', '期权', 'BTC', 'BTC'),
-      // IBIT:美股盘的 BTC 敞口(moomoo 期权 + Yahoo 现货),与上面 Deribit 那格是两个市场,单独一格。
-      assetTab('ibit', 'IBIT', 'IBIT', 'IBIT'),
-    ],
-  },
-  {
-    id: 'rates',
-    label: '利率',
-    tabs: [
-      curveTab('treasury', '收益曲线', 'treasury'),
-      // 挂 BTC 现货当对照:它是流动性链条最末端、beta 最高的那个,曲线松紧的传导在它身上最先见效。
-      // 两格差值:10Y − 1Y 读政策松紧,30Y − 10Y 读超长端的久期索价。
-      historyTab(
-        'tenor_history',
-        '期限走势',
-        'treasury',
-        [
-          { long: '10Y', short: '1Y', label: '10Y − 1Y' },
-          { long: '30Y', short: '10Y', label: '30Y − 10Y' },
-        ],
-        'BTC',
-      ),
-      curveTab('sofr_ois', 'SOFR OIS', 'sofr_ois'),
-      historyTab('ois_history', 'OIS 走势', 'sofr_ois', [{ long: '12M', short: '3M', label: '1Y − 3M' }]),
-      // 加息定价:OIS 远期 vs 当前政策利率 / 点阵图(快照)+ 累计计入次数的逐日走势(带 CPI / PCE 发布日竖线)。
-      { id: 'policy_path', label: '加息定价', render: () => <PolicyPathPanel /> },
-      regimeTab('policy_repricing', '定价走势', 'policyRepricing'),
-      regimeTab('rates_vol', '利率波动率', 'ratesVol'),
-      // 长端分解三件套。名义在「收益曲线 / 期限走势」,通胀那一块在「通胀」视角的 BEI 两格,
-      // 剩下的实际腿与期限溢价腿放这里 —— 长端上行时靠这几格分「动的是通胀还是实际利率」。
-      curveTab('real_curve', '实际收益率', 'real'),
-      // 30Y − 10Y:实际曲线自身的长端陡峭度。剥掉通胀后,这条走阔就是久期风险补偿在抬。
-      historyTab('real_history', '实际走势', 'real', [{ long: '30Y', short: '10Y', label: '30Y − 10Y' }]),
-      regimeTab('rates_decomp', '长端分解', 'ratesDecomp'),
-    ],
-  },
-  {
-    id: 'japan',
-    label: '日本',
-    tabs: [
-      regimeTab('jpy', '日元', 'jpy'),
-      curveTab('jgb_curve', '收益曲线', 'jgb'),
-      // 只看各期限水平:利差 pane 与 8306 蜡烛挪去了「银行」那格(银行业传导在那边读)。
-      historyTab('jgb_history', '期限走势', 'jgb'),
-      // 日本银行股:10Y 主变量 + 8306,下面是利润层的验证项(利差 / 存款贝塔)。挨着曲线两格放,方便对读期限。
-      regimeTab('jp_banks', '银行', 'jpBanks'),
-      // 通胀两条(CGPI 先行 + 新核心核心):「银行」利差里靠预期的那一截能不能兑现,看日银会不会继续加。
-      regimeTab('jp_inflation', '通胀', 'jpInflation'),
-      regimeTab('jgb_vol', '日债波动率', 'jgbVol'),
-      // 产能面(日银试算,季度更新)。放日本视角最后一格:前面几格是市场怎么定价,这格是产能够不够 ——
-      // BOJ 加息叙事的前提在这里,和曲线/日元那几格配读。
-      regimeTab('jp_output_gap', '产出缺口', 'jpGap'),
-      // 长端分解(中島上智模型)。对称利率视角同名那格,但只有一套模型 —— 读法差异写在两格 desc 里。
-      regimeTab('jp_term_premium', '长端分解', 'jpTermPremium'),
-    ],
-  },
-  {
-    id: 'inflation',
-    label: '通胀',
-    tabs: [
-      curveTab('bei', '通胀预期', 'bei'),
-      historyTab('bei_history', '通胀走势', 'bei', [{ long: '10Y', short: '5Y', label: '10Y − 5Y' }]),
-      regimeTab('infl_source', '通胀来源', 'inflSource'),
-    ],
-  },
-  regimePersp('valuation', '估值'),
-  {
-    id: 'ai',
-    label: 'AI',
-    // AI 相关指标全收在这一个竖 tab 里(不再单独开「基本面」)。前三个横 tab 是跨公司的汇总/宏观信号
-    // (算力价格、买方合计判据线、AI CDS);「产业链」单独一个横 tab,里面是各家公司的财务明细
-    // (一家一格,格子由那家的 source 决定,见 aiChain 的 SOURCE_KINDS)—— 十几家挤进主 tab 条太乱,
-    // 收进 IndustryChainPanel 自己的内部公司选择器(见该文件,按 GROUP_ORDER 分组)。
-    tabs: [
-      regimeTab('gpu_compute', '算力价格', 'compute'),
-      regimeTab('buyer', '买方合计', 'fundamentals:buyer'),
-      // 曾配 Oracle − Apple 差值格,已撤:实测与 Oracle 本线相关 0.9986(Apple 日波动仅其 1/10、两者日变动相关 0.12),
-      // 减掉 Apple 只是把 Oracle 平移约 40bp,剥不出「共同因子」。
-      historyTab('ai_cds', 'AI CDS', 'ai_cds'),
-      { id: 'industry_chain', label: '产业链', render: (interval) => <IndustryChainPanel interval={interval} /> },
-    ],
-  },
-  {
-    id: 'featured',
-    label: '特色指标',
-    tabs: [
-      { id: 'attack_defense', label: '攻防', render: () => <AttackDefensePanel /> },
-      regimeTab('concentration', '集中度', 'concentration'),
-    ],
-  },
-  {
-    // 自由组图:空白图上挑现有序列、分格叠放(见 panels/chartEditor)。单视图,无横 tab。
-    id: 'editor',
-    label: '图表编辑',
-    tabs: [
-      {
-        id: 'editor',
-        label: '图表编辑',
-        render: (interval) => (
-          <Suspense fallback={<p className="text-sm text-neutral-500">加载中…</p>}>
-            <ChartEditorPage interval={interval} />
-          </Suspense>
-        ),
-      },
-    ],
-  },
+  OPTIONS,
+  CREDIT,
+  LIQUIDITY,
+  SENTIMENT,
+  MACRO,
+  OIL,
+  BTC,
+  RATES,
+  JAPAN,
+  INFLATION,
+  VALUATION,
+  AI,
+  FEATURED,
+  EDITOR,
 ];

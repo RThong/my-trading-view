@@ -7,20 +7,23 @@
   "plugins": [
     // 顶层具名函数用 function 声明,带自动修复
     "./biome-plugins/function-declaration.grit",
-    // 业务代码禁循环;纯计算(坐标 / 指标 / 数值算法 / 文本扫描)与测试放行。
-    // 计算逻辑夹在业务文件里时,拆成单独文件再加进放行名单,别在业务规则下逐个 biome-ignore。
+    // 业务代码禁循环。按目录划界:纯计算放进下面几个计算目录,其余都算业务。
+    // 计算逻辑夹在业务文件里时,拆出来放进计算目录,别在业务规则下逐个 biome-ignore。
+    // 写成「全检查、排除计算目录」而不是「只列业务目录」:新增业务目录自动受检,放错位置的计算代码会响亮地报错。
     // ⚠️ 插件的 includes 要写成 `**/src/…`:`src/**` 这种相对写法在 2.5.4 匹配不上,插件静默不生效
     {
       "path": "./biome-plugins/no-loop.grit",
       "includes": [
         "**/src/**",
+        // 图表引擎 + 图表纯计算(坐标、指标、配对 / 相关性)
+        "!**/src/web/chart/**",
+        // 前端通用工具
         "!**/src/web/lib/**",
-        "!**/src/web/panels/chart/**",
+        // 前后端共用的纯计算
+        "!**/src/shared/calc/**",
+        // 服务端数值计算 / 回测 / 报表文本解析
         "!**/src/server/analytics/**",
         "!**/src/server/backtest/**",
-        "!**/src/web/panels/chartEditor/analysis.ts",
-        "!**/src/shared/policyPath.ts",
-        "!**/src/server/fetchers/sec6kText.ts",
         "!**/*.test.ts",
         "!**/*.test.tsx"
       ]

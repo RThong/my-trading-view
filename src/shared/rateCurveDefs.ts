@@ -1,5 +1,5 @@
 // 收益曲线页(/api/yield-curve)各条曲线的期限 / 名单。纯数据,前后端共用:
-// 服务端按它取数(analytics/rateCurves),图表编辑器按它生成序列名单(web/panels/chartEditor/registry)。
+// 服务端按它取数(analytics/rateCurves),图表编辑器按它生成序列名单(web/views/chartDoc/registry)。
 
 // ── 美国财政部每日曲线(server/fetchers/usTreasuryPar 按列名解析)
 // 名义 par yield:财政部列名 → 本项目期限标签。只取标准 11 档(各年新增的 1.5Mo/2Mo/4Mo 等额外档忽略)。
