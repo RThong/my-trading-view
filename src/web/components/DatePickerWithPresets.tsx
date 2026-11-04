@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { lazy, useState } from 'react';
 import { CalendarIcon } from 'lucide-react';
-import { Calendar } from './ui/calendar';
 import { Button } from './ui/button';
+import { LazyBoundary } from './LazyBoundary';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+
+// 日历懒加载:react-day-picker + date-fns 约占首屏包的三分之一,却只有收益曲线的日期选择器用,点开弹层才拉
+const Calendar = lazy(() => import('./ui/calendar').then((m) => ({ default: m.Calendar })));
 
 // YYYY-MM-DD <-> Date(本地日历日,避免 UTC 偏移)。
 function toISO(d: Date) {
@@ -56,17 +59,21 @@ export function DatePickerWithPresets({ value, presets, min, max, snap, onChange
           ))}
         </div>
         <div className="border-l border-neutral-800 pl-1">
-          <Calendar
-            mode="single"
-            captionLayout="dropdown"
-            fixedWeeks
-            selected={selected}
-            defaultMonth={selected}
-            startMonth={fromISO(min)}
-            endMonth={fromISO(max)}
-            disabled={{ before: fromISO(min), after: fromISO(max) }}
-            onSelect={(d) => d && pick(snap(toISO(d)))}
-          />
+          {/* 占位与日历同尺寸(fixedWeeks 恒 6 行,实测 212×294):加载完成那一下弹层不跳。
+              尺寸由 ui/calendar.tsx 的 --cell-size、内边距、captionLayout 决定,改那边要回来重量这个 */}
+          <LazyBoundary fallback={<div className="h-[294px] w-[212px]" />}>
+            <Calendar
+              mode="single"
+              captionLayout="dropdown"
+              fixedWeeks
+              selected={selected}
+              defaultMonth={selected}
+              startMonth={fromISO(min)}
+              endMonth={fromISO(max)}
+              disabled={{ before: fromISO(min), after: fromISO(max) }}
+              onSelect={(d) => d && pick(snap(toISO(d)))}
+            />
+          </LazyBoundary>
         </div>
       </PopoverContent>
     </Popover>
