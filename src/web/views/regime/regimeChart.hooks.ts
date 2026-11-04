@@ -126,6 +126,8 @@ export type PaneSpec = {
   rollMismatch?: RollMismatchKind;
 };
 export type DimConfig = { panes: PaneSpec[] };
+/** 一个 regime 图要的全部配置:dim(存储键 / SEC 提示按它认公司)与它的 panes 绑在一起传,不会配错对。 */
+export type RegimeView = { dim: RegimeDim; panes: PaneSpec[] };
 /** 一个视角贡献的那几个 dim 的配置(pages/<视角>/dims.ts 用 satisfies 对齐)。 */
 export type RegimeDims = Partial<Record<Exclude<FixedDim, DocDim>, DimConfig>>;
 /**

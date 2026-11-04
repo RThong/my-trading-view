@@ -9,7 +9,7 @@ import {
   secTrimNote,
   type RegimeData,
 } from './regimeChart.hooks';
-import { dimPanes, REGIME_DIMS } from '../../pages/regimeDims';
+import { dimPanes, REGIME_DIMS, regimeView } from '../../pages/regimeDims';
 import { ACTIVE_TICKERS, fundKey, kindsOf, SEC_BUYER_FCF_KEY, SEC_BUYER_FCFQ_KEY } from '../../../shared/aiChain';
 import { REGIME_SERIES, isSeriesKey, type SeriesKey } from '../../../shared/regimeSeries';
 
@@ -600,4 +600,11 @@ test('各视角 dims 的 key 不重名,且全部拼进 REGIME_DIMS', async () =>
   expect(files.length).toBeGreaterThan(0);
   expect(dupes).toEqual([]);
   expect(keys.toSorted()).toEqual(Object.keys(REGIME_DIMS).toSorted());
+});
+
+// RegimeChart 要求配置引用稳定:基本面维度的 panes 按名单现算,靠 regimeView 的缓存兜住
+test('regimeView:同一 dim 每次拿到同一个对象(含按名单现算的基本面维度)', () => {
+  expect(regimeView('credit')).toBe(regimeView('credit'));
+  expect(regimeView('fundamentals:NVDA')).toBe(regimeView('fundamentals:NVDA'));
+  expect(regimeView('fundamentals:NVDA').panes).toBe(dimPanes('fundamentals:NVDA'));
 });

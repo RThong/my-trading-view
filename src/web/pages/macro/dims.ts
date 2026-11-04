@@ -1,4 +1,4 @@
-// 「宏观」视角各 regime tab 的 pane 配置(合进 views/regime 的 REGIME_DIMS)。
+// 「宏观」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
 import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
 import { FICC_TRIANGLE } from '../../views/regime/descSnippets';
 

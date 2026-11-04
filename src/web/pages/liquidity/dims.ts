@@ -1,4 +1,4 @@
-// 「流动性」视角各 regime tab 的 pane 配置(合进 views/regime 的 REGIME_DIMS)。
+// 「流动性」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
 import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
 
 // 跨格复用的框架文本:同一判据被多个 desc 引用,抽常量避免改一处漏一处。

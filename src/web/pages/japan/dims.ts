@@ -1,4 +1,4 @@
-// 「日本」视角各 regime tab 的 pane 配置(合进 views/regime 的 REGIME_DIMS)。
+// 「日本」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
 import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
 
 // 日银加息决定日竖线(「银行」四格共用)。取半透明浅灰:黄 / 橙 / 红 / 青 / 紫都被线占了;10Y 格的 2Y 对照线是实心蓝灰,形状也不同(线 vs 满高竖柱)。

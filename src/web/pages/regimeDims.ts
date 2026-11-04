@@ -9,6 +9,7 @@ import {
   type FixedDim,
   type PaneSpec,
   type RegimeDim,
+  type RegimeView,
 } from '../views/regime/regimeChart.hooks';
 import { buyerAggregatePane, buyerQuarterlyPane, SOURCE_PANES } from './ai/fundamentals';
 import { AI_DIMS } from './ai/dims';
@@ -43,12 +44,11 @@ export const REGIME_DIMS: Record<Exclude<FixedDim, DocDim>, DimConfig> = {
   ...VALUATION_DIMS,
 };
 
-// 模块加载时转一次:固定维度的 panes 要是模块常量(RegimeChart 按引用做 memo,见那边的注释)
+// 模块加载时转一次:doc 写错的话 docToPaneSpecs 会抛,在加载时就炸,不等到打开那个 tab
 const DOC_PANES = Object.fromEntries(
   Object.entries(REGIME_DOCS).map(([dim, doc]) => [dim, docToPaneSpecs(doc)]),
 ) as Record<DocDim, PaneSpec[]>;
-/** dim → panes。基本面维度按名单现算(引用每次新建,故 RegimeChart 里要 useMemo 化的地方已由 dim 固定)。 */
-export function dimPanes(dim: RegimeDim): PaneSpec[] {
+function buildPanes(dim: RegimeDim): PaneSpec[] {
   if (Object.hasOwn(DOC_PANES, dim)) return DOC_PANES[dim as DocDim];
   if (!dim.startsWith('fundamentals:')) return REGIME_DIMS[dim as Exclude<FixedDim, DocDim>].panes;
 
@@ -61,4 +61,23 @@ export function dimPanes(dim: RegimeDim): PaneSpec[] {
   return sourcesOf(who)
     .flatMap((s) => SOURCE_PANES[s](who))
     .filter((p) => !seen.has(p.key) && seen.add(p.key));
+}
+
+// 按 dim 缓存:同一 dim 永远拿到同一个对象。RegimeChart 要求 panes 引用稳定(基本面维度按名单现算,
+// 不缓存的话每次都是新数组),缓存放在这里,调用方在 render 里直接调也安全;没打开的 tab 也不会提前算。
+const VIEWS = new Map<RegimeDim, RegimeView>();
+
+/** dim → 这张 regime 图的配置(dim + panes)。 */
+export function regimeView(dim: RegimeDim): RegimeView {
+  const hit = VIEWS.get(dim);
+  if (hit) return hit;
+
+  const view = { dim, panes: buildPanes(dim) };
+  VIEWS.set(dim, view);
+  return view;
+}
+
+/** dim → panes(同 regimeView,只取格子)。 */
+export function dimPanes(dim: RegimeDim): PaneSpec[] {
+  return regimeView(dim).panes;
 }
