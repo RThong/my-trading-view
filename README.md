@@ -14,8 +14,8 @@ A personal, local-only markets dashboard, organized as **vertical perspectives**
   (NOBL/QQQ offense-defense regime via ZigZag). Series with a trailing distribution add
   P5/P95 bands, a current-percentile badge, and red/green shading of extreme periods.
 
-The whole rail (视角) + its tabs live in one registry ([`src/web/perspectives.tsx`](src/web/perspectives.tsx));
-each tab carries its own render factory. Built to track things TradingView doesn't expose
+Each perspective (视角) owns a directory under [`src/web/pages/`](src/web/pages/) with its tabs and panel config;
+[`src/web/perspectives.tsx`](src/web/perspectives.tsx) only assembles the rail. Each tab carries its own render factory. Built to track things TradingView doesn't expose
 well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local page.
 
 ## Tech stack
@@ -110,33 +110,43 @@ Check recent runs with `./scripts/cron.sh history`.
 
 ```
 src/
-├── shared/                  types · stats · marketCatalog (标的元数据单一真相源;前后端派生)
+├── shared/                  types · marketCatalog (标的元数据单一真相源;前后端派生)
+│   └── calc/                pure compute shared by both ends (stats · policyPath)
 ├── server/
 │   ├── index.ts             Hono app, exports AppType
 │   ├── config.ts            option/price whitelists (derived from marketCatalog)
 │   ├── routes/              health · options · vrp · price · regime · yieldCurve
 │   ├── fetchers/            moomoo · deribit · cboe(Index/Vx) · fred · yahoo · eris · iceCds · jpxJgbVix · mofJgb · cftcCot · capeShiller · cnnFearGreed
-│   ├── analytics/           vrp · termStructure · regime · rateCurves (all pure, read-time compute)
+│   ├── analytics/           vrp · termStructure · regime · rateCurves · sec6kText (all pure, read-time compute)
 │   ├── storage/             bun:sqlite schema, migrations, repository
 │   └── jobs/                daily orchestrator + optionsSnapshot / vrpInputs / vxTermStructure / cryptoDaily / erisSnapshot / iceCdsSnapshot / btcPrice / tradingCalendar
 └── web/
     ├── App.tsx              shell only (vertical perspectives × horizontal tabs, keep-alive)
-    ├── perspectives.tsx     tab registry — each tab carries its own render() (asset/regime/curve/history factories)
+    ├── perspectives.tsx     assembles the rail from pages/* (order only)
     ├── components/          Header · TabBar · StatusLight · InfoTip · DatePickerWithPresets
     ├── hooks/               interval · useStable · usePerspectiveNavigation
-    ├── lib/                 chart · palette · zigzag · indicators (EMA / Bollinger / MACD / RSI, pure + tested)
-    └── panels/
-        ├── chart/           shared multi-pane infra (paneChart.hooks/types + PaneChartView) — data-source-agnostic;
-        │                    plus overlay-indicator registry, band-fill primitive, MACD/RSI sub-charts
-        ├── asset/           options: AssetChart + hooks (25Δ + optional VRP)
-        ├── regime/          regime: RegimeChart + REGIME_DIMS (self-contained PaneSpec[] → specs)
-        ├── attackDefense/   NOBL/QQQ ratio + ZigZag offense/defense regimes
-        └── rates/           yield-curve + tenor-history (YieldCurve* / TenorHistory* / shared yieldCurve+rateSpread hooks)
+    ├── lib/                 generic helpers (http fetcher + SWR opts · utils · oilRoll)
+    ├── chart/               chart engine + chart-side pure compute, data-source-agnostic:
+    │                        multi-pane infra (paneChart.hooks/types + PaneChartView), core (types / aggregate / dates),
+    │                        indicators (EMA / Bollinger / MACD / RSI) · zigzag · palette · trendlines · bandFill · analysis
+    ├── views/               business views reused across perspectives
+    │   ├── regime/          RegimeChart + data hook; REGIME_DIMS assembled from pages/*/dims
+    │   ├── asset/           AssetChart + hooks (25Δ + optional VRP)
+    │   ├── curve/           yield-curve + tenor-history (YieldCurve* / TenorHistory* / yieldCurve+rateSpread hooks)
+    │   └── chartDoc/        ChartDoc format + series registry (shared by the editor and fixed panels)
+    └── pages/               one dir per perspective (= route): index (its tabs) + dims (its regime panes)
+        │                    + components only that perspective uses
+        ├── tabs.tsx         tab factories (asset/regime/curve/history) + TabDef / Perspective types
+        ├── rates/           … + PolicyPathPanel
+        ├── ai/              … + IndustryChainPanel + fundamentals (per-company panes)
+        ├── featured/        … + AttackDefensePanel (NOBL/QQQ ZigZag) + concentration ChartDoc
+        ├── editor/          chart editor (free-form composer)
+        └── options · credit · liquidity · sentiment · macro · oil · btc · japan · inflation · valuation
 ```
 
-Each panel is a thin shell: **fetch model (data hook) → pure buildSpecs → shared pane infra**.
+Each view is a thin shell: **fetch model (data hook) → pure buildSpecs → shared pane infra**.
 "Add an indicator/tab/underlying" = add one entry to its domain source-of-truth
-(`REGIME_DIMS` / `PERSPECTIVES` / `MARKET_CATALOG`), nothing else moves.
+(`pages/<perspective>/dims` / `pages/<perspective>/index` / `MARKET_CATALOG`), nothing else moves.
 
 ## Perspectives
 
