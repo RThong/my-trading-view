@@ -74,7 +74,9 @@ export const INDICATORS: IndicatorDef[] = [
   },
 ];
 
-const storageKeyOf = (key: string) => `indicators:${key}`;
+function storageKeyOf(key: string) {
+  return `indicators:${key}`;
+}
 
 function loadIds(key: string): string[] {
   try {

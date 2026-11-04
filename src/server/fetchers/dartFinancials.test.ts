@@ -5,17 +5,22 @@ const Q1 = REPORTS[0];
 const FY = REPORTS[3];
 
 /** 造一份 DART 响应。CIS 给单季+累计两列,CF 只给一列(累计)—— 与真实响应同形。 */
-const body = (rows: Array<Partial<Record<string, string>>>, status = '000') =>
-  new Response(JSON.stringify({ status, message: status === '000' ? '정상' : 'x', list: rows }), { status: 200 });
+function body(rows: Array<Partial<Record<string, string>>>, status = '000') {
+  return new Response(JSON.stringify({ status, message: status === '000' ? '정상' : 'x', list: rows }), {
+    status: 200,
+  });
+}
 
-const row = (o: { id?: string; nm: string; div: string; amt?: string; add?: string }) => ({
-  sj_div: o.div,
-  account_id: o.id ?? '',
-  account_nm: o.nm,
-  thstrm_amount: o.amt ?? '',
-  thstrm_add_amount: o.add ?? '',
-  rcept_no: '20250514000123',
-});
+function row(o: { id?: string; nm: string; div: string; amt?: string; add?: string }) {
+  return {
+    sj_div: o.div,
+    account_id: o.id ?? '',
+    account_nm: o.nm,
+    thstrm_amount: o.amt ?? '',
+    thstrm_add_amount: o.add ?? '',
+    rcept_no: '20250514000123',
+  };
+}
 
 /** 半年报的真实形态:CIS 的 thstrm 是**单季**、add 是累计;CF 的 thstrm 就是累计、add 空。 */
 const H1_ROWS = [

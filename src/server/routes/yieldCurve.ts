@@ -54,10 +54,10 @@ async function buildFredCurve(pairs: { tenor: string; series: string }[]): Promi
 }
 
 // 财政部现拉失败 → 记日志并当作全部期限无数据(空对象)。
-const warnUstFailed = (e: unknown): Record<string, Point[]> => {
+function warnUstFailed(e: unknown): Record<string, Point[]> {
   console.warn(`[yield-curve] 财政部曲线现拉失败: ${(e as Error).message}`);
   return {};
-};
+}
 
 /**
  * 美债收益曲线(名义 / TIPS 实际):美国财政部每日曲线直发源(当天出,比 FRED DGS / DFII 快 1-2 天;FRED 本就搬这份)。
@@ -117,26 +117,29 @@ async function buildBei(startYear?: number): Promise<CurveBody> {
 }
 
 // JGB 收益曲线(MOF 官方 CSV,2018 起,15 档含 2Y)。缺档进 unavailable。
-const buildJgb = async (): Promise<CurveBody> => {
+async function buildJgb(): Promise<CurveBody> {
   const c = await fetchJgbCurve('2018-01-01');
   const unavailable = c.tenors.filter((t) => !c.series[t]?.length);
   return { tenors: c.tenors, series: c.series, unavailable };
-};
+}
 
 // Eris 的 FairCoupon 已是百分点 → 恒等 xform。
-const buildOis = (): CurveBody => buildFromDb(ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })));
+function buildOis(): CurveBody {
+  return buildFromDb(ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })));
+}
 
 // AI 巨头 + 甲骨文 + CoreWeave + SpaceX 单名 CDS:读库原始价,xform 成约定 spread(bp)。"tenor" 复用为公司名。
 // 非真曲线(公司无序),但复用 CurveBody 走 TenorHistoryPanel 的时间序列视图(每名一条线)。
 // 票息按名不同(CoreWeave 500bp 档),故逐名给 xform。
-const buildAiCds = (): CurveBody =>
-  buildFromDb(
+function buildAiCds(): CurveBody {
+  return buildFromDb(
     AI_CDS.map((c) => ({
       label: c.name,
       symbol: `ICE_CDS_${c.ticker}`,
       xform: (v: number) => cdsPriceToSpreadBp(v, c.coupon),
     })),
   );
+}
 
 // 现拉外部源的曲线(FRED / 财政部 / MOF,冷拉 1~6s)。走 swrCache:有旧值先回、过期后台刷新,
 // 完整结果落盘 → 服务端重启后也是先回盘上那份(见 swrCache)。
@@ -184,13 +187,14 @@ const FULL_BUILDERS: Record<string, () => Promise<CurveBody>> = {
 };
 
 // 每个 source 一份缓存。TTL / 重试间隔与 regime 同(EOD 日频,6h 安全;降级结果 10 分钟后重试)。
-const curveCaches = (builders: Record<string, () => Promise<CurveBody>>, fileSuffix: string) =>
-  Object.fromEntries(
+function curveCaches(builders: Record<string, () => Promise<CurveBody>>, fileSuffix: string) {
+  return Object.fromEntries(
     Object.entries(builders).map(([source, build]) => [source, curveCache(source, build, fileSuffix)]),
   );
+}
 
-const curveCache = (source: string, build: () => Promise<CurveBody>, fileSuffix: string) =>
-  createSwrCache<CurveBody>({
+function curveCache(source: string, build: () => Promise<CurveBody>, fileSuffix: string) {
+  return createSwrCache<CurveBody>({
     ttlMs: 6 * 60 * 60 * 1000,
     retryMs: 10 * 60 * 1000,
     snapshotPath: resolve(PROJECT_ROOT, 'data', 'cache', `yield-${source}${fileSuffix}.json.gz`),
@@ -204,6 +208,7 @@ const curveCache = (source: string, build: () => Promise<CurveBody>, fileSuffix:
       return { value: fillFromPrev(body, prev), complete: body.tenors.length > 0 && !body.unavailable.length };
     },
   });
+}
 
 const liveCaches = curveCaches(LIVE_BUILDERS, '');
 const fullCaches = curveCaches(FULL_BUILDERS, '-full');

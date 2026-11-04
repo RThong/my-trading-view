@@ -8,8 +8,9 @@ import {
 
 // 美国财政部每日曲线直发源(当天收盘即出,比 FRED 快 1-2 天)。按年一个 CSV,无需 key。
 // FRED 的 DGS(名义)/ DFII(TIPS 实际)本就是搬这两张表(经 H.15),数值一致,只是固定晚一个工作日。
-const CSV = (year: number, type: string) =>
-  `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/${year}/all?type=${type}&field_tdr_date_value=${year}&_format=csv`;
+function csvUrl(year: number, type: string) {
+  return `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/${year}/all?type=${type}&field_tdr_date_value=${year}&_format=csv`;
+}
 
 // 列名 → 期限的对照表搬到 shared(图表编辑器按它列期限),这里照旧按原名使用 / 转出
 export { UST_REAL_TENORS, UST_TENORS } from '../../shared/rateCurveDefs';
@@ -62,7 +63,7 @@ async function fetchCurve(
   const isEarlyJan = now.getUTCMonth() === 0 && now.getUTCDate() <= 10;
   const years = Array.from({ length: endYear - startYear + 1 }, (_, i) => startYear + i);
   const fetchYear = async (y: number) => {
-    const res = await doFetch(CSV(y, type), { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const res = await doFetch(csvUrl(y, type), { headers: { 'User-Agent': 'Mozilla/5.0' } });
     if (!res.ok) throw new Error(`${label} ${y}: ${res.status}`);
 
     // 没有数据的年份财政部回 200 + 空 body:只在 1 月上旬放过今年。
@@ -100,9 +101,11 @@ async function fetchCurve(
  * 名义 par yield 曲线(11 档)。startYear 缺省 = 全站起点(2018);图表编辑器要长历史时传 UST_FIRST_YEAR。
  * 早年有的档位还没发行(1M 2001 起、20Y 1993 前与 30Y 2002–2006 停发),那几年该档自然缺,不算失败。
  */
-export const fetchTreasuryCurve = (doFetch = fetchWithTimeout, now = new Date(), startYear = DEFAULT_START_YEAR) =>
-  fetchCurve('daily_treasury_yield_curve', COL_TO_TENOR, 'UST', doFetch, now, startYear);
+export function fetchTreasuryCurve(doFetch = fetchWithTimeout, now = new Date(), startYear = DEFAULT_START_YEAR) {
+  return fetchCurve('daily_treasury_yield_curve', COL_TO_TENOR, 'UST', doFetch, now, startYear);
+}
 
 /** TIPS 实际收益率曲线(5Y–30Y 共 5 档),= FRED DFII 同值但早一个工作日。startYear 同上(长历史传 UST_REAL_FIRST_YEAR)。 */
-export const fetchTreasuryRealCurve = (doFetch = fetchWithTimeout, now = new Date(), startYear = DEFAULT_START_YEAR) =>
-  fetchCurve('daily_treasury_real_yield_curve', REAL_COL_TO_TENOR, 'UST real', doFetch, now, startYear);
+export function fetchTreasuryRealCurve(doFetch = fetchWithTimeout, now = new Date(), startYear = DEFAULT_START_YEAR) {
+  return fetchCurve('daily_treasury_real_yield_curve', REAL_COL_TO_TENOR, 'UST real', doFetch, now, startYear);
+}

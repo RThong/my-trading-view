@@ -5,26 +5,28 @@ import { getMarketSeries, insertMarketSeries } from '../storage/repository';
 import { updateTwseRevenue } from './twseRevenue';
 import type { TwseRevenueResult } from '../fetchers/twseRevenue';
 
-const freshDb = () => {
+function freshDb() {
   const db = new Database(':memory:');
   migrate(db);
   return db;
-};
+}
 
 // TSM 是名单里唯一走 TWSE 的一家(twseCode 2330),故测试都用它。
 const TSM = { tickers: ['TSM'] };
 
-const monthly = (
+function monthly(
   latestMonthEnd: string,
   points: Array<[string, number]>,
   yoyPct: number | null = 10,
-): TwseRevenueResult => ({
-  company: '台積電',
-  points: points.map(([monthEnd, revenueTwdM]) => ({ monthEnd, revenueTwdM })),
-  yoyPct,
-  latestMonthEnd,
-  note: null,
-});
+): TwseRevenueResult {
+  return {
+    company: '台積電',
+    points: points.map(([monthEnd, revenueTwdM]) => ({ monthEnd, revenueTwdM })),
+    yoyPct,
+    latestMonthEnd,
+    note: null,
+  };
+}
 
 describe('TWSE 月营收', () => {
   test('一次写三个点 + 一个同比点(快照型源唯一的历史来源)', async () => {

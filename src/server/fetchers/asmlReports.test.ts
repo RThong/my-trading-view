@@ -34,30 +34,38 @@ const REAL: Cols = {
   gm: 54.0,
 };
 
-const n = (x: number) => x.toLocaleString('en-US', { minimumFractionDigits: 1 });
+function n(x: number) {
+  return x.toLocaleString('en-US', { minimumFractionDigits: 1 });
+}
 
 /** 单元格式(老版):每个数字一个 <td>。 */
-const cells = (c: Cols) =>
-  `<p>(Unaudited, in millions, except per share data)</p><table>` +
-  `<tr><td>Three months ended</td><td>Six months ended</td></tr>` +
-  `<tr><td>Total net sales</td><td>${n(c.revPrev)}</td><td>${n(c.rev)}</td><td>15,433.2</td><td>18,093.4</td></tr>` +
-  `<tr><td>Total cost of sales</td><td>(${n(c.cogsPrev)})</td><td>(${n(c.cogs)})</td><td>(7,124.0)</td><td>(8,413.0)</td></tr>` +
-  `<tr><td>Gross margin</td><td>${c.gmPrev} %</td><td>${c.gm} %</td><td>53.8 %</td><td>53.5 %</td></tr>` +
-  `<tr><td>Net cash provided by (used in) operating activities</td><td>${n(c.ocfPrev)}</td><td>${n(c.ocf)}</td><td>689.1</td><td>(482.5)</td></tr>` +
-  `<tr><td>Purchase of property, plant and equipment</td><td>(${n(c.capexPrev)})</td><td>(${n(c.capex)})</td><td>(829.8)</td><td>(701.8)</td></tr>` +
-  `</table>`;
+function cells(c: Cols) {
+  return (
+    `<p>(Unaudited, in millions, except per share data)</p><table>` +
+    `<tr><td>Three months ended</td><td>Six months ended</td></tr>` +
+    `<tr><td>Total net sales</td><td>${n(c.revPrev)}</td><td>${n(c.rev)}</td><td>15,433.2</td><td>18,093.4</td></tr>` +
+    `<tr><td>Total cost of sales</td><td>(${n(c.cogsPrev)})</td><td>(${n(c.cogs)})</td><td>(7,124.0)</td><td>(8,413.0)</td></tr>` +
+    `<tr><td>Gross margin</td><td>${c.gmPrev} %</td><td>${c.gm} %</td><td>53.8 %</td><td>53.5 %</td></tr>` +
+    `<tr><td>Net cash provided by (used in) operating activities</td><td>${n(c.ocfPrev)}</td><td>${n(c.ocf)}</td><td>689.1</td><td>(482.5)</td></tr>` +
+    `<tr><td>Purchase of property, plant and equipment</td><td>(${n(c.capexPrev)})</td><td>(${n(c.capex)})</td><td>(829.8)</td><td>(701.8)</td></tr>` +
+    `</table>`
+  );
+}
 
 /** 内联式(新版):整段是纯文本,数字靠空格分隔。 */
-const inline = (c: Cols) =>
-  `<div>(Unaudited, , in millions, except per share data) 2025 2026 2025 2026 ` +
-  `Total net sales ${n(c.revPrev)} ${n(c.rev)} 15,433.2 18,093.4 ` +
-  `Total cost of sales (${n(c.cogsPrev)}) (${n(c.cogs)}) (7,124.0) (8,413.0) ` +
-  `Gross profit 4,129.5 5,035.4 8,309.2 9,680.4 ` +
-  `Gross margin ${c.gmPrev} % ${c.gm} % 53.8 % 53.5 % ` +
-  `Cash flows from operating activities Net income 2,290.3 2,917.6 4,645.3 5,674.3 ` +
-  `Net cash provided by (used in) operating activities ${n(c.ocfPrev)} ${n(c.ocf)} 689.1 (482.5) ` +
-  `Cash flows from investing activities ` +
-  `Purchase of property, plant and equipment (${n(c.capexPrev)}) (${n(c.capex)}) (829.8) (701.8)</div>`;
+function inline(c: Cols) {
+  return (
+    `<div>(Unaudited, , in millions, except per share data) 2025 2026 2025 2026 ` +
+    `Total net sales ${n(c.revPrev)} ${n(c.rev)} 15,433.2 18,093.4 ` +
+    `Total cost of sales (${n(c.cogsPrev)}) (${n(c.cogs)}) (7,124.0) (8,413.0) ` +
+    `Gross profit 4,129.5 5,035.4 8,309.2 9,680.4 ` +
+    `Gross margin ${c.gmPrev} % ${c.gm} % 53.8 % 53.5 % ` +
+    `Cash flows from operating activities Net income 2,290.3 2,917.6 4,645.3 5,674.3 ` +
+    `Net cash provided by (used in) operating activities ${n(c.ocfPrev)} ${n(c.ocf)} 689.1 (482.5) ` +
+    `Cash flows from investing activities ` +
+    `Purchase of property, plant and equipment (${n(c.capexPrev)}) (${n(c.capex)}) (829.8) (701.8)</div>`
+  );
+}
 
 describe('parseAsmlReport', () => {
   for (const [name, build] of [

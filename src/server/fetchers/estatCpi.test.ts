@@ -2,9 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { estatTimeToIso, fetchCoreCoreCpiYoy, parseEstatSeries } from './estatCpi';
 
 // 真实响应的形状(截取):倒序、`***` 缺值、单条时 VALUE 不是数组。
-const body = (value: unknown, status = 0) => ({
-  GET_STATS_DATA: { RESULT: { STATUS: status, ERROR_MSG: 'x' }, STATISTICAL_DATA: { DATA_INF: { VALUE: value } } },
-});
+function body(value: unknown, status = 0) {
+  return {
+    GET_STATS_DATA: { RESULT: { STATUS: status, ERROR_MSG: 'x' }, STATISTICAL_DATA: { DATA_INF: { VALUE: value } } },
+  };
+}
 
 describe('estatTimeToIso', () => {
   test('月值 → 当月 1 日;年值 → null', () => {

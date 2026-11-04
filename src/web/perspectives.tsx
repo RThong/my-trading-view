@@ -22,23 +22,29 @@ export type TabDef = { id: string; label: string; group?: string; render: (inter
 export type Perspective = { id: string; label: string; tabs: TabDef[] };
 
 // ── tab 工厂:注意 tab id 与面板 source 是两回事(如收益曲线 / 期限走势可指向同一 source)──
-const assetTab = (id: string, label: string, underlying: string, vrpUnderlying?: string): TabDef => ({
-  id,
-  label,
-  render: (interval) => <AssetChart interval={interval} underlying={underlying} vrpUnderlying={vrpUnderlying} />,
-});
-const regimeTab = (id: string, label: string, dim: RegimeDim, group?: string): TabDef => ({
-  id,
-  label,
-  group,
-  render: (interval) => <RegimeChart dim={dim} interval={interval} />,
-});
-const curveTab = (id: string, label: string, source: string): TabDef => ({
-  id,
-  label,
-  render: () => <YieldCurvePanel source={source} />,
-});
-const historyTab = (
+function assetTab(id: string, label: string, underlying: string, vrpUnderlying?: string): TabDef {
+  return {
+    id,
+    label,
+    render: (interval) => <AssetChart interval={interval} underlying={underlying} vrpUnderlying={vrpUnderlying} />,
+  };
+}
+function regimeTab(id: string, label: string, dim: RegimeDim, group?: string): TabDef {
+  return {
+    id,
+    label,
+    group,
+    render: (interval) => <RegimeChart dim={dim} interval={interval} />,
+  };
+}
+function curveTab(id: string, label: string, source: string): TabDef {
+  return {
+    id,
+    label,
+    render: () => <YieldCurvePanel source={source} />,
+  };
+}
+function historyTab(
   id: string,
   label: string,
   source: string,
@@ -46,14 +52,18 @@ const historyTab = (
   spreads?: SpreadDef[],
   /** 现货参照标的。只给真的相关的那个 tab 配 —— 不是每格都该挂一条风险资产。 */
   spot?: string,
-): TabDef => ({
-  id,
-  label,
-  render: (interval) => <TenorHistoryPanel source={source} interval={interval} spreads={spreads} spot={spot} />,
-});
+): TabDef {
+  return {
+    id,
+    label,
+    render: (interval) => <TenorHistoryPanel source={source} interval={interval} spreads={spreads} spot={spot} />,
+  };
+}
 
 // 单视图 regime 视角:无横 tab 条(tab 与视角同 id,TabBar 单 tab 时不渲染横条)。
-const regimePersp = (id: RegimeDim, label: string): Perspective => ({ id, label, tabs: [regimeTab(id, label, id)] });
+function regimePersp(id: RegimeDim, label: string): Perspective {
+  return { id, label, tabs: [regimeTab(id, label, id)] };
+}
 
 export const PERSPECTIVES: Perspective[] = [
   {

@@ -182,10 +182,15 @@ export function normalize(doc: ChartDoc): ChartDoc {
   return { v: 1, panes };
 }
 
-const mapLayer = (doc: ChartDoc, layerId: string, fn: (l: Layer, p: Pane) => Partial<Layer>): ChartDoc => ({
-  ...doc,
-  panes: doc.panes.map((p) => ({ ...p, layers: p.layers.map((l) => (l.id === layerId ? { ...l, ...fn(l, p) } : l)) })),
-});
+function mapLayer(doc: ChartDoc, layerId: string, fn: (l: Layer, p: Pane) => Partial<Layer>): ChartDoc {
+  return {
+    ...doc,
+    panes: doc.panes.map((p) => ({
+      ...p,
+      layers: p.layers.map((l) => (l.id === layerId ? { ...l, ...fn(l, p) } : l)),
+    })),
+  };
+}
 
 export function findLayer(doc: ChartDoc, layerId: string): { pane: Pane; layer: Layer } | undefined {
   const pane = doc.panes.find((p) => p.layers.some((l) => l.id === layerId));
@@ -198,7 +203,9 @@ export function findLayer(doc: ChartDoc, layerId: string): { pane: Pane; layer: 
  * 这一格里被叠加的线(B)占着的轴。别的线不能再挂上去:B 的轴范围跟着 A 走,挂上去的线会被强行按 A 的比例缩放,
  * 叠加关系也会被 pruneRefs 解除 —— 加线 / 挪线 / 换轴碰到它都改开独立轴或不让换。
  */
-export const fitScaleIds = (p: Pane): Set<string> => new Set(p.layers.filter((l) => l.fit).map((l) => l.scale));
+export function fitScaleIds(p: Pane): Set<string> {
+  return new Set(p.layers.filter((l) => l.fit).map((l) => l.scale));
+}
 
 /** 加一条图层:默认第 0 格、右轴(右轴被叠加的线占着就开独立轴)。空图时新建主格。 */
 export function addLayer(doc: ChartDoc, series: string, color: string): ChartDoc {
@@ -254,12 +261,14 @@ export function setLayerShift(doc: ChartDoc, layerId: string, shift: number): Ch
 }
 
 /** 按固定字段顺序重建一根轴(id、side、invert、log):先开哪个开关都一样,复制出去的 JSON 再导入文本原样不变。 */
-const canonicalScale = (sc: Scale): Scale => ({
-  id: sc.id,
-  side: sc.side,
-  ...(sc.invert ? { invert: true as const } : {}),
-  ...(sc.log ? { log: true as const } : {}),
-});
+function canonicalScale(sc: Scale): Scale {
+  return {
+    id: sc.id,
+    side: sc.side,
+    ...(sc.invert ? { invert: true as const } : {}),
+    ...(sc.log ? { log: true as const } : {}),
+  };
+}
 
 /** 轴的开关型属性(倒轴 / 对数),作用于整根轴;关掉时删字段。 */
 function setScaleFlag(doc: ChartDoc, paneId: string, scaleId: string, flag: 'invert' | 'log', on: boolean): ChartDoc {
@@ -280,15 +289,18 @@ function setScaleFlag(doc: ChartDoc, paneId: string, scaleId: string, flag: 'inv
   };
 }
 
-export const setScaleInvert = (doc: ChartDoc, paneId: string, scaleId: string, on: boolean) =>
-  setScaleFlag(doc, paneId, scaleId, 'invert', on);
+export function setScaleInvert(doc: ChartDoc, paneId: string, scaleId: string, on: boolean) {
+  return setScaleFlag(doc, paneId, scaleId, 'invert', on);
+}
 
-export const setScaleLog = (doc: ChartDoc, paneId: string, scaleId: string, on: boolean) =>
-  setScaleFlag(doc, paneId, scaleId, 'log', on);
+export function setScaleLog(doc: ChartDoc, paneId: string, scaleId: string, on: boolean) {
+  return setScaleFlag(doc, paneId, scaleId, 'log', on);
+}
 
 /** 是否有别的图层按它换算(它是某条线的 fit.target)。 */
-export const isFitTarget = (doc: ChartDoc, layerId: string): boolean =>
-  doc.panes.some((p) => p.layers.some((l) => l.fit?.target === layerId));
+export function isFitTarget(doc: ChartDoc, layerId: string): boolean {
+  return doc.panes.some((p) => p.layers.some((l) => l.fit?.target === layerId));
+}
 
 /**
  * 叠到 target 上:挪进 target 所在格,挂一根自己的轴 —— 优先 target 对面的内置轴(有刻度可读),
@@ -442,81 +454,115 @@ export function nextColor(doc: ChartDoc, palette: readonly string[]): string {
 
 // ── 校验:以后从 localStorage / URL 载入时走这里(项目没有 zod,手写守卫)──
 
-const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
-const isStr = (x: unknown): x is string => typeof x === 'string' && x.length > 0;
+function isObj(x: unknown): x is Record<string, unknown> {
+  return typeof x === 'object' && x !== null && !Array.isArray(x);
+}
+function isStr(x: unknown): x is string {
+  return typeof x === 'string' && x.length > 0;
+}
 
 // 保留 id 与 side 必须一一对应:'right' / 'left' 只能是内置轴,其它 id 只能是独立轴。
 // 否则 {id:'left', side:'overlay'} 这种会让图层挂着左轴、整图左轴却不开。
-const isScale = (x: unknown): x is Scale =>
-  isObj(x) &&
-  isStr(x.id) &&
-  (x.id === 'right' || x.id === 'left' ? x.side === x.id : x.side === 'overlay') &&
-  (x.invert === undefined || x.invert === true) &&
-  (x.log === undefined || x.log === true);
+function isScale(x: unknown): x is Scale {
+  return (
+    isObj(x) &&
+    isStr(x.id) &&
+    (x.id === 'right' || x.id === 'left' ? x.side === x.id : x.side === 'overlay') &&
+    (x.invert === undefined || x.invert === true) &&
+    (x.log === undefined || x.log === true)
+  );
+}
 
 // 颜色限定 #rrggbb:lw-charts 解析不了的颜色会直接抛错(整页白屏),<input type=color> 也只认这种
-const isColor = (x: unknown): x is string => typeof x === 'string' && /^#[0-9a-f]{6}$/i.test(x);
+function isColor(x: unknown): x is string {
+  return typeof x === 'string' && /^#[0-9a-f]{6}$/i.test(x);
+}
 
 // 只看外形会放过 2026-99-01 这种不存在的日期:按 UTC 解析再格式化回来,一致才算真日期
-const isDate = (x: unknown): x is string =>
-  typeof x === 'string' &&
-  /^\d{4}-\d{2}-\d{2}$/.test(x) &&
-  !Number.isNaN(Date.parse(`${x}T00:00:00Z`)) &&
-  new Date(`${x}T00:00:00Z`).toISOString().slice(0, 10) === x;
-const isInt = (x: unknown, lo: number, hi: number): x is number =>
-  Number.isInteger(x) && (x as number) >= lo && (x as number) <= hi;
+function isDate(x: unknown): x is string {
+  return (
+    typeof x === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(x) &&
+    !Number.isNaN(Date.parse(`${x}T00:00:00Z`)) &&
+    new Date(`${x}T00:00:00Z`).toISOString().slice(0, 10) === x
+  );
+}
+function isInt(x: unknown, lo: number, hi: number): x is number {
+  return Number.isInteger(x) && (x as number) >= lo && (x as number) <= hi;
+}
 
-const isNum = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
-const isFit = (x: unknown): x is Fit =>
-  isObj(x) &&
-  isStr(x.target) &&
-  isDate(x.start) &&
-  isDate(x.end) &&
-  x.start < x.end &&
-  isNum(x.alpha) &&
-  isNum(x.beta) &&
-  x.beta !== 0 &&
-  isNum(x.r);
+function isNum(x: unknown): x is number {
+  return typeof x === 'number' && Number.isFinite(x);
+}
+function isFit(x: unknown): x is Fit {
+  return (
+    isObj(x) &&
+    isStr(x.target) &&
+    isDate(x.start) &&
+    isDate(x.end) &&
+    x.start < x.end &&
+    isNum(x.alpha) &&
+    isNum(x.beta) &&
+    x.beta !== 0 &&
+    isNum(x.r)
+  );
+}
 
-const isRender = (x: unknown): x is LayerRender =>
-  isObj(x) &&
-  x.kind === 'line' &&
-  (x.baseline === undefined || isNum(x.baseline)) &&
-  (x.step === undefined || x.step === true);
-const isRefLine = (x: unknown): x is RefLine =>
-  isObj(x) && isNum(x.price) && isStr(x.title) && (x.color === undefined || isColor(x.color));
-const isPercentile = (x: unknown): x is PercentileBand =>
-  isObj(x) &&
-  (x.riskTail === undefined || x.riskTail === 'low' || x.riskTail === 'high') &&
-  (x.since === undefined || isDate(x.since));
+function isRender(x: unknown): x is LayerRender {
+  return (
+    isObj(x) &&
+    x.kind === 'line' &&
+    (x.baseline === undefined || isNum(x.baseline)) &&
+    (x.step === undefined || x.step === true)
+  );
+}
+function isRefLine(x: unknown): x is RefLine {
+  return isObj(x) && isNum(x.price) && isStr(x.title) && (x.color === undefined || isColor(x.color));
+}
+function isPercentile(x: unknown): x is PercentileBand {
+  return (
+    isObj(x) &&
+    (x.riskTail === undefined || x.riskTail === 'low' || x.riskTail === 'high') &&
+    (x.since === undefined || isDate(x.since))
+  );
+}
 
-const isLayer = (x: unknown): x is Layer =>
-  isObj(x) &&
-  isStr(x.id) &&
-  isStr(x.scale) &&
-  isColor(x.color) &&
-  isStr(x.series) &&
-  (x.shift === undefined || isInt(x.shift, -MAX_SHIFT, MAX_SHIFT)) &&
-  (x.fit === undefined || isFit(x.fit)) &&
-  (x.title === undefined || isStr(x.title)) &&
-  (x.render === undefined || isRender(x.render)) &&
-  (x.refLines === undefined || (Array.isArray(x.refLines) && x.refLines.every(isRefLine))) &&
-  (x.percentile === undefined || isPercentile(x.percentile));
+function isLayer(x: unknown): x is Layer {
+  return (
+    isObj(x) &&
+    isStr(x.id) &&
+    isStr(x.scale) &&
+    isColor(x.color) &&
+    isStr(x.series) &&
+    (x.shift === undefined || isInt(x.shift, -MAX_SHIFT, MAX_SHIFT)) &&
+    (x.fit === undefined || isFit(x.fit)) &&
+    (x.title === undefined || isStr(x.title)) &&
+    (x.render === undefined || isRender(x.render)) &&
+    (x.refLines === undefined || (Array.isArray(x.refLines) && x.refLines.every(isRefLine))) &&
+    (x.percentile === undefined || isPercentile(x.percentile))
+  );
+}
 
-const canonicalRender = (r: LayerRender): LayerRender => ({
-  kind: r.kind,
-  ...(r.baseline !== undefined ? { baseline: r.baseline } : {}),
-  ...(r.step ? { step: true as const } : {}),
-});
-const canonicalRefLine = (r: RefLine): RefLine => ({
-  price: r.price,
-  title: r.title,
-  ...(r.color !== undefined ? { color: r.color } : {}),
-});
-const canonicalPercentile = (p: PercentileBand): PercentileBand => ({
-  ...(p.riskTail ? { riskTail: p.riskTail } : {}),
-  ...(p.since ? { since: p.since } : {}),
-});
+function canonicalRender(r: LayerRender): LayerRender {
+  return {
+    kind: r.kind,
+    ...(r.baseline !== undefined ? { baseline: r.baseline } : {}),
+    ...(r.step ? { step: true as const } : {}),
+  };
+}
+function canonicalRefLine(r: RefLine): RefLine {
+  return {
+    price: r.price,
+    title: r.title,
+    ...(r.color !== undefined ? { color: r.color } : {}),
+  };
+}
+function canonicalPercentile(p: PercentileBand): PercentileBand {
+  return {
+    ...(p.riskTail ? { riskTail: p.riskTail } : {}),
+    ...(p.since ? { since: p.since } : {}),
+  };
+}
 
 /**
  * 按字段白名单、固定顺序重建图层(id、series、scale、color、shift、fit、title、render、refLines、percentile):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
@@ -549,34 +595,42 @@ function canonicalLayer(l: Layer): Layer {
 }
 
 // 'new' 是 PaneTarget 里「新开一格」的保留字,格不能叫这个
-const isPane = (x: unknown): x is Pane =>
-  isObj(x) &&
-  isStr(x.id) &&
-  x.id !== 'new' &&
-  typeof x.stretch === 'number' &&
-  Number.isFinite(x.stretch) &&
-  x.stretch > 0 &&
-  Array.isArray(x.scales) &&
-  x.scales.every(isScale) &&
-  Array.isArray(x.layers) &&
-  x.layers.every(isLayer) &&
-  (x.label === undefined || isStr(x.label)) &&
-  (x.desc === undefined || isStr(x.desc));
+function isPane(x: unknown): x is Pane {
+  return (
+    isObj(x) &&
+    isStr(x.id) &&
+    x.id !== 'new' &&
+    typeof x.stretch === 'number' &&
+    Number.isFinite(x.stretch) &&
+    x.stretch > 0 &&
+    Array.isArray(x.scales) &&
+    x.scales.every(isScale) &&
+    Array.isArray(x.layers) &&
+    x.layers.every(isLayer) &&
+    (x.label === undefined || isStr(x.label)) &&
+    (x.desc === undefined || isStr(x.desc))
+  );
+}
 
-const allUnique = (ids: string[]) => new Set(ids).size === ids.length;
+function allUnique(ids: string[]) {
+  return new Set(ids).size === ids.length;
+}
 
 /**
  * id 唯一性:格 / 图层 / 独立轴的 id 全文档唯一(渲染层按图层 id 建 Map,重复会让多条图层坍缩成一条);
  * 内置轴 'right' / 'left' 每格各有一根,只要求格内不重复。
  */
-const idsUnique = (panes: Pane[]): boolean =>
-  allUnique(
-    panes.flatMap((p) => [
-      p.id,
-      ...p.layers.map((l) => l.id),
-      ...p.scales.filter((s) => s.side === 'overlay').map((s) => s.id),
-    ]),
-  ) && panes.every((p) => allUnique(p.scales.map((s) => s.id)));
+function idsUnique(panes: Pane[]): boolean {
+  return (
+    allUnique(
+      panes.flatMap((p) => [
+        p.id,
+        ...p.layers.map((l) => l.id),
+        ...p.scales.filter((s) => s.side === 'overlay').map((s) => s.id),
+      ]),
+    ) && panes.every((p) => allUnique(p.scales.map((s) => s.id)))
+  );
+}
 
 /** 结构不对 / id 冲突返回 null;通过则过一遍 normalize(修补引用不一致这类可自愈的问题)。 */
 export function parseChartDoc(x: unknown): ChartDoc | null {

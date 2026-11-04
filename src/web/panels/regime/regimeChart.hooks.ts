@@ -32,6 +32,7 @@ import {
   type SecFiled,
   type SecLag,
 } from '../../../shared/aiChain';
+import { getJson, SWR_OPTS } from '../../lib/http';
 
 // 分位带阈值(自身历史):想改 5/95 更严就动这里。
 const PCTL_LO = 5;
@@ -107,9 +108,12 @@ const SEASONAL_Z_GATE =
   '四格共用这把尺便于横比,别拿其中一格的带去套别的数据。';
 // 配了 clampVisibleTo 的格子共用。**措辞必须说实话**:线是被裁在 pane 边缘、看不见的,
 // 不是「画到轴外还能看见」;而普通放大也不会让轴松开(窗口里只要还有正常点就仍被夹)。
-const CLAMP_NOTE = (box: string, tail: string) =>
-  `⚠️ **纵轴夹在 ${box},超出部分在图上看不见**(线被裁在格子边缘)——${tail}\n` +
-  '**数据本身没有被改**:把十字光标移到那一段,图例读出来的仍是真值。';
+function clampNote(box: string, tail: string) {
+  return (
+    `⚠️ **纵轴夹在 ${box},超出部分在图上看不见**(线被裁在格子边缘)——${tail}\n` +
+    '**数据本身没有被改**:把十字光标移到那一段,图例读出来的仍是真值。'
+  );
+}
 const PINNED_VOL = '⚠️ 央行可信干预会诱使市场做多 gamma、内生压低波动率:这种低波不是真稳,可信度一破反向弹性极大。';
 // SEC 基本面各格共用:季频数据的读法约束。写在每格开头,防止被当日频指标使。
 const SEC_CAVEAT =
@@ -117,7 +121,9 @@ const SEC_CAVEAT =
   '用途是证实/证伪叙事,不是择时;不要用它解释当天的价格。';
 // 名单会变,所以只写**口径与条件**,不写「当前接了哪几家」——写状态的文案一定会过期。
 // 两侧名单现算,别在文案里写死 —— 名单一改文案就过期。只列因果链内的(备查的那几家不是判据成员)。
-const tickersOf = (side: 'buyer' | 'seller') => chainTickers(side).join('/');
+function tickersOf(side: 'buyer' | 'seller') {
+  return chainTickers(side).join('/');
+}
 const SEC_ROSTER_CAVEAT =
   `AI 链按判据分两侧(见 shared/aiChain 的 side):**买铲子的**(${tickersOf('buyer')} —— 花钱建算力)` +
   `进这条合计线;**卖铲子的**(${tickersOf('seller')} —— 收钱)只看毛利率、**不进**这条线。` +
@@ -143,17 +149,6 @@ export type RegimeData = {
 };
 
 const NO_DATA: RegimeData = { series: {}, unavailable: [] }; // 稳定空引用,避免 render 抖动
-const SWR_OPTS = {
-  revalidateOnFocus: false,
-  revalidateIfStale: false,
-  revalidateOnReconnect: false,
-};
-
-async function getJson<T>(url: string): Promise<T> {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(String(r.status));
-  return r.json() as Promise<T>;
-}
 
 /** 三个 regime 视角共用;SWR 按 URL 去重,只发一次 /api/regime。 */
 /** enabled = false 时不发请求(图表编辑器图上没用到 regime 序列时,不拉这份大响应)。 */
@@ -1038,7 +1033,7 @@ export const REGIME_DIMS: Record<Exclude<FixedDim, DocDim>, DimConfig> = {
           '贴 0 或转负 = 美油被跨洋抢走,或 Cushing 库容扭曲。',
           '常态带 1.5~10,出带 = 告警非确诊;常被美国出口 / 管输主导,别当纯国际风险读。',
           '',
-          CLAMP_NOTE('−5~15', '2020-04 的负油价把这条打到 63,不夹的话常态带 1.5~10 在图上完全分辨不出。'),
+          clampNote('−5~15', '2020-04 的负油价把这条打到 63,不夹的话常态带 1.5~10 在图上完全分辨不出。'),
           '⚠️ 地缘期会反过来:买家转订美国轻质原油,反而把 WTI 顶到高于 Brent。转负未必是美国需求问题。',
           '',
           ROLL_NOTE.brentWti,
@@ -1169,10 +1164,7 @@ export const REGIME_DIMS: Record<Exclude<FixedDim, DocDim>, DimConfig> = {
           '上面那格答「离满还有多远」,这格答「比往年同期努力多少」—— 秋季检修季的 92% 和',
           '夏季旺季的 92% 完全是两回事,水位线分不出来,这条能。',
           '',
-          CLAMP_NOTE(
-            '±5',
-            '2021-02 的 Uri 寒潮冻停德州炼厂,那周 z ≈ −27(开工率 56%);不夹的话其余 8 年被压成一条直线。',
-          ),
+          clampNote('±5', '2021-02 的 Uri 寒潮冻停德州炼厂,那周 z ≈ −27(开工率 56%);不夹的话其余 8 年被压成一条直线。'),
           SEASONAL_Z_GATE,
           '⚠️ z 读的是「相对往年同期」,不是「相对历史常态」——基准 5 年含 2020-22 乱期,',
           'z 不极端 ≠ 不紧张,可能只是「和前几年一样紧」。',
@@ -1210,7 +1202,7 @@ export const REGIME_DIMS: Record<Exclude<FixedDim, DocDim>, DimConfig> = {
           '',
           '⚠️ **相减成一条会毁掉这个读法**,所以叠画不相减:两条的基数差 3 倍多(加工量 ~1760 万桶/日、',
           '馏分油产量 ~535 万桶/日),百分比同比才可比,绝对桶数之差不可比。',
-          CLAMP_NOTE('±15', '疫情停摆 + 次年基数效应让两条都到过 ±40~60%,而日常波动在 ±5 以内。'),
+          clampNote('±15', '疫情停摆 + 次年基数效应让两条都到过 ±40~60%,而日常波动在 ±5 以内。'),
           '⚠️ **这里是同比百分比,不是同比绝对量。** 卖方/媒体常说「多炼了 X 万桶/日」——那是绝对量口径,',
           '和这两条不可互相引用。回源核对时先问清是哪个口径,两者在同一周可以给出完全不同的故事。',
           '⚠️ 单周同比噪声大(炼厂非计划停车、检修错周)。别用单周背离下结论,看连续几周是否同向。',
@@ -2058,10 +2050,11 @@ const BASELINE: Partial<Record<FundKind, PaneSpec['render']>> = {
 };
 
 /** 柱 ⇒ 符号柱(正绿负红、零基线);折线 ⇒ 默认折线,除非上表指定了基线。 */
-const renderOf = (kind: FundKind): PaneSpec['render'] | undefined =>
-  BASELINE[kind] ?? (KIND_RENDER[kind] === 'bar' ? { kind: 'signed' } : undefined);
+function renderOf(kind: FundKind): PaneSpec['render'] | undefined {
+  return BASELINE[kind] ?? (KIND_RENDER[kind] === 'bar' ? { kind: 'signed' } : undefined);
+}
 
-const paneOf = (
+function paneOf(
   ticker: string,
   kind: FundKind,
   label: string,
@@ -2069,7 +2062,7 @@ const paneOf = (
   // signed(符号柱)不需要 color —— 正绿负红由 signed 分支决定,图例留空用默认色,与 vxTermSpread 一致。
   color: string | undefined,
   lines: Array<string | undefined>,
-): PaneSpec => {
+): PaneSpec {
   const gaps = PANE_CONCEPTS[kind].flatMap((c) => {
     const why = knownGap(ticker, c);
     return why ? [`⚠️ **这格是空的,而且不是 bug**:${ticker} 的 ${c} 拿不到 —— ${why}`] : [];
@@ -2085,7 +2078,7 @@ const paneOf = (
     // 只丢 undefined —— '' 是段落分隔符,InfoTip 用 whitespace-pre-wrap 渲染,filter(Boolean) 会把它一起吃掉。
     desc: [...(gaps.length ? [...gaps, ''] : []), ...lines].filter((l) => l !== undefined).join('\n'),
   };
-};
+}
 
 /** TWSE 三格共用:源的性质与币种。各格自己的端点与频率写在各自定义那一行。 */
 const TWSE_CAVEAT =
@@ -2426,7 +2419,9 @@ export function derivePaneMeta(panes: PaneSpec[]) {
   };
 }
 
-const toLine = (rows: RegimePoint[]): LinePoint[] => rows.map((r) => ({ time: r.date, value: r.value }));
+function toLine(rows: RegimePoint[]): LinePoint[] {
+  return rows.map((r) => ({ time: r.date, value: r.value }));
+}
 
 /** 一序列一 pane:pane 下标 = panes 索引;缺失的序列(unavailable)不建 spec,该 pane 留空。
  *  percentile 的 pane:按原始日频值算 P5/P95 作参考线(与显示 interval 无关)。 */

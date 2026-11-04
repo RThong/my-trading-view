@@ -2,8 +2,15 @@ import { describe, test, expect } from 'bun:test';
 import { ema, bollinger, macd, rsi } from './indicators';
 import type { Bar } from './chart';
 
-const bars = (closes: number[]): Bar[] =>
-  closes.map((c, i) => ({ time: `2026-01-${String(i + 1).padStart(2, '0')}`, open: c, high: c, low: c, close: c }));
+function bars(closes: number[]): Bar[] {
+  return closes.map((c, i) => ({
+    time: `2026-01-${String(i + 1).padStart(2, '0')}`,
+    open: c,
+    high: c,
+    low: c,
+    close: c,
+  }));
+}
 
 describe('ema', () => {
   test('SMA 起算 + α=2/(n+1) 递推', () => {

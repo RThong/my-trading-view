@@ -77,18 +77,22 @@ export const CATEGORIES: SeriesCategory[] = [
   '基本面',
 ];
 
-const endpoint = (url: string, field: string): SeriesSource => ({ kind: 'endpoint', url, field });
+function endpoint(url: string, field: string): SeriesSource {
+  return { kind: 'endpoint', url, field };
+}
 
 // ── price_eod 现货(与期权页蜡烛同一份,各自从上市日起)与 BTC 蜡烛
-const price = (id: string, symbol: string, label: string, aliases: string[]): SeriesDef => ({
-  id,
-  label,
-  category: '资产',
-  freq: '日',
-  unit: '$',
-  source: endpoint(`/api/price/${symbol}`, 'close'),
-  aliases,
-});
+function price(id: string, symbol: string, label: string, aliases: string[]): SeriesDef {
+  return {
+    id,
+    label,
+    category: '资产',
+    freq: '日',
+    unit: '$',
+    source: endpoint(`/api/price/${symbol}`, 'close'),
+    aliases,
+  };
+}
 
 const MANUAL: SeriesDef[] = [
   price('SPY', 'SPY', 'SPY 标普 500', ['标普', 's&p']),
@@ -127,8 +131,8 @@ type CurveFamily = {
   aliases: string[] | ((t: string) => string[]);
 };
 
-const curveDefs = ({ curve, tenors, id, label, category, unit, aliases }: CurveFamily): SeriesDef[] =>
-  tenors.map((t) => ({
+function curveDefs({ curve, tenors, id, label, category, unit, aliases }: CurveFamily): SeriesDef[] {
+  return tenors.map((t) => ({
     id: id(t),
     label: label(t),
     category,
@@ -137,8 +141,11 @@ const curveDefs = ({ curve, tenors, id, label, category, unit, aliases }: CurveF
     source: { kind: 'curve', curve, tenor: t },
     aliases: typeof aliases === 'function' ? aliases(t) : aliases,
   }));
+}
 
-const lower = (t: string) => t.toLowerCase();
+function lower(t: string) {
+  return t.toLowerCase();
+}
 
 const CURVES: SeriesDef[] = (
   [
@@ -220,7 +227,9 @@ const CURVES: SeriesDef[] = (
 ).flatMap(curveDefs);
 
 // ── 期权:25Δ(本地库逐日快照,只能从开始采集那天往后攒)与 VRP(隐含 − 已实现)
-const optionName = (u: string) => u.replace(/^\./, '');
+function optionName(u: string) {
+  return u.replace(/^\./, '');
+}
 
 const OPTIONS: SeriesDef[] = MARKET_CATALOG.filter((a) => a.optionSource !== 'none').flatMap((a) => {
   const u = a.underlying;
@@ -285,16 +294,20 @@ const VRP: SeriesDef[] = Object.entries(IV_INDEX).flatMap(([u, ivIndex]) => {
 // 没列的都已经从别处发了:VIX / SKEW / MOVE / VXN / ISM / CGI(GPU)/ 供应密度在 regime,
 // ERIS_OIS / ICE_CDS 在曲线接口(CDS 库里存的是价,曲线接口换成了 bp),SEC_* / TWSE_* 即基本面 fund:*。
 export const DB_PREFIX = 'db:';
-const dbSource = (seriesId: string) => endpoint(`/api/series/${encodeURIComponent(seriesId)}`, 'value');
-const db = (seriesId: string, label: string, aliases: string[] = [], weekends?: true): SeriesDef => ({
-  id: `${DB_PREFIX}${seriesId}`,
-  label,
-  category: '波动率',
-  freq: '日',
-  source: dbSource(seriesId),
-  aliases,
-  ...(weekends && { weekends }),
-});
+function dbSource(seriesId: string) {
+  return endpoint(`/api/series/${encodeURIComponent(seriesId)}`, 'value');
+}
+function db(seriesId: string, label: string, aliases: string[] = [], weekends?: true): SeriesDef {
+  return {
+    id: `${DB_PREFIX}${seriesId}`,
+    label,
+    category: '波动率',
+    freq: '日',
+    source: dbSource(seriesId),
+    aliases,
+    ...(weekends && { weekends }),
+  };
+}
 
 const DB_SERIES: SeriesDef[] = [
   db('VVIX', 'VVIX (VIX 的波动率)'),
@@ -309,14 +322,16 @@ const DB_SERIES: SeriesDef[] = [
 
 /** VX 单月合约(`VX:<到期日>`):份数随时间增加,名单由 /api/series?prefix=VX: 现取(见 useVxContracts)。 */
 export const VX_CONTRACT_PREFIX = 'VX:';
-const vxContractDef = (seriesId: string): SeriesDef => ({
-  id: `${DB_PREFIX}${seriesId}`,
-  label: `VX ${seriesId.slice(VX_CONTRACT_PREFIX.length)} 到期`,
-  category: 'VX 合约',
-  freq: '日',
-  source: dbSource(seriesId),
-  aliases: ['vx', '期货', '合约'],
-});
+function vxContractDef(seriesId: string): SeriesDef {
+  return {
+    id: `${DB_PREFIX}${seriesId}`,
+    label: `VX ${seriesId.slice(VX_CONTRACT_PREFIX.length)} 到期`,
+    category: 'VX 合约',
+    freq: '日',
+    source: dbSource(seriesId),
+    aliases: ['vx', '期货', '合约'],
+  };
+}
 
 // ── 基本面(/api/regime 的 fund:*,AI 链公司季报;名单与面板同源,见 shared/aiChain)
 const MONEY_UNIT = { USD: '百万美元', TWD: '百万新台币', EUR: '百万欧元', KRW: '百万韩元' } as const;
@@ -332,15 +347,17 @@ const FUND_KIND: Record<FundKind, { label: string; freq: SeriesFreq; money?: tru
   revYoy: { label: '月营收同比', freq: '月', unit: '%' },
 };
 
-const fundDef = (key: SeriesKey, label: string, freq: SeriesFreq, unit: string, ticker: string): SeriesDef => ({
-  id: key,
-  label,
-  category: '基本面',
-  freq,
-  unit,
-  source: { kind: 'regime', key },
-  aliases: [ticker.toLowerCase(), '财报', '基本面'],
-});
+function fundDef(key: SeriesKey, label: string, freq: SeriesFreq, unit: string, ticker: string): SeriesDef {
+  return {
+    id: key,
+    label,
+    category: '基本面',
+    freq,
+    unit,
+    source: { kind: 'regime', key },
+    aliases: [ticker.toLowerCase(), '财报', '基本面'],
+  };
+}
 
 const FUNDAMENTALS: SeriesDef[] = [
   ...ACTIVE_TICKERS.flatMap((t) =>
@@ -378,7 +395,9 @@ export const REGISTRY: SeriesDef[] = [...HAND, ...FROM_META, ...FUNDAMENTALS];
 const BY_ID = new Map(REGISTRY.map((d) => [d.id, d]));
 
 export const YAHOO_PREFIX = 'yh:';
-export const yahooId = (symbol: string) => `${YAHOO_PREFIX}${symbol.toUpperCase()}`;
+export function yahooId(symbol: string) {
+  return `${YAHOO_PREFIX}${symbol.toUpperCase()}`;
+}
 
 // 库里已有的 Yahoo 代码 → 库里那条的 id。搜索结果遇到它们直接给库里那条(有库兜底、带中文别名),不再并列一条 yh:。
 // price_eod 的几只按代码自动对上;下面是代码与 id 不同名的。
@@ -416,9 +435,9 @@ export function libraryIdForYahoo(symbol: string): string | undefined {
 // Yahoo 代码的显示名(搜索结果 / 取数响应里带回来)。文档只存代码,名字不进 JSON,
 // 所以记在这里给标签用;没记到(比如以后从存档载入、还没取到数)就只显示代码。
 const yahooNames = new Map<string, string>();
-export const rememberYahooName = (symbol: string, name: string) => {
+export function rememberYahooName(symbol: string, name: string) {
   yahooNames.set(symbol.toUpperCase(), name);
-};
+}
 
 export function seriesDef(id: string): SeriesDef | undefined {
   const known = BY_ID.get(id);
@@ -439,7 +458,9 @@ export function seriesDef(id: string): SeriesDef | undefined {
 }
 
 /** VX 合约的 series_id 清单 → 定义(按到期日倒序:近的在前)。 */
-export const vxContractDefs = (seriesIds: string[]): SeriesDef[] => [...seriesIds].sort().reverse().map(vxContractDef);
+export function vxContractDefs(seriesIds: string[]): SeriesDef[] {
+  return [...seriesIds].sort().reverse().map(vxContractDef);
+}
 
 /** 搜索:名称 / id / 别名包含关键字(不区分大小写)。空关键字 = 全部。extra = 现取的动态名单(VX 合约)。 */
 export function searchSeries(query: string, extra: SeriesDef[] = []): SeriesDef[] {

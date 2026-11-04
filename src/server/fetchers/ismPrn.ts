@@ -97,31 +97,33 @@ export function parseNewsroom(html: string): IsmCandidate[] {
   }));
 }
 
-const cellText = (s: string) =>
-  s
+function cellText(s: string) {
+  return s
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;|&#160;/g, ' ')
     .replace(/&reg;|&#174;|®/g, '')
     .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
     .trim();
+}
 
-const rowsOf = (table: string) =>
-  [...table.matchAll(/<tr[\s\S]*?<\/tr>/g)].map((r) =>
+function rowsOf(table: string) {
+  return [...table.matchAll(/<tr[\s\S]*?<\/tr>/g)].map((r) =>
     [...r[0].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map((c) => cellText(c[1])),
   );
+}
 
-const num = (s: string | undefined) => {
+function num(s: string | undefined) {
   const v = Number(s);
   // 扩散指数定义域就是 0~100;越界说明取错了列(比如取到了「变动」那格的 +1.3)。
   return Number.isFinite(v) && v >= 0 && v <= 100 && s !== '' ? v : null;
-};
+}
 
-const shiftMonth = (month: string, by: number) => {
+function shiftMonth(month: string, by: number) {
   const d = new Date(`${month}T00:00:00Z`);
   d.setUTCMonth(d.getUTCMonth() + by);
   return d.toISOString().slice(0, 10);
-};
+}
 
 /**
  * 单篇月报 HTML → 解析结果;认不出「AT A GLANCE」表 / 缺头条或 Prices 行 → null。

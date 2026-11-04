@@ -5,22 +5,24 @@ import { getMarketSeries } from '../storage/repository';
 import { updateIsm, ISM_SERIES, staleSectors } from './ismSnapshot';
 import type { IsmCandidate, IsmRelease } from '../fetchers/ismPrn';
 
-const freshDb = () => {
+function freshDb() {
   const db = new Database(':memory:');
   migrate(db);
   return db;
-};
+}
 
-const rel = (month: string, prevMonth: string, cur: number, prev: number): IsmRelease => ({
-  sector: 'mfg',
-  month,
-  prevMonth,
-  pmi: { cur, prev },
-  prices: { cur: cur + 10, prev: prev + 10 },
-});
+function rel(month: string, prevMonth: string, cur: number, prev: number): IsmRelease {
+  return {
+    sector: 'mfg',
+    month,
+    prevMonth,
+    pmi: { cur, prev },
+    prices: { cur: cur + 10, prev: prev + 10 },
+  };
+}
 
 /** 假 fetcher:pages[i] 是第 i+1 页的候选;bodies 按 path 给解析结果;记下拉过哪些正文。 */
-const fake = (pages: IsmCandidate[][], bodies: Record<string, IsmRelease | null>) => {
+function fake(pages: IsmCandidate[][], bodies: Record<string, IsmRelease | null>) {
   const pulled: string[] = [];
   return {
     pulled,
@@ -32,7 +34,7 @@ const fake = (pages: IsmCandidate[][], bodies: Record<string, IsmRelease | null>
       },
     },
   };
-};
+}
 
 test('updateIsm:按报告月升序写,后发布的「上月值」覆盖先发布的「当月值」(季节因子重估靠它带回来)', async () => {
   const db = freshDb();

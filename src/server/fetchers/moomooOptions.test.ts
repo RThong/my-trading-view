@@ -7,10 +7,12 @@ import { defaultMoomooOptionsClient } from './moomooOptions';
 
 const EXPIRY = new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10);
 
-const contract = (code: string, strikePrice: number) => ({
-  basic: { security: { code } },
-  optionExData: { strikePrice },
-});
+function contract(code: string, strikePrice: number) {
+  return {
+    basic: { security: { code } },
+    optionExData: { strikePrice },
+  };
+}
 
 /**
  * 假 ws:hang 里的标的的期权链请求永不返回;其余回一条只有 25Δ 一对合约的最小链。

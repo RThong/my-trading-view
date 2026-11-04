@@ -35,7 +35,9 @@ export const CATEGORICAL_DARK = [
 // 候选色网格:色相每 10°、三档明度,饱和度固定 65(与前 8 档柔和度相当,不显荧光);暗底(#0a0a0a)上都够亮。
 const CANDIDATES = [48, 62, 76].flatMap((l) => Array.from({ length: 36 }, (_, i) => hslToHex(i * 10, 65, l)));
 
-const rgb = (hex: string) => [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+function rgb(hex: string) {
+  return [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16));
+}
 
 /** 近似感知色差(redmean 加权 RGB):比纯 RGB 欧氏距离更贴近人眼,够判「两色分不分得开」。 */
 export function colorDistance(a: string, b: string): number {

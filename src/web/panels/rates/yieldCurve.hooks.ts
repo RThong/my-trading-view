@@ -3,6 +3,7 @@
 import useSWR from 'swr';
 import { useServerRefresh } from '../../hooks/useServerRefresh';
 import { unique, uniqueBy } from 'remeda';
+import { getJson, SWR_OPTS } from '../../lib/http';
 
 export type YPoint = { date: string; value: number };
 export type YieldCurveData = {
@@ -18,17 +19,6 @@ export type YieldCurveData = {
 };
 
 const NO_DATA: YieldCurveData = { tenors: [], series: {}, unavailable: [] };
-const SWR_OPTS = {
-  revalidateOnFocus: false,
-  revalidateIfStale: false,
-  revalidateOnReconnect: false,
-};
-
-async function getJson<T>(url: string): Promise<T> {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(String(r.status));
-  return r.json() as Promise<T>;
-}
 
 // ── 纯函数(可单测)────────────────────────────────────────────────
 

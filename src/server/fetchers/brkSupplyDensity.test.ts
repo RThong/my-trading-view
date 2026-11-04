@@ -7,7 +7,9 @@ import { NonRetryableError } from './http';
 import { updateSupplyDensity } from '../jobs/supplyDensitySnapshot';
 import { rollingMean } from '../analytics/regime';
 
-const day1 = <T>(data: T[], type: string) => ({ index: 'day1', type, start: 0, data });
+function day1<T>(data: T[], type: string) {
+  return { index: 'day1', type, start: 0, data };
+}
 const DATES = day1(['2010-08-15', '2010-08-16', '2010-08-17'], 'Date');
 
 describe('zipDensity', () => {

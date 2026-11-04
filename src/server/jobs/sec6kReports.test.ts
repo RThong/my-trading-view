@@ -12,7 +12,9 @@ function freshDb(): Database {
   return db;
 }
 
-const filing = (periodEnd: string, filed: string): FsFiling => ({ accn: `fs-${periodEnd}`, filed, periodEnd });
+function filing(periodEnd: string, filed: string): FsFiling {
+  return { accn: `fs-${periodEnd}`, filed, periodEnd };
+}
 
 const Q1 = filing('2026-03-31', '2026-05-15');
 const Q2 = filing('2026-06-30', '2026-08-14');

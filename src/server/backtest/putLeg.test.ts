@@ -11,11 +11,11 @@ const cfg: PutConfig = {
 };
 
 // 由 QQQ 价格序列造 base(纯 QQQ 净值)+ PutDay 序列。
-const build = (qqqPath: number[], vxn: number, greed: boolean[]) => {
+function build(qqqPath: number[], vxn: number, greed: boolean[]) {
   const base: EquityPoint[] = qqqPath.map((q, i) => ({ date: `d${i}`, value: q / qqqPath[0] }));
   const days: PutDay[] = qqqPath.map((q, i) => ({ date: `d${i}`, qqq: q, vxn, greed: greed[i] }));
   return { base, days };
-};
+}
 
 test('非贪婪期:叠加层 == base(putValue 恒 0)', () => {
   const q = [100, 101, 99, 102, 100];

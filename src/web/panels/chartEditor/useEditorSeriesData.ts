@@ -3,24 +3,22 @@
 // 任意 Yahoo 代码走 /api/yahoo/history。
 import { useMemo } from 'react';
 import useSWR from 'swr';
-import { aggregate, type LinePoint } from '../../lib/chart';
+import { aggregate, isWeekend, type LinePoint } from '../../lib/chart';
 import type { Interval } from '../../hooks/interval';
 import { useServerRefresh } from '../../hooks/useServerRefresh';
 import { useRegimeData, type RegimeData } from '../regime/regimeChart.hooks';
 import { shiftPoints } from './analysis';
 import { rememberYahooName, seriesDef, type CurveSource, type SeriesDef, type SeriesSource } from './registry';
+import { SWR_OPTS } from '../../lib/http';
 
-const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
 const RETRY_SWR_OPTS = { ...SWR_OPTS, revalidateIfStale: true };
 /**
- * 只留周一~周五。同 tenorHistory.hooks 的 weekdayOnly(那边未导出,按约定复制一份不改原件):
+ * 只留周一~周五(同 tenorHistory.hooks 的 weekdayOnly):
  * BTC 这类 7×24 序列与股票 / 利率同轴时,周末点会给时间轴凭空多出约 900 根空位。
  */
-export const weekdayOnly = (points: LinePoint[]): LinePoint[] =>
-  points.filter((p) => {
-    const dow = new Date(`${p.time}T00:00:00Z`).getUTCDay();
-    return dow !== 0 && dow !== 6;
-  });
+export function weekdayOnly(points: LinePoint[]): LinePoint[] {
+  return points.filter((p) => !isWeekend(p.time));
+}
 
 /**
  * 一次取数请求:哪条序列、平移多少交易日;daily = 不按页头周期聚合、固定日线
@@ -29,16 +27,17 @@ export const weekdayOnly = (points: LinePoint[]): LinePoint[] =>
 export type SeriesRequest = { series: string; shift: number; daily?: true };
 
 /** 请求的键(也是 points 的键)。注册表 id 里没有 '@' / '#'。 */
-export const requestKey = ({ series, shift, daily }: SeriesRequest): string =>
-  `${series}${shift ? `@${shift}` : ''}${daily ? '#d' : ''}`;
+export function requestKey({ series, shift, daily }: SeriesRequest): string {
+  return `${series}${shift ? `@${shift}` : ''}${daily ? '#d' : ''}`;
+}
 
-const parseKey = (key: string): SeriesRequest => {
+function parseKey(key: string): SeriesRequest {
   const daily = key.endsWith('#d');
   const body = daily ? key.slice(0, -2) : key;
   const at = body.lastIndexOf('@');
   const req = at < 0 ? { series: body, shift: 0 } : { series: body.slice(0, at), shift: Number(body.slice(at + 1)) };
   return daily ? { ...req, daily: true } : req;
-};
+}
 
 /** 「URL + 字段」型的源(price_eod 现货、25Δ、VRP、/api/series):URL → 行;取不到的为 null(单个失败不连累其它)。 */
 type EndpointRow = { date: string } & Record<string, number | string | null>;
@@ -100,12 +99,10 @@ async function getYahoo([, ...symbols]: string[]): Promise<YahooData> {
   return Object.fromEntries(rows);
 }
 
-const isWeekend = (date: string) => {
-  const dow = new Date(`${date}T00:00:00Z`).getUTCDay();
-  return dow === 0 || dow === 6;
-};
 /** 日线里周末点超过一成 = 7×24 资产(加密);美股的周末快照入库前已归到周五,不会误判。同 AssetChart 的判据。 */
-const hasWeekends = (points: LinePoint[]) => points.filter((p) => isWeekend(p.time)).length > points.length * 0.1;
+function hasWeekends(points: LinePoint[]) {
+  return points.filter((p) => isWeekend(p.time)).length > points.length * 0.1;
+}
 
 /** 收益曲线接口的响应(只用到的字段)。同利率页 useYieldCurve 的 YieldCurveData。 */
 type CurveData = {
@@ -142,10 +139,12 @@ export type SourceData = {
   yahoo?: YahooData;
 };
 
-const fromDated = (rows: { date: string; value: number }[] | undefined): LinePoint[] =>
-  (rows ?? []).map((p) => ({ time: p.date, value: p.value }));
-const fromCloses = (rows: { date: string; close: number }[] | undefined): LinePoint[] =>
-  (rows ?? []).map((b) => ({ time: b.date, value: b.close }));
+function fromDated(rows: { date: string; value: number }[] | undefined): LinePoint[] {
+  return (rows ?? []).map((p) => ({ time: p.date, value: p.value }));
+}
+function fromCloses(rows: { date: string; close: number }[] | undefined): LinePoint[] {
+  return (rows ?? []).map((b) => ({ time: b.date, value: b.close }));
+}
 
 /** 按数据源种类从原始响应里取出 { time, value }[](查表,每种源一个取法)。取不到 → []。 */
 const EXTRACT: {

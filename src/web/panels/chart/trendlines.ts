@@ -34,11 +34,18 @@ export function serializeLines(lines: TrendLine[]): string {
   return JSON.stringify(lines);
 }
 
-const isAnchor = (v: unknown): v is Anchor =>
-  typeof v === 'object' && v !== null && Number.isFinite((v as Anchor).logical) && Number.isFinite((v as Anchor).price);
+function isAnchor(v: unknown): v is Anchor {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    Number.isFinite((v as Anchor).logical) &&
+    Number.isFinite((v as Anchor).price)
+  );
+}
 
-const isLine = (v: unknown): v is TrendLine =>
-  typeof v === 'object' && v !== null && isAnchor((v as TrendLine).a) && isAnchor((v as TrendLine).b);
+function isLine(v: unknown): v is TrendLine {
+  return typeof v === 'object' && v !== null && isAnchor((v as TrendLine).a) && isAnchor((v as TrendLine).b);
+}
 
 // 容错解析:null / 坏 JSON / 非数组一律得空数组,绝不抛(localStorage 内容不可信)。
 // 逐元素校验形状——[null]、[{}] 等合法 JSON 也要滤掉,否则渲染取 ln.a 会崩。

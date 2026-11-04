@@ -35,11 +35,11 @@ export const EIA_FETCH_TIMEOUT_MS = 40_000;
  * **导出只为可测**:窗口够不够是随时间漂移的性质,不能只靠「URL 里有 length=」那种断言
  * (任何数值都满足,等于没测)。
  */
-export const weeksToFetch = () => {
+export function weeksToFetch() {
   const from = new Date(HISTORY_START_DATE);
   from.setFullYear(from.getFullYear() - SEASONAL_BASELINE_YEARS);
   return Math.ceil((Date.now() - from.getTime()) / (7 * 86_400_000)) + 4; // +4 周缓冲
-};
+}
 
 type EiaRow = { period: string; value: unknown };
 
@@ -49,14 +49,14 @@ type EiaRow = { period: string; value: unknown };
  * 一旦遇上字符串就会**悄悄把整条序列滤空**,最后只表现为那一格 unavailable,查不出原因。
  * 故这里按值解析而不按类型:数字或数字字符串都收,null / 空串 / 解析不出的一律丢。
  */
-const toFiniteNumber = (v: unknown): number | null => {
+function toFiniteNumber(v: unknown): number | null {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
   if (typeof v === 'string' && v.trim() !== '') {
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   }
   return null;
-};
+}
 
 export function createEiaFetcher(opts: { apiKey: string; fetch?: FetchFn }) {
   const doFetch = opts.fetch ?? ((url: string) => fetchWithTimeout(url, undefined, EIA_FETCH_TIMEOUT_MS));

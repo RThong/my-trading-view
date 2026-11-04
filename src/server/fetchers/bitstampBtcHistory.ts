@@ -16,8 +16,9 @@ const PAGE = 1000;
 // 而真实缺失(早年零成交日被滤掉)只缺 1 天 —— 7 天足够把两者分开。
 const MAX_GAP_DAYS = 7;
 
-const dayGap = (from: string, to: string) =>
-  (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
+function dayGap(from: string, to: string) {
+  return (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
+}
 
 type Ohlc = { timestamp: string; open: string; high: string; low: string; close: string };
 

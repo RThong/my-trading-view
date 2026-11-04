@@ -23,8 +23,12 @@ const W = 1000,
   PAD_T = 16,
   PAD_B = 28;
 
-const last = (rows: { date: string; value: number }[] | undefined) => rows?.at(-1);
-const fmt = (v: number, d = 3) => v.toFixed(d);
+function last(rows: { date: string; value: number }[] | undefined) {
+  return rows?.at(-1);
+}
+function fmt(v: number, d = 3) {
+  return v.toFixed(d);
+}
 
 function ForwardChart({
   segs,

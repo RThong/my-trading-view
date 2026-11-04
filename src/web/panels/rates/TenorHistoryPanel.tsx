@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import useSWR from 'swr';
 import { useYieldCurve } from './yieldCurve.hooks';
 import { SERIES_COLORS } from '../../lib/palette';
+import { getJson, SWR_OPTS } from '../../lib/http';
 
 import {
   tenorSeriesData,
@@ -116,13 +117,6 @@ const ZERO_BASE = new Set(['ai_cds']);
 /** 差值 pane 定义:长腿 − 短腿。label 兼作该格的 key 与说明的索引。 */
 export type SpreadDef = { long: string; short: string; label: string };
 
-const getJson = (url: string) =>
-  fetch(url).then((r) => {
-    if (!r.ok) throw new Error(String(r.status));
-    return r.json();
-  });
-const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false };
-
 /**
  * 现货腿专用:**空结果当失败抛**,不让它进 SWR 缓存。
  *
@@ -131,11 +125,11 @@ const SWR_OPTS = { revalidateOnFocus: false, revalidateIfStale: false, revalidat
  * (非活跃 tab 只是 `hidden`,实例不卸载)—— 空结果会一直粘到**整页刷新**,不是粘一个 TTL。
  * 抛错则 SWR 不写 data、按自身退避重试,面板那格保持不画(它只看 data,不读 error)。
  */
-const getSpotJson = async (url: string) => {
+async function getSpotJson(url: string) {
   const rows = await getJson(url);
   if (!Array.isArray(rows) || !rows.length) throw new Error(`empty: ${url}`);
   return rows;
-};
+}
 
 // 时间横轴 × 每条线一个期限 + 利差(+ 可选的现货蜡烛),共享时间轴。
 // 数据/存储不改,复用收益率曲线序列;现货走已有的 /api/price/:underlying。

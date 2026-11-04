@@ -2,8 +2,9 @@ import { describe, test, expect } from 'bun:test';
 import { rollingSharpe } from './sharpe';
 import type { Point } from './vrp';
 
-const px = (vals: number[]): Point[] =>
-  vals.map((value, i) => ({ date: `2026-01-${String(i + 1).padStart(2, '0')}`, value }));
+function px(vals: number[]): Point[] {
+  return vals.map((value, i) => ({ date: `2026-01-${String(i + 1).padStart(2, '0')}`, value }));
+}
 
 describe('rollingSharpe', () => {
   test('零波动窗口被丢弃,不出 Infinity', () => {

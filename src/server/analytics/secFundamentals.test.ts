@@ -19,21 +19,25 @@ import {
   type FactRow,
 } from './secFundamentals';
 
-const row = (start: string, end: string, val: number, extra: Partial<FactRow> = {}): FactRow => ({
-  start,
-  end,
-  val,
-  accn: 'a-1',
-  form: '10-Q',
-  filed: '2025-05-28',
-  ...extra,
-});
+function row(start: string, end: string, val: number, extra: Partial<FactRow> = {}): FactRow {
+  return {
+    start,
+    end,
+    val,
+    accn: 'a-1',
+    form: '10-Q',
+    filed: '2025-05-28',
+    ...extra,
+  };
+}
 
-const facts = (tags: Record<string, FactRow[]>): CompanyFacts => ({
-  facts: {
-    'us-gaap': Object.fromEntries(Object.entries(tags).map(([t, rows]) => [t, { units: { USD: rows } }])),
-  },
-});
+function facts(tags: Record<string, FactRow[]>): CompanyFacts {
+  return {
+    facts: {
+      'us-gaap': Object.fromEntries(Object.entries(tags).map(([t, rows]) => [t, { units: { USD: rows } }])),
+    },
+  };
+}
 
 // NVDA FY2026 现金流实测值(YTD 累计),黄金值来自 data.sec.gov companyfacts。
 const NVDA_OCF_YTD = [

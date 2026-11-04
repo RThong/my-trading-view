@@ -24,8 +24,12 @@ const PUT: PutConfig = {
 };
 const VARIANTS: PanicEntry[] = ['A', 'B', 'C'];
 
-const pct = (x: number) => (x * 100).toFixed(2) + '%';
-const pad = (s: string, n: number) => s.padEnd(n);
+function pct(x: number) {
+  return (x * 100).toFixed(2) + '%';
+}
+function pad(s: string, n: number) {
+  return s.padEnd(n);
+}
 
 async function main() {
   const db = openDb();

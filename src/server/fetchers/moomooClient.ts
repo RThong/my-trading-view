@@ -87,7 +87,9 @@ export function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promi
 
 // SDK 的请求方法都是大写开头(GetOptionChain / RequestTradeDate …),start/stop/onlogin 等是小写。
 // 用 Proxy 统一套截止时间,而不是在每个调用点手包:新加的请求不会漏。
-const isRequestMethod = (key: PropertyKey) => typeof key === 'string' && /^[A-Z]/.test(key);
+function isRequestMethod(key: PropertyKey) {
+  return typeof key === 'string' && /^[A-Z]/.test(key);
+}
 
 function withRequestDeadlines(ws: any, ms: number): any {
   return new Proxy(ws, {

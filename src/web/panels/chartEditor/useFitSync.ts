@@ -6,15 +6,17 @@ import type { ChartDoc } from './chartDoc';
 import type { LayerSeries } from './useEditorChart';
 
 /** a ≈ alpha + beta × b 反过来:A 轴的范围对应的 B 轴范围(beta < 0 时上下颠倒,由 B 轴的倒轴抵消)。 */
-export const mapRange = (
+export function mapRange(
   { from, to }: { from: number; to: number },
   { alpha, beta }: { alpha: number; beta: number },
-): { from: number; to: number } => {
+): { from: number; to: number } {
   const [lo, hi] = [(from - alpha) / beta, (to - alpha) / beta].sort((x, y) => x - y);
   return { from: lo, to: hi };
-};
+}
 
-const same = (x: number, y: number) => Math.abs(x - y) <= Math.abs(y) * 1e-9;
+function same(x: number, y: number) {
+  return Math.abs(x - y) <= Math.abs(y) * 1e-9;
+}
 
 export function useFitSync(chartRef: RefObject<IChartApi | null>, seriesRef: RefObject<LayerSeries>, doc: ChartDoc) {
   // 上一轮对齐过的 B 轴(格 + 轴 id):叠加取消 / 线被删后要把那根轴转回自动缩放,否则它停在手动范围里,

@@ -62,7 +62,9 @@ type Fetcher = Pick<ReturnType<typeof createSecFetcher>, 'latestFiling' | 'compa
 
 const SEC_SERIES_PREFIX = 'SEC_';
 const SEC_SERIES_PREFIX_ESCAPED = 'SEC\\_'; // LIKE 的 `_` 是通配符,转义后才是字面下划线
-const key = (r: MarketSeriesRow) => `${r.seriesId}@${r.obsDate}=${r.value}`;
+function key(r: MarketSeriesRow) {
+  return `${r.seriesId}@${r.obsDate}=${r.value}`;
+}
 
 /**
  * 体检结论带上是**哪一家**的。派生量是 sec ∪ sec6k 一起算的,但 job_run 是各源各记一条:

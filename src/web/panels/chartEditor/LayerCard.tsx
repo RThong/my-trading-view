@@ -11,9 +11,12 @@ export type CardActions = Pick<
 >;
 
 // <select> 的 value 只能是字符串:挂轴选择编码成 right / left / new / ov:<轴 id>
-const encodeScale = (scaleId: string) => (scaleId === 'right' || scaleId === 'left' ? scaleId : `ov:${scaleId}`);
-const decodeScale = (v: string): ScaleChoice =>
-  v === 'right' || v === 'left' ? v : v === 'new' ? 'newOverlay' : { overlay: v.slice(3) };
+function encodeScale(scaleId: string) {
+  return scaleId === 'right' || scaleId === 'left' ? scaleId : `ov:${scaleId}`;
+}
+function decodeScale(v: string): ScaleChoice {
+  return v === 'right' || v === 'left' ? v : v === 'new' ? 'newOverlay' : { overlay: v.slice(3) };
+}
 
 const SELECT =
   'rounded border border-neutral-800 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-300 hover:border-neutral-600';

@@ -10,7 +10,9 @@ export function baseLabel(doc: ChartDoc, layerId: string): string {
   return seriesDef(l.series)?.label ?? l.series;
 }
 
-export const shiftText = (shift: number) => `${shift > 0 ? '右移' : '左移'} ${Math.abs(shift)} 天`;
+export function shiftText(shift: number) {
+  return `${shift > 0 ? '右移' : '左移'} ${Math.abs(shift)} 天`;
+}
 
 export function layerLabel(doc: ChartDoc, l: Layer): string {
   const name = seriesDef(l.series)?.label ?? l.series;
@@ -20,4 +22,6 @@ export function layerLabel(doc: ChartDoc, l: Layer): string {
 }
 
 /** 图例里跟在数值后的单位。 */
-export const layerUnit = (l: Layer): string | undefined => seriesDef(l.series)?.unit;
+export function layerUnit(l: Layer): string | undefined {
+  return seriesDef(l.series)?.unit;
+}

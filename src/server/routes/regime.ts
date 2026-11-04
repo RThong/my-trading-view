@@ -71,16 +71,17 @@ import {
 type OhlcBar = { time: string; open: number; high: number; low: number; close: number };
 
 /** 库里的日 bar → 蜡烛点。OHLC 三项可空(部分源只给收盘),缺则退化成十字线(open=high=low=close)。 */
-const toOhlc = (
+function toOhlc(
   bars: Array<{ date: string; open: number | null; high: number | null; low: number | null; close: number }>,
-): OhlcBar[] =>
-  bars.map((b) => ({
+): OhlcBar[] {
+  return bars.map((b) => ({
     time: b.date,
     open: b.open ?? b.close,
     high: b.high ?? b.close,
     low: b.low ?? b.close,
     close: b.close,
   }));
+}
 type RegimeBody = {
   series: Record<string, Point[]>;
   unavailable: string[];

@@ -19,7 +19,9 @@ const BASE = 'https://www.deribit.com/api/v2/public';
 const TICKER_CONCURRENCY = 10;
 
 /** 只重试传输层失败:429 限流与 5xx。其余 4xx 是「这个请求本身不对」,再打一次还是同样答复。 */
-export const isRetryableStatus = (status: number) => status === 429 || status >= 500;
+export function isRetryableStatus(status: number) {
+  return status === 429 || status >= 500;
+}
 
 /** 裸调用,不重试。逐合约的 ticker 走这个 —— 那一层由 mapLimit 的 allSettled 兜着。 */
 async function get(path: string): Promise<any> {
@@ -45,7 +47,9 @@ async function get(path: string): Promise<any> {
  * 而给上百次调用各加「1.5s + 一整轮 15s 超时」会让 Deribit 抽风时单链墙钟翻倍
  * (~300s → ~630s),而 crypto job 一天 5 个触发点、没有互斥锁。
  */
-const getRetried = (path: string, delayMs?: number): Promise<any> => withRetry(() => get(path), delayMs);
+function getRetried(path: string, delayMs?: number): Promise<any> {
+  return withRetry(() => get(path), delayMs);
+}
 
 /**
  * 分批并发,避免一次性打太多请求触发限流。单合约容错:用 allSettled,

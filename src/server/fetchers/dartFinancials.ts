@@ -64,13 +64,13 @@ type Body = { status?: string; message?: string; list?: Row[] };
  * 若改成「季报取单季、年报取全年」,年报那期 start 仍是 1-1、跨度 364 天,差分会因长度判据被丢掉,
  * **Q4 会静默消失**。
  */
-const cumulative = (r: Row): number | null => {
+function cumulative(r: Row): number | null {
   const raw = (r.thstrm_add_amount ?? '').trim() || (r.thstrm_amount ?? '').trim();
   if (!raw || raw === '-') return null;
 
   const n = Number(raw.replace(/,/g, ''));
   return Number.isFinite(n) ? n : null;
-};
+}
 
 type FetchFn = (url: string, init?: RequestInit, timeoutMs?: number) => Promise<Response>;
 

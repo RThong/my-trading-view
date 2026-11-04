@@ -3,8 +3,12 @@ import { SERIES_COLORS } from '../../lib/palette';
 import { EMPTY_DOC, addLayer, moveLayer, nextColor, setLayerScale, type ChartDoc } from './chartDoc';
 
 // 起手示例:各演示一种用法(同格独立轴叠加 / 同格同轴 / 分两格比先后)。只是快捷入口,载入后照常编辑。
-const add = (d: ChartDoc, series: string) => addLayer(d, series, nextColor(d, SERIES_COLORS));
-const lastLayerId = (d: ChartDoc) => d.panes.flatMap((p) => p.layers).at(-1)!.id;
+function add(d: ChartDoc, series: string) {
+  return addLayer(d, series, nextColor(d, SERIES_COLORS));
+}
+function lastLayerId(d: ChartDoc) {
+  return d.panes.flatMap((p) => p.layers).at(-1)!.id;
+}
 
 const PRESETS: { label: string; hint: string; build: () => ChartDoc }[] = [
   {

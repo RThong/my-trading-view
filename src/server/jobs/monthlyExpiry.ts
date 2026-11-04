@@ -7,8 +7,12 @@
  */
 const DAY_MS = 86_400_000;
 
-const utc = (y: number, m: number, d: number) => new Date(Date.UTC(y, m, d));
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+function utc(y: number, m: number, d: number) {
+  return new Date(Date.UTC(y, m, d));
+}
+function iso(d: Date) {
+  return d.toISOString().slice(0, 10);
+}
 
 /** 某月(m 为 0 起)第三个周五。 */
 export function thirdFriday(y: number, m: number): Date {

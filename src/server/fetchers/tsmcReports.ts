@@ -98,12 +98,13 @@ export function parseTsmcReport(html: string): TsmcYtd {
 const THOUSANDS_TO_UNITS = 1000;
 
 /** 累计口径(`ytd`):start 填当年 1-1,单季由 toQuarters 相邻相减还原。 */
-export const toCompanyFacts = (rows: Array<{ filing: FsFiling; ytd: TsmcYtd }>): CompanyFacts =>
-  packFacts(
+export function toCompanyFacts(rows: Array<{ filing: FsFiling; ytd: TsmcYtd }>): CompanyFacts {
+  return packFacts(
     rows.map(({ filing, ytd }) => ({ filing, values: ytd })),
     'ytd',
     THOUSANDS_TO_UNITS,
   );
+}
 
 // ── 财报稿(T+16,只有营收与毛利)────────────────────────────────────────────
 

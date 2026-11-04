@@ -164,7 +164,9 @@ test('valuation:cape 分位只用 pctlSince(2000+)窗口,线仍画全部', () =>
 
 // SEC 滞后提示:判据只认后端算好的 secLag,不做任何日期差推断(各家财年季末天然错开)。
 const LAG = { ticker: 'META', remoteFiled: '2026-07-30', localFiled: '2026-04-30', latestPeriodEnd: '2026-03-31' };
-const withLag = (secLag: (typeof LAG)[]): RegimeData => ({ series: {}, unavailable: [], secLag });
+function withLag(secLag: (typeof LAG)[]): RegimeData {
+  return { series: {}, unavailable: [], secLag };
+}
 
 test('secLagNote:落后的那家 tab 出提示,其余 tab 与非基本面维度不出', () => {
   expect(secLagNote(withLag([LAG]), 'fundamentals:META')).toContain('META 截至 2026-03-31');

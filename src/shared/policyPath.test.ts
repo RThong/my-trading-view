@@ -18,7 +18,9 @@ const PAR = {
   '5Y': 4.7500551757,
 };
 
-const seg = (to: string) => oisForwards(PAR, AS_OF).find((s) => s.toTenor === to)!;
+function seg(to: string) {
+  return oisForwards(PAR, AS_OF).find((s) => s.toTenor === to)!;
+}
 
 test('自检:6–9M / 9–12M 远期与 12M 累计次数', () => {
   // 任务单给的 4.79 / 5.0 是线性近似 (r₂t₂ − r₁t₁)/(t₂ − t₁),比 DF 口径多乘了 (1 + r₁t₁),

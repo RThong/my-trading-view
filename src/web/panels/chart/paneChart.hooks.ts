@@ -32,8 +32,9 @@ import { BandFillPrimitive } from './bandFill';
  * 单向 = 不用在这里硬编码 lightweight-charts 的线性默认 margins —— 同一格的标的不会变,
  * 数据只会从空变全,不存在要切回去的情形。
  */
-const applyLogScale = (s: AnySeries) =>
-  s.priceScale().applyOptions({ mode: 1, scaleMargins: { top: 0.05, bottom: 0.05 } });
+function applyLogScale(s: AnySeries) {
+  return s.priceScale().applyOptions({ mode: 1, scaleMargins: { top: 0.05, bottom: 0.05 } });
+}
 
 // 按 kind 建对应 series,并挂上各自的参考线/背景带。
 function addSeries(chart: IChartApi, spec: Spec): AnySeries {

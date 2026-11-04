@@ -12,11 +12,14 @@ import {
   transformPairs,
 } from './analysis';
 
-const pts = (rows: [string, number][]) => rows.map(([time, value]) => ({ time, value }));
+function pts(rows: [string, number][]) {
+  return rows.map(([time, value]) => ({ time, value }));
+}
 
 /** 从 start 起连续 n 个交易日,值由 f(i) 给出 */
-const weekdays = (start: string, n: number, f: (i: number) => number) =>
-  Array.from({ length: n }, (_, i) => ({ time: shiftBusinessDays(start, i), value: f(i) }));
+function weekdays(start: string, n: number, f: (i: number) => number) {
+  return Array.from({ length: n }, (_, i) => ({ time: shiftBusinessDays(start, i), value: f(i) }));
+}
 
 describe('shiftBusinessDays', () => {
   test('跨周末按交易日数', () => {

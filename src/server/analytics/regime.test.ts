@@ -232,8 +232,9 @@ test('sumAligned:前向填充后相加', () => {
 });
 
 // 生成周频序列:每年 date 同一天的 value 由 pick(year) 给。
-const weeklyAt = (mmdd: string, years: number[], pick: (y: number) => number) =>
-  years.map((y) => ({ date: `${y}-${mmdd}`, value: pick(y) }));
+function weeklyAt(mmdd: string, years: number[], pick: (y: number) => number) {
+  return years.map((y) => ({ date: `${y}-${mmdd}`, value: pick(y) }));
+}
 
 test('seasonalZ:基准期排除当年,只用往年同期', () => {
   // 往年同期 5 个样本恒为 100(σ=0 会被跳过)→ 故给一点离散度:100/102/100/102/100,均值 100.8。
@@ -346,8 +347,9 @@ test('seasonalZ:基准期下界生效 —— 超出 years 的往年数据不得�
 });
 
 // ── 能源派生层。这几条都是「改错了也不报错、只让图默默变成另一个量」的地方 ──
-const seq = (vals: number[], from = 1) =>
-  vals.map((v, i) => ({ date: `2024-01-${String(i + from).padStart(2, '0')}`, value: v }));
+function seq(vals: number[], from = 1) {
+  return vals.map((v, i) => ({ date: `2024-01-${String(i + from).padStart(2, '0')}`, value: v }));
+}
 
 test('oilCracks:三条裂解的数学(×42、权重 2:1、缺腿返回 undefined)', () => {
   const wti = seq([60, 60]);

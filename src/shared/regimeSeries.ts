@@ -203,4 +203,6 @@ export type SeriesKey = RegimeSeries | FundSeries;
 const ENUMERATED: ReadonlySet<string> = new Set(REGIME_SERIES);
 
 /** 运行时校验(给测试与动态来源用;类型收窄不了的地方靠它)。 */
-export const isSeriesKey = (k: string): k is SeriesKey => ENUMERATED.has(k) || k.startsWith(FUND_KEY_PREFIX);
+export function isSeriesKey(k: string): k is SeriesKey {
+  return ENUMERATED.has(k) || k.startsWith(FUND_KEY_PREFIX);
+}

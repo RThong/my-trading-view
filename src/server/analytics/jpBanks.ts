@@ -22,14 +22,17 @@ export const BOJ_HIKES: readonly Point[] = [
   { date: '2026-09-18', value: 1.25 }, // 09-24 生效
 ];
 
-const monthOf = (date: string) => `${date.slice(0, 7)}-01`;
+function monthOf(date: string) {
+  return `${date.slice(0, 7)}-01`;
+}
 
-const groupByMonth = (daily: Point[]) =>
-  daily.reduce((m, p) => {
+function groupByMonth(daily: Point[]) {
+  return daily.reduce((m, p) => {
     const k = monthOf(p.date);
     (m.get(k) ?? m.set(k, []).get(k)!).push(p.value);
     return m;
   }, new Map<string, number[]>());
+}
 
 /** 日频 → 月均(记当月 1 日)。输入须升序。 */
 export function monthlyMean(daily: Point[]): Point[] {
@@ -40,14 +43,14 @@ export function monthlyMean(daily: Point[]): Point[] {
  * 按日期前向填充的取值器:返回「日期 ≤ d 的最后一个值」。**查询日期必须单调递增**(内部是单指针,
  * 不回退)。月频序列记在当月 1 日,所以它对月频腿就是「当月值,当月未发布则沿用上月」。
  */
-const ffill = (rows: Point[]) => {
+function ffill(rows: Point[]) {
   let i = -1;
 
   return (d: string) => {
     while (i + 1 < rows.length && rows[i + 1].date <= d) i++;
     return i < 0 ? undefined : rows[i].value;
   };
-};
+}
 
 /**
  * 存款贝塔 = (当月存款利率 − 基准月存款利率) / (当月政策利率 − 基准月政策利率)。
