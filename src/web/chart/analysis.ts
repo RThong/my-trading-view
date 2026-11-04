@@ -79,7 +79,9 @@ function alignDays(a: DayPoint[], b: DayPoint[]): DayPair[] {
 
 /**
  * 两条线按日期配对。以点少(频率低)的那条为基准日期,另一条取「当天或之前最近的值」;
- * 最近值太旧(超过 7 天,或超过它自身中位间隔的 1.6 倍)就跳过这一天,免得拿几个月前的值硬配。
+ * 最近值太旧就跳过这一天,免得拿几个月前的值硬配。容忍度取「7 天」与「它自身中位间隔的 1.6 倍」中**较大**的:
+ * 日频按 7 天算(跨周末、两地假日错开都配得上),月频按约 7 周算(季末配上一个月初的值)。
+ * 取较小的话,季频 ÷ 月频会因为季末离月初 30 天而一个点都配不上。
  */
 export function alignPairs(a: LinePoint[], b: LinePoint[]): Pair[] {
   return alignDays(toDays(a), toDays(b)).map((p) => ({ time: fromDayNum(p.day), a: p.a, b: p.b }));

@@ -11,6 +11,7 @@ import {
   nextColor,
   removeLayer,
   removeSeries,
+  setLayerCalc,
   setLayerColor,
   setLayerScale,
   setLayerShift,
@@ -18,6 +19,7 @@ import {
   setScaleLog,
   parseChartDoc,
   setStretches,
+  type Calc,
   type ChartDoc,
   type Fit,
   type PaneTarget,
@@ -64,7 +66,8 @@ export function useChartDoc() {
     /** 下拉框勾选 / 取消勾选:在图上的就整条拿掉,不在的加到第 0 格 */
     toggleSeries: (series: string) =>
       setDoc((d) =>
-        d.panes.some((p) => p.layers.some((l) => l.series === series))
+        // 只看普通图层:A − B 不算「A 在图上」(计算图层在卡片上单独删)
+        d.panes.some((p) => p.layers.some((l) => l.series === series && !l.calc))
           ? removeSeries(d, series)
           : addLayer(d, series, nextColor(d, SERIES_COLORS)),
       ),
@@ -75,6 +78,7 @@ export function useChartDoc() {
     setColor: (layerId: string, color: string) => setDoc((d) => setLayerColor(d, layerId, color)),
     setStretches: (stretches: number[]) => setDoc((d) => setStretches(d, stretches)),
     setShift: (layerId: string, shift: number) => setDoc((d) => setLayerShift(d, layerId, shift)),
+    setCalc: (layerId: string, calc: Calc | undefined) => setDoc((d) => setLayerCalc(d, layerId, calc)),
     setInvert: (paneId: string, scaleId: string, invert: boolean) =>
       setDoc((d) => setScaleInvert(d, paneId, scaleId, invert)),
     setLog: (paneId: string, scaleId: string, log: boolean) => setDoc((d) => setScaleLog(d, paneId, scaleId, log)),

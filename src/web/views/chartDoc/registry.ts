@@ -67,7 +67,26 @@ export type SeriesDef = {
   weekends?: true;
   /** 搜索用的别名 */
   aliases?: string[];
+  /** 同一族(25Δ / VRP / VX 单月合约):下拉里默认只列 featured 的那几条,其余打代码才出现(同 TradingView 的期货合约) */
+  family?: SeriesFamily;
+  featured?: true;
+  /** 交易代码(如 VXZ26):下拉里显示在右侧,也能按它搜 */
+  code?: string;
 };
+
+export type SeriesFamily =
+  | 'opt25'
+  | 'vrp'
+  | 'vx'
+  | 'ust'
+  | 'real'
+  | 'bei'
+  | 'jgb'
+  | 'ois'
+  | 'credit'
+  | 'creditTerm'
+  | 'cds'
+  | 'fund';
 
 export const CATEGORIES: SeriesCategory[] = [
   ...META_CATEGORIES.slice(0, 2),
@@ -129,9 +148,12 @@ type CurveFamily = {
   unit: string;
   /** 整族共用;要按期限给的(如 us10y)传函数 —— 共用的话一搜就命中整族 */
   aliases: string[] | ((t: string) => string[]);
+  /** 下拉里收成一族,只常显 featured 这几档(其余打期限才出现,见 familyVisible) */
+  family: SeriesFamily;
+  featured: string[];
 };
 
-function curveDefs({ curve, tenors, id, label, category, unit, aliases }: CurveFamily): SeriesDef[] {
+function curveDefs({ curve, tenors, id, label, category, unit, aliases, family, featured }: CurveFamily): SeriesDef[] {
   return tenors.map((t) => ({
     id: id(t),
     label: label(t),
@@ -140,6 +162,8 @@ function curveDefs({ curve, tenors, id, label, category, unit, aliases }: CurveF
     unit,
     source: { kind: 'curve', curve, tenor: t },
     aliases: typeof aliases === 'function' ? aliases(t) : aliases,
+    family,
+    ...(featured.includes(t) && { featured: true as const }),
   }));
 }
 
@@ -158,6 +182,8 @@ const CURVES: SeriesDef[] = (
       category: '利率',
       unit: '%',
       aliases: (t) => ['国债', 'treasury', `us${lower(t)}`],
+      family: 'ust',
+      featured: ['2Y', '10Y'],
     },
     {
       curve: 'real',
@@ -167,6 +193,8 @@ const CURVES: SeriesDef[] = (
       category: '利率',
       unit: '%',
       aliases: ['tips', '实际收益率'],
+      family: 'real',
+      featured: ['10Y'],
     },
     {
       curve: 'bei',
@@ -176,6 +204,8 @@ const CURVES: SeriesDef[] = (
       category: '通胀·宏观',
       unit: '%',
       aliases: ['bei', '盈亏平衡'],
+      family: 'bei',
+      featured: ['10Y'],
     },
     {
       // id 与 regime 的 jgb2y / jgb10y 相同(同为 MOF 曲线),手写优先 → 那两条也走曲线接口,15 档一套口径
@@ -186,6 +216,8 @@ const CURVES: SeriesDef[] = (
       category: '日本',
       unit: '%',
       aliases: ['jgb', '日本国债'],
+      family: 'jgb',
+      featured: ['2Y', '10Y'],
     },
     {
       curve: 'sofr_ois',
@@ -195,24 +227,30 @@ const CURVES: SeriesDef[] = (
       category: '利率',
       unit: '%',
       aliases: ['ois', 'sofr', 'swap'],
+      family: 'ois',
+      featured: ['12M'],
     },
     {
       curve: 'credit_rating',
       tenors: CREDIT_RATING.map((c) => c.tenor),
       id: (t) => `credit:${t}`,
-      label: (t) => `信用利差 OAS · ${t}`,
+      label: (t) => `信用利差 OAS ${t}`,
       category: '信用·流动性',
       unit: '%',
       aliases: ['oas', '信用利差'],
+      family: 'credit',
+      featured: ['BBB'],
     },
     {
       curve: 'credit_term',
       tenors: CREDIT_TERM.map((c) => c.tenor),
       id: (t) => `credit:${t}`,
-      label: (t) => `投资级 OAS · ${t}`,
+      label: (t) => `投资级 OAS ${t}`,
       category: '信用·流动性',
       unit: '%',
       aliases: ['oas', '信用利差', '投资级'],
+      family: 'creditTerm',
+      featured: [],
     },
     {
       curve: 'ai_cds',
@@ -222,6 +260,8 @@ const CURVES: SeriesDef[] = (
       category: 'AI 链',
       unit: 'bp',
       aliases: ['cds', '信用'],
+      family: 'cds',
+      featured: ['Oracle'],
     },
   ] satisfies CurveFamily[]
 ).flatMap(curveDefs);
@@ -235,7 +275,12 @@ const OPTIONS: SeriesDef[] = MARKET_CATALOG.filter((a) => a.optionSource !== 'no
   const u = a.underlying;
   const name = optionName(u);
   const url = `/api/options/25delta/${encodeURIComponent(u)}?days=3650`;
-  const base = { category: '期权' as const, freq: '日' as const, ...(u === 'BTC' && { weekends: true as const }) };
+  const base = {
+    category: '期权' as const,
+    freq: '日' as const,
+    family: 'opt25' as const,
+    ...(u === 'BTC' && { weekends: true as const }),
+  };
   const aliases = ['25d', '25Δ', '期权', 'skew'];
 
   return [
@@ -259,6 +304,7 @@ const OPTIONS: SeriesDef[] = MARKET_CATALOG.filter((a) => a.optionSource !== 'no
       ...base,
       id: `opt:${name}:skew`,
       label: `${name} 25Δ skew (put − call)`,
+      ...(u === 'SPY' && { featured: true as const }),
       unit: 'pp',
       source: endpoint(url, 'skew'),
       aliases,
@@ -272,6 +318,7 @@ const VRP: SeriesDef[] = Object.entries(IV_INDEX).flatMap(([u, ivIndex]) => {
   const base = {
     category: '期权' as const,
     freq: '日' as const,
+    family: 'vrp' as const,
     unit: '%',
     ...(u === 'BTC' && { weekends: true as const }),
   };
@@ -286,7 +333,14 @@ const VRP: SeriesDef[] = Object.entries(IV_INDEX).flatMap(([u, ivIndex]) => {
       source: endpoint(url, 'rv'),
       aliases: [...aliases, 'rv'],
     },
-    { ...base, id: `vrp:${u}:vrp`, label: `${u} VRP (隐含 − 已实现)`, source: endpoint(url, 'vrp'), aliases },
+    {
+      ...base,
+      id: `vrp:${u}:vrp`,
+      label: `${u} VRP (隐含 − 已实现)`,
+      source: endpoint(url, 'vrp'),
+      aliases,
+      ...(u === 'SPY' && { featured: true as const }),
+    },
   ];
 });
 
@@ -311,8 +365,9 @@ function db(seriesId: string, label: string, aliases: string[] = [], weekends?: 
 
 const DB_SERIES: SeriesDef[] = [
   db('VVIX', 'VVIX (VIX 的波动率)'),
-  db('VX1', 'VX 近月连续', ['vx', '期货']),
-  db('VX3', 'VX 第三近月连续', ['vx', '期货']),
+  // 连续合约归到「VX 合约」组:那组的单月合约默认收起,这两条是组里常显的入口(代码同 TradingView 的 VX1! 写法)
+  { ...db('VX1', 'VX 近月连续', ['vx', '期货']), category: 'VX 合约', code: 'VX1!' },
+  { ...db('VX3', 'VX 第三近月连续', ['vx', '期货']), category: 'VX 合约', code: 'VX3!' },
   db('GVZ', 'GVZ 黄金波动率', ['黄金', 'gold']),
   db('OVX', 'OVX 原油波动率', ['原油', 'oil']),
   db('VXTLT', 'VXTLT 美债波动率', ['美债']),
@@ -322,14 +377,23 @@ const DB_SERIES: SeriesDef[] = [
 
 /** VX 单月合约(`VX:<到期日>`):份数随时间增加,名单由 /api/series?prefix=VX: 现取(见 useVxContracts)。 */
 export const VX_CONTRACT_PREFIX = 'VX:';
+// 期货月份代码(CME / CBOE 通用):1 月 F … 12 月 Z。VXZ26 = 2026 年 12 月到期的 VX
+const MONTH_CODES = 'FGHJKMNQUVXZ';
+
 function vxContractDef(seriesId: string): SeriesDef {
+  const expiry = seriesId.slice(VX_CONTRACT_PREFIX.length);
+  const month = MONTH_CODES[Number(expiry.slice(5, 7)) - 1];
+  const code = `VX${month}${expiry.slice(2, 4)}`;
+
   return {
     id: `${DB_PREFIX}${seriesId}`,
-    label: `VX ${seriesId.slice(VX_CONTRACT_PREFIX.length)} 到期`,
+    label: `VX ${expiry} 到期`,
     category: 'VX 合约',
     freq: '日',
     source: dbSource(seriesId),
-    aliases: ['vx', '期货', '合约'],
+    aliases: ['vx', '期货', '合约', `VX${month}${expiry.slice(0, 4)}`],
+    family: 'vx',
+    code,
   };
 }
 
@@ -347,6 +411,7 @@ const FUND_KIND: Record<FundKind, { label: string; freq: SeriesFreq; money?: tru
   revYoy: { label: '月营收同比', freq: '月', unit: '%' },
 };
 
+// 买方合计(跨公司的那两条)常显;各家公司的格子收起,打代码(如 NVDA)才出现
 function fundDef(key: SeriesKey, label: string, freq: SeriesFreq, unit: string, ticker: string): SeriesDef {
   return {
     id: key,
@@ -356,6 +421,8 @@ function fundDef(key: SeriesKey, label: string, freq: SeriesFreq, unit: string, 
     unit,
     source: { kind: 'regime', key },
     aliases: [ticker.toLowerCase(), '财报', '基本面'],
+    family: 'fund',
+    ...(ticker === 'buyer' && { featured: true as const }),
   };
 }
 
@@ -462,11 +529,59 @@ export function vxContractDefs(seriesIds: string[]): SeriesDef[] {
   return [...seriesIds].sort().reverse().map(vxContractDef);
 }
 
-/** 搜索:名称 / id / 别名包含关键字(不区分大小写)。空关键字 = 全部。extra = 现取的动态名单(VX 合约)。 */
+/**
+ * 族成员什么时候列出来:常显的(featured)总列;其余要打了关键字才列 —— 下拉一打开就摊开 24 条 25Δ、
+ * 115 份 VX 合约太冗余。VX 单月合约还要关键字里带数字(年 / 月,或 VXZ26 这种代码),光打「vx」只给连续合约。
+ */
+function familyVisible(d: SeriesDef, q: string): boolean {
+  if (!d.family || d.featured) return true;
+  return q !== '' && (d.family !== 'vx' || /\d/.test(q));
+}
+
+/** 族在提示里怎么称呼:名称、量词、一个搜索示例(示例须真能搜到) */
+const FAMILY_HINT: Record<SeriesFamily, { name: string; unit: string; example: string }> = {
+  opt25: { name: '25Δ', unit: '条', example: 'QQQ 25' },
+  vrp: { name: 'VRP', unit: '条', example: 'TLT VRP' },
+  vx: { name: '单月合约', unit: '份', example: 'VXZ26' },
+  ust: { name: '美债', unit: '档', example: '美债 5Y' },
+  real: { name: '实际利率', unit: '档', example: '实际利率 30Y' },
+  bei: { name: 'BEI', unit: '档', example: 'BEI 5Y' },
+  jgb: { name: '日债', unit: '档', example: '日债 30Y' },
+  ois: { name: 'OIS', unit: '档', example: 'OIS 3M' },
+  credit: { name: '评级 OAS', unit: '档', example: 'OAS BB' },
+  creditTerm: { name: '投资级 OAS', unit: '档', example: 'OAS 1-3Y' },
+  cds: { name: 'CDS', unit: '家', example: 'Nvidia' },
+  fund: { name: '公司财报', unit: '条', example: 'NVDA' },
+};
+
+/** 各分组里因为没打代码而收起的族,每族一句提示(下拉的组标题后面显示)。 */
+export function familyHints(query: string, defs: SeriesDef[]): Partial<Record<SeriesCategory, string>> {
+  const q = query.trim().toLowerCase();
+  const hidden = defs.filter((d) => !familyVisible(d, q));
+  const categories = [...new Set(hidden.map((d) => d.category))];
+
+  return Object.fromEntries(
+    categories.map((c) => {
+      const inCategory = hidden.filter((d) => d.category === c);
+      const families = [...new Set(inCategory.map((d) => d.family as SeriesFamily))];
+      const counts = families.map((f) => {
+        const { name, unit } = FAMILY_HINT[f];
+        return `${name} ${inCategory.filter((d) => d.family === f).length} ${unit}`;
+      });
+      const examples = families.map((f) => `「${FAMILY_HINT[f].example}」`).join('');
+      return [c, `另有 ${counts.join('、')} · 输入如${examples}`];
+    }),
+  );
+}
+
+/** 搜索:名称 / id / 别名 / 代码包含关键字(不区分大小写)。extra = 现取的动态名单(VX 合约)。族成员按 familyVisible 收起。 */
 export function searchSeries(query: string, extra: SeriesDef[] = []): SeriesDef[] {
   const all = extra.length ? [...REGISTRY, ...extra] : REGISTRY;
   const q = query.trim().toLowerCase();
-  if (!q) return all;
 
-  return all.filter((d) => [d.label, d.id, ...(d.aliases ?? [])].some((s) => s.toLowerCase().includes(q)));
+  return all.filter(
+    (d) =>
+      familyVisible(d, q) &&
+      (!q || [d.label, d.id, d.code ?? '', ...(d.aliases ?? [])].some((s) => s.toLowerCase().includes(q))),
+  );
 }

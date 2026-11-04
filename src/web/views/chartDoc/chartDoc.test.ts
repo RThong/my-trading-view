@@ -14,6 +14,7 @@ import {
   parseChartDoc,
   removeLayer,
   removeSeries,
+  setLayerCalc,
   setLayerColor,
   setLayerScale,
   setStretches,
@@ -432,5 +433,43 @@ describe('固定面板用的可选字段', () => {
     ['desc 须是字符串', { desc: 1 }],
   ])('格:%s → 拒收', (_, patch) => {
     expect(parseChartDoc(base({}, patch))).toBeNull();
+  });
+});
+
+describe('计算图层(calc)', () => {
+  const withCalc = () => setLayerCalc(twoOnMain(), 'l1', { op: '-', series: 'ust2y' });
+
+  test('设上 / 改运算 / 去掉;字段顺序固定,导出再导入原样不变', () => {
+    const doc = withCalc();
+    expect(doc.panes[0].layers[0].calc).toEqual({ op: '-', series: 'ust2y' });
+    expect(Object.keys(doc.panes[0].layers[0]).slice(0, 3)).toEqual(['id', 'series', 'calc']);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+
+    expect(setLayerCalc(doc, 'l1', { op: '/', series: 'ust2y' }).panes[0].layers[0].calc?.op).toBe('/');
+    expect(setLayerCalc(doc, 'l1', undefined).panes[0].layers[0].calc).toBeUndefined();
+    expect(setLayerCalc(doc, 'l1', { op: '-', series: 'ust2y' })).toBe(doc);
+  });
+
+  test('序列 id 带 | @ # 的拒收(取数请求键靠它们分段)', () => {
+    const raw = JSON.parse(JSON.stringify(withCalc()));
+    raw.panes[0].layers[0].series = 'dgs10|-|vix';
+    expect(parseChartDoc(raw)).toBeNull();
+  });
+
+  test('搜索框取消勾选 A 只删普通图层,不连带删 A − B', () => {
+    const doc = withCalc();
+    const both = addLayer(doc, 'SPY', '#333333');
+    expect(removeSeries(both, 'SPY').panes[0].layers.map((l) => l.id)).toEqual(['l1', 'l2']);
+  });
+
+  test.each([
+    ['运算不认识', { op: '*', series: 'ust2y' }],
+    ['第二条序列为空', { op: '-', series: '' }],
+    ['缺第二条序列', { op: '/' }],
+    ['第二条序列 id 带请求键分隔符(会被误拆成平移)', { op: '-', series: 'ust2y@5' }],
+  ])('%s → 拒收', (_, calc) => {
+    const raw = JSON.parse(JSON.stringify(withCalc()));
+    raw.panes[0].layers[0].calc = calc;
+    expect(parseChartDoc(raw)).toBeNull();
   });
 });

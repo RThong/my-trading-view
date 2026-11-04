@@ -3,14 +3,17 @@ import type { RegimeData } from '../../../views/regime/regimeChart.hooks';
 import {
   CURVE_SOURCES,
   REGISTRY,
+  familyHints,
   libraryIdForYahoo,
   rememberYahooName,
   seriesDef,
   searchSeries,
+  vxContractDefs,
   yahooId,
 } from '../../../views/chartDoc/registry';
 import { asOfValue } from './useCrosshairLegend';
-import { commonRange, seriesPoints, weekdayOnly } from './useEditorSeriesData';
+import { calcPoints, commonRange, requestKey, seriesPoints, weekdayOnly } from './useEditorSeriesData';
+import { layerUnit, seriesLabel } from '../layerLabel';
 import { REGIME_SERIES, isSeriesKey } from '../../../../shared/regimeSeries';
 
 const regime: RegimeData = {
@@ -133,7 +136,33 @@ describe('registry', () => {
     expect(searchSeries('dxy').map((d) => d.id)).toEqual(['usd']);
     expect(searchSeries('us10y').map((d) => d.id)).toEqual(['dgs10']);
     expect(searchSeries('比特币').map((d) => d.id)).toEqual(expect.arrayContaining(['IBIT', 'btc', 'btcSharpe1y']));
-    expect(searchSeries('  ')).toBe(REGISTRY);
+  });
+
+  test('同族序列默认收起:不打字只列常显的那几条,打了关键字才列出来', () => {
+    const ids = (q: string, extra = []) => searchSeries(q, extra).map((d) => d.id);
+    expect(ids('')).toContain('opt:SPY:skew');
+    expect(ids('')).not.toContain('opt:QQQ:skew');
+    expect(ids('')).toContain('vrp:SPY:vrp');
+    expect(ids('')).not.toContain('vrp:TLT:rv');
+    expect(ids('qqq 25')).toEqual(['opt:QQQ:putIv', 'opt:QQQ:callIv', 'opt:QQQ:skew']);
+    expect(ids('tlt vrp')).toEqual(['vrp:TLT:vrp']);
+    // 曲线各期限、各家财报同理:默认只留常用的几档
+    expect(ids('')).toEqual(expect.arrayContaining(['ust2y', 'dgs10', 'real10y', 'ois:12M', 'fund:buyerFcf']));
+    expect(ids('')).not.toContain('ust5y');
+    expect(ids('')).not.toContain('fund:NVDA:gm');
+    expect(ids('美债 5Y')).toEqual(['ust5y']);
+    expect(ids('ois 3m')).toEqual(['ois:3M']);
+  });
+
+  test('VX 单月合约:按月份代码(VXZ26 / VXZ2026)或日期搜,光打 vx 只给连续合约', () => {
+    const contracts = vxContractDefs(['VX:2026-11-18', 'VX:2026-12-16']);
+    expect(seriesDef('db:VX:2026-12-16')?.code).toBe('VXZ26');
+    const ids = (q: string) => searchSeries(q, contracts).map((d) => d.id);
+    expect(ids('vxz26')).toEqual(['db:VX:2026-12-16']);
+    expect(ids('VXZ2026')).toEqual(['db:VX:2026-12-16']);
+    expect(ids('vx 2026-1')).toEqual(['db:VX:2026-12-16', 'db:VX:2026-11-18']);
+    expect(ids('vx').filter((id) => id.startsWith('db:VX:'))).toEqual([]);
+    expect(familyHints('', contracts)['VX 合约']).toContain('单月合约 2 份');
   });
 
   test('VX 单月合约不在静态表里,按 id 现生成定义', () => {
@@ -191,5 +220,69 @@ describe('commonRange', () => {
     expect(commonRange([pts('2020-01-01', '2021-01-01'), []])).toEqual({ from: '2020-01-01', to: '2021-01-01' });
     expect(commonRange([[], []])).toBeNull();
     expect(commonRange([pts('2020-01-01'), pts('2020-01-01')])).toBeNull();
+  });
+});
+
+describe('计算图层', () => {
+  // 两条日线 + 一条月频(月频那条的日期是月初,落在 2026-10-01)
+  const daily = (vals: [string, number][]) => vals.map(([date, value]) => ({ date, value }));
+  const data = {
+    regime: {
+      series: {
+        usjp2y: daily([
+          ['2026-10-01', 3.5],
+          ['2026-10-05', 3.0],
+        ]),
+        coreCpiYoy: daily([['2026-10-01', 2.0]]),
+        vix: daily([
+          ['2026-10-01', 0],
+          ['2026-10-02', 20],
+        ]),
+      },
+      unavailable: [],
+    } as RegimeData,
+    curves: {},
+  };
+  const def = (id: string) => seriesDef(id)!;
+
+  test('相减:以点少的那条为准,另一条取当天或之前最近的值', () => {
+    // 两条点数相同 → 以 A(usjp2y:10-01、10-05)为准;10-05 那天 vix 没点,取 10-02 的 20(3 天前,不算太旧)
+    expect(calcPoints(def('usjp2y'), '-', def('vix'), data, '1D')).toEqual([
+      { time: '2026-10-01', value: 3.5 },
+      { time: '2026-10-05', value: -17 },
+    ]);
+  });
+
+  test('日频 ÷ 月频:对齐到月频那条的日期;除数为 0 的那天跳过', () => {
+    expect(calcPoints(def('usjp2y'), '/', def('coreCpiYoy'), data, '1D')).toEqual([
+      { time: '2026-10-01', value: 1.75 },
+    ]);
+    expect(calcPoints(def('usjp2y'), '/', def('vix'), data, '1D')).toEqual([{ time: '2026-10-05', value: 0.15 }]);
+  });
+
+  test('请求键区分计算与否、运算与第二条序列', () => {
+    const keys = [
+      { series: 'dgs10', shift: 0 },
+      { series: 'dgs10', calc: { op: '-' as const, series: 'ust2y' }, shift: 0 },
+      { series: 'dgs10', calc: { op: '/' as const, series: 'ust2y' }, shift: 0 },
+      { series: 'dgs10', calc: { op: '-' as const, series: 'ust2y' }, shift: 3, daily: true as const },
+    ].map(requestKey);
+    expect(new Set(keys).size).toBe(4);
+  });
+
+  test('名称与单位:% − % 是百分点,比值没有单位,单位不同的相减也没有单位', () => {
+    expect(seriesLabel('dgs10', { op: '-', series: 'ust2y' })).toBe('美债 10Y − 美债 2Y');
+    expect(seriesLabel('vixeq', { op: '/', series: 'vix' })).toBe('VIXEQ 成分股波动率 ÷ VIX');
+    const layer = (calc?: { op: '-' | '/'; series: string }) => ({
+      id: 'l1',
+      series: 'dgs10',
+      scale: 'right',
+      color: '#111111',
+      ...(calc && { calc }),
+    });
+    expect(layerUnit(layer())).toBe('%');
+    expect(layerUnit(layer({ op: '-', series: 'ust2y' }))).toBe('pp');
+    expect(layerUnit(layer({ op: '/', series: 'ust2y' }))).toBeUndefined();
+    expect(layerUnit(layer({ op: '-', series: 'vix' }))).toBeUndefined();
   });
 });

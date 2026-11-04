@@ -10,7 +10,6 @@ import { layerRequest, useLayerData } from './hooks/layerPoints';
 import { LayerList } from './components/LayerList';
 import { Legend } from './components/Legend';
 import { SeriesPicker } from './components/SeriesPicker';
-import { seriesDef } from '../../views/chartDoc/registry';
 import { useChartDoc } from './hooks/useChartDoc';
 import { useCrosshairLegend } from './hooks/useCrosshairLegend';
 import { useEditorChart } from './hooks/useEditorChart';
@@ -46,7 +45,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
   const status = [
     isLoading && !empty ? '加载中…' : undefined,
     error ? `取数失败:${error.message}` : undefined,
-    missing.length ? `暂无数据:${missing.map((id) => seriesDef(id)?.label ?? id).join(', ')}` : undefined,
+    missing.length ? `暂无数据:${missing.join(', ')}` : undefined,
   ].filter((s) => s !== undefined);
 
   return (
@@ -68,7 +67,9 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
       {/* 侧栏本身不滚:下拉框要能盖住下面的图层区;只有图层区自己滚 */}
       <aside className="flex w-80 shrink-0 flex-col gap-3 border-l border-neutral-800 pl-3">
         <SeriesPicker
-          selected={seriesLayers.map((l) => ({ series: l.series, color: l.color }))}
+          // 计算图层(A − B)不进标签:标签代表「这条序列在图上」,勾掉 A 不该连带删掉 A − B
+          selected={seriesLayers.filter((l) => !l.calc).map((l) => ({ series: l.series, color: l.color }))}
+          canClear={seriesLayers.length > 0}
           onToggle={toggleSeries}
           onClear={() => load(EMPTY_DOC)}
         />

@@ -48,7 +48,7 @@ export function resolvePair(doc: ChartDoc, pair: { a?: string; b?: string }): { 
 
 /** A / B 未平移、未聚合的日线原序列请求(找偏移要逐交易日平移;页面据此多取一份数据)。 */
 function rawRequest(l: Layer) {
-  return { series: l.series, shift: 0, daily: true as const };
+  return { series: l.series, ...(l.calc && { calc: l.calc }), shift: 0, daily: true as const };
 }
 export function pairRequests(pair: { a?: Layer; b?: Layer }) {
   return [pair.a, pair.b].filter((l) => l !== undefined).map(rawRequest);
@@ -215,8 +215,9 @@ export function directionText(beta: number, bInverted: boolean, b: string) {
   return beta >= 0 ? '同向' : bInverted ? `反向,${b} 的轴已倒过来` : `反向(A 的轴已倒,${b} 不用倒)`;
 }
 
+// 「是哪两条线」按取数请求认(含计算):A 改成 A − C 后就是另一条线,旧结果不该再显示
 function pairKey(a: Layer, b: Layer) {
-  return `${a.series}|${b.series}`;
+  return `${requestKey(rawRequest(a))}~${requestKey(rawRequest(b))}`;
 }
 
 function OverlayNote({ shown: { res, aShift, invert }, a, b }: { shown: ShownResult; a: string; b: string }) {

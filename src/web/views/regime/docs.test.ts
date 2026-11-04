@@ -38,6 +38,7 @@ describe('固定面板的 ChartDoc', () => {
     expect(() => docToPaneSpecs(withLayer({ series: 'SPY' }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({ series: 'nope' }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({ shift: 5 }))).toThrow();
+    expect(() => docToPaneSpecs(withLayer({ calc: { op: '-', series: 'vix' } }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({ scale: 'left' }, { id: 'left', side: 'left' }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({}, { id: 'right', side: 'right', log: true }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({}, { id: 'right', side: 'right', invert: true }))).toThrow();
