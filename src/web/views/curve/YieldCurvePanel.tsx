@@ -3,6 +3,7 @@ import { useYieldCurve, curveForDate, snapToTradingDay } from './yieldCurve.hook
 import { YieldCurveChart, type Curve } from './YieldCurveChart';
 import { DatePickerWithPresets } from '../../components/DatePickerWithPresets';
 import { InfoTip } from '../../components/InfoTip';
+import { Button } from '../../components/ui/button';
 import { SERIES_COLORS } from '../../chart/palette';
 
 type Row = { id: number; date: string; visible: boolean };
@@ -152,20 +153,23 @@ export function YieldCurvePanel({ source }: { source: string }) {
                   </td>
                 ))}
                 <td className="px-2 py-1 text-right">
-                  <button onClick={() => remove(row.id)} className="text-neutral-500 hover:text-red-400" title="删除">
+                  <Button
+                    variant="ghost"
+                    size="icon-2xs"
+                    onClick={() => remove(row.id)}
+                    className="text-neutral-500 hover:text-red-400"
+                    title="删除"
+                  >
                     ✕
-                  </button>
+                  </Button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <button
-          onClick={addRow}
-          className="mt-2 rounded border border-neutral-700 px-2 py-1 text-xs text-neutral-300 hover:bg-neutral-800"
-        >
+        <Button variant="outline" size="xs" onClick={addRow} className="mt-2">
           + 添加时间点
-        </button>
+        </Button>
       </div>
     </div>
   );

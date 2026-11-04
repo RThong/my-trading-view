@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CalendarIcon } from 'lucide-react';
 import { Calendar } from './ui/calendar';
+import { Button } from './ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 
 // YYYY-MM-DD <-> Date(本地日历日,避免 UTC 偏移)。
@@ -43,13 +44,15 @@ export function DatePickerWithPresets({ value, presets, min, max, snap, onChange
       <PopoverContent align="start" className="w-auto flex-row gap-1 p-2">
         <div className="flex flex-col gap-0.5">
           {presets.map((p) => (
-            <button
+            <Button
               key={p.label}
+              variant="ghost"
+              size="xs"
               onClick={() => pick(p.date)}
-              className={`rounded px-2 py-1 text-left text-xs hover:bg-neutral-800 ${p.date === value ? 'bg-neutral-800 text-white' : ''}`}
+              className={`justify-start ${p.date === value ? 'bg-muted text-white hover:bg-muted' : ''}`}
             >
               {p.label}
-            </button>
+            </Button>
           ))}
         </div>
         <div className="border-l border-neutral-800 pl-1">

@@ -181,5 +181,8 @@
 - **UI 组件库:shadcn/ui**(base-nova 风格,底层 Base UI `@base-ui/react`),组件源码在 `src/web/components/ui/`(拷进来归自己,可改),
   类名合并 `cn` 在 `src/web/lib/utils.ts`(clsx + tailwind-merge),颜色变量在 `styles.css` 的 `@theme inline`(只映射到 neutral 深色,
   没有明暗两套)。加组件:`bunx shadcn@latest add <名字>` 后**检查 styles.css 是否被塞进 `:root` 变量 / `body` 全局样式**,有就删掉、
-  缺的变量照现有写法补进 `@theme`;组件里的图标占位换 lucide。旧的手写组件(InfoTip / TabBar 等)碰到再迁,不专门改。
+  缺的变量照现有写法补进 `@theme`;组件里的图标占位换 lucide。⚠️ CLI 实测会:把 `cn` 写成 `from "cn"` 并装 npm 上同名的无关包
+  (改回 `@web/lib/utils`、`bun remove cn`)、漏装 `class-variance-authority`、多装 `date-fns`(react-day-picker 自带)。
+  ⚠️ 组件里的 `dark:` 分支要**拍平成基础类**:全站恒深色,而 `dark:x` 与调用方传的同属性类 tailwind-merge 判不出冲突、
+  CSS 里 `dark:` 排后面总是赢,调用方的激活色就盖不掉(见 `ui/button.tsx` 顶部)。手写组件正在分批迁到组件库。
 - 秘密只在 `.env`(gitignored):`FRED_API_KEY`、`EIA_API_KEY`、`ESTAT_APP_ID`、`MOOMOO_WS_*`、`SEC_USER_AGENT`(SEC 要求真实联系方式)。

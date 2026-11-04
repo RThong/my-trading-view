@@ -18,6 +18,7 @@ import type { PriceBar } from '../asset/assetChart.hooks';
 import { spreadSeries } from './rateSpread.hooks';
 import { aggregate } from '../../chart/core';
 import { InfoTip } from '../../components/InfoTip';
+import { Button } from '../../components/ui/button';
 import type { Interval } from '../../hooks/interval';
 
 // 视图说明(按 source):同一曲线换时间横轴看各期限走势 + 利差。
@@ -242,13 +243,15 @@ export function TenorHistoryPanel({
           const desc = SPREAD_DESC[source]?.[d.label];
           return (
             <div key={d.label} className="flex items-center gap-0.5 rounded border border-neutral-700 px-1 py-0.5">
-              <button
+              <Button
+                variant="ghost"
+                size="icon-2xs"
                 onClick={() => toggleSpread(d.label)}
                 title={shown ? '收起差值' : '展开差值'}
-                className="px-1 text-neutral-300"
+                className="text-neutral-300"
               >
                 {shown ? '▾' : '▸'}
-              </button>
+              </Button>
               <span className={shown ? 'text-neutral-300' : 'text-neutral-600'}>{d.label}</span>
               {desc && <InfoTip text={desc} />}
             </div>
@@ -260,17 +263,20 @@ export function TenorHistoryPanel({
         {data.tenors.map((t) => {
           const on = selected.has(t);
           return (
-            <button
+            <Button
               key={t}
+              variant="outline"
+              size="xs"
               onClick={() => toggle(t)}
-              className={`flex items-center gap-1 rounded border px-2 py-0.5 text-xs ${on ? 'border-neutral-500 text-neutral-200' : 'border-neutral-800 text-neutral-600'}`}
+              aria-pressed={on}
+              className={on ? 'border-neutral-500 text-neutral-200' : 'text-neutral-600'}
             >
               <span
                 className="inline-block h-2 w-2 rounded-full"
                 style={{ background: on ? colorAt(shownTenors.indexOf(t)) : '#3f3f46' }}
               />
               {t}
-            </button>
+            </Button>
           );
         })}
       </div>

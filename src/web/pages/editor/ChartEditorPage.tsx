@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, Copy, Upload } from 'lucide-react';
 import type { Interval } from '../../hooks/interval';
+import { Button } from '../../components/ui/button';
 import { AnalysisPanel, pairRequests, resolvePair } from './components/AnalysisPanel';
 import { type ChartDoc, EMPTY_DOC, parseChartDoc } from '../../views/chartDoc/chartDoc';
 import { EmptyState } from './components/EmptyState';
@@ -82,14 +83,15 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
           />
         </div>
         <div className="border-t border-neutral-800 pt-2">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => setShowJson((v) => !v)}
-            className="flex items-center gap-1 px-1 text-xs text-neutral-500 hover:text-neutral-300"
+            className="text-neutral-500 hover:text-neutral-300"
           >
-            {showJson ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {showJson ? <ChevronDown /> : <ChevronRight />}
             查看 JSON
-          </button>
+          </Button>
           {showJson && <JsonView json={JSON.stringify(doc, null, 2)} onLoad={load} />}
         </div>
       </aside>
@@ -97,8 +99,8 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
   );
 }
 
-const JSON_BTN =
-  'flex items-center gap-1 rounded border border-neutral-700 bg-neutral-900 px-1.5 py-0.5 text-[11px] text-neutral-400 hover:text-neutral-200';
+// 「复制 / 导入」浮在 JSON 原文上:实心底色,不然下面的字透上来
+const JSON_BTN = 'bg-neutral-900 text-neutral-400 hover:bg-neutral-800';
 
 // JSON 原文 + 右上角「复制 / 导入」。导入 = 粘贴一份 JSON 整张图换成它;校验不过就报原因、当前的图不动。
 function JsonView({ json, onLoad }: { json: string; onLoad: (doc: ChartDoc) => void }) {
@@ -144,13 +146,13 @@ function JsonView({ json, onLoad }: { json: string; onLoad: (doc: ChartDoc) => v
         />
         {error && <p className="text-xs text-amber-500">{error}</p>}
         <div className="flex justify-end gap-1.5">
-          <button type="button" onClick={cancel} className={JSON_BTN}>
+          <Button variant="outline" size="2xs" className={JSON_BTN} onClick={cancel}>
             取消
-          </button>
-          <button type="button" onClick={load} disabled={!draft.trim()} className={`${JSON_BTN} disabled:opacity-40`}>
-            <Upload size={12} />
+          </Button>
+          <Button variant="outline" size="2xs" className={JSON_BTN} onClick={load} disabled={!draft.trim()}>
+            <Upload />
             载入
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -159,14 +161,20 @@ function JsonView({ json, onLoad }: { json: string; onLoad: (doc: ChartDoc) => v
   return (
     <div className="relative mt-1">
       <div className="absolute right-1.5 top-1.5 flex gap-1">
-        <button type="button" onClick={() => setDraft('')} className={JSON_BTN} title="粘贴一份 JSON,整张图换成它">
-          <Upload size={12} />
+        <Button
+          variant="outline"
+          size="2xs"
+          className={JSON_BTN}
+          onClick={() => setDraft('')}
+          title="粘贴一份 JSON,整张图换成它"
+        >
+          <Upload />
           导入
-        </button>
-        <button type="button" onClick={copy} className={JSON_BTN}>
-          {copied ? <Check size={12} /> : <Copy size={12} />}
+        </Button>
+        <Button variant="outline" size="2xs" className={JSON_BTN} onClick={copy}>
+          {copied ? <Check /> : <Copy />}
           {copied ? '已复制' : '复制'}
-        </button>
+        </Button>
       </div>
       <pre className="max-h-72 overflow-auto rounded bg-neutral-900 p-2 text-[11px] leading-snug text-neutral-400">
         {json}

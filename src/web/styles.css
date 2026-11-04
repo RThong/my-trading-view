@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
-/* 全站只有深色:dark: 变体恒定生效。默认它跟系统 prefers-color-scheme 走,系统切浅色时 shadcn 组件会掉回浅色样式 */
+/* 全站只有深色:dark: 变体恒定生效(默认跟系统 prefers-color-scheme 走,切浅色时组件会掉回浅色样式)。
+ * 兜底用:components/ui 里的 dark: 仍要拍平成基础类 —— dark: 类与调用方传的同属性类 tailwind-merge 判不出冲突,
+ * CSS 里 dark: 排在后面,调用方就盖不掉(见 ui/button.tsx 顶部)。 */
 @custom-variant dark (&:is(*));
 
 /*

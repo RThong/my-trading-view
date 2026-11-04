@@ -1,5 +1,6 @@
 import type { DragEvent, ReactNode } from 'react';
 import { CircleAlert, GripVertical, X } from 'lucide-react';
+import { Button } from '../../../components/ui/button';
 import {
   fitScaleIds,
   isFitTarget,
@@ -28,8 +29,6 @@ function decodeScale(v: string): ScaleChoice {
 const SELECT =
   'rounded border border-neutral-800 bg-neutral-900 px-1 py-0.5 text-xs text-neutral-300 hover:border-neutral-600';
 const LOCKED_TITLE = '叠加中由「叠加对比」设定,先取消叠加才能改';
-const STEP_BTN =
-  'rounded px-1 text-xs text-neutral-500 hover:bg-neutral-800 hover:text-neutral-200 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent';
 
 type Props = {
   doc: ChartDoc;
@@ -130,14 +129,15 @@ export function LayerCard({
             <option value="new">新独立轴</option>
           </select>
         )}
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-xs"
           onClick={() => actions.remove(layer.id)}
           className="text-neutral-600 hover:text-neutral-200"
           title="删除"
         >
-          <X size={14} />
-        </button>
+          <X />
+        </Button>
       </div>
 
       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-5 text-xs text-neutral-500">
@@ -190,23 +190,25 @@ function SeriesControls({
         title={shiftLocked ? LOCKED_TITLE : '平移(交易日):正数往右挪,看它是不是领先别的线'}
       >
         平移
-        <button
-          type="button"
-          className={STEP_BTN}
+        <Button
+          variant="ghost"
+          size="icon-2xs"
+          className="text-neutral-500"
           disabled={shiftLocked}
           onClick={() => actions.setShift(layer.id, shift - 1)}
         >
           −
-        </button>
+        </Button>
         <NumberField value={shift} disabled={shiftLocked} onCommit={(n) => actions.setShift(layer.id, n)} />
-        <button
-          type="button"
-          className={STEP_BTN}
+        <Button
+          variant="ghost"
+          size="icon-2xs"
+          className="text-neutral-500"
           disabled={shiftLocked}
           onClick={() => actions.setShift(layer.id, shift + 1)}
         >
           +
-        </button>
+        </Button>
         天
       </span>
       {layer.fit && (
@@ -216,9 +218,9 @@ function SeriesControls({
             {` · 相关 ${layer.fit.r.toFixed(2)}`}
             {layer.fit.beta < 0 && (inverted ? ' · 反向,轴已倒过来' : ' · 反向(A 的轴已倒,不用倒)')}
           </span>
-          <button type="button" className={STEP_BTN} onClick={() => actions.clearFit(layer.id)}>
+          <Button variant="ghost" size="2xs" className="text-neutral-500" onClick={() => actions.clearFit(layer.id)}>
             取消叠加
-          </button>
+          </Button>
         </span>
       )}
     </>
@@ -239,20 +241,17 @@ function Toggle({
   children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="outline"
+      size="2xs"
       onClick={onClick}
       title={title}
       disabled={disabled}
-      className={
-        'rounded border px-1.5 py-px text-xs disabled:cursor-not-allowed disabled:opacity-40 ' +
-        (on
-          ? 'border-sky-600 bg-sky-600/20 text-sky-300'
-          : 'border-neutral-800 text-neutral-500 hover:text-neutral-300')
-      }
+      aria-pressed={on}
+      className={on ? 'border-sky-600 bg-sky-600/20 text-sky-300 hover:bg-sky-600/30' : 'text-neutral-500'}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
