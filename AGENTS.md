@@ -184,5 +184,8 @@
   缺的变量照现有写法补进 `@theme`;组件里的图标占位换 lucide。⚠️ CLI 实测会:把 `cn` 写成 `from "cn"` 并装 npm 上同名的无关包
   (改回 `@web/lib/utils`、`bun remove cn`)、漏装 `class-variance-authority`、多装 `date-fns`(react-day-picker 自带)。
   ⚠️ 组件里的 `dark:` 分支要**拍平成基础类**:全站恒深色,而 `dark:x` 与调用方传的同属性类 tailwind-merge 判不出冲突、
-  CSS 里 `dark:` 排后面总是赢,调用方的激活色就盖不掉(见 `ui/button.tsx` 顶部)。`md:text-sm` 这类响应式变体同理(会盖掉调用方的 `text-xs`),也拍平。手写组件正在分批迁到组件库。
+  CSS 里 `dark:` 排后面总是赢,调用方的激活色就盖不掉(见 `ui/button.tsx` 顶部)。`md:text-sm` 这类响应式变体同理(会盖掉调用方的 `text-xs`),也拍平。
+  ⚠️ 模板按新版 Base UI 写,对不上已装的 1.9:①`data-vertical:` / `group-data-horizontal/…` 匹配不上(1.9 只输出 `data-orientation`),
+  要改写成 `data-[orientation=…]:`;②tabs / toggle-group 的 `orientation` 只写进 `data-orientation`、没传给 Base UI(竖排键盘导航和 aria 都错)。
+  加完组件在浏览器里量**激活 / 悬停 / 禁用 / 展开**各态的计算样式,别只看能不能点。手写组件正在分批迁到组件库。
 - 秘密只在 `.env`(gitignored):`FRED_API_KEY`、`EIA_API_KEY`、`ESTAT_APP_ID`、`MOOMOO_WS_*`、`SEC_USER_AGENT`(SEC 要求真实联系方式)。
