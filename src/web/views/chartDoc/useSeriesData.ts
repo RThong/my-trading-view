@@ -1,24 +1,24 @@
-// 编辑器的取数层:按注册表把各序列统一成 { time, value }[],再按 Header 的周期聚合。
+// 注册表的取数层(图表编辑器与固定面板的计算格共用):按注册表把各序列统一成 { time, value }[],再按 Header 的周期聚合。
 // 只读复用现有接口与数据 hook(/api/regime 的 useRegimeData、/api/yield-curve,以及 /api/price、25Δ、VRP、/api/series),保证同一序列和旧图表数字一致;
 // 任意 Yahoo 代码走 /api/yahoo/history。
 import { useMemo } from 'react';
 import useSWR from 'swr';
-import { aggregate, isWeekend, type LinePoint } from '../../../chart/core';
-import type { Interval } from '../../../hooks/interval';
-import { useServerRefresh } from '../../../hooks/useServerRefresh';
-import { useRegimeData, type RegimeData } from '../../../views/regime/regimeChart.hooks';
-import { alignPairs, shiftPoints } from '../../../chart/analysis';
-import type { Calc } from '../../../views/chartDoc/chartDoc';
-import { seriesLabel } from '../layerLabel';
+import { aggregate, isWeekend, type LinePoint } from '../../chart/core';
+import type { Interval } from '../../hooks/interval';
+import { useServerRefresh } from '../../hooks/useServerRefresh';
+import { useRegimeData, type RegimeData } from '../regime/regimeChart.hooks';
+import { combineSeries, shiftPoints } from '../../chart/analysis';
+import type { Calc } from './chartDoc';
 import {
   rememberYahooName,
+  seriesLabel,
   seriesDef,
   type CurveSource,
   type SeriesDef,
   type SeriesSource,
-} from '../../../views/chartDoc/registry';
-import { SWR_OPTS } from '../../../lib/http';
-import { latestIso } from '../../../../shared/calc/isoDate';
+} from './registry';
+import { SWR_OPTS } from '../../lib/http';
+import { latestIso } from '../../../shared/calc/isoDate';
 
 const RETRY_SWR_OPTS = { ...SWR_OPTS, revalidateIfStale: true };
 /**
@@ -37,7 +37,8 @@ export type SeriesRequest = { series: string; calc?: Calc; shift: number; daily?
 
 /** 请求的键(也是 points 的键)。序列 id 里不会有 '|' / '@' / '#'(parseChartDoc 拒收,注册表也没有)。 */
 export function requestKey({ series, calc, shift, daily }: SeriesRequest): string {
-  return `${series}${calc ? `|${calc.op}|${calc.series}` : ''}${shift ? `@${shift}` : ''}${daily ? '#d' : ''}`;
+  const c = calc ? `|${calc.op}${calc.fill ? 'f' : ''}|${calc.series}` : '';
+  return `${series}${c}${shift ? `@${shift}` : ''}${daily ? '#d' : ''}`;
 }
 
 function parseKey(key: string): SeriesRequest {
@@ -47,7 +48,10 @@ function parseKey(key: string): SeriesRequest {
   const head = at < 0 ? body : body.slice(0, at);
   const shift = at < 0 ? 0 : Number(body.slice(at + 1));
   const [series, op, b] = head.split('|');
-  const req = { series, shift, ...(op && { calc: { op: op as Calc['op'], series: b } }) };
+  const calc: Calc | undefined = op
+    ? { op: op[0] as Calc['op'], series: b, ...(op[1] === 'f' && { fill: true as const }) }
+    : undefined;
+  const req = { series, shift, ...(calc && { calc }) };
   return daily ? { ...req, daily: true } : req;
 }
 
@@ -121,6 +125,8 @@ type CurveData = {
   series: Record<string, { date: string; value: number }[]>;
   refreshing?: boolean;
   partial?: boolean;
+  /** 本次现拉失败、服务端拿上一份顶上的期限(见 server 的 fillFromPrev) */
+  fallback?: string[];
 };
 const NO_CURVE: CurveData = { series: {} };
 
@@ -179,22 +185,18 @@ export function seriesPoints(def: SeriesDef, data: SourceData, interval: Interva
 }
 
 /**
- * 计算图层:A、B 各自按日线取出,按日期对齐(以点少的那条为准,另一条取当天或之前最近的值、太旧就跳过,
- * 见 alignPairs)后相减 / 相除,再平移、聚合。先算后聚合:周 / 月线下两条各取期末再算,和先算日值再取期末一样,
- * 但对齐必须在日线上做才不会错位。除数为 0 的那天跳过。
+ * 计算图层:A、B 各自按日线取出,按 calc 的对齐口径相减 / 相除(见 combineSeries),再平移、聚合。
+ * 先算后聚合:对齐必须在日线上做才不会错位。
  */
 export function calcPoints(
   a: SeriesDef,
-  op: Calc['op'],
+  calc: Calc,
   b: SeriesDef,
   data: SourceData,
   interval: Interval,
   shift = 0,
 ): LinePoint[] {
-  const pairs = alignPairs(dailyPoints(a, data), dailyPoints(b, data));
-  const values = pairs
-    .filter((p) => op === '-' || p.b !== 0)
-    .map((p) => ({ time: p.time, value: op === '-' ? p.a - p.b : p.a / p.b }));
+  const values = combineSeries(dailyPoints(a, data), dailyPoints(b, data), calc.op, calc.fill);
   return aggregate(shiftPoints(values, shift), interval);
 }
 
@@ -224,16 +226,18 @@ export function commonRange(series: LinePoint[][]): { from: string; to: string }
   return from < to ? { from, to } : null;
 }
 
-export type EditorSeriesData = {
+export type SeriesData = {
   /** 请求键(requestKey)→ 点。只含本次请求到的。 */
   points: Record<string, LinePoint[]>;
   isLoading: boolean;
   error?: Error;
   /** 用到了、但这次没有数据的序列名(计算图层是「A − B」,含两条没有重叠日期的情况) */
   missing: string[];
+  /** 用到了「源这次没拉到、服务端拿上一份顶上」的腿的请求键(线照画,但不是最新;计算图层任一腿是这样就算) */
+  stale: string[];
 };
 
-export function useEditorSeriesData(requests: SeriesRequest[], interval: Interval): EditorSeriesData {
+export function useSeriesData(requests: SeriesRequest[], interval: Interval): SeriesData {
   // 用 join 后的字符串当依赖:调用方每次渲染给新数组,内容不变就不重算(稳定化责任放在 hook 内)。
   const keysStr = [...new Set(requests.map(requestKey))].sort().join(',');
   const sources = useMemo(
@@ -305,7 +309,7 @@ export function useEditorSeriesData(requests: SeriesRequest[], interval: Interva
             if (!req.calc) return [[k, seriesPoints(def, data, iv, req.shift)]];
 
             const b = seriesDef(req.calc.series);
-            return b ? [[k, calcPoints(def, req.calc.op, b, data, iv, req.shift)]] : [];
+            return b ? [[k, calcPoints(def, req.calc, b, data, iv, req.shift)]] : [];
           }),
       ),
     [keysStr, regime, yahoo, endpoints, curves, interval],
@@ -325,5 +329,21 @@ export function useEditorSeriesData(requests: SeriesRequest[], interval: Interva
       ];
   const error = regimeError ?? curveStates.find((c) => c.error)?.error;
 
-  return { points, isLoading, error, missing };
+  const stale = useMemo(() => {
+    function legStale(id: string): boolean {
+      const src = seriesDef(id)?.source;
+      if (src?.kind === 'regime' || src?.kind === 'regimeOhlc') return !!regime.fallback?.includes(src.key);
+      if (src?.kind === 'curve') return !!curves[src.curve]?.fallback?.includes(src.tenor);
+      return false;
+    }
+    return keysStr
+      .split(',')
+      .filter(Boolean)
+      .filter((k) => {
+        const r = parseKey(k);
+        return [r.series, ...(r.calc ? [r.calc.series] : [])].some(legStale);
+      });
+  }, [keysStr, regime, curves]);
+
+  return { points, isLoading, error, missing, stale };
 }

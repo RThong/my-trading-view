@@ -13,14 +13,14 @@ import { SeriesPicker } from './components/SeriesPicker';
 import { useChartDoc } from './hooks/useChartDoc';
 import { useCrosshairLegend } from './hooks/useCrosshairLegend';
 import { useEditorChart } from './hooks/useEditorChart';
-import { useEditorSeriesData } from './hooks/useEditorSeriesData';
+import { useSeriesData } from '../../views/chartDoc/useSeriesData';
 import { useBaseBand } from './hooks/useBaseBand';
 import { useFitSync } from './hooks/useFitSync';
 import { useLineDrag } from './hooks/useLineDrag';
 import { useVisibleRange } from './hooks/useVisibleRange';
 
 // 图表编辑页:空白图上自己挑序列、分格叠放、把一条线叠到另一条上看劈叉。只负责组装 ——
-// 状态见 useChartDoc,取数见 useEditorSeriesData,各图层最终数据见 layerPoints,渲染见 useEditorChart。
+// 状态见 useChartDoc,取数见 views/chartDoc/useSeriesData,各图层最终数据见 layerPoints,渲染见 useEditorChart。
 // 全部编辑状态就是 doc 这一份 JSON(右下角可查看)。
 export function ChartEditorPage({ interval }: { interval: Interval }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -32,7 +32,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
 
   const seriesLayers = doc.panes.flatMap((p) => p.layers);
   const requests = [...seriesLayers.map(layerRequest), ...pairRequests(resolvePair(doc, pair))];
-  const { points, isLoading, error, missing } = useEditorSeriesData(requests, interval);
+  const { points, isLoading, error, missing } = useSeriesData(requests, interval);
   const data = useLayerData(doc, points);
   const { chartRef, seriesRef } = useEditorChart(containerRef, doc, data, { onStretches: setStretches, interval });
   const { hoverTime, layout } = useCrosshairLegend(containerRef, chartRef, doc);

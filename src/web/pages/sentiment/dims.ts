@@ -79,6 +79,7 @@ export const SENTIMENT_DIMS = {
       },
       {
         key: 'vxTermSpread',
+        from: { series: 'db:VX1', calc: { op: '-', series: 'db:VX3' } },
         label: 'VX1−V3',
         title: 'VX1−V3 期限结构',
         render: { kind: 'signed' }, // 期限结构:符号柱状图,不套分位带
@@ -94,6 +95,7 @@ export const SENTIMENT_DIMS = {
       },
       {
         key: 'vixSpotTerm',
+        from: { series: 'vixSpot', calc: { op: '-', series: 'vix3m' } },
         label: 'VIX−3M',
         title: 'VIX−VIX3M 即期期限结构',
         render: { kind: 'signed' }, // 同 VX1−V3:符号柱状图,不套分位带
@@ -226,6 +228,7 @@ export const SENTIMENT_DIMS = {
       },
       {
         key: 'corTermSpread',
+        from: { series: 'cor3m', calc: { op: '-', series: 'cor1m' } },
         label: 'COR3M−1M',
         title: '隐含相关性期限结构 COR3M − COR1M (pp)',
         color: '#14b8a6',
@@ -243,6 +246,7 @@ export const SENTIMENT_DIMS = {
       },
       {
         key: 'rxmSpx',
+        from: { series: 'rxm', calc: { op: '/', series: 'spx' } },
         label: 'RXM/SPX',
         title: 'RXM/SPX (风险逆转相对表现)',
         color: '#a855f7',

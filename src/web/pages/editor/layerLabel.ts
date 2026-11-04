@@ -1,17 +1,6 @@
 // 图层的显示名与单位(卡片、图例、分析面板共用一处,免得几处写法漂移)。
-import { findLayer, type Calc, type ChartDoc, type Layer } from '../../views/chartDoc/chartDoc';
-import { seriesDef } from '../../views/chartDoc/registry';
-
-const OP_TEXT: Record<Calc['op'], string> = { '-': '−', '/': '÷' };
-
-function seriesName(id: string): string {
-  return seriesDef(id)?.label ?? id;
-}
-
-/** 序列名;计算图层是「A − B」/「A ÷ B」。卡片、图例、缺数据提示共用。 */
-export function seriesLabel(series: string, calc?: Calc): string {
-  return calc ? `${seriesName(series)} ${OP_TEXT[calc.op]} ${seriesName(calc.series)}` : seriesName(series);
-}
+import { findLayer, type ChartDoc, type Layer } from '../../views/chartDoc/chartDoc';
+import { seriesDef, seriesLabel } from '../../views/chartDoc/registry';
 
 /** 只取序列本名(不带平移 / 换算等修饰),给「A × B」这类组合名用。 */
 export function baseLabel(doc: ChartDoc, layerId: string): string {

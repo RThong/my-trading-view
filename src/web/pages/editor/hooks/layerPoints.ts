@@ -2,7 +2,7 @@
 import { useMemo } from 'react';
 import type { LinePoint } from '../../../chart/core';
 import type { ChartDoc, Layer, Pane } from '../../../views/chartDoc/chartDoc';
-import { requestKey } from './useEditorSeriesData';
+import { requestKey } from '../../../views/chartDoc/useSeriesData';
 
 export type LayerData = {
   /** 画在图上的点 */

@@ -202,7 +202,7 @@ function CalcRow({ layer, locked, actions }: { layer: Layer; locked: boolean; ac
       {op && (
         <SeriesSelect
           value={layer.calc?.series}
-          onChange={(id) => actions.setCalc(layer.id, { op, series: id })}
+          onChange={(id) => actions.setCalc(layer.id, { ...layer.calc, op, series: id })}
           placeholder={op === '-' ? '减去哪条序列' : '除以哪条序列'}
           disabled={locked}
         />

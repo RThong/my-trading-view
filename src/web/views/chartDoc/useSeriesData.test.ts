@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { RegimeData } from '../../../views/regime/regimeChart.hooks';
+import type { RegimeData } from '../regime/regimeChart.hooks';
 import {
   CURVE_SOURCES,
   REGISTRY,
@@ -8,13 +8,15 @@ import {
   rememberYahooName,
   seriesDef,
   searchSeries,
+  seriesLabel,
   vxContractDefs,
   yahooId,
-} from '../../../views/chartDoc/registry';
-import { asOfValue } from './useCrosshairLegend';
-import { calcPoints, commonRange, requestKey, seriesPoints, weekdayOnly } from './useEditorSeriesData';
-import { layerUnit, seriesLabel } from '../layerLabel';
-import { REGIME_SERIES, isSeriesKey } from '../../../../shared/regimeSeries';
+} from './registry';
+import { asOfValue } from '../../pages/editor/hooks/useCrosshairLegend';
+import { calcPoints, commonRange, requestKey, seriesPoints, weekdayOnly } from './useSeriesData';
+import { layerUnit } from '../../pages/editor/layerLabel';
+import { REGIME_SERIES, isSeriesKey } from '../../../shared/regimeSeries';
+import { DERIVED } from '../../../shared/seriesMeta';
 
 const regime: RegimeData = {
   series: {
@@ -122,7 +124,7 @@ describe('registry', () => {
     expect(seriesDef('dgs10')?.source).toEqual({ kind: 'curve', curve: 'treasury', tenor: '10Y' });
   });
 
-  test('regime 序列除了不可画的都进名单', () => {
+  test('regime 序列除了不可画的都能解析;能用 calc 拼的派生量不进下拉,calc 拼不了的标「派生」', () => {
     const ids = new Set(REGISTRY.map((d) => d.id));
     expect(REGIME_SERIES.filter((k) => !ids.has(k))).toEqual([
       'bojHikeDates',
@@ -130,6 +132,14 @@ describe('registry', () => {
       'coreCpiRelease',
       'corePceRelease',
     ]);
+    // 旧图引用的派生 id 照样能解析(取得到数),只是下拉里不列
+    const calcDerived = Object.keys(DERIVED).filter((k) => DERIVED[k as keyof typeof DERIVED] === 'calc');
+    expect(calcDerived.every((k) => seriesDef(k)?.hidden)).toBe(true);
+    const listed = new Set(searchSeries('vix').map((d) => d.id));
+    expect(listed.has('vixeqVix')).toBe(false);
+    expect(seriesDef('netLiquidity')?.label).toBe('净流动性(派生)');
+    expect(seriesDef('reserves')?.label).toBe('准备金(派生)');
+    expect(seriesDef('vix')?.label).toBe('VIX');
   });
 
   test('搜索命中名称 / 别名,不区分大小写', () => {
@@ -224,19 +234,25 @@ describe('commonRange', () => {
 });
 
 describe('计算图层', () => {
-  // 两条日线 + 一条月频(月频那条的日期是月初,落在 2026-10-01)
-  const daily = (vals: [string, number][]) => vals.map(([date, value]) => ({ date, value }));
+  const pts = (vals: [string, number][]) => vals.map(([date, value]) => ({ date, value }));
   const data = {
     regime: {
       series: {
-        usjp2y: daily([
-          ['2026-10-01', 3.5],
-          ['2026-10-05', 3.0],
+        vix: pts([
+          ['2026-10-01', 20],
+          ['2026-10-02', 0],
+          ['2026-10-05', 25],
+          ['2026-10-06', 11],
         ]),
-        coreCpiYoy: daily([['2026-10-01', 2.0]]),
-        vix: daily([
-          ['2026-10-01', 0],
-          ['2026-10-02', 20],
+        vixeq: pts([
+          ['2026-10-01', 40],
+          ['2026-10-05', 50],
+          ['2026-10-06', 55],
+          ['2026-10-07', 60],
+        ]),
+        coreCpiYoy: pts([
+          ['2026-09-01', 2.5],
+          ['2026-10-01', 2.0],
         ]),
       },
       unavailable: [],
@@ -245,19 +261,66 @@ describe('计算图层', () => {
   };
   const def = (id: string) => seriesDef(id)!;
 
-  test('相减:以点少的那条为准,另一条取当天或之前最近的值', () => {
-    // 两条点数相同 → 以 A(usjp2y:10-01、10-05)为准;10-05 那天 vix 没点,取 10-02 的 20(3 天前,不算太旧)
-    expect(calcPoints(def('usjp2y'), '-', def('vix'), data, '1D')).toEqual([
-      { time: '2026-10-01', value: 3.5 },
-      { time: '2026-10-05', value: -17 },
+  test('两条都是日频:只算两边同一天都有数的日子,除数为 0 跳过', () => {
+    expect(calcPoints(def('vixeq'), { op: '/', series: 'vix' }, def('vix'), data, '1D')).toEqual([
+      { time: '2026-10-01', value: 2 },
+      { time: '2026-10-05', value: 2 },
+      { time: '2026-10-06', value: 5 },
     ]);
   });
 
-  test('日频 ÷ 月频:对齐到月频那条的日期;除数为 0 的那天跳过', () => {
-    expect(calcPoints(def('usjp2y'), '/', def('coreCpiYoy'), data, '1D')).toEqual([
-      { time: '2026-10-01', value: 1.75 },
+  test('日频 − 月频:对齐到月频那条的日期,日频取当天或之前最近的值', () => {
+    // 09-01 那天 vix 还没有数 → 跳过;10-01 取当天 20
+    expect(calcPoints(def('vix'), { op: '-', series: 'coreCpiYoy' }, def('coreCpiYoy'), data, '1D')).toEqual([
+      { time: '2026-10-01', value: 18 },
     ]);
-    expect(calcPoints(def('usjp2y'), '/', def('vix'), data, '1D')).toEqual([{ time: '2026-10-05', value: 0.15 }]);
+  });
+
+  test('异频按发布间隔认低频,不按点数:历史长的月频 ÷ 历史短的日频,对齐到月频日期', () => {
+    const monthly = pts(
+      [...Array(24)].map(
+        (_, i) => [`${2024 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}-01`, 2] as [string, number],
+      ),
+    );
+    const dailyShort = pts([
+      ['2025-11-28', 10],
+      ['2025-12-01', 20],
+      ['2025-12-02', 30],
+    ]);
+    const d2 = { ...data, regime: { ...data.regime, series: { coreCpiYoy: monthly, vix: dailyShort } } as RegimeData };
+    // 月频 24 点 > 日频 3 点,按点数会错锚到日频;按间隔锚到月频:只有 2025-12-01 那天配得上(取当天 vix = 20)
+    expect(calcPoints(def('vix'), { op: '/', series: 'coreCpiYoy' }, def('coreCpiYoy'), d2, '1D')).toEqual([
+      { time: '2025-12-01', value: 10 },
+    ]);
+  });
+
+  test('同为周频但发布日不同(周三对周二):取最近值配上,不因「同频」就要求同一天', () => {
+    const wed = pts([
+      ['2026-10-07', 100],
+      ['2026-10-14', 110],
+      ['2026-10-21', 120],
+    ]);
+    const tue = pts([
+      ['2026-10-06', 1],
+      ['2026-10-13', 2],
+      ['2026-10-20', 3],
+    ]);
+    const d3 = { ...data, regime: { ...data.regime, series: { netLiquidity: wed, vixCotAm: tue } } as RegimeData };
+    expect(calcPoints(def('netLiquidity'), { op: '-', series: 'vixCotAm' }, def('vixCotAm'), d3, '1D')).toEqual([
+      { time: '2026-10-07', value: 99 },
+      { time: '2026-10-14', value: 108 },
+      { time: '2026-10-21', value: 117 },
+    ]);
+  });
+
+  test('fill:日期取并集、各自沿用最近值', () => {
+    expect(calcPoints(def('vixeq'), { op: '-', series: 'vix', fill: true }, def('vix'), data, '1D')).toEqual([
+      { time: '2026-10-01', value: 20 },
+      { time: '2026-10-02', value: 40 },
+      { time: '2026-10-05', value: 25 },
+      { time: '2026-10-06', value: 44 },
+      { time: '2026-10-07', value: 49 },
+    ]);
   });
 
   test('请求键区分计算与否、运算与第二条序列', () => {
@@ -266,8 +329,9 @@ describe('计算图层', () => {
       { series: 'dgs10', calc: { op: '-' as const, series: 'ust2y' }, shift: 0 },
       { series: 'dgs10', calc: { op: '/' as const, series: 'ust2y' }, shift: 0 },
       { series: 'dgs10', calc: { op: '-' as const, series: 'ust2y' }, shift: 3, daily: true as const },
+      { series: 'dgs10', calc: { op: '-' as const, series: 'ust2y', fill: true as const }, shift: 0 },
     ].map(requestKey);
-    expect(new Set(keys).size).toBe(4);
+    expect(new Set(keys).size).toBe(5);
   });
 
   test('名称与单位:% − % 是百分点,比值没有单位,单位不同的相减也没有单位', () => {

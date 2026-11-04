@@ -32,11 +32,12 @@ export type PercentileBand = { riskTail?: 'low' | 'high'; since?: string };
 
 /**
  * 计算图层:本图层画的不是 series 本身,而是「series 运算 calc.series」(A − B 价差、A ÷ B 比值)。
- * 两条按日期对齐后现算(频率不同时对齐到低频那条,见 web/chart/analysis 的 alignPairs 与编辑器取数层的 calcPoints),
- * 注册表里不必为每个组合另登一条。
+ * 两条按日期对齐后现算(同频取同一天、异频锚低频那条、fill 取并集,见 web/chart/analysis 的 combineSeries;
+ * 取数入口是 views/chartDoc/useSeriesData 的 calcPoints),注册表里不必为每个组合另登一条。
  */
 export type CalcOp = '-' | '/';
-export type Calc = { op: CalcOp; series: string };
+/** fill:两条日期取并集、各自沿用最近值(跨市场利差用,一边休市时那边确实没变);缺省按频率自动对齐 */
+export type Calc = { op: CalcOp; series: string; fill?: true };
 
 export type Layer = {
   id: string;
@@ -254,7 +255,8 @@ export function removeSeries(doc: ChartDoc, series: string): ChartDoc {
 /** 设 / 去掉计算(undefined = 还原成序列本身)。 */
 export function setLayerCalc(doc: ChartDoc, layerId: string, calc: Calc | undefined): ChartDoc {
   const cur = findLayer(doc, layerId)?.layer;
-  if (!cur || (cur.calc?.op === calc?.op && cur.calc?.series === calc?.series)) return doc;
+  if (!cur || (cur.calc?.op === calc?.op && cur.calc?.series === calc?.series && cur.calc?.fill === calc?.fill))
+    return doc;
 
   return {
     ...doc,
@@ -555,14 +557,16 @@ function isPercentile(x: unknown): x is PercentileBand {
   );
 }
 
-// 序列 id 里不能有取数请求键的分隔符(| @ #,见 useEditorSeriesData 的 requestKey):
+// 序列 id 里不能有取数请求键的分隔符(| @ #,见 useSeriesData 的 requestKey):
 // 否则 "ust2y@5" 这种导入后会被拆成「ust2y、平移 5 天」,图上画的和 JSON 写的不是一回事
 function isSeriesId(x: unknown): x is string {
   return isStr(x) && !/[|@#]/.test(x);
 }
 
 function isCalc(x: unknown): x is Calc {
-  return isObj(x) && (x.op === '-' || x.op === '/') && isSeriesId(x.series);
+  return (
+    isObj(x) && (x.op === '-' || x.op === '/') && isSeriesId(x.series) && (x.fill === undefined || x.fill === true)
+  );
 }
 
 function isLayer(x: unknown): x is Layer {
@@ -611,7 +615,7 @@ function canonicalLayer(l: Layer): Layer {
   return {
     id: l.id,
     series: l.series,
-    ...(l.calc ? { calc: { op: l.calc.op, series: l.calc.series } } : {}),
+    ...(l.calc ? { calc: { op: l.calc.op, series: l.calc.series, ...(l.calc.fill && { fill: true as const }) } } : {}),
     scale: l.scale,
     color: l.color,
     ...(l.shift ? { shift: l.shift } : {}),

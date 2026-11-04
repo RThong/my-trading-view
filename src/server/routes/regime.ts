@@ -369,6 +369,14 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     fedTargetUpper: 'fedTargetUpper',
     fedTargetLower: 'fedTargetLower',
     sepMedianLr: 'sepMedianLr',
+    // 下面几条原本只当派生量的腿在内部用(repoStress / vixSpotTerm / rxmSpx),现在原样发出来:
+    // 前端用 ChartDoc 的 calc 现算差 / 比值,注册表下拉只放原始序列(派生的那几条仍照算、照发,见下)
+    iorb: 'iorb',
+    vix3m: 'vix3m',
+    rxm: 'rxm',
+    // 现拉的 CBOE VIX(与库里那条 vix 同值,但当天收盘一出就有,不等 daily job):VIX − VIX3M、VIXEQ / VIX
+    // 这类与现拉腿内连接的计算要用它,否则 job 没跑时当天那根会被整根丢掉(见上面 src.vixSpot 的注释)
+    vixSpot: 'vixSpot',
   };
   // 空数组归 unavailable 由 put 统一兜(见其注释),这里直接传。
   // Object.entries 会把 key 拓宽回 string,这里断言回来 —— 真正的校验发生在上面的对象字面量。
@@ -384,6 +392,16 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
       const e = eqwAt.get(b.tradeDate);
       return e ? [{ date: b.tradeDate, value: b.close / e }] : [];
     }),
+  );
+  // 两条腿原样发出(前端 calc 现算 spxEqw 的同一个比值;标普 500 统一用这条 2006 起的 Yahoo ^GSPC,
+  // 不另发 CBOE 的 SPX —— 同一个指数两个源,下拉里只该有一条)
+  put(
+    'spx',
+    (spxCap ?? []).map((b) => ({ date: b.tradeDate, value: b.close })),
+  );
+  put(
+    'spxew',
+    (spxEqw ?? []).map((b) => ({ date: b.tradeDate, value: b.close })),
   );
   // 等权回撤 − 加权回撤:宽度透支的回撤口径(见 eqwDdSpread),与上面的比值同两腿。
   const bars = (b: typeof spxCap) => (b ?? []).map((x) => ({ date: x.tradeDate, value: x.close }));
@@ -549,6 +567,10 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 缺 key 时零售那几条恒缺而这条照常有,所以**它不能进 EIA_SERIES 的豁免名单**(进了就等于
   // 把一条真失败也放行)。
   put('ulsd', diesel ?? undefined);
+  // 另外三条油品期货腿原样发出(Brent − WTI、汽油零售加价改由前端 calc 现算;单位:原油 $/桶、RBOB $/gal)
+  put('wti', wti ?? undefined);
+  put('brent', brent ?? undefined);
+  put('rbob', rbob ?? undefined);
 
   // EIA 周报六条原始序列 → 八条对外线。**水位只发炼厂开工率** —— 它是有绝对刻度的(口播的"98%"就是它,
   // 且 100% 是硬顶,一眼看得出还剩多少余量)。库存/出口的裸水位单看不携带信息

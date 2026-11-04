@@ -14,7 +14,7 @@ import {
 import { isFitTarget, type ChartDoc, type Layer } from '../../../views/chartDoc/chartDoc';
 import { baseLabel } from '../layerLabel';
 import type { ChartDocActions } from '../hooks/useChartDoc';
-import { requestKey } from '../hooks/useEditorSeriesData';
+import { requestKey } from '../../../views/chartDoc/useSeriesData';
 import type { DateRange } from '../hooks/useVisibleRange';
 
 type Props = {

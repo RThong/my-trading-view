@@ -30,6 +30,7 @@ export const JAPAN_DIMS = {
       },
       {
         key: 'usjp2y',
+        from: { series: 'ust2y', calc: { op: '-', series: 'jgb2y', fill: true } },
         label: '美日2Y利差',
         title: '美日 2Y 利差 (DGS2−JGB2Y)',
         color: '#c98500',

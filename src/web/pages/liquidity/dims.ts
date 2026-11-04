@@ -74,6 +74,7 @@ export const LIQUIDITY_DIMS = {
       },
       {
         key: 'repoStress',
+        from: { series: 'iorb', calc: { op: '-', series: 'sofr' } },
         label: '回购压力',
         title: '回购压力 (IORB−SOFR)',
         color: '#a855f7',

@@ -2,7 +2,7 @@
 //   · /api/regime:SERIES_META 生成(id = 序列名)+ 基本面 fund:*(aiChain 名单生成)
 //   · /api/price(price_eod 现货)、/api/yield-curve(各曲线各期限)、/api/options/25delta、/api/vrp
 //   · /api/series(库里 market_series 有、但别的接口没发的,id 为 `db:<series_id>`;VX 各月合约按需列)
-// 取数复用现有接口(见 useEditorSeriesData)。这里的 id 就是 ChartDoc 里图层引用的那个 id —— 改名等于让旧 JSON 失效。
+// 取数复用现有接口(见 useSeriesData)。这里的 id 就是 ChartDoc 里图层引用的那个 id —— 改名等于让旧 JSON 失效。
 import {
   ACTIVE_TICKERS,
   SEC_BUYER_FCF_KEY,
@@ -12,6 +12,7 @@ import {
   kindsOf,
   type FundKind,
 } from '../../../shared/aiChain';
+import type { CalcOp } from './chartDoc';
 import { MARKET_CATALOG, ivIndexByUnderlying } from '../../../shared/marketCatalog';
 import {
   AI_CDS,
@@ -24,6 +25,7 @@ import {
 import { REGIME_SERIES, type SeriesKey } from '../../../shared/regimeSeries';
 import {
   CATEGORIES as META_CATEGORIES,
+  DERIVED,
   SERIES_META,
   type SeriesCategory as MetaCategory,
   type SeriesFreq,
@@ -63,7 +65,7 @@ export type SeriesDef = {
   freq: SeriesFreq;
   unit?: string;
   source: SeriesSource;
-  /** 7×24 资产(含周末日线):取数时只留周一~周五,同 tenorHistory 的做法(见 useEditorSeriesData)。 */
+  /** 7×24 资产(含周末日线):取数时只留周一~周五,同 tenorHistory 的做法(见 useSeriesData)。 */
   weekends?: true;
   /** 搜索用的别名 */
   aliases?: string[];
@@ -72,6 +74,8 @@ export type SeriesDef = {
   featured?: true;
   /** 交易代码(如 VXZ26):下拉里显示在右侧,也能按它搜 */
   code?: string;
+  /** 不进下拉、但 id 照常能解析(旧图引用它照样取得到数):能用 calc 拼出来的派生量、与别的序列同值的腿 */
+  hidden?: true;
 };
 
 export type SeriesFamily =
@@ -441,19 +445,22 @@ const FUNDAMENTALS: SeriesDef[] = [
 const HAND: SeriesDef[] = [...MANUAL, ...CURVES, ...OPTIONS, ...VRP, ...DB_SERIES];
 const OVERRIDDEN = new Set(HAND.map((d) => d.id));
 
+// 下拉只放原始序列:能用 calc 现算的派生量(差 / 比值)从下拉隐藏(要看就在编辑器里拼),但 id 照常能解析,
+// 旧图引用它照样取得到数;calc 还表达不了的派生量暂留下拉,名称标「派生」(见 shared/seriesMeta 的 DERIVED)
 const FROM_META: SeriesDef[] = REGIME_SERIES.filter(
   (k) => SERIES_META[k].chartable !== false && !OVERRIDDEN.has(k),
 ).map((k) => {
   const { label, category, freq, unit, aliases, weekends } = SERIES_META[k];
   return {
     id: k,
-    label,
+    label: DERIVED[k] === 'server' ? `${label}(派生)` : label,
     category,
     freq,
     source: { kind: 'regime', key: k },
     ...(unit && { unit }),
     ...(weekends && { weekends }),
     ...(aliases && { aliases }),
+    ...((DERIVED[k] === 'calc' || SERIES_META[k].hidden) && { hidden: true as const }),
   };
 });
 
@@ -489,6 +496,14 @@ const YAHOO_IN_LIBRARY: Record<string, string> = {
   'BTC-USD': 'btc',
   '8306.T': 'mufg',
   'HO=F': 'ulsd',
+  // 派生量的原始腿(服务端原样发出的那几条)
+  '^GSPC': 'spx',
+  '^SPX': 'spx', // Yahoo 搜 spx 先出的是 CBOE 那条标普,同一个指数,也归到这条
+  '^SPXEW': 'spxew',
+  'CL=F': 'wti',
+  'BZ=F': 'brent',
+  'RB=F': 'rbob',
+  '^VIX3M': 'vix3m',
 };
 
 /** Yahoo 代码在库里对应的序列 id;库里没有 → undefined。 */
@@ -581,7 +596,19 @@ export function searchSeries(query: string, extra: SeriesDef[] = []): SeriesDef[
 
   return all.filter(
     (d) =>
+      !d.hidden &&
       familyVisible(d, q) &&
       (!q || [d.label, d.id, d.code ?? '', ...(d.aliases ?? [])].some((s) => s.toLowerCase().includes(q))),
   );
+}
+
+const OP_TEXT: Record<CalcOp, string> = { '-': '−', '/': '÷' };
+
+function seriesName(id: string): string {
+  return seriesDef(id)?.label ?? id;
+}
+
+/** 序列名;计算图层是「A − B」/「A ÷ B」。卡片、图例、缺数据提示共用。 */
+export function seriesLabel(series: string, calc?: { op: CalcOp; series: string }): string {
+  return calc ? `${seriesName(series)} ${OP_TEXT[calc.op]} ${seriesName(calc.series)}` : seriesName(series);
 }
