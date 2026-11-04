@@ -28,18 +28,21 @@ export function parseTreasuryPar(csv: string, colToTenor = COL_TO_TENOR): Record
     return y ? [{ c, date: `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}` }] : [];
   });
 
+  const points = rows.flatMap(({ c, date }) =>
+    cols.flatMap(({ i, tenor }) => {
+      const raw = c[i]?.trim();
+      const v = Number(raw);
+      return raw && Number.isFinite(v) ? [{ tenor, date, value: v }] : [];
+    }),
+  );
+
+  // 按期限分组:两列映射到同一期限时合并,不是后一列盖掉前一列。
   // 一个点都没有的期限不出键(调用方靠「键数为 0」判整张表没解析出来)
   return Object.fromEntries(
-    cols
-      .map(({ i, tenor }): [string, Point[]] => [
-        tenor,
-        rows.flatMap(({ c, date }) => {
-          const raw = c[i]?.trim();
-          const v = Number(raw);
-          return raw && Number.isFinite(v) ? [{ date, value: v }] : [];
-        }),
-      ])
-      .filter(([, pts]) => pts.length),
+    [...Map.groupBy(points, (p) => p.tenor)].map(([tenor, ps]) => [
+      tenor,
+      ps.map(({ date, value }) => ({ date, value })),
+    ]),
   );
 }
 

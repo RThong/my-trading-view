@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
 import { runPlugin } from './runPlugin';
 
@@ -12,6 +12,18 @@ const REPORTED = [
   { name: 'do...while', input: 'do {\n  f();\n} while (ok());' },
   { name: '带 break 照样报(改 find / some)', input: 'for (const x of xs) {\n  if (x) break;\n}' },
   { name: '嵌套循环只报最外层一次', input: 'for (const x of xs) {\n  while (ok(x)) {\n    f();\n  }\n}' },
+  {
+    name: '顺序 await 循环里的同步内层循环照样报',
+    input: 'async function g() {\n  for (const u of us) {\n    await get(u);\n    for (const x of xs) f(x);\n  }\n}',
+  },
+  {
+    name: 'await 只在箭头回调里,不算顺序 await',
+    input: 'for (const x of xs) {\n  fs.push(async () => await f(x));\n}',
+  },
+  {
+    name: 'await 只在 function 回调里,不算顺序 await',
+    input: 'for (const x of xs) {\n  fs.push(async function () {\n    await f(x);\n  });\n}',
+  },
 ];
 
 const ALLOWED = [
@@ -33,12 +45,16 @@ const ALLOWED = [
 ];
 
 const ALL = [...REPORTED, ...ALLOWED];
-const results = new Map(
-  runPlugin(
-    PLUGIN,
-    ALL.map((c) => c.input),
-  ).map((r, i) => [ALL[i].name, r]),
-);
+// 两次 biome 进程放进 beforeAll:跑失败时落在具体的测试钩子上报错,而不是整个文件 import 即崩、看不出是谁
+let results: Map<string, ReturnType<typeof runPlugin>[number]>;
+beforeAll(() => {
+  results = new Map(
+    runPlugin(
+      PLUGIN,
+      ALL.map((c) => c.input),
+    ).map((r, i) => [ALL[i].name, r]),
+  );
+});
 
 describe('报错', () => {
   test.each(REPORTED)('$name', (c) => {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { beforeAll, describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
 import { runPlugin } from './runPlugin';
 
@@ -92,12 +92,16 @@ const MANUAL: Case[] = [
 ];
 
 const ALL = [...CONVERTED, ...UNCHANGED, ...MANUAL];
-const results = new Map(
-  runPlugin(
-    PLUGIN,
-    ALL.map((c) => c.input),
-  ).map((r, i) => [ALL[i].name, r]),
-);
+// 两次 biome 进程放进 beforeAll:跑失败时落在具体的测试钩子上报错,而不是整个文件 import 即崩、看不出是谁
+let results: Map<string, ReturnType<typeof runPlugin>[number]>;
+beforeAll(() => {
+  results = new Map(
+    runPlugin(
+      PLUGIN,
+      ALL.map((c) => c.input),
+    ).map((r, i) => [ALL[i].name, r]),
+  );
+});
 
 // 未改动的 case 也会被 biome 格式化,故 input 都按格式化后的样子写
 describe('改写成 function 声明', () => {

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { Pane } from '../../views/chartDoc/chartDoc';
+import type { Pane } from '../../../views/chartDoc/chartDoc';
 import { distToSpan, nativeScale, nearest, shiftRange } from './useLineDrag';
 
 function pane(scales: string[]): Pane {

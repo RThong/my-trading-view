@@ -1,8 +1,8 @@
 import { type DragEvent, useState } from 'react';
-import type { ChartDoc, PaneTarget } from '../../views/chartDoc/chartDoc';
+import type { ChartDoc, PaneTarget } from '../../../views/chartDoc/chartDoc';
 import { LayerCard, type CardActions } from './LayerCard';
-import { canLogScale, type LayerData } from './layerPoints';
-import type { ChartDocActions } from './useChartDoc';
+import { canLogScale, type LayerData } from '../hooks/layerPoints';
+import type { ChartDocActions } from '../hooks/useChartDoc';
 
 type Props = {
   doc: ChartDoc;

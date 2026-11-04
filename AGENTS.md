@@ -174,7 +174,7 @@
   `react-hooks/exhaustive-deps` 为 error)。因 typescript-eslint 不支持项目用的 TS7,lint 用 Biome/oxlint
   这类 Rust 工具(不依赖 typescript 包)。**不要自动 git commit**,等用户发话。
 - 注释用中文。声明式优先于命令式 `for` 循环。
-- **目录按「纯计算 / 业务」划界,业务再按视角(路由)分**:纯计算放 `web/chart`、`web/lib`、`shared/calc`、
+- **目录按「纯计算 / 业务」划界,业务再按视角(路由)分**:纯计算放 `web/chart`、`shared/calc`、
   `server/analytics`、`server/backtest`(允许循环);前端业务里跨视角复用的视图放 `web/views/`,
   只属于某个视角的 tab 定义 / regime 配置(`dims.ts`)/ 组件放 `web/pages/<视角>/`。业务代码禁循环由 Biome 插件
   `biome-plugins/no-loop.grit` 按目录执行(范围见 `biome.jsonc`):计算逻辑夹在业务文件里就拆进计算目录,别加 `biome-ignore`。

@@ -1,9 +1,9 @@
-import type { Interval } from '../../hooks/interval';
-import { shiftBusinessDays } from '../../chart/analysis';
-import type { ChartDoc } from '../../views/chartDoc/chartDoc';
-import { layerLabel, layerUnit } from './layerLabel';
-import type { LayerData } from './layerPoints';
-import { asOfPoint, type LegendLayout } from './useCrosshairLegend';
+import type { Interval } from '../../../hooks/interval';
+import { shiftBusinessDays } from '../../../chart/analysis';
+import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
+import { layerLabel, layerUnit } from '../layerLabel';
+import type { LayerData } from '../hooks/layerPoints';
+import { asOfPoint, type LegendLayout } from '../hooks/useCrosshairLegend';
 
 /** 数值按量级定小数位:BTC 这种五位数不带小数,利率 / 波动率 / 相关性留两位。 */
 export function fmtValue(v: number | undefined): string {

@@ -11,9 +11,9 @@ import {
   type ISeriesApi,
   type Time,
 } from 'lightweight-charts';
-import { CHART_OPTIONS, type LinePoint } from '../../chart/core';
-import type { Interval } from '../../hooks/interval';
-import type { ChartDoc } from '../../views/chartDoc/chartDoc';
+import { CHART_OPTIONS, type LinePoint } from '../../../chart/core';
+import type { Interval } from '../../../hooks/interval';
+import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
 import { canLogScale, type LayerData } from './layerPoints';
 import { commonRange } from './useEditorSeriesData';
 

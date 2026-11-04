@@ -111,7 +111,7 @@ Check recent runs with `./scripts/cron.sh history`.
 ```
 src/
 ├── shared/                  types · marketCatalog (标的元数据单一真相源;前后端派生)
-│   └── calc/                pure compute shared by both ends (stats · policyPath)
+│   └── calc/                pure compute shared by both ends (stats · policyPath · oilRoll)
 ├── server/
 │   ├── index.ts             Hono app, exports AppType
 │   ├── config.ts            option/price whitelists (derived from marketCatalog)
@@ -125,7 +125,7 @@ src/
     ├── perspectives.tsx     assembles the rail from pages/* (order only)
     ├── components/          Header · TabBar · StatusLight · InfoTip · DatePickerWithPresets
     ├── hooks/               interval · useStable · usePerspectiveNavigation
-    ├── lib/                 generic helpers (http fetcher + SWR opts · utils · oilRoll)
+    ├── lib/                 generic helpers (http fetcher + SWR opts · utils)
     ├── chart/               chart engine + chart-side pure compute, data-source-agnostic:
     │                        multi-pane infra (paneChart.hooks/types + PaneChartView), core (types / aggregate / dates),
     │                        indicators (EMA / Bollinger / MACD / RSI) · zigzag · palette · trendlines · bandFill · analysis

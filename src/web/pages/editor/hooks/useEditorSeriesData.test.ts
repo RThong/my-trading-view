@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { RegimeData } from '../../views/regime/regimeChart.hooks';
+import type { RegimeData } from '../../../views/regime/regimeChart.hooks';
 import {
   CURVE_SOURCES,
   REGISTRY,
@@ -8,10 +8,10 @@ import {
   seriesDef,
   searchSeries,
   yahooId,
-} from '../../views/chartDoc/registry';
+} from '../../../views/chartDoc/registry';
 import { asOfValue } from './useCrosshairLegend';
 import { commonRange, seriesPoints, weekdayOnly } from './useEditorSeriesData';
-import { REGIME_SERIES, isSeriesKey } from '../../../shared/regimeSeries';
+import { REGIME_SERIES, isSeriesKey } from '../../../../shared/regimeSeries';
 
 const regime: RegimeData = {
   series: {

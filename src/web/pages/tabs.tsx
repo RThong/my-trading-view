@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { AssetChart } from '../views/asset/AssetChart';
 import { RegimeChart } from '../views/regime/RegimeChart';
 import type { RegimeDim } from '../views/regime/regimeChart.hooks';
+import { dimPanes } from './regimeDims';
 import { YieldCurvePanel } from '../views/curve/YieldCurvePanel';
 import { TenorHistoryPanel, type SpreadDef } from '../views/curve/TenorHistoryPanel';
 import type { Interval } from '../hooks/interval';
@@ -20,11 +21,13 @@ export function assetTab(id: string, label: string, underlying: string, vrpUnder
 }
 
 export function regimeTab(id: string, label: string, dim: RegimeDim, group?: string): TabDef {
+  // 建 tab 时查一次:基本面维度的 panes 按名单现算,每次调用都是新引用,放进 render 里会每帧重建
+  const panes = dimPanes(dim);
   return {
     id,
     label,
     group,
-    render: (interval) => <RegimeChart dim={dim} interval={interval} />,
+    render: (interval) => <RegimeChart dim={dim} panes={panes} interval={interval} />,
   };
 }
 

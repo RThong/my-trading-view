@@ -14,8 +14,8 @@ import {
   MismatchDirection,
   PriceScaleMode,
 } from 'lightweight-charts';
-import { fmtDate } from '../../chart/core';
-import { findLayer, type ChartDoc, type Pane } from '../../views/chartDoc/chartDoc';
+import { fmtDate } from '../../../chart/core';
+import { findLayer, type ChartDoc, type Pane } from '../../../views/chartDoc/chartDoc';
 import type { LayerSeries } from './useEditorChart';
 
 // 鼠标离线多近算抓住(像素)

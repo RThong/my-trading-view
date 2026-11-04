@@ -235,7 +235,7 @@ TradingView：Pine 是逐根 K 线执行的，天然不容易用到未来数据�
 - 不需要：图表数量。
 
 本项目现状
-- 固定面板：`perspectives.tsx` 定义了 12 个竖向视角；`PaneSpec`（`src/web/views/regime/regimeChart.hooks.ts`）已经是集中式的单格定义，包括 `desc`、`band`、`refLines`、`percentile`、`overlays`、`events`、`clamp/expandVisibleTo`、`rollMismatch`。
+- 固定面板：各视角在 `src/web/pages/<视角>/`（横 tab 在 `index`、regime 格子配置在 `dims`），`perspectives.tsx` 按顺序组装竖向视角；`PaneSpec`（`src/web/views/regime/regimeChart.hooks.ts`）已经是集中式的单格定义，包括 `desc`、`band`、`refLines`、`percentile`、`overlays`、`events`、`clamp/expandVisibleTo`、`rollMismatch`。
 - 图表编辑器（`src/web/pages/editor/`，ChartDoc v1）：格、纵轴、图层三级结构（对标 TradingView 的窗格 / Pin to scale）；支持平移、倒轴、对数轴；分析区只留「叠加对比」：先找偏移，再按规则自动选两者同步的基准段、定比例，B 轴每帧跟 A 轴对齐（滚动相关、领先滞后扫描曲线、参照期日期框已在第三轮 60aa49f 删除）；可以加载任意 Yahoo 代码。**分析能力比参考站强。**
 - 问题：固定面板和编辑器是两套引擎，互不相通；ChartDoc 还表达不了 PaneSpec 的大部分字段；编辑器不能持久化。
 - 长期方向：旧图表映射成 ChartDoc，**旧图往新格式上映射，不是新格式迁就旧代码**。

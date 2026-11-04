@@ -2,8 +2,8 @@
 // 各图层的数值在渲染时由 asOfValue 现算,不进 state。
 import { type RefObject, useEffect, useState } from 'react';
 import type { IChartApi, MouseEventParams } from 'lightweight-charts';
-import { fmtDate, type LinePoint } from '../../chart/core';
-import type { ChartDoc } from '../../views/chartDoc/chartDoc';
+import { fmtDate, type LinePoint } from '../../../chart/core';
+import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
 
 /** 各格绘图区顶边 + 绘图区左边(开了左轴时要让开刻度),相对图表容器的像素。 */
 export type LegendLayout = { tops: number[]; left: number };

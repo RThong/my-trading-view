@@ -7,10 +7,10 @@ import {
   type Layer,
   type Pane,
   type ScaleChoice,
-} from '../../views/chartDoc/chartDoc';
-import { baseLabel, layerLabel } from './layerLabel';
+} from '../../../views/chartDoc/chartDoc';
+import { baseLabel, layerLabel } from '../layerLabel';
 import { NumberField } from './NumberField';
-import type { ChartDocActions } from './useChartDoc';
+import type { ChartDocActions } from '../hooks/useChartDoc';
 
 export type CardActions = Pick<
   ChartDocActions,

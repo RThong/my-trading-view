@@ -1,7 +1,7 @@
 // 图上当前可视的时间区间(防抖后的),给「叠加对比」在视口里选基准段用。
 import { type RefObject, useEffect, useState } from 'react';
 import type { IChartApi, IRange, Time } from 'lightweight-charts';
-import { fmtDate } from '../../chart/core';
+import { fmtDate } from '../../../chart/core';
 
 export type DateRange = { from: string; to: string };
 

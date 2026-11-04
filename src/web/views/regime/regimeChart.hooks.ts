@@ -1,5 +1,5 @@
-// regime 视图(各视角共用)的数据层:取数 + 按 dim 查 pane 配置 + spec 构造。
-// 各 dim 的 pane 配置按视角放在 pages/<视角>/dims.ts(AI 产业链在 pages/ai/fundamentals.ts),这里只汇总。
+// regime 视图(各视角共用)的数据层:取数 + pane 配置的类型 + spec 构造。
+// 各 dim 的 pane 配置按视角放在 pages/<视角>/dims.ts,汇总与 dim → panes 查表在 pages/regimeDims.ts(视图不反向依赖页面)。
 // 图表引擎(usePaneChart/usePaneLayout/useCrosshairLegend)与展示壳(PaneChartView)全复用期权侧。
 import useSWR from 'swr';
 import { useServerRefresh } from '../../hooks/useServerRefresh';
@@ -8,24 +8,11 @@ import { percentile, percentileRank } from '../../../shared/calc/stats';
 import type { SeriesKey } from '../../../shared/regimeSeries';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../../chart/paneChart.types';
-import { rollMismatchDates, type RollMismatchKind } from '../../lib/oilRoll';
+import { rollMismatchDates, type RollMismatchKind } from '../../../shared/calc/oilRoll';
 import type { ChartDoc } from '../chartDoc/chartDoc';
-import { CONCENTRATION } from '../../pages/featured/concentration';
 import { seriesDef } from '../chartDoc/registry';
-import { isAggregateMember, sourcesOf, type FundTrim, type SecFiled, type SecLag } from '../../../shared/aiChain';
+import { isAggregateMember, type FundTrim, type SecFiled, type SecLag } from '../../../shared/aiChain';
 import { getJson, SWR_OPTS } from '../../lib/http';
-import { buyerAggregatePane, buyerQuarterlyPane, SOURCE_PANES } from '../../pages/ai/fundamentals';
-import { CREDIT_DIMS } from '../../pages/credit/dims';
-import { LIQUIDITY_DIMS } from '../../pages/liquidity/dims';
-import { SENTIMENT_DIMS } from '../../pages/sentiment/dims';
-import { MACRO_DIMS } from '../../pages/macro/dims';
-import { JAPAN_DIMS } from '../../pages/japan/dims';
-import { RATES_DIMS } from '../../pages/rates/dims';
-import { INFLATION_DIMS } from '../../pages/inflation/dims';
-import { OIL_DIMS } from '../../pages/oil/dims';
-import { BTC_DIMS } from '../../pages/btc/dims';
-import { AI_DIMS } from '../../pages/ai/dims';
-import { VALUATION_DIMS } from '../../pages/valuation/dims';
 
 // 分位带阈值(自身历史):想改 5/95 更严就动这里。
 const PCTL_LO = 5;
@@ -135,7 +122,7 @@ export type PaneSpec = {
   overlays?: { key: SeriesKey; title: string; color: string; step?: boolean; hidden?: boolean }[];
   /** 事件竖线:序列里每个点的日期画一根满高细柱(发布日这类「哪天发生」的标记,值不画)。 */
   events?: { key: SeriesKey; title: string; color: string }[];
-  /** 两条期货腿相减的格子:灰蓝背景标出合约月份对不上的日子(见 lib/oilRoll)。 */
+  /** 两条期货腿相减的格子:灰蓝背景标出合约月份对不上的日子(见 shared/calc/oilRoll)。 */
   rollMismatch?: RollMismatchKind;
 };
 export type DimConfig = { panes: PaneSpec[] };
@@ -143,27 +130,9 @@ export type DimConfig = { panes: PaneSpec[] };
 export type RegimeDims = Partial<Record<Exclude<FixedDim, DocDim>, DimConfig>>;
 /**
  * 已迁成 ChartDoc 的 tab(与图表编辑器同一格式,序列引注册表 id;见 ./docs)。
- * 逐 tab 往这里挪:挪一个,就从下面 REGIME_DIMS 删掉对应的手写 panes —— 两边同时有,类型会报错。
+ * 逐 tab 往这里挪:挪一个,就从 pages/regimeDims 的 REGIME_DIMS 删掉对应的手写 panes —— 两边同时有,类型会报错。
  */
 export type DocDim = 'concentration';
-export const REGIME_DOCS: Record<DocDim, ChartDoc> = {
-  concentration: CONCENTRATION,
-};
-
-// 各视角的配置在 pages/<视角>/dims.ts;这里只汇总,类型保证每个固定 dim 都有配置。
-export const REGIME_DIMS: Record<Exclude<FixedDim, DocDim>, DimConfig> = {
-  ...CREDIT_DIMS,
-  ...LIQUIDITY_DIMS,
-  ...SENTIMENT_DIMS,
-  ...MACRO_DIMS,
-  ...JAPAN_DIMS,
-  ...RATES_DIMS,
-  ...INFLATION_DIMS,
-  ...OIL_DIMS,
-  ...BTC_DIMS,
-  ...AI_DIMS,
-  ...VALUATION_DIMS,
-};
 
 /**
  * ChartDoc → 固定面板的格子定义。图层的序列 id 经注册表解析成 /api/regime 的键,下游(渲染规格、分位徽标、
@@ -200,25 +169,6 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
 
   return panes;
 }
-// 模块加载时转一次:固定维度的 panes 要是模块常量(RegimeChart 按引用做 memo,见那边的注释)
-const DOC_PANES = Object.fromEntries(
-  Object.entries(REGIME_DOCS).map(([dim, doc]) => [dim, docToPaneSpecs(doc)]),
-) as Record<DocDim, PaneSpec[]>;
-/** dim → panes。基本面维度按名单现算(引用每次新建,故 RegimeChart 里要 useMemo 化的地方已由 dim 固定)。 */
-export function dimPanes(dim: RegimeDim): PaneSpec[] {
-  if (Object.hasOwn(DOC_PANES, dim)) return DOC_PANES[dim as DocDim];
-  if (!dim.startsWith('fundamentals:')) return REGIME_DIMS[dim as Exclude<FixedDim, DocDim>].panes;
-
-  const who = dim.slice('fundamentals:'.length);
-  if (who === 'buyer') return [buyerAggregatePane, buyerQuarterlyPane];
-
-  // 一家可能走多个源(TSM:季度四格来自 sec6k、月营收两格来自 twse)—— 各源的格子按 sources
-  // 顺序拼起来。同一个 key 只留一次:sec 与 sec6k 共用 companyPanes,同时声明两者时会重。
-  const seen = new Set<string>();
-  return sourcesOf(who)
-    .flatMap((s) => SOURCE_PANES[s](who))
-    .filter((p) => !seen.has(p.key) && seen.add(p.key));
-}
 /** 从 panes[] 派生 PaneChartView 需要的平行 map(pane 定义 / 命名 / 配色 / 说明)。 */
 export function derivePaneMeta(panes: PaneSpec[]) {
   return {
@@ -248,8 +198,8 @@ function toLine(rows: RegimePoint[]): LinePoint[] {
 }
 /** 一序列一 pane:pane 下标 = panes 索引;缺失的序列(unavailable)不建 spec,该 pane 留空。
  *  percentile 的 pane:按原始日频值算 P5/P95 作参考线(与显示 interval 无关)。 */
-export function buildRegimeSpecs(data: RegimeData, dim: RegimeDim, interval: Interval): Spec[] {
-  return dimPanes(dim).flatMap((p, pane): Spec[] => {
+export function buildRegimeSpecs(data: RegimeData, panes: PaneSpec[], interval: Interval): Spec[] {
+  return panes.flatMap((p, pane): Spec[] => {
     const key = p.key;
     if (data.unavailable.includes(key)) return []; // unavailable 权威:不建 spec
     const render = p.render ?? { kind: 'line' as const };
@@ -429,22 +379,22 @@ export function secFiledNote(data: RegimeData, dim: RegimeDim): string | undefin
  * 缺口的成因在源侧(companyfacts 那几期压根没有 capex 行,补 tag 链没用),所以
  * **只在这里说,不在 job 里报警** —— 那会是一盏永远修不掉的常驻黄灯。
  */
-export function secTrimNote(data: RegimeData, dim: RegimeDim): string | undefined {
+export function secTrimNote(data: RegimeData, panes: PaneSpec[]): string | undefined {
   if (!data.secTrim?.length) return undefined;
 
-  const keys = new Set(dimPanes(dim).map((p) => p.key));
+  const keys = new Set(panes.map((p) => p.key));
   const mine = data.secTrim.filter((t) => keys.has(t.key));
   if (!mine.length) return undefined;
 
-  const label = (key: string) => dimPanes(dim).find((p) => p.key === key)?.label ?? key;
+  const label = (key: string) => panes.find((p) => p.key === key)?.label ?? key;
   const one = (t: FundTrim) => `${label(t.key)} 少 ${t.dropped} 点(断在 ${t.gapFrom} → ${t.gapTo})`;
 
   return `⚠️ 已裁断档:${mine.map(one).join(';')}`;
 }
 /** 各序列最新值在自身历史里的百分位(徽标用,如 { cor1m: 'P3' })。仅 percentile 的 pane 产出。 */
-export function regimePercentiles(data: RegimeData, dim: RegimeDim): Record<string, string> {
+export function regimePercentiles(data: RegimeData, panes: PaneSpec[]): Record<string, string> {
   return Object.fromEntries(
-    dimPanes(dim).flatMap((p) => {
+    panes.flatMap((p) => {
       if (!p.percentile) return []; // 无分位 pane(含 signed / candle)无徽标
       if (data.unavailable.includes(p.key)) return [];
       const rows = data.series[p.key];
