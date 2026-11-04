@@ -41,6 +41,6 @@ sync_loop() as $loop where {
     JsForInStatement(body=contains $loop),
     JsWhileStatement(body=contains $loop),
     JsDoWhileStatement(body=contains $loop)
-  } as $outer where { $outer <: sync_loop() } ,
+  } as $outer where { $outer <: sync_loop() },
   register_diagnostic(span=$loop, message="业务代码不用循环,改用 map / filter / find / some / reduce(顺序 await 除外)", severity="error")
 }

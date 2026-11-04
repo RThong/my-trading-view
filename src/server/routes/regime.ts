@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import { resolve } from 'node:path';
 import { PROJECT_ROOT } from '../config';
 import { createSwrCache } from './swrCache';
-import type { Database } from 'bun:sqlite';
 import { createFredFetcher } from '../fetchers/fred';
 import { createEiaFetcher } from '../fetchers/eia';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
@@ -16,7 +15,7 @@ import { fetchNakajimaJgb } from '../fetchers/nakajimaJgb';
 import { fetchBojSeries } from '../fetchers/bojStat';
 import { fetchCoreCoreCpiYoy } from '../fetchers/estatCpi';
 import { BOJ_HIKES, betaLegs, depositBeta, jpBankSpreads, monthlyMean } from '../analytics/jpBanks';
-import { fetchMoveSeries, mergeMove } from '../fetchers/moveIndex';
+import { fetchMoveSeries } from '../fetchers/moveIndex';
 import { fetchShillerCape } from '../fetchers/capeShiller';
 import { fetchHlwRstar } from '../fetchers/nyfedRstar';
 import { fetchAcmTermPremium } from '../fetchers/nyfedAcm';
@@ -35,74 +34,25 @@ import {
   retailMargin,
   monthlyAnnualizedPct,
   releaseMarkers,
-  rollingMean,
   eqwDdSpread,
   type Point,
 } from '../analytics/regime';
-import { OIS_INPUT_TENORS, hikesByTenor } from '../../shared/calc/policyPath';
 import type { RegimeSeries, FundSeries, SeriesKey } from '../../shared/regimeSeries';
 import { nearMinusFar } from '../analytics/termStructure';
-import { rollingSharpe } from '../analytics/sharpe';
 import { openDb } from '../storage/db';
-import { getMarketSeries, getPriceBars, getSecLatestFiled, getSecLag } from '../storage/repository';
+import { getSecLatestFiled } from '../storage/repository';
 import { HISTORY_START_DATE, SEASONAL_BASELINE_YEARS } from '../config';
+import type { FundTrim, SecFiled, SecLag } from '../../shared/aiChain';
 import {
-  BUYER_FCF_SERIES,
-  BUYER_FCFQ_SERIES,
-  seriesId as secSeriesId,
-  trailingContiguous,
-} from '../analytics/secFundamentals';
-import { twseSeriesId } from '../fetchers/twseRevenue';
-import {
-  ACTIVE_TICKERS,
-  FUND_KEY_PREFIX,
-  SEC_BUYER_FCF_KEY,
-  SEC_BUYER_FCFQ_KEY,
-  fundKey,
-  kindsOf,
-  trimsGaps,
-  type FundKind,
-  type FundTrim,
-  type SecFiled,
-  type SecLag,
-} from '../../shared/aiChain';
-
-// 后端不 import web 的 Bar(跨边界);内联 OHLC 形状,JSON 与前端 chart 的 Bar 一致。
-type OhlcBar = { time: string; open: number; high: number; low: number; close: number };
-
-/** 库里的日 bar → 蜡烛点。OHLC 三项可空(部分源只给收盘),缺则退化成十字线(open=high=low=close)。 */
-function toOhlc(
-  bars: Array<{ date: string; open: number | null; high: number | null; low: number | null; close: number }>,
-): OhlcBar[] {
-  return bars.map((b) => ({
-    time: b.date,
-    open: b.open ?? b.close,
-    high: b.high ?? b.close,
-    low: b.low ?? b.close,
-    close: b.close,
-  }));
-}
-type RegimeBody = {
-  series: Record<string, Point[]>;
-  unavailable: string[];
-  ohlc?: Record<string, OhlcBar[]>;
-  secLag?: SecLag[];
-  secTrim?: FundTrim[];
-  secFiled?: Record<string, SecFiled>;
-  /** 本次现拉失败、沿用上一份成功数据顶上的序列(见 fillFromPrev)。 */
-  fallback?: string[];
-  /** 服务端缓存已过期、正在后台刷新:前端据此过几秒再取一次。 */
-  refreshing?: boolean;
-  /** 当前缓存值不完整(有源没拉到):服务端要等有请求进来才重试,前端据此隔几分钟再取一次。 */
-  partial?: boolean;
-};
-
-/**
- * `moveLive` 单独存:MOVE 是「现拉的 Yahoo 腿 + 库里的补丁」合并出来的,
- * 而库那半边由 daily job(别的进程)写 —— 只缓存合并结果的话,job 补上的那天最长要等满 TTL 才出现。
- * 存住 live 腿,缓存命中时就能拿它重新和库里的 merge 一次,和 readDbBacked 的动机同一个。
- */
-type RegimeCached = { body: RegimeBody; moveLive: Point[]; sofrLive: Point[] };
+  type RegimeBody,
+  type RegimeCached,
+  mergeDbRead,
+  resolveSofr,
+  fillFromPrev,
+  shouldCache,
+} from './regimePolicy';
+import { toOhlc, readDbBacked, readSecSeries } from './regimeDb';
+import type { OhlcBar } from './regimeKeys';
 
 // stale-while-revalidate(见 swrCache):有旧值先回、过期后台刷新,单个慢源(EIA 偶发卡 40s)不再拖住整页。
 // EOD 日频数据盘中不变,TTL 取 6h 安全;降级结果 10 分钟后重试(不粘 6h,也不每个请求打一轮全套上游)。
@@ -113,319 +63,6 @@ const regimeCache = createSwrCache<RegimeCached>({
   snapshotPath: resolve(PROJECT_ROOT, 'data', 'cache', 'regime.json.gz'),
   load: (prev) => fetchFresh(prev ?? undefined),
 });
-
-/**
- * 缓存里的外部源部分 + 本次读库结果。缓存(尤其是重启后读回的盘上快照)里那份库读序列是旧的:
- * 先整批剔掉,再塞本次读的 —— 只覆盖不剔的话,库里这次没有的 key 会拿缓存旧值冒充。
- * 按 key 集合剔除而不是按前缀:前缀耦合的话,以后往 JOB_WRITTEN_SERIES 里加一条
- * 不叫 gpu* 的(如 vix)就会漏剔,unavailable 里出现重复项。
- */
-export function mergeDbRead(
-  cached: RegimeBody,
-  reads: { series: Record<string, Point[]>; ohlc?: Record<string, OhlcBar[]>; unavailable: string[] }[],
-): Pick<RegimeBody, 'series' | 'ohlc' | 'unavailable'> {
-  const isDbRead = (k: string) => k.startsWith(FUND_KEY_PREFIX) || DB_BACKED_KEYS.has(k);
-  const liveOnly = <V>(rec: Record<string, V> = {}) =>
-    Object.fromEntries(Object.entries(rec).filter(([k]) => !isDbRead(k)));
-
-  return {
-    series: Object.assign(liveOnly(cached.series), ...reads.map((r) => r.series)),
-    ohlc: Object.assign(liveOnly(cached.ohlc), ...reads.map((r) => r.ohlc ?? {})),
-    unavailable: [...cached.unavailable.filter((n) => !isDbRead(n)), ...reads.flatMap((r) => r.unavailable)],
-  };
-}
-
-/**
- * SOFR live 腿(OIS 加息次数的基准)。现拉失败时拿上一份顶上,并把四条加息次数一起标 `fallback`:
- * 否则 `sofr` 线标「沿用上次」、以它为基准的加息次数却成「暂不可用」—— 同一个原因两种提示。
- */
-export function resolveSofr(
-  raw: Point[] | undefined,
-  prev: Point[] | undefined,
-): { sofrLive: Point[]; fallback: string[] } {
-  if (raw?.length || !prev?.length) return { sofrLive: raw ?? [], fallback: [] };
-  return { sofrLive: prev, fallback: OIS_HIKE_HORIZONS.map(([out]) => out) };
-}
-
-/**
- * 本次现拉失败的**外部源**序列,用上一份结果顶上,记入 `fallback`(面板标「沿用上次」)。
- * 库读的(`fund:*` / DB_BACKED_KEYS)不补:它们每次请求都重读库,缺了就是真缺。
- */
-export function fillFromPrev(body: RegimeBody, prev: RegimeBody | undefined): RegimeBody {
-  const fillable = body.unavailable.filter(
-    (n) => !n.startsWith(FUND_KEY_PREFIX) && !DB_BACKED_KEYS.has(n) && prev?.series[n]?.length,
-  );
-  if (!prev || !fillable.length) return body;
-
-  const pick = <V>(rec: Record<string, V> | undefined) =>
-    Object.fromEntries(Object.entries(rec ?? {}).filter(([k]) => fillable.includes(k)));
-  return {
-    ...body,
-    series: { ...body.series, ...pick(prev.series) },
-    ohlc: { ...pick(prev.ohlc), ...body.ohlc },
-    unavailable: body.unavailable.filter((n) => !fillable.includes(n)),
-    fallback: fillable,
-  };
-}
-
-/**
- * AI 链基本面派生量(季频/月频,由 jobs/aiChainFundamentals 每天跑着维护)。库里没有就归 unavailable,
- * 该 pane 留空 —— 这几条不像行情那样天天更新,job 没跑过是常态,不该整页失败。
- *
- * 序列按**启用名单 × 该家各个源的格子种类并集**派生(见 shared/aiChain 的 kindsOf),
- * 键由 fundKey 生成、与面板同源:加公司或加源都不用改这里。
- */
-/** kind → 库里 series_id。查表而非分支:漏一档是编译错误(Record 要求键齐)。 */
-const SERIES_ID: Record<FundKind, (ticker: string) => string> = {
-  // gm/capex/fcf/fcfq 无论来自 companyfacts 还是季报 6-K,原始行都落同一张表、派生同一套
-  // `SEC_*` 序列(见 jobs/sec6kReports),所以这里不必按源分层。
-  gm: (t) => secSeriesId(t, 'GM'),
-  capex: (t) => secSeriesId(t, 'CAPEX'),
-  fcf: (t) => secSeriesId(t, 'FCF'),
-  fcfq: (t) => secSeriesId(t, 'FCFQ'),
-  rev: (t) => secSeriesId(t, 'REV'),
-  revGrowth: (t) => secSeriesId(t, 'REVG'),
-  capexCloud: (t) => secSeriesId(t, 'CAPEXCLOUD'),
-  revM: (t) => twseSeriesId(t, 'revM'),
-  revYoy: (t) => twseSeriesId(t, 'revYoy'),
-};
-
-/**
- * 由**独立 job**写库、因此缓存命中时必须重读的序列(out 键 → market_series 的 symbol)。
- * 这些不像 FRED/CBOE 那样是请求时现拉的:进程内缓存看不到 cryptoDaily 等别的进程刚写进去的行,
- * 不重读的话,job 刚跑完最长还要等 TTL(6h)才在面板上出现。读库很便宜,不值得为它整体失效缓存。
- * GPU 这几条尤其要重读 —— 缓存条件专门放宽了「gpu 前缀缺失也缓存」(库没跑过 job 时四条必然缺、
- * B300 长期允许缺),两个改动合起来会把「GPU 不可用」这个状态缓存住并卡满 6h。
- */
-export const JOB_WRITTEN_SERIES = [
-  // VIX/VXN 同样是 daily job 写库、同样该重读 —— 它们历史非空,所以症状比 GPU 轻
-  // (不是"整格不可用",只是最新一点最长滞后 6h),但性质一模一样,别再漏第二次。
-  ['vix', 'VIX'],
-  ['vxn', 'VXN'],
-  // SKEW 同理(daily 的 vrp_inputs 组写库)。
-  ['skew', 'SKEW'],
-  ['gpuH100', 'CGI_H100'],
-  ['gpuH200', 'CGI_H200'],
-  ['gpuB200', 'CGI_B200'],
-  ['gpuB300', 'CGI_B300'],
-  // ISM 四条(月频,daily 的 ism 分组写库)。**不进 gpu 那种「缺着也缓存」的豁免**:
-  // 回填过就恒有,缺了说明库没回填或 job 坏了 —— 那种状态不该被缓存 6 小时。
-  ['ismMfg', 'ISM_MFG_PMI'],
-  ['ismSvc', 'ISM_SVC_PMI'],
-  ['ismMfgPrices', 'ISM_MFG_PRICES'],
-  ['ismSvcPrices', 'ISM_SVC_PRICES'],
-] as const;
-
-/** 只有 gpu 这几条允许"缺着也缓存"(库没跑过 job 时必然缺、B300 长期允许缺)。 */
-export const GPU_KEY_PREFIX = 'gpu';
-/**
- * 这次结果算不算完整。**完整才长缓存(6h)+ 落盘**;降级结果只缓存 10 分钟就重试、不落盘(见 swrCache)。四类例外:
- *  · `fund:` —— SEC 季频,靠独立 job 逐季攒,从没跑过 job 的库里必然缺。
- *  · `gpu`  —— 新接的 experimental 源,允许缺。
- *  · EIA 八条,**且仅当没配 key 时** —— 那是配置状态,不是失败。
- *  · e-Stat 那条(新核心核心 CPI),同样**仅当没配 ESTAT_APP_ID 时**。
- *
- * ⚠️ 第三条的「仅当」是要害:配了 key 还缺 = 网络挂了或源结构变了,属 transient,
- * 就该算不完整、10 分钟后重试。一律豁免的话会把降级结果缓存 6 小时、还写进盘上快照。
- * ⚠️ 反过来不豁免也不行:README 把 EIA key 写成可选项,缺 key 时这八条恒缺 →
- * `every` 恒 false → 永远不完整:每 10 分钟重拉一轮全套上游,快照也永远写不进盘。
- */
-export function shouldCache(
-  unavailable: readonly string[],
-  { hasEiaKey, hasEstatKey }: { hasEiaKey: boolean; hasEstatKey: boolean },
-): boolean {
-  // e-Stat 同理:没配 appId 时新核心核心 CPI 恒缺,是配置状态不是失败。
-  const exempt = new Set<string>([...(hasEiaKey ? [] : EIA_SERIES), ...(hasEstatKey ? [] : ESTAT_SERIES)]);
-
-  return unavailable.every((n) => n.startsWith(FUND_KEY_PREFIX) || n.startsWith(GPU_KEY_PREFIX) || exempt.has(n));
-}
-
-/**
- * ⚠️ **这张名单是手抄的,必须和主 handler 里实际 `put()` 的那八条一致** ——
- * 将来加第九条 EIA 线却忘了同步,缺 key 时那条不在豁免里 → 缓存又会永久关不上(见 `shouldCache`)。
- * 同文件的 `DB_BACKED_KEYS` 有同构的回归测试,这里同样在 `routes/regime.test.ts` 里钉住。
- */
-export const EIA_SERIES: readonly SeriesKey[] = [
-  'refUtil',
-  'refUtilZ5y',
-  'distStocksZ5y',
-  'gasStocksZ5y',
-  'distExportsZ5y',
-  'distYield',
-  'crudeRunsYoy',
-  'distProdYoy',
-  // 零售两条与两条加价同样只在配了 key 时才有 —— 加价虽然有一条 Yahoo 腿(ULSD/RBOB),
-  // 但缺 key 时零售腿为空、整条出不来,所以照样要豁免。裸 `ulsd` 不在此列(它与 EIA 无关)。
-  'dieselRetail',
-  'gasRetail',
-  'dieselRetailMargin',
-  'gasRetailMargin',
-];
-
-/** 只在配了 e-Stat appId 时才有的序列(见 shouldCache)。 */
-export const ESTAT_SERIES: readonly SeriesKey[] = ['jpCoreCoreCpiYoy'];
-
-/**
- * 读**全部来自本地库**的东西:market_series 的直读几条、price_eod 的蜡烛、以及由它们派生的量。
- * 主路径与缓存命中路径共用这一个函数 —— 上一版只覆盖了 market_series 的成对映射,
- * 结果 qqq / ohlc.btc / btcSharpe1y / vxTermSpread 四组照旧不重读,注释却写着"凡是 job 写的都重读"。
- * 抽成一处就不会再出现"框架比实现宽"这种事:加一条只改这里,两条路径同时生效。
- */
-export function readDbBacked(
-  db: Database,
-  /** MOVE 现拉的那条腿。它不来自库,但 MOVE 的最终值是「它 + 库里补丁」合并出来的,所以合并动作得放在这。 */
-  moveLive: Point[],
-  /** FRED SOFR 定盘值:OIS 加息次数的基准(现拉),曲线那半在库里,所以同样得在这里合。 */
-  sofrLive: Point[],
-): {
-  series: Record<string, Point[]>;
-  unavailable: string[];
-  ohlc: Record<string, OhlcBar[]>;
-} {
-  const series: Record<string, Point[]> = {};
-  const unavailable: string[] = [];
-  const ohlc: Record<string, OhlcBar[]> = {};
-  const put = (name: SeriesKey, value: Point[] | undefined) => {
-    if (value?.length) series[name] = value;
-    else unavailable.push(name);
-  };
-
-  JOB_WRITTEN_SERIES.forEach(([out, sym]) => {
-    put(out, getMarketSeries(db, sym));
-  });
-
-  // QQQ 现货:波动率与情绪两个视角的价格参照 —— 那些指标只有对着价格才读得出「背离还是同步」。
-  // 同 DXY 的处理:close 进 series 管存在性,OHLC 进 ohlc 画蜡烛。
-  // 截到 HISTORY_START_DATE:price_eod 的 ETF 拉到了上市日(给 K 线均线收敛用),这两个视角的其它序列
-  // 多从 2018 起,不截会把整张图的时间轴拉回 1999。
-  const qqqBars = getPriceBars(db, 'QQQ').filter((b) => b.date >= HISTORY_START_DATE);
-  put(
-    'qqq',
-    qqqBars.map((b) => ({ date: b.date, value: b.close })),
-  );
-  if (qqqBars.length) ohlc.qqq = toOhlc(qqqBars);
-
-  // BTC:现货蜡烛 + 1Y 滚动夏普。窗口 365 而非 252 —— crypto 每天都有数据点,
-  // 「一年」就是 365 个点;年化同走 √365(与 VRP 的 BTC 腿同口径,见 analytics/vrp)。
-  // 蜡烛带上当天盘中那根(看盘要);夏普只用已收盘的,盘中那根的收益只有几小时,混进去是偏差。
-  const btcBars = getPriceBars(db, 'BTC');
-  const btcClose = getPriceBars(db, 'BTC', { closedOnly: true }).map((b) => ({ date: b.date, value: b.close }));
-  // 这里**不走 put**(与 qqq 的写法刻意不同):BTC 点数是它们的两倍多,
-  // 把 close 再塞一份进 series 是 ~196KB 的纯冗余 —— 蜡烛只读 ohlc,那份 series 唯一作用是判存在性。
-  // 存在性直接由 ohlc 判,语义不变、payload 省掉。
-  if (btcBars.length) ohlc.btc = toOhlc(btcBars);
-  else unavailable.push('btc');
-  put('btcSharpe1y', rollingSharpe(btcClose, 365, 365));
-  // 供应密度:库里存原始日值,对外发 7 日均线 —— 原始值单日能跳 10pp,Murphy 原图那条就是 7 日均线。
-  const densityRaw = getMarketSeries(db, 'BTC_SUPPLY_DENSITY');
-  put('btcSupplyDensity', rollingMean(densityRaw, 7));
-  put('btcSupplyDensityRaw', densityRaw);
-
-  // 期限结构价差走 nearMinusFar(近端 − 远端,正 = backwardation)。具名 near/far 是刻意的:
-  // 方向写反不会报错、只会让人读反图,而位置参数的调换单测抓不住(见 analytics/termStructure)。
-  // 它是**内连接**:两腿更新不同步时宁可少一根,也不拿旧的一腿配新的另一腿还标成新日期。
-  put('vxTermSpread', nearMinusFar({ near: getMarketSeries(db, 'VX1'), far: getMarketSeries(db, 'VX3') }));
-
-  // MOVE:实时拉的优先,库里的补丁只填 Yahoo 断供的那些天。
-  put('move', mergeMove(moveLive, getMarketSeries(db, 'MOVE')));
-
-  // OIS 隐含「到 N 为止累计计入几次加息」:逐日用当天整条曲线反推。Eris 由 daily job 写库,所以归这一批重读。
-  // 基准 = 当日 SOFR 定盘值;FRED 次日早上才发,当天没有就沿用上一个(≤ 当日最近)。
-  const oisPar = [...oisParByDate(db)].map(([date, par]) => ({
-    date,
-    par,
-    base: sofrLive.findLast((p) => p.date <= date)?.value,
-  }));
-  OIS_HIKE_HORIZONS.forEach(([out, tenor]) => {
-    put(
-      out,
-      oisPar.flatMap(({ date, par, base }) => {
-        const v = base === undefined ? null : hikesByTenor(par, date, tenor, base);
-        return v === null ? [] : [{ date, value: v }];
-      }),
-    );
-  });
-
-  return { series, unavailable, ohlc };
-}
-
-/** OIS 隐含累计加息次数:对外名 → 以哪个期限结尾的那一段远期(见 shared/calc/policyPath)。 */
-const OIS_HIKE_HORIZONS = [
-  ['oisHikes3m', '3M'],
-  ['oisHikes6m', '6M'],
-  ['oisHikes12m', '12M'],
-  ['oisHikes2y', '2Y'],
-] as const;
-
-/** 库里 Eris 各档按日拼成整条曲线(期限 → 百分点)。插入顺序跟 1D 的日期升序走。 */
-function oisParByDate(db: Database): Map<string, Record<string, number>> {
-  const points = OIS_INPUT_TENORS.flatMap((tenor) =>
-    getMarketSeries(db, `ERIS_OIS_${tenor}`).map((p) => ({ tenor, ...p })),
-  );
-
-  // groupBy 的 Map 顺序 = 各日期首次出现的顺序(即 1D 那档的日期升序)
-  const byDate = Map.groupBy(points, (p) => p.date);
-  return new Map([...byDate].map(([date, ps]) => [date, Object.fromEntries(ps.map((p) => [p.tenor, p.value]))]));
-}
-
-/** 这一批的 key 全集:缓存命中时要先把旧条目按 key 剔掉,再塞新读到的。 */
-export const DB_BACKED_KEYS: ReadonlySet<string> = new Set<string>([
-  ...JOB_WRITTEN_SERIES.map(([out]) => out),
-  'qqq',
-  'btc',
-  'btcSharpe1y',
-  'btcSupplyDensity',
-  'btcSupplyDensityRaw',
-  'vxTermSpread',
-  'move',
-  ...OIS_HIKE_HORIZONS.map(([out]) => out),
-]);
-
-function readSecSeries(db: Database): {
-  series: Record<string, Point[]>;
-  unavailable: string[];
-  lag: SecLag[];
-  trims: FundTrim[];
-} {
-  const defs = [
-    ...ACTIVE_TICKERS.flatMap((ticker) =>
-      kindsOf(ticker).map((kind) => ({
-        out: fundKey(ticker, kind),
-        id: SERIES_ID[kind](ticker),
-        // 裁不裁由「折线还是柱状」决定,和源无关(见 shared/aiChain 的 KIND_RENDER)。
-        trim: trimsGaps(kind),
-      })),
-    ),
-    { out: SEC_BUYER_FCF_KEY, id: BUYER_FCF_SERIES, trim: trimsGaps('fcf') },
-    // 单季合计是柱状 → 不裁。裁了会在真缺一季时把缺口之前的历史柱全砍掉。
-    { out: SEC_BUYER_FCFQ_KEY, id: BUYER_FCFQ_SERIES, trim: trimsGaps('fcfq') },
-  ];
-
-  const read = defs.map(({ out, id, trim }) => {
-    const raw = getMarketSeries(db, id);
-    return { out, raw, rows: trim ? trailingContiguous(raw) : raw };
-  });
-
-  // 裁掉了多少必须回报:裁本身是对的,**静默才是问题** —— 用户只看到一条短线,
-  // 分不清是「这家上市晚」还是「中间缺了几季、TTM 整段作废」(见 FundTrim)。
-  // trailingContiguous 保留的是尾段,所以被裁掉的是前 dropped 个点。
-  const trims: FundTrim[] = read
-    .filter(({ raw, rows }) => raw.length > rows.length)
-    .map(({ out, raw, rows }) => {
-      const dropped = raw.length - rows.length;
-      return { key: out, dropped, gapFrom: raw[dropped - 1]!.date, gapTo: rows[0]!.date };
-    });
-
-  const series: Record<string, Point[]> = Object.fromEntries(
-    read.filter(({ rows }) => rows.length).map(({ out, rows }) => [out, rows]),
-  );
-  const unavailable = read.filter(({ rows }) => !rows.length).map(({ out }) => out);
-
-  // 只保留启用名单里的:名单外的公司(曾启用过、水位还留在库里)不该在面板上冒出来。
-  const lag = getSecLag(db).filter((l) => ACTIVE_TICKERS.includes(l.ticker));
-
-  return { series, unavailable, lag, trims };
-}
 
 /**
  * 宏观 / regime 指标:现拉外部源(零存储,见 spec),并行 + 优雅降级 + 内存 TTL 缓存。
@@ -609,7 +246,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const eiaKey = process.env.EIA_API_KEY ?? '';
   const eia = createEiaFetcher({ apiKey: eiaKey });
   // 没 key 就别发这六个请求 —— 每个都会往回抛同一句「缺 key」,徒增六次往返和六行日志。
-  // 那不是失败,是没配;下面 hasEiaKey 也据此把这八条从缓存条件里豁免。
+  // 那不是失败,是没配;下面 hasEiaKey 也据此把 EIA 那 12 条(见 EIA_SERIES)从缓存条件里豁免。
   if (!eiaKey) console.warn('[regime] 未配 EIA_API_KEY,「炼厂·库存」整块不可用(其余视角不受影响)');
   const eiaWeekly = (id: string): Promise<Point[] | null> =>
     eiaKey
@@ -981,7 +618,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 全成功才算 complete(降级结果只短暂缓存、不落盘,见 swrCache)。例外:SEC 那几条是季频、GPU 那几条(gpu 前缀)
   // 是新接的 experimental 源(B300 允许缺、库还没跑过 job 时四条都缺)—— 两者都靠独立 job 逐日/逐季攒,
   // 从没跑过 job 的库里必然缺——不能让这类常态把整条路由的缓存永久关掉。
-  // 没配 key 时 EIA 那八条恒缺 —— 与 SEC/GPU 同属「必然缺」,不能让它把缓存永久关掉。
+  // 没配 key 时 EIA 那 12 条恒缺 —— 与 SEC/GPU 同属「必然缺」,不能让它把缓存永久关掉。
   // 配了 key 才缺则是真失败(网络/源结构变了),照旧挡住缓存等下次重试。
   const complete = shouldCache(unavailable, { hasEiaKey: Boolean(eiaKey), hasEstatKey: Boolean(estatKey) });
   const filled = complete ? fresh : fillFromPrev(fresh, prev?.body);

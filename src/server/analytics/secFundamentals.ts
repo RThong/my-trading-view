@@ -19,6 +19,7 @@
 import type { SecFundamentalRow } from '../storage/repository';
 import type { SegmentFact } from '../../shared/aiChain';
 import type { Point } from './regime';
+import { latestIso } from '../../shared/calc/isoDate';
 
 export type { Point };
 
@@ -248,7 +249,7 @@ export function tagConflicts(facts: CompanyFacts): TagConflict[] {
   const ends = byConcept.flatMap(([, maps]) => maps.flatMap((m) => [...m.values()].map((p) => p.end)));
   if (ends.length === 0) return [];
 
-  const newest = ends.reduce((m, e) => (e > m ? e : m));
+  const newest = latestIso(ends);
   const cutoff = new Date(Date.parse(newest) - CONFLICT_WINDOW_QUARTERS * 91 * DAY_MS).toISOString().slice(0, 10);
 
   return byConcept.flatMap(([concept, maps]) => {
@@ -802,7 +803,7 @@ export function aggregateFcf(byTicker: Map<string, QuarterPoint[]>): Point[] {
     if (points.some((p) => p === undefined)) return []; // 缺一家就不出点
 
     // obs_date 取该季各家里最晚的期末——合计要到最后一家的期末才算齐。
-    const date = points.map((p) => p!.date).reduce((a, b) => (a > b ? a : b));
+    const date = latestIso(points.map((p) => p!.date));
     return [{ date, value: points.reduce((s: number, p) => s + p!.value, 0) }];
   });
 }

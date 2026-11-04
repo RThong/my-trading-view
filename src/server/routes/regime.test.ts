@@ -49,18 +49,17 @@ test('nearMinusFar:任一腿为空 → 空结果', () => {
 // 往名单里加一条不叫 gpu* 的(vix 就是)就会漏剔、unavailable 里出现重复。所以按 key 集合剔。
 import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
+import { readDbBacked } from './regimeDb';
 import {
-  JOB_WRITTEN_SERIES,
   GPU_KEY_PREFIX,
-  DB_BACKED_KEYS,
-  readDbBacked,
   shouldCache,
   EIA_SERIES,
   ESTAT_SERIES,
   fillFromPrev,
   mergeDbRead,
   resolveSofr,
-} from './regime';
+} from './regimePolicy';
+import { JOB_WRITTEN_SERIES, DB_BACKED_KEYS } from './regimeKeys';
 
 test('JOB_WRITTEN_SERIES:out 键唯一、symbol 唯一', () => {
   const outs = JOB_WRITTEN_SERIES.map(([out]) => out);
@@ -110,7 +109,7 @@ test('shouldCache:SEC / GPU 缺席是常态,不挡缓存', () => {
   expect(ok(['fund:NVDA:fcf', 'gpuB300'], true)).toBe(true);
 });
 
-test('shouldCache:没配 EIA key 时那八条恒缺,必须豁免 —— 否则缓存永久关不上', () => {
+test('shouldCache:没配 EIA key 时那 12 条恒缺,必须豁免 —— 否则缓存永久关不上', () => {
   // 这正是回归点:不豁免的话每次请求都会重拉 FRED/CBOE/Yahoo 全套上游。
   expect(ok([...EIA_SERIES], false)).toBe(true);
   expect(ok([...EIA_SERIES, 'fund:NVDA:fcf'], false)).toBe(true);
@@ -121,7 +120,7 @@ test('shouldCache:配了 key 还缺 = 真失败,照旧挡住缓存等下次重�
   expect(ok(['distStocksZ5y'], true)).toBe(false);
 });
 
-test('shouldCache:豁免只覆盖 EIA 那八条,别的源缺席照样挡', () => {
+test('shouldCache:豁免只覆盖 EIA 那 12 条,别的源缺席照样挡', () => {
   expect(ok(['hyOas'], false)).toBe(false);
   expect(ok([...EIA_SERIES, 'hyOas'], false)).toBe(false);
 });
