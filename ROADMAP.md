@@ -86,7 +86,7 @@ L0 数据         采集 · 调度 · 存储 · 新鲜度
 | L4 | ❌ 无。只有顶栏数据状态灯 | 信号触发页（每日扫 504 张图）+ 策略回撤提醒 + 企微推送 | Alerts（价格 / 指标 / alertcondition，推送 / 邮件 / webhook） |
 | L3 | PaneSpec 里 22 格 `percentile.riskTail`、11 格 `refLines`/`band`；`backtest/signal.ts` 一个状态机 | 写死在各图的生成代码里 | Pine Script 与内置指标 |
 | L2 | 固定面板（`perspectives.tsx`，12 个视角）+ 图表编辑器（ChartDoc v1） | 883 张 Plotly 固定图 + 「制作图表」 | 图表布局、多图同步、画线、模板 |
-| L1 | `shared/regimeSeries.ts` 名字联合类型；编辑器另有一份 30 条注册表 | 构建时 Python 管线生成；point-in-time 成分股 | 价差符号、`request.security` |
+| L1 | `shared/regimeSeries.ts` 名字联合类型；~~编辑器另有一份 30 条注册表~~ `shared/seriesMeta.ts` 统一登记，编辑器可搜 347 条（db37326） | 构建时 Python 管线生成；point-in-time 成分股 | 价差符号、`request.security` |
 | L0 | 二十多个源、launchd 三组 job、`job_run`、状态灯 | 源很广，有数据健康页（按 tab 标 lag_days / stale） | 交易所行情、`ECONOMICS:` 宏观符号 |
 
 ### 2.2 逐层缺口矩阵
@@ -105,8 +105,8 @@ L0 数据         采集 · 调度 · 存储 · 新鲜度
 
 | 能力 | 本项目 | 参考站 | TradingView | 结论 |
 |---|---|---|---|---|
-| 单一序列注册表 | 部分（两套） | 有（构建时生成目录） | 有（符号体系） | 缺，L1-1 |
-| as-of 对齐、统一频率 | 部分 | 有 | 有（`request.security`） | 随 L1-1 一起做 |
+| 单一序列注册表 | ~~部分（两套）~~ 有 | 有（构建时生成目录） | 有（符号体系） | ~~缺，L1-1~~ 已完成（db37326） |
+| as-of 对齐、统一频率 | ~~部分~~ 有（计算图层的 `combineSeries`） | 有 | 有（`request.security`） | ~~随 L1-1 一起做~~ 已完成（730b9b8 / 02e3c95） |
 | 无前视约定（发布滞后、repaint 声明） | 部分（有 `*Release`） | 部分 | 有（lookahead 参数 + repaint 文档） | 缺约定，L1-2 |
 | point-in-time 成分股宽度 | 无 | 有 | — | 不借（本项目不做宽度） |
 
@@ -115,7 +115,7 @@ L0 数据         采集 · 调度 · 存储 · 新鲜度
 | 能力 | 本项目 | 参考站 | TradingView | 结论 |
 |---|---|---|---|---|
 | 多格共用时间轴 | 有 | 有 | 有 | 不缺 |
-| 图表即 JSON，可存可载 | 部分（ChartDoc 不能持久化） | 有 | 有（布局保存） | 缺，L2-2 |
+| 图表即 JSON，可存可载 | 部分（~~ChartDoc 不能持久化~~ 已有 localStorage 自动保存 + JSON 导入；缺图表列表、URL 带图） | 有 | 有（布局保存） | 缺，L2-2 |
 | 固定图一键带进编辑器 | 无 | 有（✎ 编辑） | 有 | 缺，L2-1 / L2-3 |
 | 标注：竖线、水平线、标题、导出 PNG | 无 | 有 | 有（画线工具） | 缺，L2-5 |
 | 分析：叠加对比（自动找偏移、自动选同步基准段、定比例，两根轴联动） | 有（较强） | 部分（只能平移） | 部分（要写 Pine） | **本项目领先** |
@@ -209,7 +209,7 @@ TradingView：数据是平台提供的，个人项目借不了。
 本项目现状
 - `shared/regimeSeries.ts`：名字用联合类型，前后端拼错就是编译错误。这个设计很好。
 - `backtest/signal.ts` 的分位数用扩张窗口（只含过去和当天），并有锁死测试。
-- 问题：图表编辑器另有一份注册表 `views/chartDoc/registry.ts`（约 30 条），和 `REGIME_SERIES` 是两套。
+- ~~问题：图表编辑器另有一份注册表 `views/chartDoc/registry.ts`（约 30 条），和 `REGIME_SERIES` 是两套。~~ 已解决（db37326）。
 
 参考站
 - 可借：成分股按 point-in-time 逐日重建，包含退市股，用来消除幸存者偏差。「制作图表」的四则运算会先按「统一频率」做 as-of 对齐再代入公式，默认对齐到频率最低那条序列的日期；最近值太旧（> 7 天或 > 该线中位间隔 × 1.6）就跳过这一天。
@@ -218,7 +218,7 @@ TradingView：数据是平台提供的，个人项目借不了。
 TradingView：Pine 是逐根 K 线执行的，天然不容易用到未来数据。`request.security` 有 lookahead 参数，平台有专门的 repainting（历史信号被改写）文档。可借的是这个**概念**：任何派生序列都要回答「它会不会改写历史」。
 
 提案
-- **L1-1（P1）注册表统一**。机制已经有了：编辑器注册表 = 静态表（约 28 条，`/api/regime`、`/api/price`、`/api/yield-curve`）+ Yahoo 动态（`yh:<代码>`）。要做的是**补登记**：静态表改为从 `REGIME_SERIES` 加元数据（单位、频率、类别、别名、发布滞后、默认样式）派生，后端已有的上百个 key 全部可搜，不再自己维护一份名单。约半天。
+- ~~**L1-1（P1）注册表统一**~~ ✅ 已完成（db37326：`shared/seriesMeta.ts` 按 `Record<RegimeSeries, …>` 登记，漏登即编译错误）。机制已经有了：编辑器注册表 = 静态表（约 28 条，`/api/regime`、`/api/price`、`/api/yield-curve`）+ Yahoo 动态（`yh:<代码>`）。要做的是**补登记**：静态表改为从 `REGIME_SERIES` 加元数据（单位、频率、类别、别名、发布滞后、默认样式）派生，后端已有的上百个 key 全部可搜，不再自己维护一份名单。约半天。
   验收：新加一条 regime 序列后，编辑器无需改代码就能搜到它。
   已知限制：Yahoo 搜索只认英文名 / 代码；Yahoo 序列读时现拉、只在内存缓存不落库，Yahoo 挂了这些图层就空（自家序列有库兜底）。
 - L1-2（P1）无前视约定写进 `AGENTS.md`：派生序列只允许滚动窗口或扩张窗口；低频序列按发布日对齐；如果必须用全样本拟合，在序列描述里标明「会重算历史」。约 15 分钟。
@@ -236,8 +236,8 @@ TradingView：Pine 是逐根 K 线执行的，天然不容易用到未来数据�
 
 本项目现状
 - 固定面板：各视角在 `src/web/pages/<视角>/`（横 tab 在 `index`、regime 格子配置在 `dims`），`perspectives.tsx` 按顺序组装竖向视角；`PaneSpec`（`src/web/views/regime/regimeChart.hooks.ts`）已经是集中式的单格定义，包括 `desc`、`band`、`refLines`、`percentile`、`overlays`、`events`、`clamp/expandVisibleTo`、`rollMismatch`。
-- 图表编辑器（`src/web/pages/editor/`，ChartDoc v1）：格、纵轴、图层三级结构（对标 TradingView 的窗格 / Pin to scale）；支持平移、倒轴、对数轴；分析区只留「叠加对比」：先找偏移，再按规则自动选两者同步的基准段、定比例，B 轴每帧跟 A 轴对齐（滚动相关、领先滞后扫描曲线、参照期日期框已在第三轮 60aa49f 删除）；可以加载任意 Yahoo 代码。**分析能力比参考站强。**
-- 问题：固定面板和编辑器是两套引擎，互不相通；ChartDoc 还表达不了 PaneSpec 的大部分字段；编辑器不能持久化。
+- 图表编辑器（`src/web/pages/editor/`，ChartDoc v1）：格、纵轴、图层三级结构（对标 TradingView 的窗格 / Pin to scale）；支持平移、倒轴、对数轴；分析区只留「叠加对比」：先找偏移，再按规则自动选两者同步的基准段、定比例，B 轴每帧跟 A 轴对齐（滚动相关、领先滞后扫描曲线、参照期日期框已在第三轮 60aa49f 删除）；可以加载任意 Yahoo 代码；计算图层 A − B / A ÷ B（730b9b8）。**分析能力比参考站强。**
+- 问题：固定面板和编辑器是两套引擎，~~互不相通~~（已有 `docToPaneSpecs` 单向桥，集中度 tab 试点，8f69743）；ChartDoc 还表达不了 PaneSpec 的大部分字段；~~编辑器不能持久化~~（已有 localStorage 自动保存，f4a0636）。
 - 长期方向：旧图表映射成 ChartDoc，**旧图往新格式上映射，不是新格式迁就旧代码**。
 
 参考站
@@ -257,24 +257,38 @@ TradingView
 - 画线工具和模板；对象树；数据窗口（同时显示所有序列在光标处的值）。
 - 可借：「布局即数据」「同步」「模板」。不借：画线工具的完整体系。
 
+**设计约定**（参照 TradingView 的分工，2026-11-05 定）
+- JSON 只存「画什么、怎么画」，计算逻辑不进 JSON。TradingView 的布局 JSON 对 Pine 脚本也只存「脚本 id + 版本 + 参数 + 样式覆盖」，不存代码，也不存算出来的数。
+- 属性还是图层：「怎么画已有的数」（颜色、倒轴、对数、参考线、轴范围）做属性；「产生新的数」（均线、z、同比）做独立图层。同一种可以加多个（MA20 + MA200），放哪一格、挂哪根轴另设。
+- 对应关系：注册表 id ≈ 脚本 id；`calc` ≈ TradingView 标的框里的 `A-B` / `A/B` 价差表达式（不走 Pine）；服务端派生量 ≈ 自写 Pine；变换图层（L2-1 第 8 项）≈ 内置指标菜单。能用表达式写的，不依赖外部代码。
+- 条件型标注（错月底色、状态背景）拆成「0/1 序列（服务端或 `shared/calc` 算）+ 背景图层」，不做成格子上的私有字段。
+- 手动画线与图表定义分开存：内置 ChartDoc 只读，画线存用户覆盖层，按 `pane.id` 对应；锚点用 `{ time, price }`（超出最后一根 K 线时记偏移根数），不用 K 线下标——历史起点一变，下标就整体错位。
+
 **提案**（这一组就是「逐步完善 JSON」的具体步骤）
 - **L2-1（P1）ChartDoc 补齐表达能力**。全部是可选字段，保持 v1，按下面的顺序加：
-  1. render：line（带 step、baseline）、signed、candle
-  2. `refLines`、`band`：跟随所在图层的纵轴
-  3. `desc`：挂在格子上
-  4. `percentile`：P5/P95 带和 riskTail
-  5. `events`：事件竖线
-  6. `clamp/expandVisibleTo`
-  7. 背景色带（按状态给背景上色）、两条线之间填色
-  8. 变换：均线、同比、Z-score、起点 = 100（期数按各序列自身频率算）
+  1. render：~~line（带 step、baseline）~~、signed、candle（candle 需要取数层出 OHLC）
+  2. ~~`refLines`~~、`band`：跟随所在图层的纵轴。`band` 不另设字段，改写成两条 refLines（「常态下限 / 上限」），沿用「有参考线时 percentile 只染背景」的渲染规则
+  3. ~~`desc`：挂在格子上~~（另加了格子 `label`）
+  4. ~~`percentile`：P5/P95 带和 riskTail~~
+  5. `events`：事件竖线，做成图层画法 `render: { kind: 'events' }`（日期仍取注册表序列）
+  6. `clamp/expandVisibleTo`：做成纵轴（Scale）的属性
+  7. 背景色带（按状态给背景上色）、两条线之间填色。背景色带 = 图层画法 `render: { kind: 'background' }` + 一条 0/1 序列；PaneSpec 的 `rollMismatch` 改由服务端发两条 0/1 序列（`oilRoll` 照算，按 WTI 交易日；改前逐日对账 4 格的错月日集合）
+  8. 变换：均线、同比、Z-score、起点 = 100（期数按各序列自身频率算）。做成图层上的参数（如 `transform: { ma: 20 }`），不做成被引用序列的属性
+  9. 图层 `hidden`：默认隐藏（对应 PaneSpec `overlays[].hidden`）
 
-  现状：ChartDoc 只有一种图层——折线序列（`chartDoc.ts` 的 `Layer`；相关性 study 图层已在 60aa49f 删除），以上全部缺。这一组不补齐，固定面板迁不过来，只能做到「编辑器像 TradingView」，做不到「整站由 JSON 配置」。
+  ~~现状：ChartDoc 只有一种图层——折线序列（`chartDoc.ts` 的 `Layer`；相关性 study 图层已在 60aa49f 删除），以上全部缺。~~
+  现状（2026-11-04）：划掉的几项已作为可选字段加进 ChartDoc（8f69743），固定面板经 `docToPaneSpecs` 能画，编辑器只保留不画；另加了计算图层 `calc`（730b9b8）。这一组不补齐，固定面板迁不过来，只能做到「编辑器像 TradingView」，做不到「整站由 JSON 配置」。
   前三项约半天，1 到 6 约 2 天，7、8 另加约 1 天。验收：用 ChartDoc 写出「信用」视角的 hyOas 格，渲染结果和现有固定面板一致。
-- **L2-2（P1）编辑器持久化**。localStorage 自动保存当前的图，另有「我的图表」列表；URL 里带上 ChartDoc 便于书签。载入一律先过 `parseChartDoc`。约 1 小时。
-- **L2-3（P1）固定面板迁移成 ChartDoc，加「在编辑器中打开」**。视角配置改为按 id 引用 ChartDoc，同一张图只有一份，避免参考站那种重复挂载。先迁移一个视角做验证，再整体迁移。约 2 到 3 天。
+- **L2-2（P1）编辑器持久化**。~~localStorage 自动保存当前的图~~（f4a0636，另加了 JSON 导入），另有「我的图表」列表；URL 里带上 ChartDoc 便于书签。载入一律先过 `parseChartDoc`。约 1 小时。
+- **L2-3（P1）固定面板迁移成 ChartDoc，加「在编辑器中打开」**。视角配置改为按 id 引用 ChartDoc，同一张图只有一份，避免参考站那种重复挂载。先迁移一个视角做验证，再整体迁移。约 2 到 3 天。进度：~~先迁一个做验证~~ 已迁「特色指标 · 集中度」一个 tab（8f69743）；「在编辑器中打开」未做。
+  目标是 PaneSpec 退场，分两步：
+  ① L2-1 补齐后，写反向转换 `paneSpecsToDoc`，用脚本生成全部视角的 ChartDoc（不手抄）；测试断言 `docToPaneSpecs` 转回后与原 PaneSpec 逐字段相等（画面零变化）。删掉各 `dims.ts` 的手写 PaneSpec，类型退为转换层内部类型。迁移时 `pane.id` = 原 key，格子顺序 / 折叠 / 手绘趋势线的本地存档都按它认，不能丢（集中度计算格换 key 时丢过一次趋势线）。约 2 天。
+  ② 编辑器渲染器补齐 L2-1 全部画法，固定面板改用它的只读模式，删掉 `docToPaneSpecs` 与旧 regime 渲染链路；手动画线同步迁过来（见 L2-5）。约 3 到 4 天。
+  不在范围：旧引擎 `PaneChartView` 还给 AssetChart / TenorHistoryPanel / AttackDefensePanel 用；SEC 申报提示、「暂不可用」提示按视角和数据状态生成，留在固定面板外层，不进 ChartDoc。
   验收：任意 regime 格右上角有「编辑」入口，点开后编辑器内容和原格一致，修改不影响原格。
-- **L2-4（P1）ChartDoc 校验测试**。存成 JSON 会丢掉编译期的拼写检查，要用一个测试补回来：遍历所有内置 ChartDoc，检查每个 series 都在注册表里。注册表 id 一旦用过就不再改名；真要改，在 parseChartDoc 里按 v 做迁移。约 30 分钟。
+- ~~**L2-4（P1）ChartDoc 校验测试**~~ ✅ 已完成（`views/regime/docs.test.ts`：内置 ChartDoc 逐个过 JSON 往返 + 序列都在注册表）。存成 JSON 会丢掉编译期的拼写检查，要用一个测试补回来：遍历所有内置 ChartDoc，检查每个 series 都在注册表里。注册表 id 一旦用过就不再改名；真要改，在 parseChartDoc 里按 v 做迁移。约 30 分钟。
 - L2-5（P2）编辑器补「标、记」：标题和叙述、竖线事件、导出 PNG（lightweight-charts 自带 `takeScreenshot()`）。约半天。
+  手动画线（现在只在旧引擎里，`chart/trendlines.hooks.ts`）随 L2-3 第②步迁到编辑器：按设计约定存用户覆盖层，锚点从 `logical` 换成 `{ time, price }`，旧存档按日期换算过去。在那之前不动，免得迁两次。
 - **L2-6（P2）MCP 出图：自然语言叠加**。外部（Claude Desktop、claude.ai、知识库会话）说一句「把黄金和 10Y 实际利率叠一起，看近 5 年」，直接拿到叠好的清晰图。
   - 分工：自然语言理解和选序列由**客户端大模型**做；本项目 MCP 只做确定性计算（取数 → 叠加 → 出图），同样输入永远同样输出，符合 §0.5 分工。
   - 工具：`search_series(query)` 搜注册表 → `get_series(id, from, to)` 取数 → `overlay(a, b, from, to)` 跑 `bestOverlay`（找偏移 + 自动选基准段 + 定比例），返回带 `shift` / `fit` 的 ChartDoc → `render_chart(doc)` 返回 PNG + 编辑器链接（点开可接着改）。
@@ -447,13 +461,19 @@ TradingView
 | 阶段 | 内容 | 合计 | 完成后能做什么 |
 |---|---|---|---|
 | 一：让看板来找你 | L3-1 规则抽离 → L4-1 存档 + 扫描 → L4-2 推送 → L4-3 今日变化条和 API | 约 1 天 | 每天只看发生变化的 N 格；N 为 0 的日子不用打开看板；从这天起开始积累真实的上线后记录 |
-| 二：图表即数据 | L2-2 编辑器持久化 → L2-1 ChartDoc 补字段 → L2-4 校验测试 → L1-1 注册表统一 → L2-3 迁移固定面板并打通编辑器 | 3 到 4 天 | 任意一格都能带进编辑器；同一张图只有一份 |
+| 二：图表即数据 | L2-2 编辑器持久化（部分）→ L2-1 ChartDoc 补字段（部分）→ ~~L2-4 校验测试~~ → ~~L1-1 注册表统一~~ → L2-3 迁移固定面板并打通编辑器 | 3 到 4 天 | 任意一格都能带进编辑器；同一张图只有一份 |
 | 三：变化与分析联动 | 从 state_daily 的变化一键生成 ChartDoc（变化的序列 + 同组相关序列 + 现货） | 约半天 | 收到通知 → 打开预配好的分析图 → 继续加线 |
 | 四：判断与复盘 | L0-2 OAS 镜像、L5-2 流动性阶梯、L5-3 AI 日报 skill、L5-4 事件日历、L6-1 敏感性表、L6-2 决策日志、L6-3 历史回放、L0-1 序列级新鲜度、L2-5 编辑器「标、记」、L2-6 MCP 出图（需阶段二完成）、L3-2 / L4-4 共振 | 按需挑选 | — |
 
 阶段一不依赖阶段二，可以立即开始。阶段一里抽出的 alertRules 也是阶段二 `refLines`/`band` 和阶段四流动性阶梯的共同来源，只需要抽一次。L0-2（OAS 镜像）也是「只能从今往后攒」型，宜尽早做。
 
 后话，先不做：表达式图层（类似 Pine 的公式，如 `zscore(A/B, 252)`，函数只允许不看未来的版本）、TS 指标模块（`defineIndicator`）。等 ChartDoc 稳定以后，再在 ChartDoc 上加一个 expr 图层类型。在线脚本沙箱不做。
+
+表达式图层本质是把一部分服务端计算交给用户在 JSON 里写，和其他功能耦合低，可以放最后。但下面几条现在就要守住，以后接上不用返工：
+1. 图层「数据来源 → 名称 / 单位 / 取数」的解析集中在少数几处（`registry.ts` 的 `seriesDef` / `seriesLabel`、`useSeriesData` 的 `calcPoints`），别处不要假设 `series` 一定能在注册表查到。以后加 `expr` 字段只改这几处，照 `calc` 的接法。
+2. 先做 L2-1 第 8 项变换（相当于内置指标菜单），能覆盖大部分需求；完整的表达式语言视需要再做，可能永远用不上。
+3. 变换 / 表达式的计算放 `shared/`（同 `calc` 用的 `combineSeries`），L4 服务端扫描与报警能复用同一份。
+4. 函数只提供滚动窗口 / 扩张窗口版本，不看未来（L1-2）。
 
 ---
 
