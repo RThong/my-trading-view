@@ -1,12 +1,15 @@
 import { type DragEvent, type ReactNode, useState } from 'react';
-import { CircleAlert, GripVertical, X } from 'lucide-react';
+import { CircleAlert, GripVertical, Settings2, X } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { NativeSelect, NativeSelectOption } from '../../../components/ui/native-select';
+import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
 import {
   fitScaleIds,
   isFitTarget,
   type CalcOp,
   type ChartDoc,
+  type Fit,
   type Layer,
   type Pane,
   type ScaleChoice,
@@ -30,6 +33,10 @@ function decodeScale(v: string): ScaleChoice {
 }
 
 const LOCKED_TITLE = '叠加中由「叠加对比」设定,先取消叠加才能改';
+
+function stopPropagation(e: DragEvent) {
+  e.stopPropagation();
+}
 
 type Props = {
   doc: ChartDoc;
@@ -76,6 +83,8 @@ export function LayerCard({
         : `独立轴 ${overlays.findIndex((s) => s.id === layer.scale) + 1}`;
   const inverted = !!scale?.invert;
   const log = !!scale?.log;
+  // 计算只选了运算、还没选第二条时先记在卡片上:CalcRow 在弹层里,弹层一关 / 切 tab 就卸载,记在那里会丢
+  const [pendingCalc, setPendingCalc] = useState<PendingCalc>();
 
   return (
     <li
@@ -101,7 +110,7 @@ export function LayerCard({
           className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border-0 bg-transparent p-0"
           title="颜色"
         />
-        <span className="min-w-0 truncate text-sm text-neutral-200" title={layerLabel(doc, layer)}>
+        <span className="min-w-0 flex-1 truncate text-sm text-neutral-200" title={layerLabel(doc, layer)}>
           {layerLabel(doc, layer)}
         </span>
         {sharers.length > 0 && (
@@ -109,10 +118,10 @@ export function LayerCard({
             text={`和 ${sharers.map((l) => baseLabel(doc, l.id)).join('、')} 共用${scaleName},拖动会一起动;要单独拖,把纵轴改成别的轴`}
           />
         )}
-        <span className="flex-1" />
         {!fixed && (
           <NativeSelect
             size="xs"
+            className="shrink-0"
             value={encodeScale(layer.scale)}
             onChange={(e) => actions.setScale(layer.id, decodeScale(e.target.value))}
             title="挂哪根纵轴"
@@ -130,6 +139,70 @@ export function LayerCard({
             <NativeSelectOption value="new">新独立轴</NativeSelectOption>
           </NativeSelect>
         )}
+        <Popover>
+          <PopoverTrigger
+            render={
+              <Button variant="ghost" size="icon-xs" className="text-neutral-600 hover:text-neutral-200" title="设置" />
+            }
+          >
+            <Settings2 />
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            className="w-80 gap-2 p-2 text-xs text-neutral-400"
+            // 弹层经 Portal 画在 body 下,但 React 事件仍沿组件树冒泡到卡片 li:
+            // 在输入框里拖选文字会被当成开始拖这张卡片;往输入框里放文字会被卡片的 drop 拦掉。拖放事件一律不出弹层
+            onDragStart={stopPropagation}
+            onDragOver={stopPropagation}
+            onDrop={stopPropagation}
+            onDragEnd={stopPropagation}
+          >
+            <Tabs defaultValue="data">
+              <TabsList variant="line">
+                <TabsTrigger value="data">数据</TabsTrigger>
+                <TabsTrigger value="axis">纵轴</TabsTrigger>
+              </TabsList>
+              <TabsContent value="data" className="flex flex-col gap-2 text-xs">
+                <CalcRow
+                  layer={layer}
+                  locked={fixed}
+                  actions={actions}
+                  pending={pendingCalc}
+                  onPending={setPendingCalc}
+                />
+                <ShiftRow layer={layer} locked={fixed} actions={actions} />
+              </TabsContent>
+              <TabsContent value="axis" className="flex flex-col gap-2 text-xs">
+                <p className="text-neutral-500">{scaleName}的属性:这根轴上的线一起变</p>
+                <div className="flex items-center gap-2">
+                  <Toggle
+                    on={inverted}
+                    disabled={axisLocked}
+                    onClick={() => actions.setInvert(pane.id, layer.scale, !inverted)}
+                    title={axisLocked ? LOCKED_TITLE : '倒轴:整根轴上下颠倒,挂在这根轴上的线一起倒'}
+                  >
+                    倒轴
+                  </Toggle>
+                  <Toggle
+                    on={log}
+                    disabled={axisLocked || (!canLog && !log)}
+                    onClick={() => actions.setLog(pane.id, layer.scale, !log)}
+                    title={
+                      axisLocked
+                        ? LOCKED_TITLE
+                        : canLog
+                          ? '对数坐标:等比例的涨跌画成等高,适合跨好几个数量级的线(BTC、长历史指数)'
+                          : '这根轴上有 ≤0 的值(利率、利差常见),取不了对数'
+                    }
+                  >
+                    对数
+                  </Toggle>
+                </div>
+                {log && !canLog && <span className="text-amber-500">这根轴上有 ≤0 的值,暂按普通坐标显示</span>}
+              </TabsContent>
+            </Tabs>
+          </PopoverContent>
+        </Popover>
         <Button
           variant="ghost"
           size="icon-xs"
@@ -140,57 +213,76 @@ export function LayerCard({
           <X />
         </Button>
       </div>
-
-      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 pl-5 text-xs text-neutral-500">
-        <SeriesControls layer={layer} shiftLocked={fixed} inverted={inverted} actions={actions} />
-        <Toggle
-          on={inverted}
-          disabled={axisLocked}
-          onClick={() => actions.setInvert(pane.id, layer.scale, !inverted)}
-          title={axisLocked ? LOCKED_TITLE : '倒轴:整根轴上下颠倒,挂在这根轴上的线一起倒'}
-        >
-          倒轴
-        </Toggle>
-        <Toggle
-          on={log}
-          disabled={axisLocked || (!canLog && !log)}
-          onClick={() => actions.setLog(pane.id, layer.scale, !log)}
-          title={
-            axisLocked
-              ? LOCKED_TITLE
-              : canLog
-                ? '对数坐标:等比例的涨跌画成等高,适合跨好几个数量级的线(BTC、长历史指数)'
-                : '这根轴上有 ≤0 的值(利率、利差常见),取不了对数'
-          }
-        >
-          对数
-        </Toggle>
-        {log && !canLog && <span className="text-amber-500">这根轴上有 ≤0 的值,暂按普通坐标显示</span>}
-      </div>
-      <CalcRow layer={layer} locked={fixed} actions={actions} />
+      <StateBadges shift={layer.shift ?? 0} inverted={inverted} log={log} logIneffective={log && !canLog} />
+      {layer.fit && <FitRow fit={layer.fit} inverted={inverted} onClear={() => actions.clearFit(layer.id)} />}
     </li>
   );
 }
+
+// 卡片上只留「这条线被动过什么」的提示,改动去 ⚙ 弹层里做。
+// 单独占一行、没有就不占:侧栏只有 ~290px,和名字挤在一行会把名字截到只剩一两个字
+function StateBadges({
+  shift,
+  inverted,
+  log,
+  logIneffective,
+}: {
+  shift: number;
+  inverted: boolean;
+  log: boolean;
+  logIneffective: boolean;
+}) {
+  const badge = 'shrink-0 rounded bg-neutral-800 px-1 text-[10px] leading-4 text-neutral-400';
+  if (shift === 0 && !inverted && !log) return null;
+
+  return (
+    <div className="mt-1 flex gap-1 pl-5">
+      {shift !== 0 && <span className={badge}>{`平移 ${shift > 0 ? '+' : ''}${shift}`}</span>}
+      {inverted && <span className={badge}>倒轴</span>}
+      {log && (
+        <span
+          className={logIneffective ? `${badge} text-amber-500` : badge}
+          title={logIneffective ? '这根轴上有 ≤0 的值,暂按普通坐标显示' : undefined}
+        >
+          对数
+        </span>
+      )}
+    </div>
+  );
+}
+
+// 暂存的运算绑定到当时那个图层对象:图层一变(导入整张图换了文档、或这条线被改过)就作废,
+// 否则导入一份同 id 的图会在没有计算的卡片上留下半截计算控件
+type PendingCalc = { layer: Layer; op: CalcOp };
 
 /**
  * 计算:这条线改画成「它 − / ÷ 另一条序列」。先选运算再选第二条;两样齐了才写进文档(文档里的计算必须完整),
  * 只选了运算的那一步先记在卡片上。叠加中的线锁住:算出来的值一变,按点按钮时定的比例就对不上了。
  */
-function CalcRow({ layer, locked, actions }: { layer: Layer; locked: boolean; actions: CardActions }) {
-  // 暂存的运算绑定到当时那个图层对象:图层一变(导入整张图换了文档、或这条线被改过)就作废,
-  // 否则导入一份同 id 的图会在没有计算的卡片上留下半截计算控件
-  const [pending, setPending] = useState<{ layer: Layer; op: CalcOp }>();
+function CalcRow({
+  layer,
+  locked,
+  actions,
+  pending,
+  onPending,
+}: {
+  layer: Layer;
+  locked: boolean;
+  actions: CardActions;
+  pending: PendingCalc | undefined;
+  onPending: (p: PendingCalc | undefined) => void;
+}) {
   const op = layer.calc?.op ?? (pending?.layer === layer ? pending.op : undefined);
 
   function onOp(v: string) {
-    setPending(v ? { layer, op: v as CalcOp } : undefined);
+    onPending(v ? { layer, op: v as CalcOp } : undefined);
     if (!v) actions.setCalc(layer.id, undefined);
     else if (layer.calc) actions.setCalc(layer.id, { ...layer.calc, op: v as CalcOp });
   }
 
   return (
     <div
-      className="mt-1 flex items-center gap-1.5 pl-5 text-xs text-neutral-500"
+      className="flex items-center gap-1.5"
       title={locked ? LOCKED_TITLE : '计算:把这条线换成它与另一条序列的差(−)或比值(÷),两条按日期对齐后现算'}
     >
       计算
@@ -211,60 +303,52 @@ function CalcRow({ layer, locked, actions }: { layer: Layer; locked: boolean; ac
   );
 }
 
-function SeriesControls({
-  layer,
-  shiftLocked,
-  inverted,
-  actions,
-}: {
-  layer: Layer;
-  shiftLocked: boolean;
-  inverted: boolean;
-  actions: CardActions;
-}) {
+function ShiftRow({ layer, locked, actions }: { layer: Layer; locked: boolean; actions: CardActions }) {
   const shift = layer.shift ?? 0;
 
   return (
-    <>
-      <span
-        className="flex items-center gap-0.5"
-        title={shiftLocked ? LOCKED_TITLE : '平移(交易日):正数往右挪,看它是不是领先别的线'}
+    <div
+      className="flex items-center gap-0.5"
+      title={locked ? LOCKED_TITLE : '平移(交易日):正数往右挪,看它是不是领先别的线'}
+    >
+      平移
+      <Button
+        variant="ghost"
+        size="icon-2xs"
+        className="text-neutral-500"
+        disabled={locked}
+        onClick={() => actions.setShift(layer.id, shift - 1)}
       >
-        平移
-        <Button
-          variant="ghost"
-          size="icon-2xs"
-          className="text-neutral-500"
-          disabled={shiftLocked}
-          onClick={() => actions.setShift(layer.id, shift - 1)}
-        >
-          −
-        </Button>
-        <NumberField value={shift} disabled={shiftLocked} onCommit={(n) => actions.setShift(layer.id, n)} />
-        <Button
-          variant="ghost"
-          size="icon-2xs"
-          className="text-neutral-500"
-          disabled={shiftLocked}
-          onClick={() => actions.setShift(layer.id, shift + 1)}
-        >
-          +
-        </Button>
-        天
+        −
+      </Button>
+      <NumberField value={shift} disabled={locked} onCommit={(n) => actions.setShift(layer.id, n)} />
+      <Button
+        variant="ghost"
+        size="icon-2xs"
+        className="text-neutral-500"
+        disabled={locked}
+        onClick={() => actions.setShift(layer.id, shift + 1)}
+      >
+        +
+      </Button>
+      天
+    </div>
+  );
+}
+
+// 叠加是正在生效的状态、且有「取消」这个动作,留在卡片上不收进弹层
+function FitRow({ fit, inverted, onClear }: { fit: Fit; inverted: boolean; onClear: () => void }) {
+  return (
+    <div className="mt-1 flex items-center gap-1.5 pl-5 text-xs text-neutral-400">
+      <span>
+        基准段 {fit.start} ~ {fit.end}
+        {` · 相关 ${fit.r.toFixed(2)}`}
+        {fit.beta < 0 && (inverted ? ' · 反向,轴已倒过来' : ' · 反向(A 的轴已倒,不用倒)')}
       </span>
-      {layer.fit && (
-        <span className="flex w-full items-center gap-1.5 text-neutral-400">
-          <span>
-            基准段 {layer.fit.start} ~ {layer.fit.end}
-            {` · 相关 ${layer.fit.r.toFixed(2)}`}
-            {layer.fit.beta < 0 && (inverted ? ' · 反向,轴已倒过来' : ' · 反向(A 的轴已倒,不用倒)')}
-          </span>
-          <Button variant="ghost" size="2xs" className="text-neutral-500" onClick={() => actions.clearFit(layer.id)}>
-            取消叠加
-          </Button>
-        </span>
-      )}
-    </>
+      <Button variant="ghost" size="2xs" className="text-neutral-500" onClick={onClear}>
+        取消叠加
+      </Button>
+    </div>
   );
 }
 
