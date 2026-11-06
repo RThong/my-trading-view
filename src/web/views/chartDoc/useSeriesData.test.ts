@@ -206,6 +206,11 @@ describe('registry', () => {
     const ids = new Set(REGISTRY.map((d) => d.id));
     // 点阵图的日期是预测年份,不进;事件日期、错月标记能解析(ChartDoc 里写竖线 / 背景图层用),但不进下拉
     expect(REGIME_SERIES.filter((k) => !ids.has(k))).toEqual(['sepMedian']);
+    // 注册表 id 撞上 regime 键、源却不是 regime 的:必须显式登记 regimeKey(固定面板读哪份),或是 BTC 这种只进 ohlc 的。
+    // 新撞名在这里拦下,别让固定面板转换按名字碰巧相等去认
+    const keys = new Set<string>(REGIME_SERIES);
+    const collide = REGISTRY.filter((d) => keys.has(d.id) && d.source.kind !== 'regime');
+    expect(collide.filter((d) => !d.regimeKey && d.source.kind !== 'regimeOhlc').map((d) => d.id)).toEqual([]);
     const markOnly = ['bojHikeDates', 'coreCpiRelease', 'corePceRelease', 'oilRollCrack', 'oilRollBrentWti'];
     expect(markOnly.every((k) => seriesDef(k)?.hidden)).toBe(true);
     // 旧图引用的派生 id 照样能解析(取得到数),只是下拉里不列

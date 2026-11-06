@@ -284,7 +284,7 @@ TradingView
   目标是 PaneSpec 退场，分两步：
   ① L2-1 补齐后，写反向转换 `paneSpecsToDoc`，用脚本生成全部视角的 ChartDoc（不手抄）；测试断言转换前后画的东西、读数一致。删掉各 `dims.ts` 的手写 PaneSpec，类型退为转换层内部类型。**不兼容老面板的界面功能**（2026-11-06 定）：格子工具条的上移下移、折叠、ⓘ 说明、画线、「只看 X」等不为它们在 JSON 里留字段，按 key 存的顺序 / 折叠 / 趋势线本地存档可以丢。约 2 天。
   ② 编辑器渲染器补齐 L2-1 全部画法，固定面板改用它的只读模式，删掉 `docToPaneSpecs` 与旧 regime 渲染链路。老面板的画线不迁（见上）。约 3 到 4 天。
-     进度（2026-11-06）：编辑器已能画 refLines、baseline、step、percentile（P5/P95 线 + riskTail 背景带）、desc（图例 ⓘ）、events、signed、hidden、纵轴范围框；还缺变换（均线 / 同比 / Z-score）。蜡烛已做。背景色带已做（`render: { kind: 'background' }`）。
+     进度（2026-11-06）：编辑器已能画 refLines、baseline、step、percentile（P5/P95 线 + riskTail 背景带）、desc（图例 ⓘ）、events、signed、hidden、纵轴范围框；还缺变换（均线 / 同比 / Z-score）。蜡烛已做。`docToPaneSpecs` 支持一格多线（第一条线是主线，其余转成 overlays）与竖线透明度（`render.events.opacity`），已用「利率 · 加息定价」格端到端对过（主线 + 3 叠加 + 2 竖线，画法字段逐一相等）。背景色带已做（`render: { kind: 'background' }`）。
      口径差异：编辑器的分位阈值按图上的点算（周 / 月线是聚合点），同 TradingView 指标默认「跟随图表周期」；固定面板按原始日频算，相当于 TradingView 指定 `timeframe = "D"`。要两种都支持时再加参数（如 `percentile.tf`），默认跟随图表。
   不在范围：旧引擎 `PaneChartView` 还给 AssetChart / TenorHistoryPanel / AttackDefensePanel 用；SEC 申报提示、「暂不可用」提示按视角和数据状态生成，留在固定面板外层，不进 ChartDoc。
   验收：任意 regime 格右上角有「编辑」入口，点开后编辑器内容和原格一致，修改不影响原格。

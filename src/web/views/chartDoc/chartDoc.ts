@@ -1,6 +1,7 @@
 // 图表编辑器的状态模型:整张图 = 一份带版本号的 JSON(图 → 格 → 纵轴 → 图层)。
 // 这份结构是标准 —— 以后旧图表往它上面映射,不是它迁就旧代码。图层只存序列 id,不存数据。
 // 本文件全是纯函数:编辑操作返回新文档,并经 normalize 保证不变式。
+import { withAlpha } from '../../chart/palette';
 
 export type ScaleSide = 'right' | 'left' | 'overlay';
 
@@ -32,13 +33,14 @@ export type Fit = { target: string; start: string; end: string; alpha: number; b
  * 画法。缺省 = 普通折线。baseline:会穿零的序列画一条基线;step:低频序列画阶梯(两次发布之间值不变)。
  * signed:符号柱(正绿负红、0 基线),看正负和大小的量(净持仓、期限结构)。
  * events:事件竖线,序列里每个日期画一根满高细柱,值不画(发布日、决议日);挂自己的隐形轴,图层的 scale 不起作用。
+ *   opacity(0~1,缺省不透明):竖线压在线上面,满色太抢眼;颜色仍只写 #rrggbb(取色器只认这个),透明度单列
  * background:背景色带,序列是 0 / 1 标记,值为 1 的日子整格高染图层颜色(淡色,压在线下面);同样挂自己的隐形轴。
  * candle:蜡烛(涨绿跌红,图层颜色不起作用),只有注册表标了 ohlc 的序列能用;图例 / 分位 / 参考线照旧按收盘
  */
 export type LayerRender =
   | { kind: 'line'; baseline?: number; step?: true }
   | { kind: 'signed' }
-  | { kind: 'events' }
+  | { kind: 'events'; opacity?: number }
   | { kind: 'background' }
   | { kind: 'candle' };
 /** 有绝对含义的阈值线(如「临界 4」),跟随图层所在的纵轴 */
@@ -304,6 +306,12 @@ export function setLayerCalc(doc: ChartDoc, layerId: string, calc: Calc | undefi
   // 计算图层是现算的一条值,没有 K 线:原来画成蜡烛的,改回折线(不留一个画不出来的画法在文档里)
   const next = setLayerField(doc, layerId, 'calc', calc);
   return calc && cur.render?.kind === 'candle' ? setLayerField(next, layerId, 'render', undefined) : next;
+}
+
+/** 竖线实际画出来的颜色:写了透明度就叠上(编辑器着色、编辑器判断要不要重灌、固定面板转换三处共用) */
+export function markColor(l: Layer): string {
+  const opacity = l.render?.kind === 'events' ? l.render.opacity : undefined;
+  return opacity === undefined ? l.color : withAlpha(l.color, opacity);
 }
 
 /** 标记图层(事件竖线、背景色带):值不画、挂自己的隐形轴、不算「一条线」(编辑器与固定面板共用这个判断) */
@@ -603,7 +611,8 @@ function isFit(x: unknown): x is Fit {
 
 function isRender(x: unknown): x is LayerRender {
   if (!isObj(x)) return false;
-  if (x.kind === 'signed' || x.kind === 'events' || x.kind === 'background' || x.kind === 'candle') return true;
+  if (x.kind === 'signed' || x.kind === 'background' || x.kind === 'candle') return true;
+  if (x.kind === 'events') return x.opacity === undefined || (isNum(x.opacity) && x.opacity > 0 && x.opacity <= 1);
 
   return (
     x.kind === 'line' && (x.baseline === undefined || isNum(x.baseline)) && (x.step === undefined || x.step === true)
@@ -651,6 +660,7 @@ function isLayer(x: unknown): x is Layer {
 }
 
 function canonicalRender(r: LayerRender): LayerRender {
+  if (r.kind === 'events') return { kind: r.kind, ...(r.opacity !== undefined ? { opacity: r.opacity } : {}) };
   if (r.kind !== 'line') return { kind: r.kind };
 
   return {
