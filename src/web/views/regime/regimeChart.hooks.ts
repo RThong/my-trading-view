@@ -9,10 +9,18 @@ import type { SeriesKey } from '../../../shared/regimeSeries';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../../chart/paneChart.types';
 import { rollMismatchDates, type RollMismatchKind } from '../../../shared/calc/oilRoll';
-import type { Calc, ChartDoc, RefLine } from '../chartDoc/chartDoc';
+import {
+  isEventsLayer,
+  type Calc,
+  type ChartDoc,
+  type Layer,
+  type LayerRender,
+  type RefLine,
+} from '../chartDoc/chartDoc';
 import { seriesDef, seriesLabel } from '../chartDoc/registry';
 import { isAggregateMember, type FundTrim, type SecFiled, type SecLag } from '../../../shared/aiChain';
 import { getJson, SWR_OPTS } from '../../lib/http';
+import { SIGNED_DOWN, SIGNED_UP } from '../../chart/palette';
 
 // 分位带阈值(自身历史):想改 5/95 更严就动这里。
 const PCTL_LO = 5;
@@ -25,9 +33,6 @@ const BG_NONE = 'rgba(0,0,0,0)';
 // 刻意调淡:错月偏差平时只有线本身波动的零头,这是「在这里算涨跌 / 市场紧时多看一眼」的提醒,
 // 不是「这段数据不能用」—— 0.28 时全历史视图满屏条纹,读起来像大半数据都坏了。
 const BG_ROLL = 'rgba(148,163,184,0.14)';
-// 符号柱状图(期限结构):正=backwardation 绿、负=contango 红。
-const SIGNED_UP = '#22c55e';
-const SIGNED_DOWN = '#ef4444';
 export type RegimePoint = { date: string; value: number };
 export type RegimeData = {
   series: Record<string, RegimePoint[]>;
@@ -144,15 +149,26 @@ export type RegimeDims = Partial<Record<Exclude<FixedDim, DocDim>, DimConfig>>;
  */
 export type DocDim = 'concentration';
 
+/** 事件图层 → 格子的 events(固定面板的事件线挂在格子上,不是一条独立的线)。只认 /api/regime 的序列 */
+function eventsOf(l: Layer): NonNullable<PaneSpec['events']>[number] {
+  const def = seriesDef(l.series);
+  if (def?.source.kind !== 'regime' || l.calc || l.shift || l.hidden)
+    throw new Error(`ChartDoc 事件图层 ${l.id}:${l.series} 须是 /api/regime 的序列,且不能计算 / 平移 / 隐藏`);
+
+  return { key: def.source.key, title: l.title ?? def.label, color: l.color };
+}
+
 /**
  * ChartDoc → 固定面板的格子定义。图层的序列 id 经注册表解析成 /api/regime 的键,下游(渲染规格、分位徽标、
- * 缺失提示)照旧按格子走。目前只支持「一格一条 regime 序列」(已迁的 tab 都是这种);不符合就是 doc 写错了,
- * 直接抛 —— 模块加载时就炸,不会静默少一格或静默不照画。叠加线 / 事件线 / 蜡烛等等迁到用它们的 tab 时再加。
+ * 缺失提示)照旧按格子走。目前只支持「一格一条 regime 序列 + 若干事件竖线」;不符合就是 doc 写错了,
+ * 直接抛 —— 模块加载时就炸,不会静默少一格或静默不照画。叠加线 / 蜡烛等等迁到用它们的 tab 时再加。
  */
 export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
   const panes = doc.panes.map((p): PaneSpec => {
-    if (p.layers.length !== 1) throw new Error(`ChartDoc 格 ${p.id}:固定面板目前只支持一格一条线`);
-    const [l] = p.layers;
+    const lines = p.layers.filter((x) => !isEventsLayer(x));
+    if (lines.length !== 1) throw new Error(`ChartDoc 格 ${p.id}:固定面板目前只支持一格一条线(事件竖线不算)`);
+    const [l] = lines;
+    const events = p.layers.filter(isEventsLayer).map(eventsOf);
     const def = seriesDef(l.series);
     // 普通图层读 /api/regime 的现成键;计算图层两条腿按注册表取数现算,只要都在注册表里
     const legsOk = l.calc ? !!def && !!seriesDef(l.calc.series) : def?.source.kind === 'regime';
@@ -174,15 +190,16 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
         ? (`${l.series}|${l.calc.op}${l.calc.fill ? 'f' : ''}|${l.calc.series}` as const)
         : (def.source as { key: SeriesKey }).key,
       ...(l.calc && { from: { series: l.series, calc: l.calc } }),
-      label: p.label ?? name,
+      label: name,
       title: l.title ?? name,
       color: l.color,
       ...(p.desc !== undefined && { desc: p.desc }),
-      ...(l.render && { render: l.render }),
+      ...(l.render && { render: l.render as Exclude<LayerRender, { kind: 'events' }> }),
       ...(l.refLines && { refLines: l.refLines }),
       ...(l.percentile && { percentile: l.percentile }),
       ...(scale?.clampVisibleTo && { clampVisibleTo: scale.clampVisibleTo }),
       ...(scale?.expandVisibleTo && { expandVisibleTo: scale.expandVisibleTo }),
+      ...(events.length > 0 && { events }),
     };
   });
 

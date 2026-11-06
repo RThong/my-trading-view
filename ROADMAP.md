@@ -266,11 +266,11 @@ TradingView
 
 **提案**（这一组就是「逐步完善 JSON」的具体步骤）
 - **L2-1（P1）ChartDoc 补齐表达能力**。全部是可选字段，保持 v1，按下面的顺序加：
-  1. render：~~line（带 step、baseline）~~、signed、candle（candle 需要取数层出 OHLC）
+  1. render：~~line（带 step、baseline）~~、~~signed~~（编辑器 ⚙ 数据页可切「柱状」）、candle（candle 需要取数层出 OHLC）
   2. ~~`refLines`~~、~~`band`~~：跟随所在图层的纵轴。`band` 不另设字段，改写成两条 refLines（「常态下限 / 上限」），沿用「有参考线时 percentile 只染背景」的渲染规则。✅ PaneSpec 的 `band` 已删，8 格改为 `refLines: normalBand(lo, hi)`
-  3. ~~`desc`：挂在格子上~~（另加了格子 `label`）
+  3. ~~`desc`：挂在格子上~~（曾另加格子 `label` 给老面板工具条用，按「不兼容老面板界面」已删）
   4. ~~`percentile`：P5/P95 带和 riskTail~~
-  5. `events`：事件竖线，做成图层画法 `render: { kind: 'events' }`（日期仍取注册表序列）
+  5. ~~`events`：事件竖线，做成图层画法 `render: { kind: 'events' }`（日期仍取注册表序列）~~ ✅ 发布日 / 决议日序列进编辑器下拉，选中即画竖线；`docToPaneSpecs` 转成格子的 `events`
   6. ~~`clamp/expandVisibleTo`：做成纵轴（Scale）的属性~~ ✅ `Scale.clampVisibleTo` / `expandVisibleTo`，编辑器能画、`docToPaneSpecs` 照传；不做 UI 入口（编辑器里拖轴即可，预设范围是固定面板的需求）
   7. 背景色带（按状态给背景上色）、两条线之间填色。背景色带 = 图层画法 `render: { kind: 'background' }` + 一条 0/1 序列；PaneSpec 的 `rollMismatch` 改由服务端发两条 0/1 序列（`oilRoll` 照算，按 WTI 交易日；改前逐日对账 4 格的错月日集合）
   8. 变换：均线、同比、Z-score、起点 = 100（期数按各序列自身频率算）。做成图层上的参数（如 `transform: { ma: 20 }`），不做成被引用序列的属性
@@ -282,13 +282,13 @@ TradingView
 - **L2-2（P1）编辑器持久化**。~~localStorage 自动保存当前的图~~（f4a0636，另加了 JSON 导入），另有「我的图表」列表；URL 里带上 ChartDoc 便于书签。载入一律先过 `parseChartDoc`。约 1 小时。
 - **L2-3（P1）固定面板迁移成 ChartDoc，加「在编辑器中打开」**。视角配置改为按 id 引用 ChartDoc，同一张图只有一份，避免参考站那种重复挂载。先迁移一个视角做验证，再整体迁移。约 2 到 3 天。进度：~~先迁一个做验证~~ 已迁「特色指标 · 集中度」一个 tab（8f69743）；「在编辑器中打开」未做。
   目标是 PaneSpec 退场，分两步：
-  ① L2-1 补齐后，写反向转换 `paneSpecsToDoc`，用脚本生成全部视角的 ChartDoc（不手抄）；测试断言 `docToPaneSpecs` 转回后与原 PaneSpec 逐字段相等（画面零变化）。删掉各 `dims.ts` 的手写 PaneSpec，类型退为转换层内部类型。迁移时 `pane.id` = 原 key，格子顺序 / 折叠 / 手绘趋势线的本地存档都按它认，不能丢（集中度计算格换 key 时丢过一次趋势线）。约 2 天。
-  ② 编辑器渲染器补齐 L2-1 全部画法，固定面板改用它的只读模式，删掉 `docToPaneSpecs` 与旧 regime 渲染链路；手动画线同步迁过来（见 L2-5）。约 3 到 4 天。
+  ① L2-1 补齐后，写反向转换 `paneSpecsToDoc`，用脚本生成全部视角的 ChartDoc（不手抄）；测试断言转换前后画的东西、读数一致。删掉各 `dims.ts` 的手写 PaneSpec，类型退为转换层内部类型。**不兼容老面板的界面功能**（2026-11-06 定）：格子工具条的上移下移、折叠、ⓘ 说明、画线、「只看 X」等不为它们在 JSON 里留字段，按 key 存的顺序 / 折叠 / 趋势线本地存档可以丢。约 2 天。
+  ② 编辑器渲染器补齐 L2-1 全部画法，固定面板改用它的只读模式，删掉 `docToPaneSpecs` 与旧 regime 渲染链路。老面板的画线不迁（见上）。约 3 到 4 天。
   不在范围：旧引擎 `PaneChartView` 还给 AssetChart / TenorHistoryPanel / AttackDefensePanel 用；SEC 申报提示、「暂不可用」提示按视角和数据状态生成，留在固定面板外层，不进 ChartDoc。
   验收：任意 regime 格右上角有「编辑」入口，点开后编辑器内容和原格一致，修改不影响原格。
 - ~~**L2-4（P1）ChartDoc 校验测试**~~ ✅ 已完成（`views/regime/docs.test.ts`：内置 ChartDoc 逐个过 JSON 往返 + 序列都在注册表）。存成 JSON 会丢掉编译期的拼写检查，要用一个测试补回来：遍历所有内置 ChartDoc，检查每个 series 都在注册表里。注册表 id 一旦用过就不再改名；真要改，在 parseChartDoc 里按 v 做迁移。约 30 分钟。
 - L2-5（P2）编辑器补「标、记」：标题和叙述、竖线事件、导出 PNG（lightweight-charts 自带 `takeScreenshot()`）。约半天。
-  手动画线（现在只在旧引擎里，`chart/trendlines.hooks.ts`）随 L2-3 第②步迁到编辑器：按设计约定存用户覆盖层，锚点从 `logical` 换成 `{ time, price }`，旧存档按日期换算过去。在那之前不动，免得迁两次。
+  手动画线（现在只在旧引擎里，`chart/trendlines.hooks.ts`）在编辑器里重新做，按设计约定存用户覆盖层、锚点用 `{ time, price }`；旧引擎的画线存档不迁。
 - **L2-6（P2）MCP 出图：自然语言叠加**。外部（Claude Desktop、claude.ai、知识库会话）说一句「把黄金和 10Y 实际利率叠一起，看近 5 年」，直接拿到叠好的清晰图。
   - 分工：自然语言理解和选序列由**客户端大模型**做；本项目 MCP 只做确定性计算（取数 → 叠加 → 出图），同样输入永远同样输出，符合 §0.5 分工。
   - 工具：`search_series(query)` 搜注册表 → `get_series(id, from, to)` 取数 → `overlay(a, b, from, to)` 跑 `bestOverlay`（找偏移 + 自动选基准段 + 定比例），返回带 `shift` / `fit` 的 ChartDoc → `render_chart(doc)` 返回 PNG + 编辑器链接（点开可接着改）。

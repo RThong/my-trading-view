@@ -15,6 +15,7 @@ import {
   setLayerColor,
   setLayerScale,
   setLayerHidden,
+  setLayerRender,
   setLayerShift,
   setScaleInvert,
   setScaleLog,
@@ -23,9 +24,11 @@ import {
   type Calc,
   type ChartDoc,
   type Fit,
+  type LayerRender,
   type PaneTarget,
   type ScaleChoice,
 } from '../../../views/chartDoc/chartDoc';
+import { seriesDef } from '../../../views/chartDoc/registry';
 
 const STORAGE_KEY = 'mtv:chartEditor:doc';
 
@@ -70,7 +73,13 @@ export function useChartDoc() {
         // 只看普通图层:A − B 不算「A 在图上」(计算图层在卡片上单独删)
         d.panes.some((p) => p.layers.some((l) => l.series === series && !l.calc))
           ? removeSeries(d, series)
-          : addLayer(d, series, nextColor(d, SERIES_COLORS)),
+          : // 事件日期(发布日)加进来直接画竖线
+            addLayer(
+              d,
+              series,
+              nextColor(d, SERIES_COLORS),
+              seriesDef(series)?.events ? { kind: 'events' } : undefined,
+            ),
       ),
     remove: (layerId: string) => setDoc((d) => removeLayer(d, layerId)),
     move: (layerId: string, target: PaneTarget, before?: string) =>
@@ -80,6 +89,7 @@ export function useChartDoc() {
     setStretches: (stretches: number[]) => setDoc((d) => setStretches(d, stretches)),
     setShift: (layerId: string, shift: number) => setDoc((d) => setLayerShift(d, layerId, shift)),
     setHidden: (layerId: string, hidden: boolean) => setDoc((d) => setLayerHidden(d, layerId, hidden)),
+    setRender: (layerId: string, render: LayerRender | undefined) => setDoc((d) => setLayerRender(d, layerId, render)),
     setCalc: (layerId: string, calc: Calc | undefined) => setDoc((d) => setLayerCalc(d, layerId, calc)),
     setInvert: (paneId: string, scaleId: string, invert: boolean) =>
       setDoc((d) => setScaleInvert(d, paneId, scaleId, invert)),

@@ -9,3 +9,11 @@ export function latestIso(dates: readonly string[]): string {
     return latest;
   });
 }
+
+/** ISO 日期字符串里最早的一个(同 latestIso,别换成 Math.min)。 */
+export function earliestIso(dates: readonly string[]): string {
+  return dates.reduce((earliest, d) => {
+    if (d < earliest) return d;
+    return earliest;
+  });
+}

@@ -126,9 +126,10 @@ describe('registry', () => {
 
   test('regime 序列除了不可画的都能解析;能用 calc 拼的派生量不进下拉,calc 拼不了的标「派生」', () => {
     const ids = new Set(REGISTRY.map((d) => d.id));
-    expect(REGIME_SERIES.filter((k) => !ids.has(k))).toEqual([
+    // 点阵图的日期是预测年份,不进;事件日期(发布日 / 决议日)进,标 events,加到图上画竖线
+    expect(REGIME_SERIES.filter((k) => !ids.has(k))).toEqual(['sepMedian']);
+    expect(REGISTRY.filter((d) => d.events).map((d) => d.id)).toEqual([
       'bojHikeDates',
-      'sepMedian',
       'coreCpiRelease',
       'corePceRelease',
     ]);

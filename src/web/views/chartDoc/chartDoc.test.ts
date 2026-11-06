@@ -5,6 +5,8 @@ import {
   applyLayerFit,
   clearLayerFit,
   setLayerHidden,
+  setLayerRender,
+  liveScaleIds,
   setLayerShift,
   setScaleInvert,
   setScaleLog,
@@ -230,6 +232,25 @@ describe('平移 / 倒轴', () => {
     expect('shift' in setLayerShift(e, 'l2', 0).panes[0].layers[1]).toBe(false);
   });
 
+  test('画法:signed / events 往返解析保留,setLayerRender 设回折线删字段;addLayer 可带画法', () => {
+    const d = setLayerRender(twoOnMain(), 'l2', { kind: 'signed' });
+    expect(d.panes[0].layers[1].render).toEqual({ kind: 'signed' });
+    expect(setLayerRender(d, 'l2', { kind: 'signed' })).toBe(d);
+    expect('render' in setLayerRender(d, 'l2', undefined).panes[0].layers[1]).toBe(false);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
+
+    const e = addLayer(twoOnMain(), 'coreCpiRelease', '#333333', { kind: 'events' });
+    expect(e.panes[0].layers[2]).toMatchObject({ series: 'coreCpiRelease', render: { kind: 'events' } });
+    expect(parseChartDoc(JSON.parse(JSON.stringify(e)))).toEqual(e);
+  });
+
+  test('liveScaleIds:竖线占的独立轴 lw-charts 里没有,不列(对它调 priceScale 会抛)', () => {
+    const d = addLayer(twoOnMain(), 'coreCpiRelease', '#333333', { kind: 'events' });
+    const withOverlay = { ...d.panes[0], scales: [...d.panes[0].scales, { id: 's9', side: 'overlay' as const }] };
+    withOverlay.layers = withOverlay.layers.map((l) => (l.series === 'coreCpiRelease' ? { ...l, scale: 's9' } : l));
+    expect(liveScaleIds(withOverlay)).toEqual(['right']);
+  });
+
   test('setLayerHidden:显示删字段、不变返回原引用、往返解析保留;hidden 只认 true', () => {
     const d = setLayerHidden(twoOnMain(), 'l2', true);
     expect(d.panes[0].layers[1]).toMatchObject({ hidden: true });
@@ -445,9 +466,11 @@ describe('固定面板用的可选字段', () => {
         refLines: [{ price: 4, title: '临界 4', color: '#ef4444' }],
         percentile: { riskTail: 'high', since: '2000-01-01' },
       },
-      { label: 'VIX', desc: '说明' },
+      { desc: '说明' },
     );
     expect(parseChartDoc(ok)).toEqual(ok as ChartDoc);
+    // 旧版存档带格子短名 label(已删的字段):照样载入,字段丢掉
+    expect(parseChartDoc(base({}, { label: 'VIX' }))?.panes[0]).not.toHaveProperty('label');
   });
 
   test.each([
@@ -462,10 +485,7 @@ describe('固定面板用的可选字段', () => {
     expect(parseChartDoc(base(patch))).toBeNull();
   });
 
-  test.each([
-    ['label 不能是空串', { label: '' }],
-    ['desc 须是字符串', { desc: 1 }],
-  ])('格:%s → 拒收', (_, patch) => {
+  test.each([['desc 须是字符串', { desc: 1 }]])('格:%s → 拒收', (_, patch) => {
     expect(parseChartDoc(base({}, patch))).toBeNull();
   });
 });

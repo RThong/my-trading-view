@@ -4,33 +4,93 @@
 import { type RefObject, useEffect, useRef } from 'react';
 import {
   createChart,
+  HistogramSeries,
   LineSeries,
   PriceScaleMode,
   type AutoscaleInfoProvider,
   type IChartApi,
   type IPaneApi,
   type ISeriesApi,
+  type SeriesType,
   type Time,
 } from 'lightweight-charts';
 import { CHART_OPTIONS, boxAutoscaleProvider, type LinePoint } from '../../../chart/core';
+import { SIGNED_DOWN, SIGNED_UP } from '../../../chart/palette';
 import type { Interval } from '../../../hooks/interval';
-import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
+import { isEventsLayer, liveScaleIds, type ChartDoc, type Layer, type Pane } from '../../../views/chartDoc/chartDoc';
 import { canLogScale, type LayerData } from './layerPoints';
 import { commonRange } from '../../../views/chartDoc/useSeriesData';
 
-export type LayerSeries = Map<string, ISeriesApi<'Line'>>;
-type SeriesOpts = {
-  color: string;
-  priceScaleId: string;
-  visible: boolean;
-  lineVisible: boolean;
-  lastValueVisible: boolean;
-  crosshairMarkerVisible: boolean;
-  autoscaleInfoProvider: AutoscaleInfoProvider;
-};
+/** 折线是 Line;符号柱、事件竖线是 Histogram。拖线 / 选中高亮只对折线(见 useLineDrag) */
+export type LayerSeries = Map<string, ISeriesApi<SeriesType>>;
+type Kind = NonNullable<Layer['render']>['kind'];
+/**
+ * 上次灌给某图层的数据、当时的画法和颜色:画法变了(符号柱 ↔ 事件)同一份点也要重灌,点的颜色 / 值不一样;
+ * 竖线的颜色逐点写在数据里(会盖过 series 的 color 选项),改色也得重灌
+ */
+type Fed = { pts: LinePoint[]; kind: Kind; color: string };
 
 // 原样自动缩放。轴上去掉范围框时也要显式写回它:lw-charts 合并选项会跳过 undefined,不写就沿用旧框
 const PASS_AUTOSCALE: AutoscaleInfoProvider = (base) => base();
+// 事件竖线挂的隐形轴固定 0~1、上下不留白:值恒为 1 的柱子就是满高竖线
+const FULL_HEIGHT: AutoscaleInfoProvider = () => ({ priceRange: { minValue: 0, maxValue: 1 } });
+
+function kindOf(l: Layer): Kind {
+  return l.render?.kind ?? 'line';
+}
+
+/** 按画法换成 lw-charts 要的点:符号柱逐点上色,事件竖线值恒为 1 */
+function toSeriesData(kind: Kind, color: string, pts: LinePoint[]) {
+  if (kind === 'signed') return pts.map((p) => ({ ...p, color: p.value >= 0 ? SIGNED_UP : SIGNED_DOWN }));
+  if (kind === 'events') return pts.map((p) => ({ time: p.time, value: 1, color }));
+  return pts;
+}
+
+/** 各画法的 series 选项。每次对账整份写回,改色 / 换轴 / 显隐 / 范围框都走这里 */
+function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
+  const hidden = !!layer.hidden;
+  if (isEventsLayer(layer))
+    return {
+      color: layer.color,
+      priceScaleId: `ev-${layer.id}`,
+      visible: !hidden,
+      lastValueVisible: false,
+      priceLineVisible: false,
+      autoscaleInfoProvider: FULL_HEIGHT,
+    };
+
+  const scale = pane.scales.find((sc) => sc.id === layer.scale);
+  // 轴的范围框落到这根轴上每条线的自动缩放上,轴取并集(语义见 boxAutoscaleProvider)
+  const autoscaleInfoProvider = boxAutoscaleProvider(scale?.clampVisibleTo, scale?.expandVisibleTo) ?? PASS_AUTOSCALE;
+  if (kindOf(layer) === 'signed')
+    return { priceScaleId: layer.scale, visible: !hidden, lastValueVisible: !hidden, base: 0, autoscaleInfoProvider };
+
+  // 隐藏 = visible: false:不画、不进自动缩放(lw-charts 自带);图例读数取自 layerPoints,不受影响。
+  // 例外是被叠加的 A:B 轴每帧按 A 轴的范围换算(useFitSync),A 不进自动缩放的话 A 轴定住、B 也跟着定住 —— 只关线和标签
+  return {
+    color: layer.color,
+    priceScaleId: layer.scale,
+    visible: !hidden || fitTargets.has(layer.id),
+    lineVisible: !hidden,
+    lastValueVisible: !hidden,
+    crosshairMarkerVisible: !hidden,
+    autoscaleInfoProvider,
+  };
+}
+
+function createLayerSeries(chart: IChartApi, layer: Layer, opts: object, paneIndex: number): ISeriesApi<SeriesType> {
+  if (kindOf(layer) === 'line')
+    return chart.addSeries(LineSeries, { ...opts, lineWidth: 2, priceLineVisible: false }, paneIndex);
+
+  const s = chart.addSeries(HistogramSeries, { ...opts, priceLineVisible: false }, paneIndex);
+  if (isEventsLayer(layer)) fullHeight(s);
+  return s;
+}
+
+/** 竖线的隐形轴上下不留白:值恒为 1 的柱子顶满整格 */
+function fullHeight(s: ISeriesApi<SeriesType>) {
+  s.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
+}
 
 type Options = {
   /** 拖完分隔条后读回的各格高度比例(写回 JSON,保持 JSON 是唯一真源)。 */
@@ -54,7 +114,7 @@ export function useEditorChart(
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<LayerSeries>(new Map());
   // 每条图层上次 setData 的数组引用:引用没变就不重设(改色 / 换轴不该触发整段重灌数据)。
-  const fedRef = useRef(new Map<string, LinePoint[]>());
+  const fedRef = useRef(new Map<string, Fed>());
   // lw-charts 格对象 → 它上次对应的文档格 id。对应关系变了 = 这块 lw 格装的是「新的格」,要把内置轴设回默认,
   // 见纵轴那个 effect。只认格对象身份不够:lw 会复用旧格对象(最后一格永不删除;移走某格唯一的线后别的线会挪进来)
   const paneOwnerRef = useRef(new Map<IPaneApi<Time>, string>());
@@ -110,15 +170,18 @@ export function useEditorChart(
       const s = seriesRef.current.get(l.id);
       const pts = data[l.id]?.display;
       const prev = fedRef.current.get(l.id);
-      return s && pts && prev !== pts ? [{ id: l.id, s, pts, prev }] : [];
+      const kind = kindOf(l);
+      const changed = prev?.pts !== pts || prev.kind !== kind || (kind === 'events' && prev.color !== l.color);
+      return s && pts && changed ? [{ l, s, pts, kind, prev: prev?.pts }] : [];
     });
-    stale.forEach(({ id, s, pts }) => {
-      s.setData(pts);
-      fedRef.current.set(id, pts);
+    stale.forEach(({ l, s, pts, kind }) => {
+      s.setData(toSeriesData(kind, l.color, pts));
+      fedRef.current.set(l.id, { pts, kind, color: l.color });
     });
-    // 这一轮有没有图层「第一次拿到真数据」(新加的线 / 加载完成)。隐藏的线不参与:看不见的短历史线不该把视图截短
-    const seriesIds = new Set(layers.filter((l) => !l.hidden).map((l) => l.id));
-    const arrived = stale.filter(({ id, pts, prev }) => seriesIds.has(id) && pts.length > 0 && !prev?.length);
+    // 这一轮有没有图层「第一次拿到真数据」(新加的线 / 加载完成)。隐藏的线、事件竖线不参与:
+    // 看不见的短历史线不该把视图截短;竖线是零散的日期,不是一段有起止的数据
+    const seriesIds = new Set(layers.filter((l) => !l.hidden && !isEventsLayer(l)).map((l) => l.id));
+    const arrived = stale.filter(({ l, pts, prev }) => seriesIds.has(l.id) && pts.length > 0 && !prev?.length);
 
     // 有新线到位、或换了周期,就把横轴对准「所有线都有数据的那一段」:长历史的线不截,往左拖还在,
     // 只是不让短历史的线挤在右边。其余时候缩放归用户,删线 / 改色 / 数据刷新不动视图。
@@ -159,7 +222,7 @@ export function useEditorChart(
         paneOwnerRef.current.set(api, pane.id);
       }
       const byId = new Map(pane.scales.map((sc) => [sc.id, sc]));
-      const ids = new Set(['right', 'left', ...byId.keys()]);
+      const ids = new Set(['right', 'left', ...liveScaleIds(pane)]);
       ids.forEach((id) => {
         const sc = byId.get(id);
         const ps = api.priceScale(id);
@@ -196,7 +259,7 @@ export function useEditorChart(
  * 已处理的格都装着自己的目标图层,不会因为有图层被移走而变空被 lw-charts 自动删掉;
  * 被移空自动删掉的只可能是后面的格,不影响已落位的下标。目标格不存在时 lw-charts 会新建。
  */
-function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LinePoint[]>, doc: ChartDoc) {
+function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, Fed>, doc: ChartDoc) {
   const wanted = new Set(doc.panes.flatMap((p) => p.layers.map((l) => l.id)));
   const fitTargets = new Set(doc.panes.flatMap((p) => p.layers.flatMap((l) => (l.fit ? [l.fit.target] : []))));
 
@@ -210,27 +273,19 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LineP
 
   doc.panes.forEach((pane, paneIndex) => {
     pane.layers.forEach((layer) => {
-      // 隐藏 = visible: false:不画、不进自动缩放(lw-charts 自带);图例读数取自 layerPoints,不受影响。
-      // 例外是被叠加的 A:B 轴每帧按 A 轴的范围换算(useFitSync),A 不进自动缩放的话 A 轴定住、B 也跟着定住 —— 只关线和标签
-      const hidden = !!layer.hidden;
-      const scale = pane.scales.find((sc) => sc.id === layer.scale);
-      const opts = {
-        color: layer.color,
-        priceScaleId: layer.scale,
-        visible: !hidden || fitTargets.has(layer.id),
-        lineVisible: !hidden,
-        lastValueVisible: !hidden,
-        crosshairMarkerVisible: !hidden,
-        // 轴的范围框落到这根轴上每条线的自动缩放上,轴取并集(语义见 boxAutoscaleProvider)
-        autoscaleInfoProvider: boxAutoscaleProvider(scale?.clampVisibleTo, scale?.expandVisibleTo) ?? PASS_AUTOSCALE,
-      };
+      const opts = seriesOptions(layer, pane, fitTargets);
       const existing = series.get(layer.id);
-      if (!existing) {
-        series.set(layer.id, createLayerSeries(chart, opts, paneIndex));
+      // 折线 ↔ 柱子是两种 series,换画法只能删了重建(数据由数据 effect 重灌)
+      const wantType = kindOf(layer) === 'line' ? 'Line' : 'Histogram';
+      // fed 不删:画法不同数据 effect 本来就会重灌;删了会被当成「数据第一次到位」,把用户调好的横轴缩放冲掉
+      if (existing && existing.seriesType() !== wantType) chart.removeSeries(existing);
+      if (!existing || existing.seriesType() !== wantType) {
+        series.set(layer.id, createLayerSeries(chart, layer, opts, paneIndex));
         return;
       }
       if (existing.getPane().paneIndex() !== paneIndex) existing.moveToPane(paneIndex);
       existing.applyOptions(opts);
+      if (isEventsLayer(layer)) fullHeight(existing);
     });
 
     // 层次同 TradingView:卡片列表最上面那条画在最上层(lw-charts 里序号越大越靠上)。
@@ -252,8 +307,4 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LineP
     if (!api) return;
     if (Math.abs(api.getStretchFactor() - pane.stretch) > STRETCH_EPS) api.setStretchFactor(pane.stretch);
   });
-}
-
-function createLayerSeries(chart: IChartApi, opts: SeriesOpts, paneIndex: number): ISeriesApi<'Line'> {
-  return chart.addSeries(LineSeries, { ...opts, lineWidth: 2, priceLineVisible: false }, paneIndex);
 }

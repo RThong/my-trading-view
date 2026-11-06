@@ -30,8 +30,12 @@ export type Fit = { target: string; start: string; end: string; alpha: number; b
 
 // 以下几个可选字段给固定面板用(固定面板的每个 tab 也是一份 ChartDoc,见 pages/featured/concentration.ts)。
 // 编辑器暂不画它们,只原样保留:从固定面板打开、改完再导出,这些设定不丢。
-/** 画法。缺省 = 普通折线。baseline:会穿零的序列画一条基线;step:低频序列画阶梯(两次发布之间值不变) */
-export type LayerRender = { kind: 'line'; baseline?: number; step?: true };
+/**
+ * 画法。缺省 = 普通折线。baseline:会穿零的序列画一条基线;step:低频序列画阶梯(两次发布之间值不变)。
+ * signed:符号柱(正绿负红、0 基线),看正负和大小的量(净持仓、期限结构)。
+ * events:事件竖线,序列里每个日期画一根满高细柱,值不画(发布日、决议日);挂自己的隐形轴,图层的 scale 不起作用
+ */
+export type LayerRender = { kind: 'line'; baseline?: number; step?: true } | { kind: 'signed' } | { kind: 'events' };
 /** 有绝对含义的阈值线(如「临界 4」),跟随图层所在的纵轴 */
 export type RefLine = { price: number; title: string; color?: string };
 
@@ -81,8 +85,6 @@ export type Pane = {
   stretch: number;
   scales: Scale[];
   layers: Layer[];
-  /** 格子的短名(固定面板工具条上的开关);缺省用主图层的名称 */
-  label?: string;
   /** 读法说明(悬停 ⓘ 显示) */
   desc?: string;
 };
@@ -247,11 +249,18 @@ export function fitScaleIds(p: Pane): Set<string> {
 }
 
 /** 加一条图层:默认第 0 格、右轴(右轴被叠加的线占着就开独立轴)。空图时新建主格。 */
-export function addLayer(doc: ChartDoc, series: string, color: string): ChartDoc {
+/** render:新图层的画法(事件序列加进来直接画竖线);缺省折线 */
+export function addLayer(doc: ChartDoc, series: string, color: string, render?: LayerRender): ChartDoc {
   const [first, ...rest] = doc.panes;
   const overlay =
     first && fitScaleIds(first).has('right') ? { id: nextId(doc, 's'), side: 'overlay' as const } : undefined;
-  const layer: Layer = { id: nextId(doc, 'l'), series, scale: overlay?.id ?? 'right', color };
+  const layer: Layer = {
+    id: nextId(doc, 'l'),
+    series,
+    scale: overlay?.id ?? 'right',
+    color,
+    ...(render && { render }),
+  };
   const panes = first
     ? [
         { ...first, scales: overlay ? [...first.scales, overlay] : first.scales, layers: [...first.layers, layer] },
@@ -288,6 +297,27 @@ export function setLayerCalc(doc: ChartDoc, layerId: string, calc: Calc | undefi
     return doc;
 
   return setLayerField(doc, layerId, 'calc', calc);
+}
+
+/** 事件竖线图层:值不画、挂自己的隐形轴、不算「一条线」(编辑器与固定面板共用这个判断) */
+export function isEventsLayer(l: Layer): boolean {
+  return l.render?.kind === 'events';
+}
+
+/**
+ * 渲染器里真会建出来的轴:有非竖线图层挂着的。竖线挂自己的隐形轴(ev-<图层 id>),它在文档里占的那根独立轴
+ * lw-charts 里没有 —— 对它调 priceScale(id) 会抛错。内置左右轴 lw-charts 每格都有,调用方自己补
+ */
+export function liveScaleIds(pane: Pane): string[] {
+  return [...new Set(pane.layers.filter((l) => !isEventsLayer(l)).map((l) => l.scale))];
+}
+
+/** 画法。undefined = 折线(删掉字段) */
+export function setLayerRender(doc: ChartDoc, layerId: string, render: LayerRender | undefined): ChartDoc {
+  const cur = findLayer(doc, layerId)?.layer;
+  if (!cur || JSON.stringify(cur.render) === JSON.stringify(render)) return doc;
+
+  return setLayerField(doc, layerId, 'render', render);
 }
 
 /** 显隐。显示 = 删掉字段 */
@@ -447,10 +477,10 @@ export function moveLayer(doc: ChartDoc, layerId: string, target: PaneTarget, be
   const builtin = layer.scale === 'right' || layer.scale === 'left' ? BUILTIN[layer.scale] : undefined;
   const carried = [overlay ?? builtin].filter((s) => s !== undefined);
 
-  // 源格只剩这一条线时,源格会被 normalize 删掉:拖到新格 = 整格换了位置,短名 / 说明跟着走;
+  // 源格只剩这一条线时,源格会被 normalize 删掉:拖到新格 = 整格换了位置,说明跟着走;
   // 拖进已有格 = 两格并成一格,只留目标格自己的(源格那段说明讲的是另一件事,带过去反而误导)
-  const { label, desc } = hit.pane.layers.length === 1 ? hit.pane : {};
-  const paneMeta = { ...(label !== undefined && { label }), ...(desc !== undefined && { desc }) };
+  const { desc } = hit.pane.layers.length === 1 ? hit.pane : {};
+  const paneMeta = desc !== undefined ? { desc } : {};
 
   const withoutLayer = doc.panes.map((p) => ({ ...p, layers: p.layers.filter((l) => l.id !== layerId) }));
   const panes =
@@ -565,11 +595,11 @@ function isFit(x: unknown): x is Fit {
 }
 
 function isRender(x: unknown): x is LayerRender {
+  if (!isObj(x)) return false;
+  if (x.kind === 'signed' || x.kind === 'events') return true;
+
   return (
-    isObj(x) &&
-    x.kind === 'line' &&
-    (x.baseline === undefined || isNum(x.baseline)) &&
-    (x.step === undefined || x.step === true)
+    x.kind === 'line' && (x.baseline === undefined || isNum(x.baseline)) && (x.step === undefined || x.step === true)
   );
 }
 function isRefLine(x: unknown): x is RefLine {
@@ -614,6 +644,8 @@ function isLayer(x: unknown): x is Layer {
 }
 
 function canonicalRender(r: LayerRender): LayerRender {
+  if (r.kind !== 'line') return { kind: r.kind };
+
   return {
     kind: r.kind,
     ...(r.baseline !== undefined ? { baseline: r.baseline } : {}),
@@ -679,7 +711,6 @@ function isPane(x: unknown): x is Pane {
     x.scales.every(isScale) &&
     Array.isArray(x.layers) &&
     x.layers.every(isLayer) &&
-    (x.label === undefined || isStr(x.label)) &&
     (x.desc === undefined || isStr(x.desc))
   );
 }
@@ -715,7 +746,6 @@ export function parseChartDoc(x: unknown): ChartDoc | null {
     stretch: p.stretch,
     scales: p.scales.map(canonicalScale),
     layers: p.layers.map(canonicalLayer),
-    ...(p.label !== undefined ? { label: p.label } : {}),
     ...(p.desc !== undefined ? { desc: p.desc } : {}),
   }));
 

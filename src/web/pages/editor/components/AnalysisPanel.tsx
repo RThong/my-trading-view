@@ -35,7 +35,8 @@ type ShownResult = { a: string; b: string; key: string; aShift: number; invert: 
 
 /** 选中的两条序列图层:选的不在图上了就退回默认(第一 / 第二条)。 */
 export function resolvePair(doc: ChartDoc, pair: { a?: string; b?: string }): { a?: Layer; b?: Layer } {
-  const series = doc.panes.flatMap((p) => p.layers);
+  // 叠加对比只认折线:事件竖线没有值;柱状(符号柱)不能隐藏后继续撑轴,当 A 时 B 的轴会定住
+  const series = doc.panes.flatMap((p) => p.layers).filter((l) => (l.render?.kind ?? 'line') === 'line');
   // 叠加期间 A / B 锁定为叠加的那一对(同时只有一组叠加):换线要先取消叠加
   const fitted = series.find((l) => l.fit);
   if (fitted) return { a: series.find((l) => l.id === fitted.fit?.target), b: fitted };
@@ -59,7 +60,8 @@ export function AnalysisPanel({ doc, points, visibleRange, pair, onPair, actions
   const [open, setOpen] = useState(true);
   const [result, setResult] = useState<ShownResult | null>(null);
 
-  const series = doc.panes.flatMap((p) => p.layers);
+  // 叠加对比只认折线:事件竖线没有值;柱状(符号柱)不能隐藏后继续撑轴,当 A 时 B 的轴会定住
+  const series = doc.panes.flatMap((p) => p.layers).filter((l) => (l.render?.kind ?? 'line') === 'line');
   const { a, b } = resolvePair(doc, pair);
   const pairLocked = series.some((l) => l.fit);
   const aPts = a && points[requestKey(rawRequest(a))];
