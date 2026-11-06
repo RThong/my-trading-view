@@ -12,7 +12,7 @@ import {
   kindsOf,
   type FundKind,
 } from '../../../shared/aiChain';
-import type { CalcOp } from './chartDoc';
+import type { CalcOp, Layer } from './chartDoc';
 import { MARKET_CATALOG, ivIndexByUnderlying } from '../../../shared/marketCatalog';
 import {
   AI_CDS,
@@ -22,7 +22,7 @@ import {
   UST_REAL_TENORS,
   UST_TENORS,
 } from '../../../shared/rateCurveDefs';
-import { REGIME_SERIES, type SeriesKey } from '../../../shared/regimeSeries';
+import { REGIME_OHLC_KEYS, REGIME_SERIES, type SeriesKey } from '../../../shared/regimeSeries';
 import {
   CATEGORIES as META_CATEGORIES,
   DERIVED,
@@ -76,6 +76,10 @@ export type SeriesDef = {
   code?: string;
   /** 不进下拉、但 id 照常能解析(旧图引用它照样取得到数):能用 calc 拼出来的派生量、与别的序列同值的腿 */
   hidden?: true;
+  /** 源里有开高低收,能画蜡烛(取法见 useSeriesData 的 seriesBars)。只有收盘的序列画法下拉里「蜡烛」置灰 */
+  ohlc?: true;
+  /** 收盘走本源、K 线另从这个 Yahoo 代码取(蜡烛图层才请求;/api/regime 不为编辑器多发整段 K 线) */
+  barsFrom?: string;
 };
 
 export type SeriesFamily =
@@ -114,6 +118,8 @@ function price(id: string, symbol: string, label: string, aliases: string[]): Se
     unit: '$',
     source: endpoint(`/api/price/${symbol}`, 'close'),
     aliases,
+    // price_eod 存的是整根日 K
+    ohlc: true,
   };
 }
 
@@ -134,6 +140,7 @@ const MANUAL: SeriesDef[] = [
     unit: '$',
     source: { kind: 'regimeOhlc', key: 'btc' },
     weekends: true,
+    ohlc: true,
     aliases: ['比特币', 'bitcoin'],
   },
 ];
@@ -448,6 +455,11 @@ const OVERRIDDEN = new Set(HAND.map((d) => d.id));
 // 下拉只放原始序列:能用 calc 现算的派生量(差 / 比值)从下拉隐藏(要看就在编辑器里拼),但 id 照常能解析,
 // 旧图引用它照样取得到数;calc 还表达不了的派生量暂留下拉,名称标「派生」(见 shared/seriesMeta 的 DERIVED)
 // 不能画成线的(chartable: false)里,标了 events 的是事件日期:能解析(ChartDoc 里写竖线图层用)但不进下拉;其余(点阵图这种日期不是观测日的)不收
+// 收盘进 series、整根 K 线另进 /api/regime 的 ohlc 的那几条(服务端按同一张表发,见 REGIME_OHLC_KEYS)
+const REGIME_WITH_OHLC: ReadonlySet<string> = new Set(REGIME_OHLC_KEYS);
+// 收盘在 /api/regime、K 线按需从 Yahoo 取的(代码与服务端拉收盘用的同一个)
+const YAHOO_BARS: Partial<Record<string, string>> = { spx: '^GSPC', spxew: '^SPXEW', usdjpy: 'JPY=X' };
+
 const FROM_META: SeriesDef[] = REGIME_SERIES.filter(
   (k) => (SERIES_META[k].chartable !== false || SERIES_META[k].events) && !OVERRIDDEN.has(k),
 ).map((k) => {
@@ -466,7 +478,14 @@ const FROM_META: SeriesDef[] = REGIME_SERIES.filter(
   };
 });
 
-export const REGISTRY: SeriesDef[] = [...HAND, ...FROM_META, ...FUNDAMENTALS];
+// 「能画蜡烛」在合并后的整张表上打:只打在 FROM_META 上的话,某条以后挪进手写表(HAND)就会悄悄丢掉
+function withOhlc(d: SeriesDef): SeriesDef {
+  const barsFrom = YAHOO_BARS[d.id];
+  if (barsFrom) return { ...d, ohlc: true, barsFrom };
+  return REGIME_WITH_OHLC.has(d.id) ? { ...d, ohlc: true } : d;
+}
+
+export const REGISTRY: SeriesDef[] = [...HAND, ...FROM_META, ...FUNDAMENTALS].map(withOhlc);
 
 const BY_ID = new Map(REGISTRY.map((d) => [d.id, d]));
 
@@ -538,6 +557,8 @@ export function seriesDef(id: string): SeriesDef | undefined {
     category: 'Yahoo',
     freq: '日',
     source: { kind: 'yahoo', symbol },
+    // /api/yahoo/history 带开高低;个别只给收盘的代码画蜡烛时那几天跳过
+    ohlc: true,
   };
 }
 
@@ -613,4 +634,15 @@ function seriesName(id: string): string {
 /** 序列名;计算图层是「A − B」/「A ÷ B」。卡片、图例、缺数据提示共用。 */
 export function seriesLabel(series: string, calc?: { op: CalcOp; series: string }): string {
   return calc ? `${seriesName(series)} ${OP_TEXT[calc.op]} ${seriesName(calc.series)}` : seriesName(series);
+}
+
+/** 这个图层能不能画蜡烛:源里有开高低收(注册表标了 ohlc),且不是计算图层(现算的一条值没有 K 线)。下拉、取数、渲染、固定面板转换共用 */
+export function canCandle(l: Pick<Layer, 'series' | 'calc'>): boolean {
+  return !!seriesDef(l.series)?.ohlc && !l.calc;
+}
+
+/** 实际按哪种画法画:写了蜡烛却画不了(JSON 里给只有收盘的序列写了 candle)就按折线画,别留一块空白 */
+export function drawnKind(l: Layer): NonNullable<Layer['render']>['kind'] {
+  const kind = l.render?.kind ?? 'line';
+  return kind === 'candle' && !canCandle(l) ? 'line' : kind;
 }

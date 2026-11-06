@@ -16,6 +16,8 @@ import {
   type Pane,
   type ScaleChoice,
 } from '../../../views/chartDoc/chartDoc';
+import { canCandle, drawnKind } from '../../../views/chartDoc/registry';
+import { CandleSwatch } from './CandleSwatch';
 import { baseLabel, layerLabel } from '../layerLabel';
 import { NumberField } from './NumberField';
 import { SeriesSelect } from './SeriesSelect';
@@ -109,13 +111,18 @@ export function LayerCard({
     >
       <div className="flex items-center gap-1.5">
         <GripVertical size={14} className={`shrink-0 ${fixed ? 'invisible' : 'text-neutral-600'}`} />
-        <input
-          type="color"
-          value={layer.color}
-          onChange={(e) => actions.setColor(layer.id, e.target.value)}
-          className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border-0 bg-transparent p-0"
-          title="颜色"
-        />
+        {/* 蜡烛按涨绿跌红画,图层颜色不起作用:不给取色器(占同样宽度,名字不跳) */}
+        {drawnKind(layer) === 'candle' ? (
+          <CandleSwatch className="h-4 w-4 shrink-0" />
+        ) : (
+          <input
+            type="color"
+            value={layer.color}
+            onChange={(e) => actions.setColor(layer.id, e.target.value)}
+            className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border-0 bg-transparent p-0"
+            title="颜色"
+          />
+        )}
         <span
           className={`min-w-0 flex-1 truncate text-sm ${layer.hidden ? 'text-neutral-500' : 'text-neutral-200'}`}
           title={layerLabel(doc, layer)}
@@ -338,8 +345,10 @@ function CalcRow({
 
 // 画法:折线 / 柱状(符号柱,正绿负红、0 基线 —— 净持仓、期限结构这类看正负的量)
 // 叠加中的线(两头)锁住:叠加只认折线(见 AnalysisPanel)
+// 蜡烛:要源里有开高低收(注册表标了 ohlc);计算图层是现算的一条值,没有 K 线
 function RenderRow({ layer, locked, actions }: { layer: Layer; locked: boolean; actions: CardActions }) {
-  const signed = layer.render?.kind === 'signed';
+  const kind = layer.render?.kind === 'signed' || layer.render?.kind === 'candle' ? layer.render.kind : 'line';
+  const candleOk = canCandle(layer);
 
   return (
     <div className="flex items-center gap-1.5" title={locked ? LOCKED_TITLE : undefined}>
@@ -347,11 +356,20 @@ function RenderRow({ layer, locked, actions }: { layer: Layer; locked: boolean; 
       <NativeSelect
         size="xs"
         disabled={locked}
-        value={signed ? 'signed' : 'line'}
-        onChange={(e) => actions.setRender(layer.id, e.target.value === 'signed' ? { kind: 'signed' } : undefined)}
+        value={kind}
+        onChange={(e) =>
+          actions.setRender(
+            layer.id,
+            e.target.value === 'line' ? undefined : { kind: e.target.value as 'signed' | 'candle' },
+          )
+        }
       >
         <NativeSelectOption value="line">折线</NativeSelectOption>
         <NativeSelectOption value="signed">柱状(正绿负红)</NativeSelectOption>
+        {/* 画不了时把原因写在选项文字里:原生下拉的选项悬停提示多数浏览器不显示,挂在整行又会对所有图层都弹 */}
+        <NativeSelectOption value="candle" disabled={!candleOk}>
+          {candleOk ? '蜡烛' : layer.calc ? '蜡烛(计算图层画不了)' : '蜡烛(只有收盘,画不了)'}
+        </NativeSelectOption>
       </NativeSelect>
     </div>
   );

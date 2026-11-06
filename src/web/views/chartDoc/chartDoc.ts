@@ -32,13 +32,15 @@ export type Fit = { target: string; start: string; end: string; alpha: number; b
  * 画法。缺省 = 普通折线。baseline:会穿零的序列画一条基线;step:低频序列画阶梯(两次发布之间值不变)。
  * signed:符号柱(正绿负红、0 基线),看正负和大小的量(净持仓、期限结构)。
  * events:事件竖线,序列里每个日期画一根满高细柱,值不画(发布日、决议日);挂自己的隐形轴,图层的 scale 不起作用。
- * background:背景色带,序列是 0 / 1 标记,值为 1 的日子整格高染图层颜色(淡色,压在线下面);同样挂自己的隐形轴
+ * background:背景色带,序列是 0 / 1 标记,值为 1 的日子整格高染图层颜色(淡色,压在线下面);同样挂自己的隐形轴。
+ * candle:蜡烛(涨绿跌红,图层颜色不起作用),只有注册表标了 ohlc 的序列能用;图例 / 分位 / 参考线照旧按收盘
  */
 export type LayerRender =
   | { kind: 'line'; baseline?: number; step?: true }
   | { kind: 'signed' }
   | { kind: 'events' }
-  | { kind: 'background' };
+  | { kind: 'background' }
+  | { kind: 'candle' };
 /** 有绝对含义的阈值线(如「临界 4」),跟随图层所在的纵轴 */
 export type RefLine = { price: number; title: string; color?: string };
 
@@ -299,7 +301,9 @@ export function setLayerCalc(doc: ChartDoc, layerId: string, calc: Calc | undefi
   if (!cur || (cur.calc?.op === calc?.op && cur.calc?.series === calc?.series && cur.calc?.fill === calc?.fill))
     return doc;
 
-  return setLayerField(doc, layerId, 'calc', calc);
+  // 计算图层是现算的一条值,没有 K 线:原来画成蜡烛的,改回折线(不留一个画不出来的画法在文档里)
+  const next = setLayerField(doc, layerId, 'calc', calc);
+  return calc && cur.render?.kind === 'candle' ? setLayerField(next, layerId, 'render', undefined) : next;
 }
 
 /** 标记图层(事件竖线、背景色带):值不画、挂自己的隐形轴、不算「一条线」(编辑器与固定面板共用这个判断) */
@@ -599,7 +603,7 @@ function isFit(x: unknown): x is Fit {
 
 function isRender(x: unknown): x is LayerRender {
   if (!isObj(x)) return false;
-  if (x.kind === 'signed' || x.kind === 'events' || x.kind === 'background') return true;
+  if (x.kind === 'signed' || x.kind === 'events' || x.kind === 'background' || x.kind === 'candle') return true;
 
   return (
     x.kind === 'line' && (x.baseline === undefined || isNum(x.baseline)) && (x.step === undefined || x.step === true)

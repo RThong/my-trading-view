@@ -17,7 +17,7 @@ import {
   type LayerRender,
   type RefLine,
 } from '../chartDoc/chartDoc';
-import { seriesDef, seriesLabel } from '../chartDoc/registry';
+import { canCandle, seriesDef, seriesLabel } from '../chartDoc/registry';
 import { isAggregateMember, type FundTrim, type SecFiled, type SecLag } from '../../../shared/aiChain';
 import { getJson, SWR_OPTS } from '../../lib/http';
 import { BACKGROUND_ALPHA, ROLL_COLOR, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, withAlpha } from '../../chart/palette';
@@ -192,8 +192,10 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
     const unknown = marks.find((x) => x.render?.kind !== 'events' && x.render?.kind !== 'background');
     if (unknown) throw new Error(`ChartDoc 图层 ${unknown.id}:固定面板不认识画法 ${unknown.render?.kind}`);
     const def = seriesDef(l.series);
-    // 普通图层读 /api/regime 的现成键;计算图层两条腿按注册表取数现算,只要都在注册表里
-    const legsOk = l.calc ? !!def && !!seriesDef(l.calc.series) : def?.source.kind === 'regime';
+    // 普通图层读 /api/regime 的现成键(蜡烛也可以是只进 ohlc 的那几条,如 BTC);计算图层两条腿按注册表取数现算,只要都在注册表里
+    const regimeKind =
+      def?.source.kind === 'regime' || (def?.source.kind === 'regimeOhlc' && l.render?.kind === 'candle');
+    const legsOk = l.calc ? !!def && !!seriesDef(l.calc.series) : regimeKind;
     if (!def || !legsOk)
       throw new Error(
         `ChartDoc 图层 ${l.id}:${l.series}${l.calc ? ` / ${l.calc.series}` : ''} 不在注册表里或不是 /api/regime 的序列`,
@@ -205,6 +207,15 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
       throw new Error(
         `ChartDoc 图层 ${l.id}:固定面板只画右轴原值,不支持平移 / 叠加 / 隐藏 / 左轴 / 独立轴 / 倒轴 / 对数`,
       );
+    // 蜡烛:序列得有 K 线(编辑器画不了会退回折线,固定面板会读不到 ohlc 整格空白);
+    // 固定面板的蜡烛只画 K 线,参考线 / 分位 / 范围框 / 竖线 / 背景写了也不画 → 一并报错
+    if (l.render?.kind === 'candle') {
+      if (!canCandle(l)) throw new Error(`ChartDoc 图层 ${l.id}:${l.series} 没有开高低收,画不了蜡烛`);
+      const extra =
+        l.refLines || l.percentile || scale?.clampVisibleTo || scale?.expandVisibleTo || events.length || rollMismatch;
+      if (extra)
+        throw new Error(`ChartDoc 图层 ${l.id}:固定面板的蜡烛格不画参考线 / 分位 / 范围框 / 竖线 / 背景,写了也不照画`);
+    }
 
     const name = seriesLabel(l.series, l.calc);
     return {

@@ -1,6 +1,6 @@
 // 编辑器的分析计算(纯函数):时间平移、两条线按日期配对、相关性(领先滞后扫描)、叠加选段与换算。
 // 输入输出都是 { time: 'YYYY-MM-DD', value }[](升序),与渲染层同一种形状。
-import type { LinePoint } from './core';
+import type { Bar, LinePoint } from './core';
 
 const DAY_MS = 86_400_000;
 // 1970-01-05 是周一:以它为原点数「第几个工作日」
@@ -37,6 +37,14 @@ export function shiftPoints(points: LinePoint[], n: number): LinePoint[] {
 
   const byDay = new Map(points.map((p) => [shiftDay(toDayNum(p.time), n), p.value]));
   return [...byDay].map(([day, value]) => ({ time: fromDayNum(day), value }));
+}
+
+/** K 线平移(同 shiftPoints:按交易日挪,落到同一天的只留一根)。 */
+export function shiftBars(bars: Bar[], n: number): Bar[] {
+  if (n === 0) return bars;
+
+  const byDay = new Map(bars.map((b) => [shiftDay(toDayNum(b.time), n), b]));
+  return [...byDay].map(([day, b]) => ({ ...b, time: fromDayNum(day) }));
 }
 
 export type Pair = { time: string; a: number; b: number };

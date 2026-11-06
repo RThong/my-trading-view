@@ -69,6 +69,21 @@ describe('固定面板的 ChartDoc', () => {
       render: { kind: 'signed' },
       events: [{ key: 'coreCpiRelease', title: '核心 CPI 发布日', color: '#eab308' }],
     });
+    // 蜡烛照传;BTC 只进 /api/regime 的 ohlc(不在 series 里),蜡烛图层也认
+    // 底子那格带分位 / 参考线,蜡烛格不画这些 → 去掉
+    const btcCandle = withLayer({
+      series: 'btc',
+      render: { kind: 'candle' },
+      refLines: undefined,
+      percentile: undefined,
+    });
+    expect(docToPaneSpecs(btcCandle)[0]).toMatchObject({ key: 'btc', render: { kind: 'candle' } });
+    expect(() => docToPaneSpecs(withLayer({ series: 'btc' }))).toThrow(); // 折线的 BTC 固定面板没有现成键
+    // 写了蜡烛却没有 K 线 / 蜡烛格配了固定面板不画的东西 → 报错(不悄悄空白 / 少画)
+    expect(() => docToPaneSpecs(withLayer({ render: { kind: 'candle' } }))).toThrow();
+    expect(() =>
+      docToPaneSpecs(withLayer({ series: 'btc', render: { kind: 'candle' }, refLines: [{ price: 1, title: 'x' }] })),
+    ).toThrow();
     withEvents.panes[0].layers[1] = { ...ev, shift: 3 };
     expect(() => docToPaneSpecs(withEvents)).toThrow();
     // 错月背景图层 → 格子的 rollMismatch;别的序列当背景、或一格两层背景,固定面板画不了 → 报错

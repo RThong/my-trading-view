@@ -16,6 +16,7 @@ import {
 } from 'lightweight-charts';
 import { fmtDate } from '../../../chart/core';
 import { findLayer, liveScaleIds, type ChartDoc, type Layer, type Pane } from '../../../views/chartDoc/chartDoc';
+import { drawnKind } from '../../../views/chartDoc/registry';
 import type { LayerSeries } from './useEditorChart';
 
 // 鼠标离线多近算抓住(像素)
@@ -67,7 +68,7 @@ export function shiftRange(t: Range & { perPx: number }, dy: number): Range {
 }
 
 function draggable(l: Layer) {
-  return !l.fit && !l.hidden && (l.render?.kind ?? 'line') === 'line';
+  return !l.fit && !l.hidden && drawnKind(l) === 'line';
 }
 
 /** 某条线在逻辑下标 [from, to] 内各点的屏幕 y(最多 MAX_HIT_BARS 根;窗口外 / 没数据的跳过)。 */

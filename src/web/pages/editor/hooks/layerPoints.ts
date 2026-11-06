@@ -1,19 +1,24 @@
 // 从「文档 + 取到的序列数据」算出每个图层最终要画的点(平移后的序列)。渲染层与图例只认这里的结果,不再自己拼。
 import { useMemo } from 'react';
-import { aggregateMax, type LinePoint } from '../../../chart/core';
+import { aggregateMax, type Bar, type LinePoint } from '../../../chart/core';
 import type { Interval } from '../../../hooks/interval';
 import { earliestIso } from '../../../../shared/calc/isoDate';
 import { shiftBusinessDays } from '../../../chart/analysis';
 import { type BandPoint, percentileMarks } from '../../../chart/percentileMarks';
 import { isMarkLayer, type ChartDoc, type Layer, type Pane, type RefLine } from '../../../views/chartDoc/chartDoc';
+import { drawnKind } from '../../../views/chartDoc/registry';
 import { requestKey } from '../../../views/chartDoc/useSeriesData';
 
 export type LayerData = {
-  /** 画在图上的点 */
+  /** 画在图上的点(蜡烛图层是收盘:图例、分位、对准横轴都读它) */
   display: LinePoint[];
+  /** 蜡烛图层的 K 线 */
+  bars?: Bar[];
 };
 
 const EMPTY: LinePoint[] = [];
+// 取不到 K 线时给同一个空数组:渲染层按引用判断要不要重灌,每次新建 [] 会让蜡烛图层随每次文档改动 setData([])
+const EMPTY_BARS: Bar[] = [];
 
 // 标记图层裁剪的结果按「原数组 + 起点」缓存:文档每改一次(改色、拖分隔条)都会重算 computeLayerData,
 // 不缓存的话 filter 每次给新数组,渲染层按引用判断「数据变了」,标记图层整段重灌
@@ -51,6 +56,8 @@ export function layerRequest(l: Layer) {
     ...(l.calc && { calc: l.calc }),
     shift: l.shift ?? 0,
     ...(isMarkLayer(l) && { daily: true as const }),
+    // 蜡烛图层多要一份 K 线(按 drawnKind:写了 candle 却画不了的按折线取)
+    ...(drawnKind(l) === 'candle' && { bars: true as const }),
   };
 }
 
@@ -58,6 +65,7 @@ export function computeLayerData(
   doc: ChartDoc,
   points: Record<string, LinePoint[]>,
   interval: Interval,
+  bars: Record<string, Bar[]> = {},
 ): Record<string, LayerData> {
   const layers = doc.panes.flatMap((p) => p.layers);
   const raw = (l: Layer) => points[requestKey(layerRequest(l))] ?? EMPTY;
@@ -72,8 +80,10 @@ export function computeLayerData(
   const from = starts.length ? earliestIso(starts) : undefined;
 
   const display = (l: Layer) => (isMarkLayer(l) ? clipFrom(periodMax(raw(l), interval), from) : raw(l));
+  const candle = (l: Layer) =>
+    drawnKind(l) === 'candle' ? { bars: bars[requestKey(layerRequest(l))] ?? EMPTY_BARS } : {};
 
-  return Object.fromEntries(layers.map((l) => [l.id, { display: display(l) }]));
+  return Object.fromEntries(layers.map((l) => [l.id, { display: display(l), ...candle(l) }]));
 }
 
 /** 文档或数据变了才重算。 */
@@ -81,8 +91,9 @@ export function useLayerData(
   doc: ChartDoc,
   points: Record<string, LinePoint[]>,
   interval: Interval,
+  bars: Record<string, Bar[]>,
 ): Record<string, LayerData> {
-  return useMemo(() => computeLayerData(doc, points, interval), [doc, points, interval]);
+  return useMemo(() => computeLayerData(doc, points, interval, bars), [doc, points, interval, bars]);
 }
 
 /**

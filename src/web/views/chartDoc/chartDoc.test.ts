@@ -240,6 +240,11 @@ describe('平移 / 倒轴', () => {
     expect('render' in setLayerRender(d, 'l2', undefined).panes[0].layers[1]).toBe(false);
     expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
 
+    const candle = setLayerRender(twoOnMain(), 'l1', { kind: 'candle' });
+    expect(parseChartDoc(JSON.parse(JSON.stringify(candle)))).toEqual(candle);
+    // 蜡烛图层改成计算图层:没有 K 线了,画法退回折线
+    expect('render' in setLayerCalc(candle, 'l1', { op: '-', series: 'vix' }).panes[0].layers[0]).toBe(false);
+
     const bg = setLayerRender(twoOnMain(), 'l2', { kind: 'background' });
     expect(parseChartDoc(JSON.parse(JSON.stringify(bg)))).toEqual(bg);
     expect(isMarkLayer(bg.panes[0].layers[1])).toBe(true);
@@ -479,7 +484,7 @@ describe('固定面板用的可选字段', () => {
   });
 
   test.each([
-    ['render.kind 不认识', { render: { kind: 'candle' } }],
+    ['render.kind 不认识', { render: { kind: 'ohlc-bars' } }],
     ['step 只能是 true', { render: { kind: 'line', step: false } }],
     ['参考线颜色须 #rrggbb', { refLines: [{ price: 1, title: 'x', color: 'red' }] }],
     ['参考线缺价位', { refLines: [{ title: 'x' }] }],

@@ -212,6 +212,15 @@ export const REGIME_SERIES = [
 
 export type RegimeSeries = (typeof REGIME_SERIES)[number];
 
+/**
+ * 收盘进 series、整根日 K 另进 /api/regime 的 ohlc 的序列(同键)。服务端按这张表发 ohlc(漏一条编译报错),
+ * 前端注册表按它标「能画蜡烛」—— 两边同一份,不会一边加了另一边不知道。
+ * 只放固定面板本来就画蜡烛的(DXY、三菱 UFJ):/api/regime 每个视角都要下载,别的序列的 K 线让编辑器按需走
+ * /api/yahoo/history(见前端注册表的 YAHOO_BARS)。BTC / QQQ 的 K 线来自库,也不在这张表里。
+ */
+export const REGIME_OHLC_KEYS = ['usd', 'mufg'] as const satisfies readonly RegimeSeries[];
+export type RegimeOhlcKey = (typeof REGIME_OHLC_KEYS)[number];
+
 /** 面板 pane / 后端 put 能用的键:枚举名,或基本面那类动态键。 */
 export type SeriesKey = RegimeSeries | FundSeries;
 

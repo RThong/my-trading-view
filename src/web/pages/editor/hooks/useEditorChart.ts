@@ -4,12 +4,14 @@
 import { type RefObject, useEffect, useRef } from 'react';
 import {
   AreaSeries,
+  CandlestickSeries,
   createChart,
   HistogramSeries,
   LineSeries,
   LineType,
   PriceScaleMode,
   type AutoscaleInfoProvider,
+  type CandlestickData,
   type IChartApi,
   type IPaneApi,
   type IPriceLine,
@@ -31,6 +33,7 @@ import {
 import { BACKGROUND_ALPHA, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, withAlpha } from '../../../chart/palette';
 import type { Interval } from '../../../hooks/interval';
 import { isMarkLayer, liveScaleIds, type ChartDoc, type Layer, type Pane } from '../../../views/chartDoc/chartDoc';
+import { drawnKind } from '../../../views/chartDoc/registry';
 import { canLogScale, layerMarks, type LayerData } from './layerPoints';
 import { commonRange } from '../../../views/chartDoc/useSeriesData';
 
@@ -41,16 +44,17 @@ type Kind = NonNullable<Layer['render']>['kind'];
  * 上次灌给某图层的数据、当时的画法和颜色:画法变了(符号柱 ↔ 事件)同一份点也要重灌,点的颜色 / 值不一样;
  * 标记图层(竖线、背景色带)的颜色逐点写在数据里(会盖过 series 的 color 选项),改色也得重灌
  */
-type Fed = { pts: LinePoint[]; kind: Kind; color: string };
+type Fed = { src: unknown[]; kind: Kind; color: string };
 
 // 原样自动缩放。轴上去掉范围框时也要显式写回它:lw-charts 合并选项会跳过 undefined,不写就沿用旧框
 const PASS_AUTOSCALE: AutoscaleInfoProvider = (base) => base();
 
-function kindOf(l: Layer): Kind {
-  return l.render?.kind ?? 'line';
-}
-
-type KindDef = { def: SeriesDefinition<SeriesType>; data: (color: string, pts: LinePoint[]) => unknown[] };
+type KindDef = {
+  def: SeriesDefinition<SeriesType>;
+  /** 喂给这种 series 的原料(蜡烛读 K 线,其余读点);引用变了才重灌 */
+  input: (d: LayerData) => unknown[] | undefined;
+  data: (color: string, d: LayerData) => unknown[];
+};
 
 /**
  * 画法表的一项。泛型把「series 种类」和「换出来的点」绑在一起:缺了这种 series 的必填字段、字段类型不对,在这里就编译报错
@@ -61,7 +65,11 @@ function kindDef<T extends SeriesType>(
   def: SeriesDefinition<T>,
   data: (color: string, pts: LinePoint[]) => SeriesDataItemTypeMap[T][],
 ): KindDef {
-  return { def: def as SeriesDefinition<SeriesType>, data };
+  return {
+    def: def as SeriesDefinition<SeriesType>,
+    input: (d) => d.display,
+    data: (color, d) => data(color, d.display),
+  };
 }
 
 /**
@@ -74,6 +82,12 @@ const KINDS: Record<Kind, KindDef> = {
     pts.map((p) => ({ ...p, color: p.value >= 0 ? SIGNED_UP : SIGNED_DOWN })),
   ),
   events: kindDef(HistogramSeries, (color, pts) => pts.map((p) => ({ time: p.time, value: 1, color }))),
+  // 蜡烛读 K 线不读点:涨跌颜色由 series 选项定(见 seriesOptions),图层颜色不起作用
+  candle: {
+    def: CandlestickSeries as SeriesDefinition<SeriesType>,
+    input: (d) => d.bars,
+    data: (_color, d): CandlestickData[] => d.bars ?? [],
+  },
   background: kindDef(AreaSeries, (color, pts) => {
     const tint = withAlpha(color, BACKGROUND_ALPHA);
     return pts.map((p) => {
@@ -87,7 +101,7 @@ const KINDS: Record<Kind, KindDef> = {
 function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
   const hidden = !!layer.hidden;
   // 背景色带的颜色逐点写在数据里(见 KINDS),选项里只关掉线和标记
-  if (kindOf(layer) === 'background')
+  if (drawnKind(layer) === 'background')
     return { ...FULL_HEIGHT_AREA, priceScaleId: `mark-${layer.id}`, visible: !hidden };
   if (isMarkLayer(layer))
     return {
@@ -102,7 +116,21 @@ function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
   const scale = pane.scales.find((sc) => sc.id === layer.scale);
   // 轴的范围框落到这根轴上每条线的自动缩放上,轴取并集(语义见 boxAutoscaleProvider)
   const autoscaleInfoProvider = boxAutoscaleProvider(scale?.clampVisibleTo, scale?.expandVisibleTo) ?? PASS_AUTOSCALE;
-  if (kindOf(layer) === 'signed')
+  // 蜡烛:涨绿跌红(同符号柱的两色),图层颜色不起作用
+  if (drawnKind(layer) === 'candle')
+    return {
+      priceScaleId: layer.scale,
+      visible: !hidden,
+      lastValueVisible: !hidden,
+      autoscaleInfoProvider,
+      upColor: SIGNED_UP,
+      downColor: SIGNED_DOWN,
+      borderUpColor: SIGNED_UP,
+      borderDownColor: SIGNED_DOWN,
+      wickUpColor: SIGNED_UP,
+      wickDownColor: SIGNED_DOWN,
+    };
+  if (drawnKind(layer) === 'signed')
     return { priceScaleId: layer.scale, visible: !hidden, lastValueVisible: !hidden, base: 0, autoscaleInfoProvider };
 
   // 隐藏 = visible: false:不画、不进自动缩放(lw-charts 自带);图例读数取自 layerPoints,不受影响。
@@ -122,7 +150,7 @@ function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
 }
 
 function createLayerSeries(chart: IChartApi, layer: Layer, opts: object, paneIndex: number): ISeriesApi<SeriesType> {
-  const kind = kindOf(layer);
+  const kind = drawnKind(layer);
   const s = chart.addSeries(
     KINDS[kind].def,
     { ...opts, ...(kind === 'line' && { lineWidth: 2 }), priceLineVisible: false },
@@ -208,15 +236,17 @@ export function useEditorChart(
     // 要重灌的:新建的、或数据引用变了的图层(改色、换格都不会换数据引用)
     const stale = layers.flatMap((l) => {
       const s = seriesRef.current.get(l.id);
-      const pts = data[l.id]?.display;
+      const d = data[l.id];
+      const kind = drawnKind(l);
+      const src = d && KINDS[kind].input(d);
       const prev = fedRef.current.get(l.id);
-      const kind = kindOf(l);
-      const changed = prev?.pts !== pts || prev.kind !== kind || (isMarkLayer(l) && prev.color !== l.color);
-      return s && pts && changed ? [{ l, s, pts, kind, prev: prev?.pts }] : [];
+      const changed = !prev || prev.src !== src || prev.kind !== kind || (isMarkLayer(l) && prev.color !== l.color);
+      // had:这条之前灌过非空数据(换画法 / 数据刷新),不算「第一次到位」,不去动横轴
+      return s && d && src && changed ? [{ l, s, d, src, kind, had: (prev?.src.length ?? 0) > 0 }] : [];
     });
-    stale.forEach(({ l, s, pts, kind }) => {
-      s.setData(KINDS[kind].data(l.color, pts) as never);
-      fedRef.current.set(l.id, { pts, kind, color: l.color });
+    stale.forEach(({ l, s, d, src, kind }) => {
+      s.setData(KINDS[kind].data(l.color, d) as never);
+      fedRef.current.set(l.id, { src, kind, color: l.color });
     });
     // 这一轮有没有图层「第一次拿到真数据」(新加的线 / 加载完成)。隐藏的线、标记图层不参与:
     // 看不见的短历史线不该把视图截短;竖线 / 色带是标记,不是一段该对准的数据。
@@ -224,7 +254,7 @@ export function useEditorChart(
     const visible = layers.filter((l) => !l.hidden);
     const lines = visible.filter((l) => !isMarkLayer(l));
     const seriesIds = new Set((lines.length ? lines : visible).map((l) => l.id));
-    const arrived = stale.filter(({ l, pts, prev }) => seriesIds.has(l.id) && pts.length > 0 && !prev?.length);
+    const arrived = stale.filter(({ l, src, had }) => seriesIds.has(l.id) && src.length > 0 && !had);
 
     // 有新线到位、或换了周期,就把横轴对准「所有线都有数据的那一段」:长历史的线不截,往左拖还在,
     // 只是不让短历史的线挤在右边。其余时候缩放归用户,删线 / 改色 / 数据刷新不动视图。
@@ -346,7 +376,7 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, Fed>,
       const opts = seriesOptions(layer, pane, fitTargets);
       const existing = series.get(layer.id);
       // 折线 ↔ 柱子是两种 series,换画法只能删了重建(数据由数据 effect 重灌)
-      const wantType = KINDS[kindOf(layer)].def.type;
+      const wantType = KINDS[drawnKind(layer)].def.type;
       // fed 不删:画法不同数据 effect 本来就会重灌;删了会被当成「数据第一次到位」,把用户调好的横轴缩放冲掉
       if (existing && existing.seriesType() !== wantType) chart.removeSeries(existing);
       if (!existing || existing.seriesType() !== wantType) {
