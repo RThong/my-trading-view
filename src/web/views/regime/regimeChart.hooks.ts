@@ -8,9 +8,9 @@ import { percentileRank } from '../../../shared/calc/stats';
 import type { SeriesKey } from '../../../shared/regimeSeries';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../../chart/paneChart.types';
-import { rollMismatchDates, type RollMismatchKind } from '../../../shared/calc/oilRoll';
+import type { RollMismatchKind } from '../../../shared/calc/oilRoll';
 import {
-  isEventsLayer,
+  isMarkLayer,
   type Calc,
   type ChartDoc,
   type Layer,
@@ -20,15 +20,18 @@ import {
 import { seriesDef, seriesLabel } from '../chartDoc/registry';
 import { isAggregateMember, type FundTrim, type SecFiled, type SecLag } from '../../../shared/aiChain';
 import { getJson, SWR_OPTS } from '../../lib/http';
-import { SIGNED_DOWN, SIGNED_UP } from '../../chart/palette';
+import { BACKGROUND_ALPHA, ROLL_COLOR, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, withAlpha } from '../../chart/palette';
 import { percentileMarks } from '../../chart/percentileMarks';
 
-// 分位阈值与极端期背景色在 chart/percentileMarks / chart/palette(与编辑器共用)。透明底色留给错月背景用
-const BG_NONE = 'rgba(0,0,0,0)';
-// 期货错月背景:中性灰蓝,刻意不与红 / 绿(风险 / 机会)同色系;画在分位带下层。
-// 刻意调淡:错月偏差平时只有线本身波动的零头,这是「在这里算涨跌 / 市场紧时多看一眼」的提醒,
-// 不是「这段数据不能用」—— 0.28 时全历史视图满屏条纹,读起来像大半数据都坏了。
-const BG_ROLL = 'rgba(148,163,184,0.14)';
+// 错月种类 → 服务端发的 0 / 1 标记序列
+const ROLL_FLAG_KEY: Record<RollMismatchKind, SeriesKey> = { crack: 'oilRollCrack', brentWti: 'oilRollBrentWti' };
+// 错月标记序列 → 错月种类(ChartDoc 背景图层转回格子的 rollMismatch 时查)
+const ROLL_KIND_BY_FLAG = new Map<string, RollMismatchKind>(
+  Object.entries(ROLL_FLAG_KEY).map(([kind, key]) => [key, kind as RollMismatchKind]),
+);
+// 分位阈值与极端期背景色在 chart/percentileMarks / chart/palette(与编辑器共用)。
+// 期货错月背景画在分位带下层,颜色、淡度的理由见 chart/palette
+const BG_ROLL = withAlpha(ROLL_COLOR, BACKGROUND_ALPHA);
 export type RegimePoint = { date: string; value: number };
 export type RegimeData = {
   series: Record<string, RegimePoint[]>;
@@ -155,16 +158,39 @@ function eventsOf(l: Layer): NonNullable<PaneSpec['events']>[number] {
 }
 
 /**
+ * 背景图层 → 格子的 rollMismatch。固定面板的背景只有错月一种(读服务端的 0 / 1 标记),
+ * 所以只认那两条标记序列、一格至多一层;别的背景写了却不照画比报错更糟
+ */
+function rollOf(layers: Layer[]): RollMismatchKind | undefined {
+  if (layers.length > 1) throw new Error('ChartDoc:固定面板一格只能有一层背景色带');
+  const [l] = layers;
+  if (!l) return undefined;
+  const kind = ROLL_KIND_BY_FLAG.get(l.series);
+  // 颜色也得是错月那个灰蓝:固定面板按固定色画,写了别的颜色编辑器照画、这里不照画,两边就对不上
+  if (!kind || l.shift || l.hidden || l.calc || l.color.toLowerCase() !== ROLL_COLOR)
+    throw new Error(
+      `ChartDoc 背景图层 ${l.id}:固定面板只认错月标记(oilRollCrack / oilRollBrentWti),颜色须是 ${ROLL_COLOR},不能平移 / 隐藏 / 计算`,
+    );
+
+  return kind;
+}
+
+/**
  * ChartDoc → 固定面板的格子定义。图层的序列 id 经注册表解析成 /api/regime 的键,下游(渲染规格、分位徽标、
- * 缺失提示)照旧按格子走。目前只支持「一格一条 regime 序列 + 若干事件竖线」;不符合就是 doc 写错了,
+ * 缺失提示)照旧按格子走。目前只支持「一格一条 regime 序列 + 若干事件竖线 + 至多一层错月背景」;不符合就是 doc 写错了,
  * 直接抛 —— 模块加载时就炸,不会静默少一格或静默不照画。叠加线 / 蜡烛等等迁到用它们的 tab 时再加。
  */
 export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
   const panes = doc.panes.map((p): PaneSpec => {
-    const lines = p.layers.filter((x) => !isEventsLayer(x));
-    if (lines.length !== 1) throw new Error(`ChartDoc 格 ${p.id}:固定面板目前只支持一格一条线(事件竖线不算)`);
+    const lines = p.layers.filter((x) => !isMarkLayer(x));
+    if (lines.length !== 1) throw new Error(`ChartDoc 格 ${p.id}:固定面板目前只支持一格一条线(竖线、背景不算)`);
     const [l] = lines;
-    const events = p.layers.filter(isEventsLayer).map(eventsOf);
+    const marks = p.layers.filter(isMarkLayer);
+    const events = marks.filter((x) => x.render?.kind === 'events').map(eventsOf);
+    const rollMismatch = rollOf(marks.filter((x) => x.render?.kind === 'background'));
+    // 以后加了别的标记画法(如两线之间填色),这里不认识就报错,别让它两头都不进、悄悄消失
+    const unknown = marks.find((x) => x.render?.kind !== 'events' && x.render?.kind !== 'background');
+    if (unknown) throw new Error(`ChartDoc 图层 ${unknown.id}:固定面板不认识画法 ${unknown.render?.kind}`);
     const def = seriesDef(l.series);
     // 普通图层读 /api/regime 的现成键;计算图层两条腿按注册表取数现算,只要都在注册表里
     const legsOk = l.calc ? !!def && !!seriesDef(l.calc.series) : def?.source.kind === 'regime';
@@ -190,12 +216,13 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
       title: l.title ?? name,
       color: l.color,
       ...(p.desc !== undefined && { desc: p.desc }),
-      ...(l.render && { render: l.render as Exclude<LayerRender, { kind: 'events' }> }),
+      ...(l.render && { render: l.render as Exclude<LayerRender, { kind: 'events' | 'background' }> }),
       ...(l.refLines && { refLines: l.refLines }),
       ...(l.percentile && { percentile: l.percentile }),
       ...(scale?.clampVisibleTo && { clampVisibleTo: scale.clampVisibleTo }),
       ...(scale?.expandVisibleTo && { expandVisibleTo: scale.expandVisibleTo }),
       ...(events.length > 0 && { events }),
+      ...(rollMismatch && { rollMismatch }),
     };
   });
 
@@ -307,13 +334,10 @@ export function buildRegimeSpecs(data: RegimeData, panes: PaneSpec[], interval: 
           .map((r) => ({ time: r.date, value: 1, color: e.color })),
         priceScaleId: `ev-${e.key}`,
       }));
-    // 错月背景:按原始日频逐日判定(同分位带,与显示 interval 无关);最先建 → 在最底层,分位红 / 绿压在它上面。
-    const mismatch =
-      p.rollMismatch &&
-      rollMismatchDates(
-        rows.map((r) => r.date),
-        p.rollMismatch,
-      );
+    // 错月背景:读服务端逐日发的 0 / 1 标记(同分位带,与显示 interval 无关);最先建 → 在最底层,分位红 / 绿压在它上面。
+    // 标记缺失(WTI 没取到)就不画背景,主线照画
+    const flags = p.rollMismatch && data.series[ROLL_FLAG_KEY[p.rollMismatch]];
+    const mismatch = flags && new Set(flags.filter((r) => r.value === 1).map((r) => r.date));
     const rollSpecs: HistoSpec[] = mismatch
       ? [
           {
@@ -326,7 +350,7 @@ export function buildRegimeSpecs(data: RegimeData, panes: PaneSpec[], interval: 
             data: rows.map((r) =>
               mismatch.has(r.date)
                 ? { time: r.date, value: 1, color: BG_ROLL }
-                : { time: r.date, value: 0, color: BG_NONE },
+                : { time: r.date, value: 0, color: TRANSPARENT },
             ),
             priceScaleId: `roll-${key}`,
           },

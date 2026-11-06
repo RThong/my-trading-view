@@ -1,10 +1,9 @@
 // 分位标记:P5 / P95 两条线 + 风险端背景带。固定面板(regime)与图表编辑器共用这一份规则,两边画出来才一致。
 import { percentile } from '../../shared/calc/stats';
-import { BAND_CALM, BAND_RISK } from './palette';
+import { BAND_CALM, BAND_RISK, TRANSPARENT } from './palette';
 
 export const PCTL_LO = 5;
 export const PCTL_HI = 95;
-const BAND_NONE = 'rgba(0,0,0,0)';
 
 export type MarkLine = { price: number; title: string; color?: string };
 export type BandPoint = { time: string; value: number; color: string };
@@ -37,7 +36,7 @@ export function percentileMarks(
   const tint = (p: { time: string; value: number }): BandPoint => {
     if (p.value < lo) return { time: p.time, value: 1, color: riskTail === 'low' ? BAND_RISK : BAND_CALM };
     if (p.value > hi) return { time: p.time, value: 1, color: riskTail === 'high' ? BAND_RISK : BAND_CALM };
-    return { time: p.time, value: 1, color: BAND_NONE };
+    return { time: p.time, value: 1, color: TRANSPARENT };
   };
 
   return { lines, band: riskTail === undefined ? null : pts.map(tint) };

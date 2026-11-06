@@ -71,6 +71,18 @@ describe('固定面板的 ChartDoc', () => {
     });
     withEvents.panes[0].layers[1] = { ...ev, shift: 3 };
     expect(() => docToPaneSpecs(withEvents)).toThrow();
+    // 错月背景图层 → 格子的 rollMismatch;别的序列当背景、或一格两层背景,固定面板画不了 → 报错
+    const bg = { ...ev, series: 'oilRollCrack', color: '#94a3b8', render: { kind: 'background' as const } };
+    withEvents.panes[0].layers[1] = bg;
+    expect(docToPaneSpecs(withEvents)[0]).toMatchObject({ rollMismatch: 'crack' });
+    withEvents.panes[0].layers[1] = { ...bg, series: 'vix' };
+    expect(() => docToPaneSpecs(withEvents)).toThrow();
+    // 颜色不是错月灰蓝:编辑器照画、固定面板按固定色画,两边对不上 → 报错
+    withEvents.panes[0].layers[1] = { ...bg, color: '#f97316' };
+    expect(() => docToPaneSpecs(withEvents)).toThrow();
+    withEvents.panes[0].layers[1] = bg;
+    withEvents.panes[0].layers.push({ ...bg, id: 'l8', series: 'oilRollBrentWti' });
+    expect(() => docToPaneSpecs(withEvents)).toThrow();
     const samePaneTwice: ChartDoc = {
       v: 1,
       panes: [

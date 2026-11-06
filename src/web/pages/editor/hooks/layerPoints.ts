@@ -1,10 +1,11 @@
 // 从「文档 + 取到的序列数据」算出每个图层最终要画的点(平移后的序列)。渲染层与图例只认这里的结果,不再自己拼。
 import { useMemo } from 'react';
-import type { LinePoint } from '../../../chart/core';
+import { aggregateMax, type LinePoint } from '../../../chart/core';
+import type { Interval } from '../../../hooks/interval';
 import { earliestIso } from '../../../../shared/calc/isoDate';
 import { shiftBusinessDays } from '../../../chart/analysis';
 import { type BandPoint, percentileMarks } from '../../../chart/percentileMarks';
-import { isEventsLayer, type ChartDoc, type Layer, type Pane, type RefLine } from '../../../views/chartDoc/chartDoc';
+import { isMarkLayer, type ChartDoc, type Layer, type Pane, type RefLine } from '../../../views/chartDoc/chartDoc';
 import { requestKey } from '../../../views/chartDoc/useSeriesData';
 
 export type LayerData = {
@@ -14,8 +15,8 @@ export type LayerData = {
 
 const EMPTY: LinePoint[] = [];
 
-// 竖线裁剪的结果按「原数组 + 起点」缓存:文档每改一次(改色、拖分隔条)都会重算 computeLayerData,
-// 不缓存的话 filter 每次给新数组,渲染层按引用判断「数据变了」,竖线整段重灌
+// 标记图层裁剪的结果按「原数组 + 起点」缓存:文档每改一次(改色、拖分隔条)都会重算 computeLayerData,
+// 不缓存的话 filter 每次给新数组,渲染层按引用判断「数据变了」,标记图层整段重灌
 const clipped = new WeakMap<LinePoint[], { from: string; out: LinePoint[] }>();
 function clipFrom(pts: LinePoint[], from: string | undefined): LinePoint[] {
   if (!from || !pts.length || pts[0].time >= from) return pts;
@@ -27,16 +28,42 @@ function clipFrom(pts: LinePoint[], from: string | undefined): LinePoint[] {
   return out;
 }
 
-export function layerRequest(l: Layer) {
-  return { series: l.series, ...(l.calc && { calc: l.calc }), shift: l.shift ?? 0 };
+// 标记图层按周期取最大值的结果,按「日线原数组 + 周期」缓存(理由同 clipFrom)
+const maxed = new WeakMap<LinePoint[], { interval: Interval; out: LinePoint[] }>();
+function periodMax(pts: LinePoint[], interval: Interval): LinePoint[] {
+  const hit = maxed.get(pts);
+  if (hit?.interval === interval) return hit.out;
+
+  const out = aggregateMax(pts, interval);
+  maxed.set(pts, { interval, out });
+  return out;
 }
 
-export function computeLayerData(doc: ChartDoc, points: Record<string, LinePoint[]>): Record<string, LayerData> {
+/**
+ * 图层的取数请求。标记图层(竖线、背景)取不聚合的日线,自己按周期取最大值(见 computeLayerData):
+ * 默认聚合取每期最后一天,周 / 月线下会漏掉期中出现过的事件 / 状态。取最大值 = 「这一期里出现过就标上」,
+ * 适合衰退期这种持续数月的时期;错月这种每个月都会出现的状态,月线以上每期都是 1、整张染满 ——
+ * 那是它本身比周期更细,看错月请用日 / 周线(固定面板始终按日频画,不受周期影响)
+ */
+export function layerRequest(l: Layer) {
+  return {
+    series: l.series,
+    ...(l.calc && { calc: l.calc }),
+    shift: l.shift ?? 0,
+    ...(isMarkLayer(l) && { daily: true as const }),
+  };
+}
+
+export function computeLayerData(
+  doc: ChartDoc,
+  points: Record<string, LinePoint[]>,
+  interval: Interval,
+): Record<string, LayerData> {
   const layers = doc.panes.flatMap((p) => p.layers);
   const raw = (l: Layer) => points[requestKey(layerRequest(l))] ?? EMPTY;
-  // 事件竖线裁到其它线最早的起点:竖线比线早开始的话,时间轴会给那段只有竖线的日子留位置,把线挤到一边
+  // 标记图层(竖线、色带)裁到其它线最早的起点:比线早开始的话,时间轴会给那段只有竖线的日子留位置,把线挤到一边
   const starts = layers
-    .filter((l) => !isEventsLayer(l))
+    .filter((l) => !isMarkLayer(l))
     .flatMap((l) =>
       raw(l)
         .slice(0, 1)
@@ -44,12 +71,18 @@ export function computeLayerData(doc: ChartDoc, points: Record<string, LinePoint
     );
   const from = starts.length ? earliestIso(starts) : undefined;
 
-  return Object.fromEntries(layers.map((l) => [l.id, { display: isEventsLayer(l) ? clipFrom(raw(l), from) : raw(l) }]));
+  const display = (l: Layer) => (isMarkLayer(l) ? clipFrom(periodMax(raw(l), interval), from) : raw(l));
+
+  return Object.fromEntries(layers.map((l) => [l.id, { display: display(l) }]));
 }
 
 /** 文档或数据变了才重算。 */
-export function useLayerData(doc: ChartDoc, points: Record<string, LinePoint[]>): Record<string, LayerData> {
-  return useMemo(() => computeLayerData(doc, points), [doc, points]);
+export function useLayerData(
+  doc: ChartDoc,
+  points: Record<string, LinePoint[]>,
+  interval: Interval,
+): Record<string, LayerData> {
+  return useMemo(() => computeLayerData(doc, points, interval), [doc, points, interval]);
 }
 
 /**
@@ -61,9 +94,9 @@ export function canLogScale(pane: Pane, scaleId: string, data: Record<string, La
   if (expand && expand[0] <= 0) return false;
 
   const fitTargets = new Set(pane.layers.flatMap((l) => (l.fit ? [l.fit.target] : [])));
-  // 事件竖线挂自己的隐形轴,不在这根轴上
+  // 标记图层挂自己的隐形轴,不在这根轴上
   return pane.layers
-    .filter((l) => l.scale === scaleId && !isEventsLayer(l) && (!l.hidden || fitTargets.has(l.id)))
+    .filter((l) => l.scale === scaleId && !isMarkLayer(l) && (!l.hidden || fitTargets.has(l.id)))
     .every((l) => (data[l.id]?.display ?? []).every((p) => p.value > 0));
 }
 

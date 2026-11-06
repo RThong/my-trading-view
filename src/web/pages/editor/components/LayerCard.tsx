@@ -7,7 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
 import {
   fitScaleIds,
-  isEventsLayer,
+  isMarkLayer,
   isFitTarget,
   type CalcOp,
   type ChartDoc,
@@ -75,12 +75,12 @@ export function LayerCard({
   const fixed = !!layer.fit || isFitTarget(doc, layer.id);
   // 倒轴 / 对数是整根轴的属性:这根轴上只要挂着叠加的任一头,就锁住(和 A 共轴的第三条线也不能改)
   const axisLocked = pane.layers.some((l) => l.scale === layer.scale && (!!l.fit || isFitTarget(doc, l.id)));
-  // 事件竖线挂自己的隐形轴、值不画:换轴、计算、平移、倒轴对数都没意义,卡片只留颜色和删除
-  const events = isEventsLayer(layer);
-  // 同格里和它挂同一根轴的其它线:同一根轴只有一套刻度,拖线 = 挪这根轴,会一起动。竖线不挂在这根轴上,不算
+  // 标记图层(竖线、背景色带)挂自己的隐形轴、值不画:换轴、计算、平移、倒轴对数都没意义,卡片只留颜色和删除
+  const events = isMarkLayer(layer);
+  // 同格里和它挂同一根轴的其它线:同一根轴只有一套刻度,拖线 = 挪这根轴,会一起动。标记图层不挂在这根轴上,不算
   const sharers = events
     ? []
-    : pane.layers.filter((l) => l.id !== layer.id && l.scale === layer.scale && !isEventsLayer(l));
+    : pane.layers.filter((l) => l.id !== layer.id && l.scale === layer.scale && !isMarkLayer(l));
   const scaleName =
     layer.scale === 'right'
       ? '右轴'
@@ -148,7 +148,11 @@ export function LayerCard({
             <NativeSelectOption value="new">新独立轴</NativeSelectOption>
           </NativeSelect>
         )}
-        {events && <span className="shrink-0 text-[10px] text-neutral-500">竖线</span>}
+        {events && (
+          <span className="shrink-0 text-[10px] text-neutral-500">
+            {layer.render?.kind === 'background' ? '背景' : '竖线'}
+          </span>
+        )}
         {!events && (
           <Popover>
             <PopoverTrigger

@@ -1,5 +1,5 @@
 // 期权/VRP 面板共用的图表辅助:暗色主题选项 + 按 interval 的周期聚合。
-import { LineStyle } from 'lightweight-charts';
+import { type AutoscaleInfoProvider, type ISeriesApi, LineStyle, type SeriesType } from 'lightweight-charts';
 import { sortBy } from 'remeda';
 import type { Interval } from '../hooks/interval';
 
@@ -82,6 +82,19 @@ export function aggregate(points: LinePoint[], interval: Interval): LinePoint[] 
       return [key, { time: key, value: p.value }] as const;
     }),
   );
+  return sortBy([...byKey.values()], (p) => p.time);
+}
+
+/** 同一周期内取最大值,再按时间升序。给 0 / 1 标记用:这一期里有一天是 1 就算 1(取最后一天会漏掉期中出现过的状态)。 */
+export function aggregateMax(points: LinePoint[], interval: Interval): LinePoint[] {
+  if (interval === '1D') return points;
+  const byKey = new Map<string, LinePoint>();
+  points.forEach((p) => {
+    const key = periodKey(p.time, interval);
+    const cur = byKey.get(key);
+    if (!cur || p.value > cur.value) byKey.set(key, { time: key, value: p.value });
+  });
+
   return sortBy([...byKey.values()], (p) => p.time);
 }
 
@@ -195,3 +208,20 @@ export const REF_LINE = {
   lineStyle: LineStyle.Dashed,
   axisLabelVisible: true,
 } as const;
+
+/** 满格高色块 / 竖线挂的隐形轴固定 0~1:值恒为 1 的点就顶满整格(再配 fullHeightScale 去掉上下留白) */
+export const FULL_HEIGHT: AutoscaleInfoProvider = () => ({ priceRange: { minValue: 0, maxValue: 1 } });
+
+/** 满格高面积色块(背景色带、分位带、叠加基准段):线和各种标记都关掉,颜色逐点或整体另给 */
+export const FULL_HEIGHT_AREA = {
+  lineVisible: false,
+  crosshairMarkerVisible: false,
+  priceLineVisible: false,
+  lastValueVisible: false,
+  autoscaleInfoProvider: FULL_HEIGHT,
+} as const;
+
+/** 色块 / 竖线的隐形轴上下不留白 */
+export function fullHeightScale(s: ISeriesApi<SeriesType>) {
+  s.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
+}

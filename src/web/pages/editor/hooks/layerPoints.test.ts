@@ -33,13 +33,13 @@ test('computeLayerData:事件竖线裁到其它线最早的起点,不把时间�
   const pt = (time: string) => ({ time, value: 1 });
   const points = {
     spx: [pt('2020-03-02'), pt('2020-04-01')],
-    coreCpiRelease: [pt('2019-12-11'), pt('2020-03-11'), pt('2020-04-10')],
+    'coreCpiRelease#d': [pt('2019-12-11'), pt('2020-03-11'), pt('2020-04-10')],
   };
-  const out = computeLayerData(doc, points);
+  const out = computeLayerData(doc, points, '1D');
   expect(out.l2.display.map((p) => p.time)).toEqual(['2020-03-11', '2020-04-10']);
   expect(out.l1.display.length).toBe(2);
   // 数据没变时再算一遍(文档改了别的,比如颜色):裁剪结果是同一个数组,渲染层不重灌
-  const again = computeLayerData({ ...doc }, points);
+  const again = computeLayerData({ ...doc }, points, '1D');
   expect(again.l2.display).toBe(out.l2.display);
 });
 
@@ -96,4 +96,15 @@ describe('layerMarks', () => {
     expect(layerMarks(signed, pts).lines).toEqual([{ price: 0, title: '0' }]);
     expect(layerMarks(signed, pts)).toBe(layerMarks(signed, pts));
   });
+});
+
+test('computeLayerData:背景色带周 / 月线按期取最大值(这一期有一天是 1 就算 1),不按期末一天', () => {
+  const doc = { v: 1 as const, panes: [pane([{ series: 'oilRollBrentWti', render: { kind: 'background' } }])] };
+  // 10 月:20 号(含)之前是 1、之后是 0 —— 月末那天是 0,按期末取会整月不染
+  const flags = ['2026-10-01', '2026-10-20', '2026-10-21', '2026-10-30'].map((time, i) => ({
+    time,
+    value: i < 2 ? 1 : 0,
+  }));
+  const out = computeLayerData(doc, { 'oilRollBrentWti#d': flags }, '1M');
+  expect(out.l1.display).toEqual([{ time: '2026-10-01', value: 1 }]);
 });

@@ -3,6 +3,7 @@
 // 所以加格删格时缩放与十字线状态都还在。不依赖旧图表引擎(chart/ 下的 PaneChart*)。
 import { type RefObject, useEffect, useRef } from 'react';
 import {
+  AreaSeries,
   createChart,
   HistogramSeries,
   LineSeries,
@@ -13,48 +14,85 @@ import {
   type IPaneApi,
   type IPriceLine,
   type ISeriesApi,
+  type SeriesDataItemTypeMap,
+  type SeriesDefinition,
   type SeriesType,
   type Time,
 } from 'lightweight-charts';
-import { CHART_OPTIONS, REF_LINE, boxAutoscaleProvider, type LinePoint } from '../../../chart/core';
-import { SIGNED_DOWN, SIGNED_UP } from '../../../chart/palette';
+import {
+  CHART_OPTIONS,
+  FULL_HEIGHT,
+  FULL_HEIGHT_AREA,
+  REF_LINE,
+  boxAutoscaleProvider,
+  fullHeightScale,
+  type LinePoint,
+} from '../../../chart/core';
+import { BACKGROUND_ALPHA, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, withAlpha } from '../../../chart/palette';
 import type { Interval } from '../../../hooks/interval';
-import { isEventsLayer, liveScaleIds, type ChartDoc, type Layer, type Pane } from '../../../views/chartDoc/chartDoc';
+import { isMarkLayer, liveScaleIds, type ChartDoc, type Layer, type Pane } from '../../../views/chartDoc/chartDoc';
 import { canLogScale, layerMarks, type LayerData } from './layerPoints';
 import { commonRange } from '../../../views/chartDoc/useSeriesData';
 
-/** 折线是 Line;符号柱、事件竖线是 Histogram。拖线 / 选中高亮只对折线(见 useLineDrag) */
+/** 折线是 Line;符号柱、事件竖线是 Histogram;背景色带是 Area。拖线 / 选中高亮只对折线(见 useLineDrag) */
 export type LayerSeries = Map<string, ISeriesApi<SeriesType>>;
 type Kind = NonNullable<Layer['render']>['kind'];
 /**
  * 上次灌给某图层的数据、当时的画法和颜色:画法变了(符号柱 ↔ 事件)同一份点也要重灌,点的颜色 / 值不一样;
- * 竖线的颜色逐点写在数据里(会盖过 series 的 color 选项),改色也得重灌
+ * 标记图层(竖线、背景色带)的颜色逐点写在数据里(会盖过 series 的 color 选项),改色也得重灌
  */
 type Fed = { pts: LinePoint[]; kind: Kind; color: string };
 
 // 原样自动缩放。轴上去掉范围框时也要显式写回它:lw-charts 合并选项会跳过 undefined,不写就沿用旧框
 const PASS_AUTOSCALE: AutoscaleInfoProvider = (base) => base();
-// 事件竖线挂的隐形轴固定 0~1、上下不留白:值恒为 1 的柱子就是满高竖线
-const FULL_HEIGHT: AutoscaleInfoProvider = () => ({ priceRange: { minValue: 0, maxValue: 1 } });
 
 function kindOf(l: Layer): Kind {
   return l.render?.kind ?? 'line';
 }
 
-/** 按画法换成 lw-charts 要的点:符号柱逐点上色,事件竖线值恒为 1 */
-function toSeriesData(kind: Kind, color: string, pts: LinePoint[]) {
-  if (kind === 'signed') return pts.map((p) => ({ ...p, color: p.value >= 0 ? SIGNED_UP : SIGNED_DOWN }));
-  if (kind === 'events') return pts.map((p) => ({ time: p.time, value: 1, color }));
-  return pts;
+type KindDef = { def: SeriesDefinition<SeriesType>; data: (color: string, pts: LinePoint[]) => unknown[] };
+
+/**
+ * 画法表的一项。泛型把「series 种类」和「换出来的点」绑在一起:缺了这种 series 的必填字段、字段类型不对,在这里就编译报错
+ * (多写了它不认的字段 TS 查不出 —— 回调返回值不做多余属性检查,比如面积图写成 color 而不是 topColor 要靠浏览器里看)。
+ * 出了这一层表里只剩宽类型,建 series 时不用再断言;灌数据那一处(setData)按宽类型断言一次
+ */
+function kindDef<T extends SeriesType>(
+  def: SeriesDefinition<T>,
+  data: (color: string, pts: LinePoint[]) => SeriesDataItemTypeMap[T][],
+): KindDef {
+  return { def: def as SeriesDefinition<SeriesType>, data };
 }
+
+/**
+ * 每种画法:用哪种 lw-charts series、点怎么换。符号柱逐点上色;事件竖线值恒为 1;
+ * 背景色带值恒为 1、标记非 0 的日子上色其余透明,用面积图(柱子之间有缝,放大后一段会碎成竖纹,同分位带)
+ */
+const KINDS: Record<Kind, KindDef> = {
+  line: kindDef(LineSeries, (_color, pts) => pts),
+  signed: kindDef(HistogramSeries, (_color, pts) =>
+    pts.map((p) => ({ ...p, color: p.value >= 0 ? SIGNED_UP : SIGNED_DOWN })),
+  ),
+  events: kindDef(HistogramSeries, (color, pts) => pts.map((p) => ({ time: p.time, value: 1, color }))),
+  background: kindDef(AreaSeries, (color, pts) => {
+    const tint = withAlpha(color, BACKGROUND_ALPHA);
+    return pts.map((p) => {
+      const fill = p.value !== 0 ? tint : TRANSPARENT;
+      return { time: p.time, value: 1, topColor: fill, bottomColor: fill };
+    });
+  }),
+};
 
 /** 各画法的 series 选项。每次对账整份写回,改色 / 换轴 / 显隐 / 范围框都走这里 */
 function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
   const hidden = !!layer.hidden;
-  if (isEventsLayer(layer))
+  // 背景色带的颜色逐点写在数据里(见 KINDS),选项里只关掉线和标记
+  if (kindOf(layer) === 'background')
+    return { ...FULL_HEIGHT_AREA, priceScaleId: `mark-${layer.id}`, visible: !hidden };
+  if (isMarkLayer(layer))
     return {
       color: layer.color,
-      priceScaleId: `ev-${layer.id}`,
+      priceScaleId: `mark-${layer.id}`,
       visible: !hidden,
       lastValueVisible: false,
       priceLineVisible: false,
@@ -84,17 +122,14 @@ function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
 }
 
 function createLayerSeries(chart: IChartApi, layer: Layer, opts: object, paneIndex: number): ISeriesApi<SeriesType> {
-  if (kindOf(layer) === 'line')
-    return chart.addSeries(LineSeries, { ...opts, lineWidth: 2, priceLineVisible: false }, paneIndex);
-
-  const s = chart.addSeries(HistogramSeries, { ...opts, priceLineVisible: false }, paneIndex);
-  if (isEventsLayer(layer)) fullHeight(s);
+  const kind = kindOf(layer);
+  const s = chart.addSeries(
+    KINDS[kind].def,
+    { ...opts, ...(kind === 'line' && { lineWidth: 2 }), priceLineVisible: false },
+    paneIndex,
+  );
+  if (isMarkLayer(layer)) fullHeightScale(s);
   return s;
-}
-
-/** 竖线的隐形轴上下不留白:值恒为 1 的柱子顶满整格 */
-function fullHeight(s: ISeriesApi<SeriesType>) {
-  s.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
 }
 
 type Options = {
@@ -176,16 +211,19 @@ export function useEditorChart(
       const pts = data[l.id]?.display;
       const prev = fedRef.current.get(l.id);
       const kind = kindOf(l);
-      const changed = prev?.pts !== pts || prev.kind !== kind || (kind === 'events' && prev.color !== l.color);
+      const changed = prev?.pts !== pts || prev.kind !== kind || (isMarkLayer(l) && prev.color !== l.color);
       return s && pts && changed ? [{ l, s, pts, kind, prev: prev?.pts }] : [];
     });
     stale.forEach(({ l, s, pts, kind }) => {
-      s.setData(toSeriesData(kind, l.color, pts));
+      s.setData(KINDS[kind].data(l.color, pts) as never);
       fedRef.current.set(l.id, { pts, kind, color: l.color });
     });
-    // 这一轮有没有图层「第一次拿到真数据」(新加的线 / 加载完成)。隐藏的线、事件竖线不参与:
-    // 看不见的短历史线不该把视图截短;竖线是零散的日期,不是一段有起止的数据
-    const seriesIds = new Set(layers.filter((l) => !l.hidden && !isEventsLayer(l)).map((l) => l.id));
+    // 这一轮有没有图层「第一次拿到真数据」(新加的线 / 加载完成)。隐藏的线、标记图层不参与:
+    // 看不见的短历史线不该把视图截短;竖线 / 色带是标记,不是一段该对准的数据。
+    // 但图上只有标记图层时就按它们对准,不然视图停在默认位置,色带挤在右边一截
+    const visible = layers.filter((l) => !l.hidden);
+    const lines = visible.filter((l) => !isMarkLayer(l));
+    const seriesIds = new Set((lines.length ? lines : visible).map((l) => l.id));
     const arrived = stale.filter(({ l, pts, prev }) => seriesIds.has(l.id) && pts.length > 0 && !prev?.length);
 
     // 有新线到位、或换了周期,就把横轴对准「所有线都有数据的那一段」:长历史的线不截,往左拖还在,
@@ -257,8 +295,8 @@ export function useEditorChart(
 
     doc.panes
       .flatMap((p) => p.layers)
-      // 隐藏的线不画(被叠加的 A 隐藏时 series 仍 visible,线会留着);竖线没有值
-      .filter((l) => !l.hidden && !isEventsLayer(l))
+      // 隐藏的线不画(被叠加的 A 隐藏时 series 仍 visible,线会留着);标记图层没有值
+      .filter((l) => !l.hidden && !isMarkLayer(l))
       .forEach((l) => {
         const s = seriesRef.current.get(l.id);
         if (!s) return;
@@ -308,7 +346,7 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, Fed>,
       const opts = seriesOptions(layer, pane, fitTargets);
       const existing = series.get(layer.id);
       // 折线 ↔ 柱子是两种 series,换画法只能删了重建(数据由数据 effect 重灌)
-      const wantType = kindOf(layer) === 'line' ? 'Line' : 'Histogram';
+      const wantType = KINDS[kindOf(layer)].def.type;
       // fed 不删:画法不同数据 effect 本来就会重灌;删了会被当成「数据第一次到位」,把用户调好的横轴缩放冲掉
       if (existing && existing.seriesType() !== wantType) chart.removeSeries(existing);
       if (!existing || existing.seriesType() !== wantType) {
@@ -317,12 +355,14 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, Fed>,
       }
       if (existing.getPane().paneIndex() !== paneIndex) existing.moveToPane(paneIndex);
       existing.applyOptions(opts);
-      if (isEventsLayer(layer)) fullHeight(existing);
+      if (isMarkLayer(layer)) fullHeightScale(existing);
     });
 
     // 层次同 TradingView:卡片列表最上面那条画在最上层(lw-charts 里序号越大越靠上)。
-    // 从底层往上逐个归位,前面已归位的不会被后面的挪动打乱。
-    pane.layers.toReversed().forEach((layer, order) => {
+    // 标记图层(背景色带、竖线)一律压在线下面,不看卡片顺序。从底层往上逐个归位,前面已归位的不会被后面的挪动打乱。
+    const marks = pane.layers.filter(isMarkLayer).toReversed();
+    const lines = pane.layers.filter((l) => !isMarkLayer(l)).toReversed();
+    [...marks, ...lines].forEach((layer, order) => {
       const s = series.get(layer.id);
       if (s && s.seriesOrder() !== order) s.setSeriesOrder(order);
     });

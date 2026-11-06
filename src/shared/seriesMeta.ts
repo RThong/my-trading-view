@@ -55,7 +55,7 @@ export type SeriesMeta = {
   weekends?: true;
   /** 不能当一条线画:事件日期(值无意义)或日期不是观测日(点阵图的日期是预测年份)。 */
   chartable?: false;
-  /** 事件日期(发布日、决议日):编辑器下拉里列出,加到图上画竖线。须同时 chartable: false */
+  /** 事件日期(发布日、决议日):能解析(ChartDoc 里写 render: events 画竖线),但不进编辑器下拉 —— 事件不该由用户从搜索里拼。须同时 chartable: false */
   events?: true;
   /** 不进编辑器下拉(id 照常能解析):与另一条同值、只是取法不同的腿,下拉里只该有一条 */
   hidden?: true;
@@ -264,6 +264,10 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   wti: daily('能源', 'WTI 原油期货', '$/桶', ['原油', 'oil', 'cl']),
   brent: daily('能源', 'Brent 原油期货', '$/桶', ['原油', 'oil', 'bz']),
   rbob: daily('能源', 'RBOB 汽油期货', '$/gal', ['汽油']),
+  // 期货连续合约换月错配(见 shared/calc/oilRoll):1 = 这天两腿合约月份对不上,差出来的是近两月价差。
+  // 0 / 1 标记,只配裂解 / Brent−WTI 那几格当背景色带(ChartDoc 写 render: background),单独加没意义 → 不进下拉
+  oilRollCrack: { ...daily('能源', '裂解错月日(产品腿与 WTI 合约月不同)'), hidden: true },
+  oilRollBrentWti: { ...daily('能源', 'Brent−WTI 错月日(两腿合约月不同)'), hidden: true },
 };
 
 /**

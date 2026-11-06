@@ -270,9 +270,9 @@ TradingView
   2. ~~`refLines`~~、~~`band`~~：跟随所在图层的纵轴。`band` 不另设字段，改写成两条 refLines（「常态下限 / 上限」），沿用「有参考线时 percentile 只染背景」的渲染规则。✅ PaneSpec 的 `band` 已删，8 格改为 `refLines: normalBand(lo, hi)`
   3. ~~`desc`：挂在格子上~~（曾另加格子 `label` 给老面板工具条用，按「不兼容老面板界面」已删）
   4. ~~`percentile`：P5/P95 带和 riskTail~~
-  5. ~~`events`：事件竖线，做成图层画法 `render: { kind: 'events' }`（日期仍取注册表序列）~~ ✅ 发布日 / 决议日序列进编辑器下拉，选中即画竖线；`docToPaneSpecs` 转成格子的 `events`
+  5. ~~`events`：事件竖线，做成图层画法 `render: { kind: 'events' }`（日期仍取注册表序列）~~ ✅ 编辑器能画；发布日 / 决议日序列不进下拉，只在 ChartDoc JSON 里写（理由同第 7 项）；`docToPaneSpecs` 转成格子的 `events`
   6. ~~`clamp/expandVisibleTo`：做成纵轴（Scale）的属性~~ ✅ `Scale.clampVisibleTo` / `expandVisibleTo`，编辑器能画、`docToPaneSpecs` 照传；不做 UI 入口（编辑器里拖轴即可，预设范围是固定面板的需求）
-  7. 背景色带（按状态给背景上色）、两条线之间填色。背景色带 = 图层画法 `render: { kind: 'background' }` + 一条 0/1 序列；PaneSpec 的 `rollMismatch` 改由服务端发两条 0/1 序列（`oilRoll` 照算，按 WTI 交易日；改前逐日对账 4 格的错月日集合）
+  7. ~~背景色带（按状态给背景上色）~~、两条线之间填色。~~背景色带 = 图层画法 `render: { kind: 'background' }` + 一条 0/1 序列；PaneSpec 的 `rollMismatch` 改由服务端发两条 0/1 序列~~ ✅ 服务端发 `oilRollCrack` / `oilRollBrentWti`（按 WTI 交易日推到期日；改前逐日对过 4 格错月日集合全等），固定面板改读它们；编辑器能画，但标记序列不进下拉，只在 ChartDoc JSON 里写（2026-11-06 定：事件 / 状态不由用户从搜索里拼，以后走类似 Pine 的定义）。两条线之间填色未做
   8. 变换：均线、同比、Z-score、起点 = 100（期数按各序列自身频率算）。做成图层上的参数（如 `transform: { ma: 20 }`），不做成被引用序列的属性
   9. ~~图层 `hidden`：默认隐藏（对应 PaneSpec `overlays[].hidden`）~~ ✅ 编辑器图例行有眼睛按钮切换；`docToPaneSpecs` 遇到会报错，等叠加线支持后转给 overlay
 
@@ -284,7 +284,7 @@ TradingView
   目标是 PaneSpec 退场，分两步：
   ① L2-1 补齐后，写反向转换 `paneSpecsToDoc`，用脚本生成全部视角的 ChartDoc（不手抄）；测试断言转换前后画的东西、读数一致。删掉各 `dims.ts` 的手写 PaneSpec，类型退为转换层内部类型。**不兼容老面板的界面功能**（2026-11-06 定）：格子工具条的上移下移、折叠、ⓘ 说明、画线、「只看 X」等不为它们在 JSON 里留字段，按 key 存的顺序 / 折叠 / 趋势线本地存档可以丢。约 2 天。
   ② 编辑器渲染器补齐 L2-1 全部画法，固定面板改用它的只读模式，删掉 `docToPaneSpecs` 与旧 regime 渲染链路。老面板的画线不迁（见上）。约 3 到 4 天。
-     进度（2026-11-06）：编辑器已能画 refLines、baseline、step、percentile（P5/P95 线 + riskTail 背景带）、desc（图例 ⓘ）、events、signed、hidden、纵轴范围框；还缺 candle、背景色带（rollMismatch）、变换（均线 / 同比 / Z-score）。
+     进度（2026-11-06）：编辑器已能画 refLines、baseline、step、percentile（P5/P95 线 + riskTail 背景带）、desc（图例 ⓘ）、events、signed、hidden、纵轴范围框；还缺 candle、变换（均线 / 同比 / Z-score）。背景色带已做（`render: { kind: 'background' }`）。
      口径差异：编辑器的分位阈值按图上的点算（周 / 月线是聚合点），同 TradingView 指标默认「跟随图表周期」；固定面板按原始日频算，相当于 TradingView 指定 `timeframe = "D"`。要两种都支持时再加参数（如 `percentile.tf`），默认跟随图表。
   不在范围：旧引擎 `PaneChartView` 还给 AssetChart / TenorHistoryPanel / AttackDefensePanel 用；SEC 申报提示、「暂不可用」提示按视角和数据状态生成，留在固定面板外层，不进 ChartDoc。
   验收：任意 regime 格右上角有「编辑」入口，点开后编辑器内容和原格一致，修改不影响原格。

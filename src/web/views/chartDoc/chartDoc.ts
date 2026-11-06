@@ -28,14 +28,17 @@ export type Scale = {
  */
 export type Fit = { target: string; start: string; end: string; alpha: number; beta: number; r: number };
 
-// 以下几个可选字段给固定面板用(固定面板的每个 tab 也是一份 ChartDoc,见 pages/featured/concentration.ts)。
-// 编辑器暂不画它们,只原样保留:从固定面板打开、改完再导出,这些设定不丢。
 /**
  * 画法。缺省 = 普通折线。baseline:会穿零的序列画一条基线;step:低频序列画阶梯(两次发布之间值不变)。
  * signed:符号柱(正绿负红、0 基线),看正负和大小的量(净持仓、期限结构)。
- * events:事件竖线,序列里每个日期画一根满高细柱,值不画(发布日、决议日);挂自己的隐形轴,图层的 scale 不起作用
+ * events:事件竖线,序列里每个日期画一根满高细柱,值不画(发布日、决议日);挂自己的隐形轴,图层的 scale 不起作用。
+ * background:背景色带,序列是 0 / 1 标记,值为 1 的日子整格高染图层颜色(淡色,压在线下面);同样挂自己的隐形轴
  */
-export type LayerRender = { kind: 'line'; baseline?: number; step?: true } | { kind: 'signed' } | { kind: 'events' };
+export type LayerRender =
+  | { kind: 'line'; baseline?: number; step?: true }
+  | { kind: 'signed' }
+  | { kind: 'events' }
+  | { kind: 'background' };
 /** 有绝对含义的阈值线(如「临界 4」),跟随图层所在的纵轴 */
 export type RefLine = { price: number; title: string; color?: string };
 
@@ -299,9 +302,9 @@ export function setLayerCalc(doc: ChartDoc, layerId: string, calc: Calc | undefi
   return setLayerField(doc, layerId, 'calc', calc);
 }
 
-/** 事件竖线图层:值不画、挂自己的隐形轴、不算「一条线」(编辑器与固定面板共用这个判断) */
-export function isEventsLayer(l: Layer): boolean {
-  return l.render?.kind === 'events';
+/** 标记图层(事件竖线、背景色带):值不画、挂自己的隐形轴、不算「一条线」(编辑器与固定面板共用这个判断) */
+export function isMarkLayer(l: Layer): boolean {
+  return l.render?.kind === 'events' || l.render?.kind === 'background';
 }
 
 /**
@@ -309,7 +312,7 @@ export function isEventsLayer(l: Layer): boolean {
  * lw-charts 里没有 —— 对它调 priceScale(id) 会抛错。内置左右轴 lw-charts 每格都有,调用方自己补
  */
 export function liveScaleIds(pane: Pane): string[] {
-  return [...new Set(pane.layers.filter((l) => !isEventsLayer(l)).map((l) => l.scale))];
+  return [...new Set(pane.layers.filter((l) => !isMarkLayer(l)).map((l) => l.scale))];
 }
 
 /** 画法。undefined = 折线(删掉字段) */
@@ -596,7 +599,7 @@ function isFit(x: unknown): x is Fit {
 
 function isRender(x: unknown): x is LayerRender {
   if (!isObj(x)) return false;
-  if (x.kind === 'signed' || x.kind === 'events') return true;
+  if (x.kind === 'signed' || x.kind === 'events' || x.kind === 'background') return true;
 
   return (
     x.kind === 'line' && (x.baseline === undefined || isNum(x.baseline)) && (x.step === undefined || x.step === true)

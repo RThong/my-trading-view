@@ -28,7 +28,6 @@ import {
   type PaneTarget,
   type ScaleChoice,
 } from '../../../views/chartDoc/chartDoc';
-import { seriesDef } from '../../../views/chartDoc/registry';
 
 const STORAGE_KEY = 'mtv:chartEditor:doc';
 
@@ -73,13 +72,7 @@ export function useChartDoc() {
         // 只看普通图层:A − B 不算「A 在图上」(计算图层在卡片上单独删)
         d.panes.some((p) => p.layers.some((l) => l.series === series && !l.calc))
           ? removeSeries(d, series)
-          : // 事件日期(发布日)加进来直接画竖线
-            addLayer(
-              d,
-              series,
-              nextColor(d, SERIES_COLORS),
-              seriesDef(series)?.events ? { kind: 'events' } : undefined,
-            ),
+          : addLayer(d, series, nextColor(d, SERIES_COLORS)),
       ),
     remove: (layerId: string) => setDoc((d) => removeLayer(d, layerId)),
     move: (layerId: string, target: PaneTarget, before?: string) =>

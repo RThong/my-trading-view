@@ -126,13 +126,10 @@ describe('registry', () => {
 
   test('regime 序列除了不可画的都能解析;能用 calc 拼的派生量不进下拉,calc 拼不了的标「派生」', () => {
     const ids = new Set(REGISTRY.map((d) => d.id));
-    // 点阵图的日期是预测年份,不进;事件日期(发布日 / 决议日)进,标 events,加到图上画竖线
+    // 点阵图的日期是预测年份,不进;事件日期、错月标记能解析(ChartDoc 里写竖线 / 背景图层用),但不进下拉
     expect(REGIME_SERIES.filter((k) => !ids.has(k))).toEqual(['sepMedian']);
-    expect(REGISTRY.filter((d) => d.events).map((d) => d.id)).toEqual([
-      'bojHikeDates',
-      'coreCpiRelease',
-      'corePceRelease',
-    ]);
+    const markOnly = ['bojHikeDates', 'coreCpiRelease', 'corePceRelease', 'oilRollCrack', 'oilRollBrentWti'];
+    expect(markOnly.every((k) => seriesDef(k)?.hidden)).toBe(true);
     // 旧图引用的派生 id 照样能解析(取得到数),只是下拉里不列
     const calcDerived = Object.keys(DERIVED).filter((k) => DERIVED[k as keyof typeof DERIVED] === 'calc');
     expect(calcDerived.every((k) => seriesDef(k)?.hidden)).toBe(true);
