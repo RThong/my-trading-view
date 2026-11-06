@@ -266,7 +266,7 @@ TradingView
 
 **提案**（这一组就是「逐步完善 JSON」的具体步骤）
 - **L2-1（P1）ChartDoc 补齐表达能力**。全部是可选字段，保持 v1，按下面的顺序加：
-  1. render：~~line（带 step、baseline）~~、~~signed~~（编辑器 ⚙ 数据页可切「柱状」）、candle（candle 需要取数层出 OHLC）
+  1. render：~~line（带 step、baseline）~~、~~signed~~（编辑器 ⚙ 数据页可切「柱状」）、~~candle~~（⚙ 画法「蜡烛」，只有注册表标了 `ohlc` 的序列能选：ETF 现货、BTC、`REGIME_OHLC_KEYS`（DXY、三菱 UFJ、标普 500、标普等权、美元日元，服务端与前端共用这张表）、Yahoo 任意代码）
   2. ~~`refLines`~~、~~`band`~~：跟随所在图层的纵轴。`band` 不另设字段，改写成两条 refLines（「常态下限 / 上限」），沿用「有参考线时 percentile 只染背景」的渲染规则。✅ PaneSpec 的 `band` 已删，8 格改为 `refLines: normalBand(lo, hi)`
   3. ~~`desc`：挂在格子上~~（曾另加格子 `label` 给老面板工具条用，按「不兼容老面板界面」已删）
   4. ~~`percentile`：P5/P95 带和 riskTail~~
@@ -284,7 +284,7 @@ TradingView
   目标是 PaneSpec 退场，分两步：
   ① L2-1 补齐后，写反向转换 `paneSpecsToDoc`，用脚本生成全部视角的 ChartDoc（不手抄）；测试断言转换前后画的东西、读数一致。删掉各 `dims.ts` 的手写 PaneSpec，类型退为转换层内部类型。**不兼容老面板的界面功能**（2026-11-06 定）：格子工具条的上移下移、折叠、ⓘ 说明、画线、「只看 X」等不为它们在 JSON 里留字段，按 key 存的顺序 / 折叠 / 趋势线本地存档可以丢。约 2 天。
   ② 编辑器渲染器补齐 L2-1 全部画法，固定面板改用它的只读模式，删掉 `docToPaneSpecs` 与旧 regime 渲染链路。老面板的画线不迁（见上）。约 3 到 4 天。
-     进度（2026-11-06）：编辑器已能画 refLines、baseline、step、percentile（P5/P95 线 + riskTail 背景带）、desc（图例 ⓘ）、events、signed、hidden、纵轴范围框；还缺 candle、变换（均线 / 同比 / Z-score）。背景色带已做（`render: { kind: 'background' }`）。
+     进度（2026-11-06）：编辑器已能画 refLines、baseline、step、percentile（P5/P95 线 + riskTail 背景带）、desc（图例 ⓘ）、events、signed、hidden、纵轴范围框；还缺变换（均线 / 同比 / Z-score）。蜡烛已做。背景色带已做（`render: { kind: 'background' }`）。
      口径差异：编辑器的分位阈值按图上的点算（周 / 月线是聚合点），同 TradingView 指标默认「跟随图表周期」；固定面板按原始日频算，相当于 TradingView 指定 `timeframe = "D"`。要两种都支持时再加参数（如 `percentile.tf`），默认跟随图表。
   不在范围：旧引擎 `PaneChartView` 还给 AssetChart / TenorHistoryPanel / AttackDefensePanel 用；SEC 申报提示、「暂不可用」提示按视角和数据状态生成，留在固定面板外层，不进 ChartDoc。
   验收：任意 regime 格右上角有「编辑」入口，点开后编辑器内容和原格一致，修改不影响原格。

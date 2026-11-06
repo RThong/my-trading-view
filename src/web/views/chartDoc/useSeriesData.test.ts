@@ -13,7 +13,7 @@ import {
   yahooId,
 } from './registry';
 import { asOfValue } from '../../pages/editor/hooks/useCrosshairLegend';
-import { calcPoints, commonRange, requestKey, seriesPoints, weekdayOnly } from './useSeriesData';
+import { calcPoints, commonRange, requestKey, seriesBars, seriesPoints, weekdayOnly } from './useSeriesData';
 import { layerUnit } from '../../pages/editor/layerLabel';
 import { REGIME_SERIES, isSeriesKey } from '../../../shared/regimeSeries';
 import { DERIVED } from '../../../shared/seriesMeta';
@@ -38,6 +38,84 @@ const regime: RegimeData = {
 const endpoints = { '/api/price/SPY': [{ date: '2026-10-30', open: 750, close: 755.7 }] };
 const curves = { real: { series: { '10Y': [{ date: '2026-10-30', value: 1.92 }] } } };
 const src = { regime, endpoints, curves };
+
+describe('seriesBars', () => {
+  test('标了 ohlc 的才有 K 线:BTC 取 ohlc、去周末;缺开高低用收盘补(同服务端 toOhlc);只有收盘的序列为空', () => {
+    expect(seriesBars(seriesDef('btc')!, src, '1D').map((b) => b.time)).toEqual(['2026-10-30', '2026-11-02']);
+    // 夹具里 SPY 只有 open / close:高低用收盘补
+    expect(seriesBars(seriesDef('SPY')!, src, '1D')).toEqual([
+      { time: '2026-10-30', open: 750, high: 755.7, low: 755.7, close: 755.7 },
+    ]);
+    const spy = {
+      ...src,
+      endpoints: { '/api/price/SPY': [{ date: '2026-10-30', open: 750, high: 760, low: 749, close: 755.7 }] },
+    };
+    expect(seriesBars(seriesDef('SPY')!, spy, '1D')).toEqual([
+      { time: '2026-10-30', open: 750, high: 760, low: 749, close: 755.7 },
+    ]);
+    expect(seriesBars(seriesDef('vix')!, src, '1D')).toEqual([]);
+    // 开高低为 null:补成一字线(不能 Number(null) = 0,那会是一根拉到 0 的 K 线)
+    const nulls = {
+      ...src,
+      endpoints: { '/api/price/SPY': [{ date: '2026-10-30', open: null, high: null, low: null, close: 755.7 }] },
+    };
+    expect(seriesBars(seriesDef('SPY')!, nulls, '1D')).toEqual([
+      { time: '2026-10-30', open: 755.7, high: 755.7, low: 755.7, close: 755.7 },
+    ]);
+    // Yahoo 任意代码:history 带开高低;缺的那天用收盘补
+    const yahoo = {
+      ...src,
+      yahoo: {
+        '^N225': {
+          symbol: '^N225',
+          name: 'Nikkei 225',
+          points: [
+            { date: '2026-11-04', close: 50, open: 49, high: 51, low: 48 },
+            { date: '2026-11-05', close: 52, open: null, high: null, low: null },
+          ],
+        },
+      },
+    };
+    expect(seriesBars(seriesDef('yh:^N225')!, yahoo, '1D')).toEqual([
+      { time: '2026-11-04', open: 49, high: 51, low: 48, close: 50 },
+      { time: '2026-11-05', open: 52, high: 52, low: 52, close: 52 },
+    ]);
+    // 标普 500:收盘在 /api/regime,K 线按需从 Yahoo ^GSPC 取(/api/regime 不为编辑器多发整段 K 线)
+    expect(seriesDef('spx')).toMatchObject({ ohlc: true, barsFrom: '^GSPC' });
+    const gspc = {
+      ...src,
+      yahoo: {
+        '^GSPC': {
+          symbol: '^GSPC',
+          name: 'S&P 500',
+          points: [{ date: '2026-11-04', close: 6800, open: 6790, high: 6810, low: 6780 }],
+        },
+      },
+    };
+    expect(seriesBars(seriesDef('spx')!, gspc, '1D')).toEqual([
+      { time: '2026-11-04', open: 6790, high: 6810, low: 6780, close: 6800 },
+    ]);
+  });
+
+  test('周线聚合:开取首、收取尾、高低取极值;平移按交易日挪', () => {
+    const btc = {
+      ...src,
+      regime: {
+        ...regime,
+        ohlc: {
+          btc: [
+            { time: '2026-11-02', open: 10, high: 12, low: 9, close: 11 },
+            { time: '2026-11-04', open: 11, high: 15, low: 8, close: 14 },
+          ],
+        },
+      },
+    };
+    expect(seriesBars(seriesDef('btc')!, btc, '1W')).toEqual([
+      { time: '2026-11-02', open: 10, high: 15, low: 8, close: 14 },
+    ]);
+    expect(seriesBars(seriesDef('btc')!, btc, '1D', 1).map((b) => b.time)).toEqual(['2026-11-03', '2026-11-05']);
+  });
+});
 
 describe('seriesPoints', () => {
   test('regime 序列:统一成 {time,value},丢掉非有限值', () => {

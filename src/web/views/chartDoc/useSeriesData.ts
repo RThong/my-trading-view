@@ -3,11 +3,11 @@
 // 任意 Yahoo 代码走 /api/yahoo/history。
 import { useMemo } from 'react';
 import useSWR from 'swr';
-import { aggregate, isWeekend, type LinePoint } from '../../chart/core';
+import { aggregate, aggregateBars, isWeekend, type Bar, type LinePoint } from '../../chart/core';
 import type { Interval } from '../../hooks/interval';
 import { useServerRefresh } from '../../hooks/useServerRefresh';
 import { useRegimeData, type RegimeData } from '../regime/regimeChart.hooks';
-import { combineSeries, shiftPoints } from '../../chart/analysis';
+import { combineSeries, shiftBars, shiftPoints } from '../../chart/analysis';
 import type { Calc } from './chartDoc';
 import {
   rememberYahooName,
@@ -33,17 +33,19 @@ export function weekdayOnly(points: LinePoint[]): LinePoint[] {
  * 一次取数请求:哪条序列、平移多少交易日;daily = 不按页头周期聚合、固定日线
  * (领先滞后扫描要逐交易日平移,周 / 月线聚合过的序列扫不出日级领先)。同一序列参数不同就是不同请求。
  */
-export type SeriesRequest = { series: string; calc?: Calc; shift: number; daily?: true };
+export type SeriesRequest = { series: string; calc?: Calc; shift: number; daily?: true; bars?: true };
 
 /** 请求的键(也是 points 的键)。序列 id 里不会有 '|' / '@' / '#'(parseChartDoc 拒收,注册表也没有)。 */
-export function requestKey({ series, calc, shift, daily }: SeriesRequest): string {
+export function requestKey({ series, calc, shift, daily, bars }: SeriesRequest): string {
   const c = calc ? `|${calc.op}${calc.fill ? 'f' : ''}|${calc.series}` : '';
-  return `${series}${c}${shift ? `@${shift}` : ''}${daily ? '#d' : ''}`;
+  return `${series}${c}${shift ? `@${shift}` : ''}${daily ? '#d' : ''}${bars ? '#b' : ''}`;
 }
 
 function parseKey(key: string): SeriesRequest {
-  const daily = key.endsWith('#d');
-  const body = daily ? key.slice(0, -2) : key;
+  const bars = key.endsWith('#b');
+  const rest = bars ? key.slice(0, -2) : key;
+  const daily = rest.endsWith('#d');
+  const body = daily ? rest.slice(0, -2) : rest;
   const at = body.lastIndexOf('@');
   const head = at < 0 ? body : body.slice(0, at);
   const shift = at < 0 ? 0 : Number(body.slice(at + 1));
@@ -51,8 +53,13 @@ function parseKey(key: string): SeriesRequest {
   const calc: Calc | undefined = op
     ? { op: op[0] as Calc['op'], series: b, ...(op[1] === 'f' && { fill: true as const }) }
     : undefined;
-  const req = { series, shift, ...(calc && { calc }) };
-  return daily ? { ...req, daily: true } : req;
+  return {
+    series,
+    shift,
+    ...(calc && { calc }),
+    ...(daily && { daily: true as const }),
+    ...(bars && { bars: true as const }),
+  };
 }
 
 /** 「URL + 字段」型的源(price_eod 现货、25Δ、VRP、/api/series):URL → 行;取不到的为 null(单个失败不连累其它)。 */
@@ -83,7 +90,11 @@ async function getEndpoints([, ...urls]: string[]): Promise<EndpointData> {
   return Object.fromEntries(rows);
 }
 
-type YahooHistory = { symbol: string; name: string; points: { date: string; close: number }[] };
+type YahooHistory = {
+  symbol: string;
+  name: string;
+  points: { date: string; close: number; open?: number | null; high?: number | null; low?: number | null }[];
+};
 /** 代码 → 日线;取不到的为 null(单个代码失败不连累其它代码) */
 type YahooData = Record<string, YahooHistory | null>;
 const NO_YAHOO: YahooData = {};
@@ -116,8 +127,13 @@ async function getYahoo([, ...symbols]: string[]): Promise<YahooData> {
 }
 
 /** 日线里周末点超过一成 = 7×24 资产(加密);美股的周末快照入库前已归到周五,不会误判。同 AssetChart 的判据。 */
-function hasWeekends(points: LinePoint[]) {
-  return points.filter((p) => isWeekend(p.time)).length > points.length * 0.1;
+function hasWeekends(times: string[]) {
+  return times.filter(isWeekend).length > times.length * 0.1;
+}
+
+/** 这条序列要不要去周末:静态表里的 7×24 序列已标 weekends;Yahoo 任意代码事先不知道,按数据判。点和 K 线共用 */
+function isSevenDay(def: SeriesDef, src: SeriesSource, times: string[]) {
+  return !!def.weekends || (src.kind === 'yahoo' && hasWeekends(times));
 }
 
 /** 收益曲线接口的响应(只用到的字段)。同利率页 useYieldCurve 的 YieldCurveData。 */
@@ -200,6 +216,59 @@ export function calcPoints(
   return aggregate(shiftPoints(values, shift), interval);
 }
 
+/**
+ * 一根日 K。收盘必须是数,否则这天不要(同点数据);开高低缺(null / 不是数)就用收盘补成一字线 ——
+ * 同服务端 toOhlc 的口径:有收盘的日子就有一根,蜡烛不会比收盘点少几天、更不会整条空白(只给收盘的 Yahoo 代码画成一排一字线)。
+ * null 不能直接 Number():Number(null) = 0,会造出一根 0 价 K 线把轴压扁
+ */
+function toBar(time: string, o: unknown, h: unknown, l: unknown, c: unknown): Bar[] {
+  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+  const close = num(c);
+  if (close === undefined) return [];
+
+  return [{ time, open: num(o) ?? close, high: num(h) ?? close, low: num(l) ?? close, close }];
+}
+
+function fromRegimeOhlc(src: { key: string }, data: SourceData) {
+  return data.regime.ohlc?.[src.key] ?? [];
+}
+function fromYahoo(symbol: string, data: SourceData) {
+  return (data.yahoo?.[symbol]?.points ?? []).flatMap((p) => toBar(p.date, p.open, p.high, p.low, p.close));
+}
+
+/** 按数据源种类取整根日 K(只有注册表标了 ohlc 的序列才有)。 */
+const BAR_EXTRACT: Partial<{
+  [K in SeriesSource['kind']]: (src: Extract<SeriesSource, { kind: K }>, data: SourceData) => Bar[];
+}> = {
+  regime: fromRegimeOhlc,
+  regimeOhlc: fromRegimeOhlc,
+  endpoint: (src, data) =>
+    (data.endpoints?.[src.url] ?? []).flatMap((r) => toBar(r.date, r.open, r.high, r.low, r.close)),
+  yahoo: (src, data) => fromYahoo(src.symbol, data),
+};
+
+/**
+ * 单条序列的 K 线(蜡烛图层用):取整根日 K → (7×24 的)去周末 → 平移 → 按周期聚合(开取首、收取尾、高低取极值)。
+ * 注册表没标 ohlc 的返回 [](画法下拉里「蜡烛」本来就置灰)。
+ */
+export function seriesBars(def: SeriesDef, data: SourceData, interval: Interval, shift = 0): Bar[] {
+  const src = def.source;
+  const extract = def.ohlc
+    ? (BAR_EXTRACT[src.kind] as ((s: SeriesSource, d: SourceData) => Bar[]) | undefined)
+    : undefined;
+  // 收盘走本源、K 线另从 Yahoo 取的(标普 500 等,见注册表 barsFrom)
+  const raw = def.barsFrom ? fromYahoo(def.barsFrom, data) : (extract?.(src, data) ?? []);
+  const daily = isSevenDay(
+    def,
+    src,
+    raw.map((b) => b.time),
+  )
+    ? raw.filter((b) => !isWeekend(b.time))
+    : raw;
+
+  return aggregateBars(shiftBars(daily, shift), interval);
+}
+
 /** 单条序列的日线:从原始响应取出 → 统一形状 → 丢非有限值 → (7×24 的)去周末。 */
 function dailyPoints(def: SeriesDef, data: SourceData): LinePoint[] {
   const src = def.source;
@@ -207,9 +276,13 @@ function dailyPoints(def: SeriesDef, data: SourceData): LinePoint[] {
 
   const finite = raw.filter((p) => Number.isFinite(p.value));
 
-  // 静态表里的 7×24 序列已标 weekends;Yahoo 任意代码事先不知道,按数据判
-  const weekends = def.weekends || (src.kind === 'yahoo' && hasWeekends(finite));
-  return weekends ? weekdayOnly(finite) : finite;
+  return isSevenDay(
+    def,
+    src,
+    finite.map((p) => p.time),
+  )
+    ? weekdayOnly(finite)
+    : finite;
 }
 
 /**
@@ -229,6 +302,8 @@ export function commonRange(series: LinePoint[][]): { from: string; to: string }
 export type SeriesData = {
   /** 请求键(requestKey)→ 点。只含本次请求到的。 */
   points: Record<string, LinePoint[]>;
+  /** 请求键 → K 线。只含带 bars 标记的请求(蜡烛图层;点照旧在 points 里,图例 / 分位读收盘) */
+  bars: Record<string, Bar[]>;
   isLoading: boolean;
   error?: Error;
   /** 用到了、但这次没有数据的序列名(计算图层是「A − B」,含两条没有重叠日期的情况) */
@@ -245,8 +320,12 @@ export function useSeriesData(requests: SeriesRequest[], interval: Interval): Se
       keysStr
         .split(',')
         .map(parseKey)
-        .flatMap((r) => [r.series, ...(r.calc ? [r.calc.series] : [])])
-        .map((id) => seriesDef(id)?.source)
+        .flatMap((r) => {
+          const def = seriesDef(r.series);
+          // 蜡烛图层的 K 线另从 Yahoo 取的,把那个代码也算进要请求的源
+          const bars: SeriesSource[] = r.bars && def?.barsFrom ? [{ kind: 'yahoo', symbol: def.barsFrom }] : [];
+          return [def?.source, ...(r.calc ? [seriesDef(r.calc.series)?.source] : []), ...bars];
+        })
         .filter((s) => s !== undefined),
     [keysStr],
   );
@@ -294,7 +373,36 @@ export function useSeriesData(requests: SeriesRequest[], interval: Interval): Se
     [treasury.data, real.data, bei.data, jgb.data, sofr_ois.data, credit_rating.data, credit_term.data, ai_cds.data],
   );
 
-  const points = useMemo(
+  const points = useMemo(() => {
+    // bars 标记只决定要不要另算 K 线,点按去掉它的键算一次:同一序列的折线和蜡烛共用一份点
+    const byBase = new Map<string, LinePoint[] | undefined>();
+    const pointsOf = (req: SeriesRequest) => {
+      const base = requestKey({ ...req, bars: undefined });
+      if (!byBase.has(base)) byBase.set(base, computePoints(req));
+      return byBase.get(base);
+    };
+    function computePoints(req: SeriesRequest): LinePoint[] | undefined {
+      const def = seriesDef(req.series);
+      const data = { regime, yahoo, endpoints, curves };
+      const iv = req.daily ? '1D' : interval;
+      if (!def) return undefined;
+      if (!req.calc) return seriesPoints(def, data, iv, req.shift);
+
+      const b = seriesDef(req.calc.series);
+      return b ? calcPoints(def, req.calc, b, data, iv, req.shift) : undefined;
+    }
+
+    return Object.fromEntries(
+      keysStr
+        .split(',')
+        .filter(Boolean)
+        .flatMap((k) => {
+          const pts = pointsOf(parseKey(k));
+          return pts ? [[k, pts]] : [];
+        }),
+    );
+  }, [keysStr, regime, yahoo, endpoints, curves, interval]);
+  const bars = useMemo(
     () =>
       Object.fromEntries(
         keysStr
@@ -303,13 +411,9 @@ export function useSeriesData(requests: SeriesRequest[], interval: Interval): Se
           .flatMap((k) => {
             const req = parseKey(k);
             const def = seriesDef(req.series);
-            const data = { regime, yahoo, endpoints, curves };
-            const iv = req.daily ? '1D' : interval;
-            if (!def) return [];
-            if (!req.calc) return [[k, seriesPoints(def, data, iv, req.shift)]];
-
-            const b = seriesDef(req.calc.series);
-            return b ? [[k, calcPoints(def, req.calc, b, data, iv, req.shift)]] : [];
+            // 只给蜡烛图层的请求(bars 标记)算 K 线:画成折线的 SPY 不必每次刷新都多跑一遍
+            if (!req.bars || !def?.ohlc || req.calc) return [];
+            return [[k, seriesBars(def, { regime, yahoo, endpoints, curves }, req.daily ? '1D' : interval, req.shift)]];
           }),
       ),
     [keysStr, regime, yahoo, endpoints, curves, interval],
@@ -345,5 +449,5 @@ export function useSeriesData(requests: SeriesRequest[], interval: Interval): Se
       });
   }, [keysStr, regime, curves]);
 
-  return { points, isLoading, error, missing, stale };
+  return { points, bars, isLoading, error, missing, stale };
 }

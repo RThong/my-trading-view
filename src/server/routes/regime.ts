@@ -37,7 +37,7 @@ import {
   eqwDdSpread,
   type Point,
 } from '../analytics/regime';
-import type { RegimeSeries, FundSeries, SeriesKey } from '../../shared/regimeSeries';
+import type { RegimeSeries, FundSeries, SeriesKey, RegimeOhlcKey } from '../../shared/regimeSeries';
 import { rollMismatchFlags } from '../../shared/calc/oilRoll';
 import { nearMinusFar } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
@@ -536,8 +536,11 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const cape1990 = cape?.filter((p) => p.date >= '1990-01-01');
   put('cape', cape1990?.length ? cape1990 : undefined);
   const ohlc: Record<string, OhlcBar[]> = {};
-  if (usdBars?.length) ohlc.usd = toOhlc(usdBars.map((b) => ({ ...b, date: b.tradeDate })));
-  if (mufgBars?.length) ohlc.mufg = toOhlc(mufgBars.map((b) => ({ ...b, date: b.tradeDate })));
+  // 收盘进 series 的那几条,整根日 K 同键进 ohlc(前端画蜡烛用)。表的键 = REGIME_OHLC_KEYS,漏一条编译报错
+  const ohlcBars: Record<RegimeOhlcKey, typeof usdBars> = { usd: usdBars, mufg: mufgBars };
+  Object.entries(ohlcBars).forEach(([key, b]) => {
+    if (b?.length) ohlc[key] = toOhlc(b.map((x) => ({ ...x, date: x.tradeDate })));
+  });
 
   // 派生:分量齐才算,缺则整条进 unavailable。净流动性只出周三点、RRP 单位换算,均见 netLiquidityWeekly。
   put(

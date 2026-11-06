@@ -1,5 +1,7 @@
 import { Eye, EyeOff } from 'lucide-react';
 import { InfoTip } from '../../../components/InfoTip';
+import { drawnKind } from '../../../views/chartDoc/registry';
+import { CandleSwatch } from './CandleSwatch';
 import type { Interval } from '../../../hooks/interval';
 import { shiftBusinessDays } from '../../../chart/analysis';
 import { isMarkLayer, type ChartDoc } from '../../../views/chartDoc/chartDoc';
@@ -60,7 +62,11 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
                 key={l.id}
                 className={`group pointer-events-auto flex items-center gap-1.5 whitespace-nowrap ${l.hidden ? 'opacity-50' : ''}`}
               >
-                <span className="h-0.5 w-3 rounded" style={{ background: l.color }} />
+                {drawnKind(l) === 'candle' ? (
+                  <CandleSwatch className="h-2.5 w-3" />
+                ) : (
+                  <span className="h-0.5 w-3 rounded" style={{ background: l.color }} />
+                )}
                 <span className="text-neutral-400">{layerLabel(doc, l)}</span>
                 {/* 标记图层(竖线、背景色带)的值无意义,只给名字 */}
                 {!isMarkLayer(l) && <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>}

@@ -4,7 +4,7 @@ import { createYahooLookup, isYahooSymbol, type YahooHistory, type YahooSearchHi
 /**
  * 图表编辑器的「任意 Yahoo 代码」:
  *  · GET /search?q=     → 代码搜索(股票 / ETF / 期货 / 指数 / 汇率 / 加密)
- *  · GET /history/:sym  → 该代码 1970 起的日线收盘
+ *  · GET /history/:sym  → 该代码 1970 起的日线:收盘 + 开高低(编辑器画蜡烛用;缺的那天为 null,前端用收盘补)
  * 读时现拉、不落库;内存里按 TTL 缓存,同一代码不反复打 Yahoo。失败不缓存,下次请求再试。
  */
 const HISTORY_SINCE = '1970-01-01';
