@@ -26,9 +26,9 @@ export function useLayerData(doc: ChartDoc, points: Record<string, LinePoint[]>)
   return useMemo(() => computeLayerData(doc, points), [doc, points]);
 }
 
-/** 这根轴能不能取对数:挂在上面的图层(画出来的值)全都大于 0。还没数据的图层不算阻碍。 */
+/** 这根轴能不能取对数:挂在上面的图层(画出来的值)全都大于 0。还没数据的、隐藏的图层不算阻碍。 */
 export function canLogScale(pane: Pane, scaleId: string, data: Record<string, LayerData>): boolean {
   return pane.layers
-    .filter((l) => l.scale === scaleId)
+    .filter((l) => l.scale === scaleId && !l.hidden)
     .every((l) => (data[l.id]?.display ?? []).every((p) => p.value > 0));
 }

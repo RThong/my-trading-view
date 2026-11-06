@@ -18,6 +18,14 @@ import { canLogScale, type LayerData } from './layerPoints';
 import { commonRange } from '../../../views/chartDoc/useSeriesData';
 
 export type LayerSeries = Map<string, ISeriesApi<'Line'>>;
+type SeriesOpts = {
+  color: string;
+  priceScaleId: string;
+  visible: boolean;
+  lineVisible: boolean;
+  lastValueVisible: boolean;
+  crosshairMarkerVisible: boolean;
+};
 
 type Options = {
   /** 拖完分隔条后读回的各格高度比例(写回 JSON,保持 JSON 是唯一真源)。 */
@@ -103,8 +111,8 @@ export function useEditorChart(
       s.setData(pts);
       fedRef.current.set(id, pts);
     });
-    // 这一轮有没有图层「第一次拿到真数据」(新加的线 / 加载完成)
-    const seriesIds = new Set(layers.map((l) => l.id));
+    // 这一轮有没有图层「第一次拿到真数据」(新加的线 / 加载完成)。隐藏的线不参与:看不见的短历史线不该把视图截短
+    const seriesIds = new Set(layers.filter((l) => !l.hidden).map((l) => l.id));
     const arrived = stale.filter(({ id, pts, prev }) => seriesIds.has(id) && pts.length > 0 && !prev?.length);
 
     // 有新线到位、或换了周期,就把横轴对准「所有线都有数据的那一段」:长历史的线不截,往左拖还在,
@@ -185,6 +193,7 @@ export function useEditorChart(
  */
 function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LinePoint[]>, doc: ChartDoc) {
   const wanted = new Set(doc.panes.flatMap((p) => p.layers.map((l) => l.id)));
+  const fitTargets = new Set(doc.panes.flatMap((p) => p.layers.flatMap((l) => (l.fit ? [l.fit.target] : []))));
 
   [...series.entries()]
     .filter(([id]) => !wanted.has(id))
@@ -196,7 +205,17 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LineP
 
   doc.panes.forEach((pane, paneIndex) => {
     pane.layers.forEach((layer) => {
-      const opts = { color: layer.color, priceScaleId: layer.scale };
+      // 隐藏 = visible: false:不画、不进自动缩放(lw-charts 自带);图例读数取自 layerPoints,不受影响。
+      // 例外是被叠加的 A:B 轴每帧按 A 轴的范围换算(useFitSync),A 不进自动缩放的话 A 轴定住、B 也跟着定住 —— 只关线和标签
+      const hidden = !!layer.hidden;
+      const opts = {
+        color: layer.color,
+        priceScaleId: layer.scale,
+        visible: !hidden || fitTargets.has(layer.id),
+        lineVisible: !hidden,
+        lastValueVisible: !hidden,
+        crosshairMarkerVisible: !hidden,
+      };
       const existing = series.get(layer.id);
       if (!existing) {
         series.set(layer.id, createLayerSeries(chart, opts, paneIndex));
@@ -227,10 +246,6 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LineP
   });
 }
 
-function createLayerSeries(
-  chart: IChartApi,
-  opts: { color: string; priceScaleId: string },
-  paneIndex: number,
-): ISeriesApi<'Line'> {
+function createLayerSeries(chart: IChartApi, opts: SeriesOpts, paneIndex: number): ISeriesApi<'Line'> {
   return chart.addSeries(LineSeries, { ...opts, lineWidth: 2, priceLineVisible: false }, paneIndex);
 }

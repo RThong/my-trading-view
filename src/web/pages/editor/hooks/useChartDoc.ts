@@ -14,6 +14,7 @@ import {
   setLayerCalc,
   setLayerColor,
   setLayerScale,
+  setLayerHidden,
   setLayerShift,
   setScaleInvert,
   setScaleLog,
@@ -78,6 +79,7 @@ export function useChartDoc() {
     setColor: (layerId: string, color: string) => setDoc((d) => setLayerColor(d, layerId, color)),
     setStretches: (stretches: number[]) => setDoc((d) => setStretches(d, stretches)),
     setShift: (layerId: string, shift: number) => setDoc((d) => setLayerShift(d, layerId, shift)),
+    setHidden: (layerId: string, hidden: boolean) => setDoc((d) => setLayerHidden(d, layerId, hidden)),
     setCalc: (layerId: string, calc: Calc | undefined) => setDoc((d) => setLayerCalc(d, layerId, calc)),
     setInvert: (paneId: string, scaleId: string, invert: boolean) =>
       setDoc((d) => setScaleInvert(d, paneId, scaleId, invert)),

@@ -173,9 +173,9 @@ export function useLineDrag(
         lo === null || hi === null
           ? undefined
           : nearest(
-              // 叠加中的线轴跟着 A 走,拖了也会弹回:不让拖
+              // 叠加中的线轴跟着 A 走,拖了也会弹回:不让拖;隐藏的线看不见,点不中
               pane.layers
-                .filter((l) => !l.fit)
+                .filter((l) => !l.fit && !l.hidden)
                 .flatMap((l) => {
                   const s = seriesRef.current.get(l.id);
                   // 鼠标落在这条线的数据范围外(比如别的线右移后延伸出的未来段):不算点中。
@@ -190,7 +190,7 @@ export function useLineDrag(
 
       // 要拖的:按到的那条;没按到线就拖本格里已选中的那条;都没有 → 不接管
       // 叠加中的线不接管(和上面的点选同一条规则):它若在叠加前就被选中,空白处拖也不能挪它的轴
-      const layer = picked ?? pane.layers.find((l) => l.id === selectedRef.current && !l.fit);
+      const layer = picked ?? pane.layers.find((l) => l.id === selectedRef.current && !l.fit && !l.hidden);
       const series = layer && seriesRef.current.get(layer.id);
       if (!layer || !series) return;
 

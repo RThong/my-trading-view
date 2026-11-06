@@ -4,6 +4,7 @@ import {
   addLayer,
   applyLayerFit,
   clearLayerFit,
+  setLayerHidden,
   setLayerShift,
   setScaleInvert,
   setScaleLog,
@@ -227,6 +228,18 @@ describe('平移 / 倒轴', () => {
     expect(setLayerShift(e, 'l2', 84)).toBe(e);
     expect(setLayerShift(e, 'l2', 99999).panes[0].layers[1]).toMatchObject({ shift: 3650 });
     expect('shift' in setLayerShift(e, 'l2', 0).panes[0].layers[1]).toBe(false);
+  });
+
+  test('setLayerHidden:显示删字段、不变返回原引用、往返解析保留;hidden 只认 true', () => {
+    const d = setLayerHidden(twoOnMain(), 'l2', true);
+    expect(d.panes[0].layers[1]).toMatchObject({ hidden: true });
+    expect(setLayerHidden(d, 'l2', true)).toBe(d);
+    expect('hidden' in setLayerHidden(d, 'l2', false).panes[0].layers[1]).toBe(false);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
+
+    const raw = JSON.parse(JSON.stringify(d));
+    raw.panes[0].layers[1].hidden = false;
+    expect(parseChartDoc(raw)).toBeNull();
   });
 
   test('setScaleLog 与倒轴互不影响,往返解析保留', () => {

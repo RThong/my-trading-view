@@ -163,8 +163,10 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
     // 固定面板画不了的设定:写了却不照画比报错更糟(看图的人以为生效了)。
     // 格高(stretch)不在此列(用户定):只关乎好不好看、不影响读数,固定面板各格一律等高,高度靠折叠 / 展开调
     const scale = p.scales.find((sc) => sc.id === l.scale);
-    if (l.shift || l.fit || l.scale !== 'right' || scale?.invert || scale?.log)
-      throw new Error(`ChartDoc 图层 ${l.id}:固定面板只画右轴原值,不支持平移 / 叠加 / 左轴 / 独立轴 / 倒轴 / 对数`);
+    if (l.shift || l.fit || l.hidden || l.scale !== 'right' || scale?.invert || scale?.log)
+      throw new Error(
+        `ChartDoc 图层 ${l.id}:固定面板只画右轴原值,不支持平移 / 叠加 / 隐藏 / 左轴 / 独立轴 / 倒轴 / 对数`,
+      );
 
     const name = seriesLabel(l.series, l.calc);
     return {

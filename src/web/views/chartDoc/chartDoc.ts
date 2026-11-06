@@ -61,6 +61,8 @@ export type Layer = {
   fit?: Fit;
   /** 图例名;缺省用注册表里的名称 */
   title?: string;
+  /** 隐藏:不画线、不撑纵轴,图例里照给读数(同 TradingView 图例行的眼睛) */
+  hidden?: true;
   render?: LayerRender;
   refLines?: RefLine[];
   percentile?: PercentileBand;
@@ -211,6 +213,17 @@ function mapLayer(doc: ChartDoc, layerId: string, fn: (l: Layer, p: Pane) => Par
   };
 }
 
+/** 改图层的一个可选字段(undefined = 删掉)。经 canonicalLayer 重建:字段顺序固定,值为 undefined 的字段不留 */
+function setLayerField<K extends keyof Layer>(doc: ChartDoc, layerId: string, key: K, value: Layer[K]): ChartDoc {
+  return {
+    ...doc,
+    panes: doc.panes.map((p) => ({
+      ...p,
+      layers: p.layers.map((l) => (l.id === layerId ? canonicalLayer({ ...l, [key]: value }) : l)),
+    })),
+  };
+}
+
 export function findLayer(doc: ChartDoc, layerId: string): { pane: Pane; layer: Layer } | undefined {
   const pane = doc.panes.find((p) => p.layers.some((l) => l.id === layerId));
   const layer = pane?.layers.find((l) => l.id === layerId);
@@ -267,17 +280,15 @@ export function setLayerCalc(doc: ChartDoc, layerId: string, calc: Calc | undefi
   if (!cur || (cur.calc?.op === calc?.op && cur.calc?.series === calc?.series && cur.calc?.fill === calc?.fill))
     return doc;
 
-  return {
-    ...doc,
-    panes: doc.panes.map((p) => ({
-      ...p,
-      layers: p.layers.map((l) => {
-        if (l.id !== layerId) return l;
-        const { calc: _old, ...rest } = l;
-        return canonicalLayer(calc ? { ...rest, calc } : rest);
-      }),
-    })),
-  };
+  return setLayerField(doc, layerId, 'calc', calc);
+}
+
+/** 显隐。显示 = 删掉字段 */
+export function setLayerHidden(doc: ChartDoc, layerId: string, hidden: boolean): ChartDoc {
+  const cur = findLayer(doc, layerId)?.layer;
+  if (!cur || !!cur.hidden === hidden) return doc;
+
+  return setLayerField(doc, layerId, 'hidden', hidden ? true : undefined);
 }
 
 /** 平移(交易日)。0 = 不平移,字段删掉;超过上限按上限截。 */
@@ -286,17 +297,7 @@ export function setLayerShift(doc: ChartDoc, layerId: string, shift: number): Ch
   const cur = findLayer(doc, layerId)?.layer;
   if (!cur || (cur.shift ?? 0) === n) return doc;
 
-  return {
-    ...doc,
-    panes: doc.panes.map((p) => ({
-      ...p,
-      layers: p.layers.map((l) => {
-        if (l.id !== layerId) return l;
-        const { shift: _old, ...rest } = l;
-        return canonicalLayer(n === 0 ? rest : { ...rest, shift: n });
-      }),
-    })),
-  };
+  return setLayerField(doc, layerId, 'shift', n || undefined);
 }
 
 /** 按固定字段顺序重建一根轴(id、side、invert、log):先开哪个开关都一样,复制出去的 JSON 再导入文本原样不变。 */
@@ -589,6 +590,7 @@ function isLayer(x: unknown): x is Layer {
     (x.shift === undefined || isInt(x.shift, -MAX_SHIFT, MAX_SHIFT)) &&
     (x.fit === undefined || isFit(x.fit)) &&
     (x.title === undefined || isStr(x.title)) &&
+    (x.hidden === undefined || x.hidden === true) &&
     (x.render === undefined || isRender(x.render)) &&
     (x.refLines === undefined || (Array.isArray(x.refLines) && x.refLines.every(isRefLine))) &&
     (x.percentile === undefined || isPercentile(x.percentile))
@@ -617,7 +619,7 @@ function canonicalPercentile(p: PercentileBand): PercentileBand {
 }
 
 /**
- * 按字段白名单、固定顺序重建图层(id、series、calc、scale、color、shift、fit、title、render、refLines、percentile):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
+ * 按字段白名单、固定顺序重建图层(id、series、calc、scale、color、shift、fit、title、hidden、render、refLines、percentile):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
  * 守住「图层不存数据」;编辑操作改 shift / fit 后也走这里,先改哪个字段都一样,复制出去的 JSON 再导入文本原样不变。
  */
 function canonicalLayer(l: Layer): Layer {
@@ -641,6 +643,7 @@ function canonicalLayer(l: Layer): Layer {
         }
       : {}),
     ...(l.title !== undefined ? { title: l.title } : {}),
+    ...(l.hidden ? { hidden: true as const } : {}),
     ...(l.render ? { render: canonicalRender(l.render) } : {}),
     ...(l.refLines ? { refLines: l.refLines.map(canonicalRefLine) } : {}),
     ...(l.percentile ? { percentile: canonicalPercentile(l.percentile) } : {}),
