@@ -27,6 +27,15 @@ export type Fit = { target: string; start: string; end: string; alpha: number; b
 export type LayerRender = { kind: 'line'; baseline?: number; step?: true };
 /** 有绝对含义的阈值线(如「临界 4」),跟随图层所在的纵轴 */
 export type RefLine = { price: number; title: string; color?: string };
+
+/** 固定常态带的上下两条参考线(基本面锚,替代自指的 P5/P95;出带 = 告警,不是确诊)。同 TradingView 的两条 hline */
+export function normalBand(lo: number, hi: number): RefLine[] {
+  return [
+    { price: lo, title: '常态下限' },
+    { price: hi, title: '常态上限' },
+  ];
+}
+
 /** 按图层自身历史算 P5 / P95 参考线;riskTail = 哪一端是风险(背景染红 / 绿);since = 只用这天起的数据算分位 */
 export type PercentileBand = { riskTail?: 'low' | 'high'; since?: string };
 

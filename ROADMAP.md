@@ -84,7 +84,7 @@ L0 数据         采集 · 调度 · 存储 · 新鲜度
 | L6 | 回测只有 CLI（`src/server/backtest/`） | 策略库 39 张卡 + 策略测试 | Strategy Tester、模拟盘、券商面板、Bar Replay |
 | L5 | 看板里没有；在 semantic-garden 的 notes 和 skill（`market-data-analysis` 读 :3000 API、`进出场参谋`）里 | 每页定价框架卡、AI 研判、流动性四层打分、阅读资料 | 观察列表、选股器、经济日历、社区观点 |
 | L4 | ❌ 无。只有顶栏数据状态灯 | 信号触发页（每日扫 504 张图）+ 策略回撤提醒 + 企微推送 | Alerts（价格 / 指标 / alertcondition，推送 / 邮件 / webhook） |
-| L3 | PaneSpec 里 22 格 `percentile.riskTail`、11 格 `refLines`/`band`；`backtest/signal.ts` 一个状态机 | 写死在各图的生成代码里 | Pine Script 与内置指标 |
+| L3 | PaneSpec 里 22 格 `percentile.riskTail`、11 格 `refLines`（含常态带 `normalBand`）；`backtest/signal.ts` 一个状态机 | 写死在各图的生成代码里 | Pine Script 与内置指标 |
 | L2 | 固定面板（`perspectives.tsx`，12 个视角）+ 图表编辑器（ChartDoc v1） | 883 张 Plotly 固定图 + 「制作图表」 | 图表布局、多图同步、画线、模板 |
 | L1 | `shared/regimeSeries.ts` 名字联合类型；~~编辑器另有一份 30 条注册表~~ `shared/seriesMeta.ts` 统一登记，编辑器可搜 347 条（db37326） | 构建时 Python 管线生成；point-in-time 成分股 | 价差符号、`request.security` |
 | L0 | 二十多个源、launchd 三组 job、`job_run`、状态灯 | 源很广，有数据健康页（按 tab 标 lag_days / stale） | 交易所行情、`ECONOMICS:` 宏观符号 |
@@ -235,7 +235,7 @@ TradingView：Pine 是逐根 K 线执行的，天然不容易用到未来数据�
 - 不需要：图表数量。
 
 本项目现状
-- 固定面板：各视角在 `src/web/pages/<视角>/`（横 tab 在 `index`、regime 格子配置在 `dims`），`perspectives.tsx` 按顺序组装竖向视角；`PaneSpec`（`src/web/views/regime/regimeChart.hooks.ts`）已经是集中式的单格定义，包括 `desc`、`band`、`refLines`、`percentile`、`overlays`、`events`、`clamp/expandVisibleTo`、`rollMismatch`。
+- 固定面板：各视角在 `src/web/pages/<视角>/`（横 tab 在 `index`、regime 格子配置在 `dims`），`perspectives.tsx` 按顺序组装竖向视角；`PaneSpec`（`src/web/views/regime/regimeChart.hooks.ts`）已经是集中式的单格定义，包括 `desc`、`refLines`（常态带用 `normalBand` 生成）、`percentile`、`overlays`、`events`、`clamp/expandVisibleTo`、`rollMismatch`。
 - 图表编辑器（`src/web/pages/editor/`，ChartDoc v1）：格、纵轴、图层三级结构（对标 TradingView 的窗格 / Pin to scale）；支持平移、倒轴、对数轴；分析区只留「叠加对比」：先找偏移，再按规则自动选两者同步的基准段、定比例，B 轴每帧跟 A 轴对齐（滚动相关、领先滞后扫描曲线、参照期日期框已在第三轮 60aa49f 删除）；可以加载任意 Yahoo 代码；计算图层 A − B / A ÷ B（730b9b8）。**分析能力比参考站强。**
 - 问题：固定面板和编辑器是两套引擎，~~互不相通~~（已有 `docToPaneSpecs` 单向桥，集中度 tab 试点，8f69743）；ChartDoc 还表达不了 PaneSpec 的大部分字段；~~编辑器不能持久化~~（已有 localStorage 自动保存，f4a0636）。
 - 长期方向：旧图表映射成 ChartDoc，**旧图往新格式上映射，不是新格式迁就旧代码**。
@@ -267,7 +267,7 @@ TradingView
 **提案**（这一组就是「逐步完善 JSON」的具体步骤）
 - **L2-1（P1）ChartDoc 补齐表达能力**。全部是可选字段，保持 v1，按下面的顺序加：
   1. render：~~line（带 step、baseline）~~、signed、candle（candle 需要取数层出 OHLC）
-  2. ~~`refLines`~~、`band`：跟随所在图层的纵轴。`band` 不另设字段，改写成两条 refLines（「常态下限 / 上限」），沿用「有参考线时 percentile 只染背景」的渲染规则
+  2. ~~`refLines`~~、~~`band`~~：跟随所在图层的纵轴。`band` 不另设字段，改写成两条 refLines（「常态下限 / 上限」），沿用「有参考线时 percentile 只染背景」的渲染规则。✅ PaneSpec 的 `band` 已删，8 格改为 `refLines: normalBand(lo, hi)`
   3. ~~`desc`：挂在格子上~~（另加了格子 `label`）
   4. ~~`percentile`：P5/P95 带和 riskTail~~
   5. `events`：事件竖线，做成图层画法 `render: { kind: 'events' }`（日期仍取注册表序列）
@@ -311,7 +311,7 @@ TradingView
 - 后话：表达式图层、指标模块（参见第 4 节「后话」）。
 
 本项目现状
-- 规则就在 PaneSpec 里：22 格配了 `percentile.riskTail`，11 格配了 `refLines` 或 `band`。分位数用 `shared/calc/stats.ts` 计算。
+- 规则就在 PaneSpec 里：22 格配了 `percentile.riskTail`，11 格配了 `refLines`（其中 8 格是常态带 `normalBand`）。分位数用 `shared/calc/stats.ts` 计算。
 - 问题：`regimeChart.hooks.ts` 依赖 swr 和 React，服务端用不了这些规则，所以规则只能在你打开页面时生效。
 - `backtest/signal.ts` 的 panic/greed 状态机已经有滞后带（进入 85 / 退出 50，进入 10 / 退出 30）和互斥规则，写法可以作为模板。
 
@@ -465,7 +465,7 @@ TradingView
 | 三：变化与分析联动 | 从 state_daily 的变化一键生成 ChartDoc（变化的序列 + 同组相关序列 + 现货） | 约半天 | 收到通知 → 打开预配好的分析图 → 继续加线 |
 | 四：判断与复盘 | L0-2 OAS 镜像、L5-2 流动性阶梯、L5-3 AI 日报 skill、L5-4 事件日历、L6-1 敏感性表、L6-2 决策日志、L6-3 历史回放、L0-1 序列级新鲜度、L2-5 编辑器「标、记」、L2-6 MCP 出图（需阶段二完成）、L3-2 / L4-4 共振 | 按需挑选 | — |
 
-阶段一不依赖阶段二，可以立即开始。阶段一里抽出的 alertRules 也是阶段二 `refLines`/`band` 和阶段四流动性阶梯的共同来源，只需要抽一次。L0-2（OAS 镜像）也是「只能从今往后攒」型，宜尽早做。
+阶段一不依赖阶段二，可以立即开始。阶段一里抽出的 alertRules 也是阶段二 `refLines` 和阶段四流动性阶梯的共同来源，只需要抽一次。L0-2（OAS 镜像）也是「只能从今往后攒」型，宜尽早做。
 
 后话，先不做：表达式图层（类似 Pine 的公式，如 `zscore(A/B, 252)`，函数只允许不看未来的版本）、TS 指标模块（`defineIndicator`）。等 ChartDoc 稳定以后，再在 ChartDoc 上加一个 expr 图层类型。在线脚本沙箱不做。
 

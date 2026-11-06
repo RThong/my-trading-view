@@ -1,5 +1,6 @@
 // 「能源」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
 import type { RollMismatchKind } from '../../../shared/calc/oilRoll';
+import { normalBand } from '../../views/chartDoc/chartDoc';
 import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
 
 // 背景带的颜色含义。**只有颜色、图上没有图例** —— 而红色直觉上像「涨」,第一次看极易读反。
@@ -60,7 +61,7 @@ export const OIL_DIMS = {
         label: 'Brent−WTI',
         title: 'Brent − WTI ($/桶)',
         color: '#38bdf8',
-        band: { lo: 1.5, hi: 10 },
+        refLines: normalBand(1.5, 10),
         clampVisibleTo: [-5, 15],
         rollMismatch: 'brentWti',
         desc: [
@@ -171,7 +172,7 @@ export const OIL_DIMS = {
         label: '炼厂开工率',
         title: '美国炼厂开工率 (% 可用产能)',
         color: '#38bdf8',
-        band: { lo: 85, hi: 97 },
+        refLines: normalBand(85, 97),
         desc: [
           '定义:美国炼厂实际加工量 / 可用产能,%(EIA 周报 WPULEUS3)。**这格发水位不发 z** ——',
           '它有绝对刻度:100% 是硬顶,离顶多远就是「还剩多少余量」,不需要跟往年比才读得懂。',
@@ -193,7 +194,7 @@ export const OIL_DIMS = {
         title: '炼厂开工率 · 季节 z (对往年同期)',
         color: '#38bdf8',
         render: { kind: 'line', baseline: 0 },
-        band: { lo: -2, hi: 2 },
+        refLines: normalBand(-2, 2),
         clampVisibleTo: [-5, 5],
         desc: [
           '定义:开工率相对**往年同期**分布的标准分。正 = 比往年这个时候开得狠。',
@@ -211,7 +212,7 @@ export const OIL_DIMS = {
         label: '馏分油收率',
         title: '馏分油收率 (馏分油产量 / 炼厂加工量, %)',
         color: '#f97316',
-        band: { lo: 28, hi: 32 },
+        refLines: normalBand(28, 32),
         desc: [
           '定义:一桶进炼厂的原油里,炼出多少馏分油(柴油/取暖油),%。EIA 不直发这条,是 WDIRPUS2 / WGIRIUS2 算的。',
           '**这格答上面那格答不了的问题**:开工率说「开多狠」,收率说「开了之后出的是什么」。',
@@ -250,7 +251,7 @@ export const OIL_DIMS = {
         title: '馏分油(柴油/取暖油)库存 · 季节 z',
         color: '#f97316',
         render: { kind: 'line', baseline: 0 },
-        band: { lo: -2, hi: 2 },
+        refLines: normalBand(-2, 2),
         percentile: { riskTail: 'low' },
         desc: [
           '定义:美国馏分油库存(EIA WDISTUS1,千桶)相对往年同期分布的标准分。**负 = 比往年同期低**。',
@@ -270,7 +271,7 @@ export const OIL_DIMS = {
         title: '汽油总库存 · 季节 z',
         color: '#22c55e',
         render: { kind: 'line', baseline: 0 },
-        band: { lo: -2, hi: 2 },
+        refLines: normalBand(-2, 2),
         percentile: { riskTail: 'low' },
         desc: [
           '定义:美国汽油总库存(EIA WGTSTUS1,千桶)相对往年同期分布的标准分。',
@@ -289,7 +290,7 @@ export const OIL_DIMS = {
         title: '馏分油出口 · 季节 z',
         color: '#eab308',
         render: { kind: 'line', baseline: 0 },
-        band: { lo: -2, hi: 2 },
+        refLines: normalBand(-2, 2),
         desc: [
           '定义:美国馏分油出口(EIA WDIEXUS2,千桶/日)相对往年同期分布的标准分。',
           '和库存 z 一起读才完整:**库存低 + 出口高 = 桶被拉去了海外**(国际需求 / 套利拉动),',
@@ -318,7 +319,7 @@ export const OIL_DIMS = {
         label: '零售柴油',
         title: '全美零售柴油 ($/gal)',
         color: '#f97316',
-        // ⚠️ 三条同轴($/gal),不设 band/分位:水位的高低要对照的是**加价**那两格,不是自身分位。
+        // ⚠️ 三条同轴($/gal),不设常态带/分位:水位的高低要对照的是**加价**那两格,不是自身分位。
         // 泵价水位本身几乎全由原油驱动,给它配分位等于给原油配分位,读不出零售端的事。
         overlays: [
           { key: 'gasRetail', title: '零售汽油 ($/gal)', color: '#22c55e' },

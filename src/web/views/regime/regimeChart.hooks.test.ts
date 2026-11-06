@@ -513,13 +513,13 @@ test('tp10Kw 那格叠 ACM 对照线,ACM 缺失只少那条、KW 主线照画', 
   expect(specsOf(both).find((s) => s.key === 'tp10Acm')).toHaveProperty('step', true);
 });
 
-test('band + percentile 同配:参考线用常态带、不被 P5/P95 覆盖,而背景带仍由 riskTail 染', () => {
+test('常态带 + percentile 同配:参考线用常态带、不被 P5/P95 覆盖,而背景带仍由 riskTail 染', () => {
   // 回归点。这两个配置曾经同时存在于库存 z 两格,而 spec 构造里 percentile 分支
-  // **整体重新赋值** refLines → band 写的 ±2 从来没画出来过,图上是 P5/P95。
-  // 同屏另外两格 z 只配了 band、画的是 ±2 —— 四条 z 两套尺,肉眼看不出,改回去测试也照绿。
+  // **整体重新赋值** refLines → 常态带写的 ±2 从来没画出来过,图上是 P5/P95。
+  // 同屏另外两格 z 只配了常态带、画的是 ±2 —— 四条 z 两套尺,肉眼看不出,改回去测试也照绿。
   // 故这条必须断言「画的是哪两条」,不能只断言「有两条」。
   const pane = REGIME_DIMS.refinery.panes.find((p) => p.key === 'distStocksZ5y');
-  expect(pane?.band).toEqual({ lo: -2, hi: 2 }); // 前提:这格确实同配了两者
+  expect(pane?.refLines?.map((l) => l.price)).toEqual([-2, 2]); // 前提:这格确实同配了两者
   expect(pane?.percentile?.riskTail).toBe('low');
 
   // 构造分布使 P5/P95 明显不等于 ±2,否则断言区分不出两种来源。

@@ -1,4 +1,5 @@
 // 「BTC」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
+import { normalBand } from '../../views/chartDoc/chartDoc';
 import type { PaneSpec, RegimeDims } from '../../views/regime/regimeChart.hooks';
 
 /**
@@ -33,7 +34,7 @@ export const BTC_DIMS = {
         title: 'BTC 1Y 滚动夏普 (年化)',
         color: '#8b5cf6',
         render: { kind: 'line', baseline: 0 },
-        band: { lo: -2, hi: 2.9 },
+        refLines: normalBand(-2, 2.9),
         desc: [
           '定义:过去 365 天日对数收益的 均值/标准差 × √365。「每承受一单位波动换回多少超额涨幅」。',
           '穿零 = 这一年白折腾(风险调整后没赚)。高 = 涨得又稳又多;深负 = 跌且乱。',

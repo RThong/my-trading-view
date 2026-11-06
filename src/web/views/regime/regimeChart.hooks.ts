@@ -9,7 +9,7 @@ import type { SeriesKey } from '../../../shared/regimeSeries';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../../chart/paneChart.types';
 import { rollMismatchDates, type RollMismatchKind } from '../../../shared/calc/oilRoll';
-import type { Calc, ChartDoc } from '../chartDoc/chartDoc';
+import type { Calc, ChartDoc, RefLine } from '../chartDoc/chartDoc';
 import { seriesDef, seriesLabel } from '../chartDoc/registry';
 import { isAggregateMember, type FundTrim, type SecFiled, type SecLag } from '../../../shared/aiChain';
 import { getJson, SWR_OPTS } from '../../lib/http';
@@ -110,9 +110,8 @@ export type PaneSpec = {
     | { kind: 'line'; baseline?: number; step?: boolean }
     | { kind: 'signed' } // 符号柱状图(正绿负红,0 基线),不套分位/徽标
     | { kind: 'candle' }; // 蜡烛(用 data.ohlc[key]),不套分位/背景带;价格轴线性/对数按数据自判
-  band?: { lo: number; hi: number }; // 固定常态带 → 上下参考线(基本面锚,替代自指的 P5/P95)
-  /** 自定义参考线(有绝对含义的阈值,不是「常态上下限」时用,如供应密度的警戒 / 高风险)。与 band 二选一。 */
-  refLines?: { price: number; title: string; color?: string }[];
+  /** 参考线:有绝对含义的阈值(常态带用 normalBand,如供应密度的警戒 / 高风险就自己写)。配了它,percentile 只染背景 */
+  refLines?: RefLine[];
   /** 轴至少覆盖这段(见 LineSpec.expandVisibleTo):让 refLines 在数据还没走到时也看得见。 */
   expandVisibleTo?: [number, number];
   /**
@@ -257,12 +256,6 @@ export function buildRegimeSpecs(data: RegimeData, panes: PaneSpec[], interval: 
       ...(p.clampVisibleTo ? { clampVisibleTo: p.clampVisibleTo } : {}),
       ...(p.expandVisibleTo ? { expandVisibleTo: p.expandVisibleTo } : {}),
     };
-    // 固定常态带:画上下参考线(基本面锚,替代自指的 P5/P95;出带=告警非确诊)。
-    if (p.band)
-      lineSpec.refLines = [
-        { price: p.band.lo, title: '常态下限' },
-        { price: p.band.hi, title: '常态上限' },
-      ];
     if (p.refLines) lineSpec.refLines = p.refLines;
 
     // 叠画的其它线(同 pane 下标)。某条 overlay 缺失只少那条,主线照画。
@@ -330,10 +323,10 @@ export function buildRegimeSpecs(data: RegimeData, panes: PaneSpec[], interval: 
     const vals = (since ? rows.filter((r) => r.date >= since) : rows).map((r) => r.value);
     const lo = percentile(vals, PCTL_LO);
     const hi = percentile(vals, PCTL_HI);
-    // **固定常态带优先**:两者都配时不覆盖 band 画的那两条线。
-    // 覆盖过一次 —— 库存季节 z 两格同时配了 `band: ±2` 和 percentile,结果图上画的是 P5/P95,
-    // 那个 band 是彻底的死配置;同屏另外两格 z 却画着 ±2,读者对着两套尺互相串读。
-    // 现在的分工:**参考线由 band 定(有绝对含义时),背景带仍由 percentile 染**(见 riskTail)。
+    // **配了参考线就不画 P5/P95**:两者都配时不覆盖。
+    // 覆盖过一次 —— 库存季节 z 两格同时配了常态带 ±2 和 percentile,结果图上画的是 P5/P95,
+    // 那条常态带是彻底的死配置;同屏另外两格 z 却画着 ±2,读者对着两套尺互相串读。
+    // 现在的分工:**参考线由 refLines 定(有绝对含义时),背景带仍由 percentile 染**(见 riskTail)。
     if (!lineSpec.refLines)
       lineSpec.refLines = [
         { price: lo, title: `P${PCTL_LO}` },
