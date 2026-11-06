@@ -4,7 +4,7 @@
 import useSWR from 'swr';
 import { useServerRefresh } from '../../hooks/useServerRefresh';
 import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../chart/core';
-import { percentile, percentileRank } from '../../../shared/calc/stats';
+import { percentileRank } from '../../../shared/calc/stats';
 import type { SeriesKey } from '../../../shared/regimeSeries';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../../chart/paneChart.types';
@@ -21,13 +21,9 @@ import { seriesDef, seriesLabel } from '../chartDoc/registry';
 import { isAggregateMember, type FundTrim, type SecFiled, type SecLag } from '../../../shared/aiChain';
 import { getJson, SWR_OPTS } from '../../lib/http';
 import { SIGNED_DOWN, SIGNED_UP } from '../../chart/palette';
+import { percentileMarks } from '../../chart/percentileMarks';
 
-// 分位带阈值(自身历史):想改 5/95 更严就动这里。
-const PCTL_LO = 5;
-const PCTL_HI = 95;
-// 极端期背景带的半透明色:风险端红、机会端绿(方向由各序列 riskTail 决定)。
-const BG_RED = 'rgba(239,68,68,0.45)';
-const BG_GREEN = 'rgba(34,197,94,0.45)';
+// 分位阈值与极端期背景色在 chart/percentileMarks / chart/palette(与编辑器共用)。透明底色留给错月背景用
 const BG_NONE = 'rgba(0,0,0,0)';
 // 期货错月背景:中性灰蓝,刻意不与红 / 绿(风险 / 机会)同色系;画在分位带下层。
 // 刻意调淡:错月偏差平时只有线本身波动的零头,这是「在这里算涨跌 / 市场紧时多看一眼」的提醒,
@@ -342,26 +338,19 @@ export function buildRegimeSpecs(data: RegimeData, panes: PaneSpec[], interval: 
     // since 给了则只用该子窗口算阈值(线仍画全部 rows);阈值再铺回整条线。
     const since = p.percentile.since;
     const vals = (since ? rows.filter((r) => r.date >= since) : rows).map((r) => r.value);
-    const lo = percentile(vals, PCTL_LO);
-    const hi = percentile(vals, PCTL_HI);
-    // **配了参考线就不画 P5/P95**:两者都配时不覆盖。
+    // **配了参考线就不画 P5/P95**(规则在 chart/percentileMarks,与编辑器共用)。
     // 覆盖过一次 —— 库存季节 z 两格同时配了常态带 ±2 和 percentile,结果图上画的是 P5/P95,
     // 那条常态带是彻底的死配置;同屏另外两格 z 却画着 ±2,读者对着两套尺互相串读。
-    // 现在的分工:**参考线由 refLines 定(有绝对含义时),背景带仍由 percentile 染**(见 riskTail)。
-    if (!lineSpec.refLines)
-      lineSpec.refLines = [
-        { price: lo, title: `P${PCTL_LO}` },
-        { price: hi, title: `P${PCTL_HI}` },
-      ];
-    const risk = p.percentile.riskTail;
-    // 背景带 = 风险/机会信号,需已知风险端;无 riskTail(如 10Y 收益率,高低方向不单一)只留 P5/P95 线,不染背景。
-    if (risk === undefined) return [...rollSpecs, ...eventSpecs, lineSpec, ...overlaySpecs];
     // 背景带按原始日频逐日判定极端(不用聚合点),保证与显示 interval 无关。
-    const bgData: HistoPoint[] = rows.map((r) => {
-      if (r.value < lo) return { time: r.date, value: 1, color: risk === 'low' ? BG_RED : BG_GREEN };
-      if (r.value > hi) return { time: r.date, value: 1, color: risk === 'high' ? BG_RED : BG_GREEN };
-      return { time: r.date, value: 0, color: BG_NONE };
-    });
+    const marks = percentileMarks(
+      vals,
+      rows.map((r) => ({ time: r.date, value: r.value })),
+      { riskTail: p.percentile.riskTail, refLines: lineSpec.refLines },
+    );
+    if (marks) lineSpec.refLines = marks.lines;
+    // 背景带 = 风险/机会信号,需已知风险端;无 riskTail(如 10Y 收益率,高低方向不单一)只留 P5/P95 线,不染背景。
+    if (!marks?.band) return [...rollSpecs, ...eventSpecs, lineSpec, ...overlaySpecs];
+    const bgData: HistoPoint[] = marks.band;
     const bgSpec: HistoSpec = {
       key: `${key}-bg`,
       pane,

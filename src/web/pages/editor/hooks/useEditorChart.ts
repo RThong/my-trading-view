@@ -6,19 +6,21 @@ import {
   createChart,
   HistogramSeries,
   LineSeries,
+  LineType,
   PriceScaleMode,
   type AutoscaleInfoProvider,
   type IChartApi,
   type IPaneApi,
+  type IPriceLine,
   type ISeriesApi,
   type SeriesType,
   type Time,
 } from 'lightweight-charts';
-import { CHART_OPTIONS, boxAutoscaleProvider, type LinePoint } from '../../../chart/core';
+import { CHART_OPTIONS, REF_LINE, boxAutoscaleProvider, type LinePoint } from '../../../chart/core';
 import { SIGNED_DOWN, SIGNED_UP } from '../../../chart/palette';
 import type { Interval } from '../../../hooks/interval';
 import { isEventsLayer, liveScaleIds, type ChartDoc, type Layer, type Pane } from '../../../views/chartDoc/chartDoc';
-import { canLogScale, type LayerData } from './layerPoints';
+import { canLogScale, layerMarks, type LayerData } from './layerPoints';
 import { commonRange } from '../../../views/chartDoc/useSeriesData';
 
 /** 折线是 Line;符号柱、事件竖线是 Histogram。拖线 / 选中高亮只对折线(见 useLineDrag) */
@@ -67,8 +69,11 @@ function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
 
   // 隐藏 = visible: false:不画、不进自动缩放(lw-charts 自带);图例读数取自 layerPoints,不受影响。
   // 例外是被叠加的 A:B 轴每帧按 A 轴的范围换算(useFitSync),A 不进自动缩放的话 A 轴定住、B 也跟着定住 —— 只关线和标签
+  const step = layer.render?.kind === 'line' && layer.render.step;
   return {
     color: layer.color,
+    // 阶梯线:低频序列(季频 r*)两次发布之间值不变,画成斜坡等于凭空造出中间值。每次都写,关掉时才能改回来
+    lineType: step ? LineType.WithSteps : LineType.Simple,
     priceScaleId: layer.scale,
     visible: !hidden || fitTargets.has(layer.id),
     lineVisible: !hidden,
@@ -235,6 +240,33 @@ export function useEditorChart(
         if (cur.mode !== mode) ps.applyOptions({ mode });
       });
     });
+  }, [doc, data]);
+
+  // 水平线(基线、参考线、分位 P5 / P95):文档或数据变了就整套重画。分位线要看数据,所以不放进结构对账。
+  // 记下画在哪条 series 上:换画法时 series 被删了重建,旧线跟着旧 series 没了,不能再去删
+  const priceLinesRef = useRef(new Map<string, { s: ISeriesApi<SeriesType>; lines: IPriceLine[] }>());
+  useEffect(() => {
+    const drawn = priceLinesRef.current;
+    [...drawn].forEach(([id, { s, lines }]) => {
+      if (seriesRef.current.get(id) !== s) return;
+      lines.forEach((pl) => {
+        s.removePriceLine(pl);
+      });
+    });
+    drawn.clear();
+
+    doc.panes
+      .flatMap((p) => p.layers)
+      // 隐藏的线不画(被叠加的 A 隐藏时 series 仍 visible,线会留着);竖线没有值
+      .filter((l) => !l.hidden && !isEventsLayer(l))
+      .forEach((l) => {
+        const s = seriesRef.current.get(l.id);
+        if (!s) return;
+        const lines = layerMarks(l, data[l.id]?.display ?? []).lines.map((rl) =>
+          s.createPriceLine({ ...REF_LINE, ...(rl.color && { color: rl.color }), price: rl.price, title: rl.title }),
+        );
+        drawn.set(l.id, { s, lines });
+      });
   }, [doc, data]);
 
   // 分隔条拖完:读回各格比例。原生拖拽改的是图内状态,不读回的话下次结构变化会被 JSON 里的旧值盖掉。

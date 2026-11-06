@@ -2,7 +2,9 @@
 import { useMemo } from 'react';
 import type { LinePoint } from '../../../chart/core';
 import { earliestIso } from '../../../../shared/calc/isoDate';
-import { isEventsLayer, type ChartDoc, type Layer, type Pane } from '../../../views/chartDoc/chartDoc';
+import { shiftBusinessDays } from '../../../chart/analysis';
+import { type BandPoint, percentileMarks } from '../../../chart/percentileMarks';
+import { isEventsLayer, type ChartDoc, type Layer, type Pane, type RefLine } from '../../../views/chartDoc/chartDoc';
 import { requestKey } from '../../../views/chartDoc/useSeriesData';
 
 export type LayerData = {
@@ -63,4 +65,43 @@ export function canLogScale(pane: Pane, scaleId: string, data: Record<string, La
   return pane.layers
     .filter((l) => l.scale === scaleId && !isEventsLayer(l) && (!l.hidden || fitTargets.has(l.id)))
     .every((l) => (data[l.id]?.display ?? []).every((p) => p.value > 0));
+}
+
+/** 一个图层要画的水平线和背景带 */
+export type LayerMarks = { lines: RefLine[]; band: BandPoint[] | null };
+
+// 同一图层对象 + 同一份点只算一次:价位线和背景带两处都要它;文档改了别处(改色、拖分隔条)时没动的图层对象不变,直接复用
+const marksCache = new WeakMap<Layer, { pts: LinePoint[]; marks: LayerMarks }>();
+
+/**
+ * 图层的水平线(基线、参考线、分位 P5 / P95)与分位背景带。分位规则(参考线优先、riskTail 定染色)在 chart/percentileMarks,
+ * 与固定面板共用;这里只管编辑器自己的口径:
+ * - 阈值按画在图上的点算(周 / 月线是聚合点),同 TradingView 指标默认跟随图表周期;固定面板按原始日频算
+ * - since 比的是平移前的日期(画在图上的日期已按 shift 挪过)
+ * - 符号柱恒有一条 0 线(同固定面板)
+ */
+export function layerMarks(layer: Layer, pts: LinePoint[]): LayerMarks {
+  const hit = marksCache.get(layer);
+  if (hit?.pts === pts) return hit.marks;
+
+  const marks = computeMarks(layer, pts);
+  marksCache.set(layer, { pts, marks });
+  return marks;
+}
+
+function computeMarks(layer: Layer, pts: LinePoint[]): LayerMarks {
+  const render = layer.render;
+  const baseline = render?.kind === 'signed' ? 0 : render?.kind === 'line' ? render.baseline : undefined;
+  const base: RefLine[] = baseline !== undefined ? [{ price: baseline, title: String(baseline) }] : [];
+  const pctl = layer.percentile;
+  if (!pctl) return { lines: [...base, ...(layer.refLines ?? [])], band: null };
+
+  const since = pctl.since;
+  const shift = layer.shift ?? 0;
+  const window = (since ? pts.filter((p) => (shift ? shiftBusinessDays(p.time, -shift) : p.time) >= since) : pts).map(
+    (p) => p.value,
+  );
+  const marks = percentileMarks(window, pts, { riskTail: pctl.riskTail, refLines: layer.refLines });
+
+  return { lines: [...base, ...(marks?.lines ?? layer.refLines ?? [])], band: marks?.band ?? null };
 }

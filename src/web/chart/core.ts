@@ -1,4 +1,5 @@
 // 期权/VRP 面板共用的图表辅助:暗色主题选项 + 按 interval 的周期聚合。
+import { LineStyle } from 'lightweight-charts';
 import { sortBy } from 'remeda';
 import type { Interval } from '../hooks/interval';
 
@@ -186,3 +187,11 @@ function mapAutoscale<T extends { priceRange: PriceRange | null }>(
     return { ...info, priceRange: fn(info.priceRange) };
   };
 }
+
+/** 参考线 / 基线的统一样式(灰色虚线 + 轴上标签)。各渲染器 createPriceLine 时展开它,再给价位、标题,有需要再盖颜色 */
+export const REF_LINE = {
+  color: '#71717a',
+  lineWidth: 1,
+  lineStyle: LineStyle.Dashed,
+  axisLabelVisible: true,
+} as const;

@@ -15,6 +15,7 @@ import { useCrosshairLegend } from './hooks/useCrosshairLegend';
 import { useEditorChart } from './hooks/useEditorChart';
 import { useSeriesData } from '../../views/chartDoc/useSeriesData';
 import { useBaseBand } from './hooks/useBaseBand';
+import { usePercentileBand } from './hooks/usePercentileBand';
 import { useFitSync } from './hooks/useFitSync';
 import { useLineDrag } from './hooks/useLineDrag';
 import { useSidebar } from './hooks/useSidebar';
@@ -41,6 +42,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
   useLineDrag(containerRef, chartRef, seriesRef, doc);
   useFitSync(chartRef, seriesRef, doc);
   useBaseBand(chartRef, doc, data);
+  usePercentileBand(chartRef, doc, data);
 
   const empty = doc.panes.length === 0;
   // 空图时不给收起按钮,侧栏强制展开(见 useSidebar)
