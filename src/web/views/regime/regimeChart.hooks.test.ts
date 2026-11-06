@@ -66,7 +66,7 @@ test('情绪维度:分位带 + 极端期背景带按 riskTail 语义上色', () 
   expect(bg.priceScaleId).toBe('bg-fng');
   expect(bg.data[0]).toMatchObject({ value: 1, color: 'rgba(34,197,94,0.45)' }); // 值0 < P5,低端=机会=绿
   expect(bg.data[10]).toMatchObject({ value: 1, color: 'rgba(239,68,68,0.45)' }); // 值100 > P95,高端=风险=红
-  expect(bg.data[5].value).toBe(0); // 值50 不极端 → 无柱
+  expect(bg.data[5].color).toBe('rgba(0,0,0,0)'); // 值50 不极端 → 透明(值统一为 1,编辑器的面积图才不出斜坡)
 });
 
 test('candle 维度:标 candle 的序列用 ohlc 出蜡烛 spec', () => {

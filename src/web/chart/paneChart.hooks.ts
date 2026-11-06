@@ -11,7 +11,7 @@ import {
   type AutoscaleInfo,
 } from 'lightweight-charts';
 import { useStable } from '../hooks/useStable';
-import { CHART_OPTIONS, boxAutoscaleProvider, changeStats, needsLogScale } from './core';
+import { CHART_OPTIONS, REF_LINE, boxAutoscaleProvider, changeStats, needsLogScale } from './core';
 import type { PaneDef, Spec, LegendCell, AnySeries } from './paneChart.types';
 import { useTrendlines } from './trendlines.hooks';
 import { BandFillPrimitive } from './bandFill';
@@ -65,10 +65,7 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
     if (spec.baseline !== undefined) {
       s.createPriceLine({
         price: spec.baseline,
-        color: '#71717a',
-        lineWidth: 1,
-        lineStyle: 2,
-        axisLabelVisible: true,
+        ...REF_LINE,
         title: '0',
       });
     }
@@ -107,10 +104,7 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
   if (spec.baseline !== undefined) {
     s.createPriceLine({
       price: spec.baseline,
-      color: '#71717a',
-      lineWidth: 1,
-      lineStyle: 2,
-      axisLabelVisible: true,
+      ...REF_LINE,
       // 标题跟着基线值走:扩散指数的分界线是 50、比值类是 1,写死 '0' 会在那几格上标错。
       title: String(spec.baseline),
     });
@@ -120,10 +114,8 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
     for (const rl of spec.refLines) {
       s.createPriceLine({
         price: rl.price,
-        color: rl.color ?? '#71717a',
-        lineWidth: 1,
-        lineStyle: 2,
-        axisLabelVisible: true,
+        ...REF_LINE,
+        ...(rl.color && { color: rl.color }),
         title: rl.title,
       });
     }

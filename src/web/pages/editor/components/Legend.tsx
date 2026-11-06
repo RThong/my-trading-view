@@ -1,4 +1,5 @@
 import { Eye, EyeOff } from 'lucide-react';
+import { InfoTip } from '../../../components/InfoTip';
 import type { Interval } from '../../../hooks/interval';
 import { shiftBusinessDays } from '../../../chart/analysis';
 import { isEventsLayer, type ChartDoc } from '../../../views/chartDoc/chartDoc';
@@ -39,7 +40,7 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
           style={{ top: (layout.tops[i] ?? 0) + 4, left: layout.left + 8 }}
         >
           {i === 0 && <span className="text-neutral-500">{hoverTime ?? '最新'}</span>}
-          {pane.layers.map((l) => {
+          {pane.layers.map((l, j) => {
             const pt = asOfPoint(data[l.id]?.display, hoverTime);
             const shift = l.shift ?? 0;
             const unit = layerUnit(l);
@@ -50,6 +51,8 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
               >
                 <span className="h-0.5 w-3 rounded" style={{ background: l.color }} />
                 <span className="text-neutral-400">{layerLabel(doc, l)}</span>
+                {/* 格子的读法说明挂在第一行名称后面(同固定面板的 ⓘ) */}
+                {j === 0 && pane.desc && <InfoTip text={pane.desc} />}
                 {/* 事件竖线的值无意义(恒为一个占位数),只给名字 */}
                 {!isEventsLayer(l) && <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>}
                 {unit && !isEventsLayer(l) && <span className="text-neutral-600">{unit}</span>}

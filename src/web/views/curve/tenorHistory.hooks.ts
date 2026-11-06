@@ -19,6 +19,7 @@ import {
   expandAutoscaleProvider,
   fmtDate,
   isWeekend,
+  REF_LINE,
   type Bar,
   type LinePoint,
 } from '../../chart/core';
@@ -253,11 +254,8 @@ export function useTenorChart(
         );
         // 穿 0 = 倒挂。只在建线时加一次。
         series.createPriceLine({
+          ...REF_LINE,
           price: 0,
-          color: '#71717a',
-          lineWidth: 1,
-          lineStyle: 2,
-          axisLabelVisible: true,
           title: '',
         });
         live.set(spec.label, series);
