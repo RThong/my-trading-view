@@ -52,6 +52,11 @@ function loadSaved(): ChartDoc {
   }
 }
 
+// 事件日期(发布日)加进来直接画竖线,其余折线。背景色带(0 / 1 标记)暂不从下拉加,只在 JSON 里写
+function defaultRender(series: string): LayerRender | undefined {
+  return seriesDef(series)?.events ? { kind: 'events' } : undefined;
+}
+
 export function useChartDoc() {
   const [doc, setDoc] = useState<ChartDoc>(loadSaved);
 
@@ -73,13 +78,7 @@ export function useChartDoc() {
         // 只看普通图层:A − B 不算「A 在图上」(计算图层在卡片上单独删)
         d.panes.some((p) => p.layers.some((l) => l.series === series && !l.calc))
           ? removeSeries(d, series)
-          : // 事件日期(发布日)加进来直接画竖线
-            addLayer(
-              d,
-              series,
-              nextColor(d, SERIES_COLORS),
-              seriesDef(series)?.events ? { kind: 'events' } : undefined,
-            ),
+          : addLayer(d, series, nextColor(d, SERIES_COLORS), defaultRender(series)),
       ),
     remove: (layerId: string) => setDoc((d) => removeLayer(d, layerId)),
     move: (layerId: string, target: PaneTarget, before?: string) =>

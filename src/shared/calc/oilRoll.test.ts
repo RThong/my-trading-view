@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { rollMismatchDates, wtiExpiryByMonth } from './oilRoll';
+import { rollMismatchDates, rollMismatchFlags, wtiExpiryByMonth } from './oilRoll';
 
 // 某月的交易日:工作日扣掉给定休市日
 function tradingDays(month: string, holidays: string[] = [], upTo = 31) {
@@ -59,5 +59,18 @@ describe('rollMismatchDates', () => {
     expect(brent.has('2026-10-20')).toBe(true);
     expect(brent.has('2026-10-21')).toBe(false);
     expect(oct.every((d) => brent.has(d) !== crack.has(d))).toBe(true);
+  });
+});
+
+describe('rollMismatchFlags', () => {
+  it('每个交易日都有点(0 也发),两种的 1 各自 = rollMismatchDates', () => {
+    const oct = tradingDays('2026-10');
+    const flags = rollMismatchFlags(oct);
+
+    (['crack', 'brentWti'] as const).forEach((kind) => {
+      const set = rollMismatchDates(oct, kind);
+      expect(flags[kind].map((f) => f.date)).toEqual(oct);
+      expect(flags[kind].every((f) => f.value === (set.has(f.date) ? 1 : 0))).toBe(true);
+    });
   });
 });

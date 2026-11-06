@@ -128,6 +128,8 @@ describe('registry', () => {
     const ids = new Set(REGISTRY.map((d) => d.id));
     // 点阵图的日期是预测年份,不进;事件日期(发布日 / 决议日)进,标 events,加到图上画竖线
     expect(REGIME_SERIES.filter((k) => !ids.has(k))).toEqual(['sepMedian']);
+    // 错月标记能解析(JSON 里写 background 图层用),但不进下拉
+    expect(['oilRollCrack', 'oilRollBrentWti'].every((k) => seriesDef(k)?.hidden)).toBe(true);
     expect(REGISTRY.filter((d) => d.events).map((d) => d.id)).toEqual([
       'bojHikeDates',
       'coreCpiRelease',

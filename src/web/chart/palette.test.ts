@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { extendDistinct, colorDistance, SERIES_COLORS, CATEGORICAL_DARK, hslToHex } from './palette';
+import { extendDistinct, colorDistance, SERIES_COLORS, CATEGORICAL_DARK, hslToHex, withAlpha } from './palette';
 
 describe('hslToHex', () => {
   it('纯红 (0,100,50) → #ff0000', () => expect(hslToHex(0, 100, 50)).toBe('#ff0000'));
@@ -31,5 +31,11 @@ describe('SERIES_COLORS', () => {
       ),
     );
     expect(worst).toBeGreaterThanOrEqual(75);
+  });
+});
+
+describe('withAlpha', () => {
+  it('#rrggbb → rgba', () => {
+    expect(withAlpha('#94a3b8', 0.14)).toBe('rgba(148,163,184,0.14)');
   });
 });

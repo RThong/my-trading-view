@@ -18,7 +18,7 @@ export function SeriesSelect({ value, onChange, placeholder, disabled, title }: 
   const [open, setOpen] = useState(false);
   const anchor = useComboboxAnchor();
   const search = useSeriesSearch(query);
-  // 只用来选计算的第二条腿:事件日期(发布日)的值无意义,不列
+  // 只用来选计算的第二条腿:事件日期的值无意义,不列
   const groups = search.groups.map((g) => ({ ...g, items: g.items.filter((o) => !seriesDef(o.id)?.events) }));
 
   // 只认用户打字 / 清空:单选模式下组件库会在选中、收起时把输入框回填成所选序列的名称,

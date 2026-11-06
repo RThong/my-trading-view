@@ -42,6 +42,20 @@ export function wtiExpiryByMonth(dates: string[]): Map<string, string> {
   );
 }
 
+/**
+ * 两种错配的逐日 0 / 1 标记(1 = 这天两腿合约月份对不上),给背景色带用:每个交易日都有点(0 也发),
+ * 前端按点排位的共享时间轴才不会把错月段挤歪。`dates` 用 WTI 自己的交易日(到期日按它推,只推一遍:
+ * 两种错配恰好互补 —— 到期日之后裂解错月,之前 Brent−WTI 错月)。
+ * 与旧做法(各格按自己的日期推)2018-01 ~ 2026-11 逐日对过 4 格,错月日集合全等。
+ */
+export function rollMismatchFlags(dates: string[]): Record<RollMismatchKind, { date: string; value: number }[]> {
+  const crack = rollMismatchDates(dates, 'crack');
+  return {
+    crack: dates.map((date) => ({ date, value: crack.has(date) ? 1 : 0 })),
+    brentWti: dates.map((date) => ({ date, value: crack.has(date) ? 0 : 1 })),
+  };
+}
+
 /** 判定 `dates` 中哪些日子两条腿的合约月份对不上(按 kind 取到期日前 / 后那一段)。 */
 export function rollMismatchDates(dates: string[], kind: RollMismatchKind): Set<string> {
   const expiry = wtiExpiryByMonth(dates);

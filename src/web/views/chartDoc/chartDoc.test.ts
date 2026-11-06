@@ -7,6 +7,7 @@ import {
   setLayerHidden,
   setLayerRender,
   liveScaleIds,
+  isMarkLayer,
   setLayerShift,
   setScaleInvert,
   setScaleLog,
@@ -238,6 +239,10 @@ describe('平移 / 倒轴', () => {
     expect(setLayerRender(d, 'l2', { kind: 'signed' })).toBe(d);
     expect('render' in setLayerRender(d, 'l2', undefined).panes[0].layers[1]).toBe(false);
     expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
+
+    const bg = setLayerRender(twoOnMain(), 'l2', { kind: 'background' });
+    expect(parseChartDoc(JSON.parse(JSON.stringify(bg)))).toEqual(bg);
+    expect(isMarkLayer(bg.panes[0].layers[1])).toBe(true);
 
     const e = addLayer(twoOnMain(), 'coreCpiRelease', '#333333', { kind: 'events' });
     expect(e.panes[0].layers[2]).toMatchObject({ series: 'coreCpiRelease', render: { kind: 'events' } });

@@ -608,3 +608,19 @@ test('regimeView:同一 dim 每次拿到同一个对象(含按名单现算的基
   expect(regimeView('fundamentals:NVDA')).toBe(regimeView('fundamentals:NVDA'));
   expect(regimeView('fundamentals:NVDA').panes).toBe(dimPanes('fundamentals:NVDA'));
 });
+
+test('错月背景读服务端的 0 / 1 标记:标 1 的日子上色;标记缺失就不画背景,主线照画', () => {
+  const pane = dimPanes('oil').find((p) => p.rollMismatch === 'crack');
+  expect(pane).toBeDefined(); // 前提:油市结构里确实有按裂解错月染背景的格
+  const key = pane!.key as string;
+  const rows = ['2026-10-20', '2026-10-21', '2026-10-22'].map((date, i) => ({ date, value: 10 + i }));
+  const flags = [0, 1, 1].map((value, i) => ({ date: rows[i].date, value }));
+
+  const withFlags = buildRegimeSpecs({ series: { [key]: rows, oilRollCrack: flags }, unavailable: [] }, [pane!], '1D');
+  const roll = withFlags.find((s) => s.key === `${key}-roll`) as { data: Array<{ value: number }> };
+  expect(roll.data.map((d) => d.value)).toEqual([0, 1, 1]);
+
+  const without = buildRegimeSpecs({ series: { [key]: rows }, unavailable: [] }, [pane!], '1D');
+  expect(without.some((s) => s.key === `${key}-roll`)).toBe(false);
+  expect(without.some((s) => s.key === key)).toBe(true);
+});

@@ -38,6 +38,7 @@ import {
   type Point,
 } from '../analytics/regime';
 import type { RegimeSeries, FundSeries, SeriesKey } from '../../shared/regimeSeries';
+import { rollMismatchFlags } from '../../shared/calc/oilRoll';
 import { nearMinusFar } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
 import { getSecLatestFiled } from '../storage/repository';
@@ -571,6 +572,10 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   put('wti', wti ?? undefined);
   put('brent', brent ?? undefined);
   put('rbob', rbob ?? undefined);
+  // 换月错配日(0 / 1,画背景色带):到期日按 WTI 自己的交易日推,两种错配都只由 WTI 到期日决定
+  const roll = wti && rollMismatchFlags(wti.map((p) => p.date));
+  put('oilRollCrack', roll?.crack);
+  put('oilRollBrentWti', roll?.brentWti);
 
   // EIA 周报六条原始序列 → 八条对外线。**水位只发炼厂开工率** —— 它是有绝对刻度的(口播的"98%"就是它,
   // 且 100% 是硬顶,一眼看得出还剩多少余量)。库存/出口的裸水位单看不携带信息

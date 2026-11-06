@@ -67,6 +67,22 @@ export function extendDistinct(seed: string[], n: number): string[] {
 // 32 = OIS 24 个期限 + 差值线等余量(按下标取色,加长不改前面的色)。
 export const SERIES_COLORS = extendDistinct(CATEGORICAL_DARK, 32);
 
+/** #rrggbb → 带透明度的 rgba(背景色带用图层颜色的淡色版) */
+export function withAlpha(hex: string, alpha: number): string {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+/** 色带段外的透明色 */
+export const TRANSPARENT = 'rgba(0,0,0,0)';
+/**
+ * 背景色带的淡度(固定面板错月背景定的,编辑器背景图层沿用):它是「在这里多看一眼」的提醒,
+ * 不是「这段数据不能用」—— 0.28 时全历史视图满屏条纹,读起来像大半数据都坏了
+ */
+export const BACKGROUND_ALPHA = 0.14;
+/** 期货错月背景:中性灰蓝,刻意不与红 / 绿(风险 / 机会)同色系 */
+export const ROLL_COLOR = '#94a3b8';
+
 /** 分位背景带:风险端红、机会端绿(固定面板与图表编辑器共用) */
 export const BAND_RISK = 'rgba(239,68,68,0.45)';
 export const BAND_CALM = 'rgba(34,197,94,0.45)';

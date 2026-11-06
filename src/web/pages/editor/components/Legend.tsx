@@ -2,7 +2,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { InfoTip } from '../../../components/InfoTip';
 import type { Interval } from '../../../hooks/interval';
 import { shiftBusinessDays } from '../../../chart/analysis';
-import { isEventsLayer, type ChartDoc } from '../../../views/chartDoc/chartDoc';
+import { isMarkLayer, type ChartDoc } from '../../../views/chartDoc/chartDoc';
 import { layerLabel, layerUnit } from '../layerLabel';
 import type { LayerData } from '../hooks/layerPoints';
 import { asOfPoint, type LegendLayout } from '../hooks/useCrosshairLegend';
@@ -53,9 +53,9 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
                 <span className="text-neutral-400">{layerLabel(doc, l)}</span>
                 {/* 格子的读法说明挂在第一行名称后面(同固定面板的 ⓘ) */}
                 {j === 0 && pane.desc && <InfoTip text={pane.desc} />}
-                {/* 事件竖线的值无意义(恒为一个占位数),只给名字 */}
-                {!isEventsLayer(l) && <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>}
-                {unit && !isEventsLayer(l) && <span className="text-neutral-600">{unit}</span>}
+                {/* 标记图层(竖线、背景色带)的值无意义,只给名字 */}
+                {!isMarkLayer(l) && <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>}
+                {unit && !isMarkLayer(l) && <span className="text-neutral-600">{unit}</span>}
                 {shift !== 0 && pt && interval === '1D' && (
                   <span className="text-neutral-600">原 {shiftBusinessDays(pt.time, -shift)}</span>
                 )}

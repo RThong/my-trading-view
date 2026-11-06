@@ -35,7 +35,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
   const seriesLayers = doc.panes.flatMap((p) => p.layers);
   const requests = [...seriesLayers.map(layerRequest), ...pairRequests(resolvePair(doc, pair))];
   const { points, isLoading, error, missing } = useSeriesData(requests, interval);
-  const data = useLayerData(doc, points);
+  const data = useLayerData(doc, points, interval);
   const { chartRef, seriesRef } = useEditorChart(containerRef, doc, data, { onStretches: setStretches, interval });
   const { hoverTime, layout } = useCrosshairLegend(containerRef, chartRef, doc);
   const visibleRange = useVisibleRange(chartRef);

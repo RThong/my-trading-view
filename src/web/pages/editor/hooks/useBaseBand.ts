@@ -3,6 +3,7 @@
 // 线本身不画)。不用柱状图:柱与柱之间有缝,深色底上只剩一排细竖纹,看不出是一整段。
 import { type RefObject, useEffect } from 'react';
 import { AreaSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
+import { FULL_HEIGHT_AREA, fullHeightScale } from '../../../chart/core';
 import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
 import type { LayerData } from './layerPoints';
 
@@ -27,18 +28,14 @@ export function useBaseBand(chartRef: RefObject<IChartApi | null>, doc: ChartDoc
         const s: ISeriesApi<'Area'> = chart.addSeries(
           AreaSeries,
           {
+            ...FULL_HEIGHT_AREA,
             priceScaleId: scaleId,
             topColor: BAND_COLOR,
             bottomColor: BAND_COLOR,
-            lineVisible: false,
-            crosshairMarkerVisible: false,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 1 } }),
           },
           paneIndex,
         );
-        s.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
+        fullHeightScale(s);
         s.setData(times.map((time) => ({ time, value: 1 })));
         // 压在所有线下面
         s.setSeriesOrder(0);

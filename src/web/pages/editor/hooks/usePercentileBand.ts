@@ -4,7 +4,8 @@
 // 每次文档 / 数据变了整套重建(同 useBaseBand):色带随分位阈值变,增量对账不划算。
 import { type RefObject, useEffect } from 'react';
 import { AreaSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
-import { isEventsLayer, type ChartDoc } from '../../../views/chartDoc/chartDoc';
+import { FULL_HEIGHT_AREA, fullHeightScale } from '../../../chart/core';
+import { isMarkLayer, type ChartDoc } from '../../../views/chartDoc/chartDoc';
 import { layerMarks, type LayerData } from './layerPoints';
 
 export function usePercentileBand(
@@ -19,7 +20,7 @@ export function usePercentileBand(
     const bands = doc.panes.flatMap((pane, paneIndex) => {
       // 一格只染一层:两层半透明叠起来,红绿混成褐色,分不清是哪条线触发的。取卡片列表里最上面那条(画在最上层的线)
       const owner = pane.layers
-        .filter((l) => !l.hidden && !isEventsLayer(l))
+        .filter((l) => !l.hidden && !isMarkLayer(l))
         .map((l) => ({ l, band: layerMarks(l, data[l.id]?.display ?? []).band }))
         .find((x) => x.band);
       if (!owner?.band) return [];
@@ -27,16 +28,12 @@ export function usePercentileBand(
       const s: ISeriesApi<'Area'> = chart.addSeries(
         AreaSeries,
         {
+          ...FULL_HEIGHT_AREA,
           priceScaleId: `pctl-${pane.id}`,
-          lineVisible: false,
-          crosshairMarkerVisible: false,
-          priceLineVisible: false,
-          lastValueVisible: false,
-          autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 1 } }),
         },
         paneIndex,
       );
-      s.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
+      fullHeightScale(s);
       s.setData(owner.band.map((p) => ({ time: p.time, value: p.value, topColor: p.color, bottomColor: p.color })));
       s.setSeriesOrder(0);
       return [s];

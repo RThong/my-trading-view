@@ -204,6 +204,10 @@ export const REGIME_SERIES = [
   'wti',
   'brent',
   'rbob',
+
+  // ── 背景标记(0 / 1,画成背景色带)
+  'oilRollCrack',
+  'oilRollBrentWti',
 ] as const;
 
 export type RegimeSeries = (typeof REGIME_SERIES)[number];
