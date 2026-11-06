@@ -63,7 +63,9 @@ export function useEditorChart(
       crosshair: { mode: 0 }, // Normal:十字线跟鼠标走,不吸附到某条线
       layout: { ...CHART_OPTIONS.layout, panes: { separatorColor: '#262626', enableResize: true } },
       // 默认最窄 0.5px/根:2018 起的日线约 2200 根,常见屏宽下放不下,「对准共同时段」会落到 2019 年中
-      timeScale: { ...CHART_OPTIONS.timeScale, minBarSpacing: 0.1 },
+      // lockVisibleTimeRangeOnResize:图宽一变(收起侧栏、拉窗口)保持可视日期范围,而不是默认的保持右端和每根宽度、
+      // 把左边那截切掉 —— 「叠加对比」按的就是可视区间,收起时框好的区间展开后不能悄悄变窄
+      timeScale: { ...CHART_OPTIONS.timeScale, minBarSpacing: 0.1, lockVisibleTimeRangeOnResize: true },
     });
     chartRef.current = chart;
     const series = seriesRef.current;
