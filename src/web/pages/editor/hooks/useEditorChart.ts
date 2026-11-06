@@ -6,12 +6,13 @@ import {
   createChart,
   LineSeries,
   PriceScaleMode,
+  type AutoscaleInfoProvider,
   type IChartApi,
   type IPaneApi,
   type ISeriesApi,
   type Time,
 } from 'lightweight-charts';
-import { CHART_OPTIONS, type LinePoint } from '../../../chart/core';
+import { CHART_OPTIONS, boxAutoscaleProvider, type LinePoint } from '../../../chart/core';
 import type { Interval } from '../../../hooks/interval';
 import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
 import { canLogScale, type LayerData } from './layerPoints';
@@ -25,7 +26,11 @@ type SeriesOpts = {
   lineVisible: boolean;
   lastValueVisible: boolean;
   crosshairMarkerVisible: boolean;
+  autoscaleInfoProvider: AutoscaleInfoProvider;
 };
+
+// 原样自动缩放。轴上去掉范围框时也要显式写回它:lw-charts 合并选项会跳过 undefined,不写就沿用旧框
+const PASS_AUTOSCALE: AutoscaleInfoProvider = (base) => base();
 
 type Options = {
   /** 拖完分隔条后读回的各格高度比例(写回 JSON,保持 JSON 是唯一真源)。 */
@@ -208,6 +213,7 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LineP
       // 隐藏 = visible: false:不画、不进自动缩放(lw-charts 自带);图例读数取自 layerPoints,不受影响。
       // 例外是被叠加的 A:B 轴每帧按 A 轴的范围换算(useFitSync),A 不进自动缩放的话 A 轴定住、B 也跟着定住 —— 只关线和标签
       const hidden = !!layer.hidden;
+      const scale = pane.scales.find((sc) => sc.id === layer.scale);
       const opts = {
         color: layer.color,
         priceScaleId: layer.scale,
@@ -215,6 +221,8 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, LineP
         lineVisible: !hidden,
         lastValueVisible: !hidden,
         crosshairMarkerVisible: !hidden,
+        // 轴的范围框落到这根轴上每条线的自动缩放上,轴取并集(语义见 boxAutoscaleProvider)
+        autoscaleInfoProvider: boxAutoscaleProvider(scale?.clampVisibleTo, scale?.expandVisibleTo) ?? PASS_AUTOSCALE,
       };
       const existing = series.get(layer.id);
       if (!existing) {

@@ -5,6 +5,7 @@ import {
   clampPriceRange,
   clampAutoscaleProvider,
   expandAutoscaleProvider,
+  boxAutoscaleProvider,
   type Bar,
 } from './core';
 
@@ -97,4 +98,25 @@ test('expandAutoscaleProvider:求并 —— 数据窄时撑到框,数据出框�
     maxValue: 24,
   });
   expect(provider(() => ({ priceRange: null }))).toEqual({ priceRange: null });
+});
+
+test('boxAutoscaleProvider:都没配 → undefined;单配同各自;两个都配先夹后撑', () => {
+  type Info = { priceRange: { minValue: number; maxValue: number } | null };
+  const info = (minValue: number, maxValue: number) => () => ({ priceRange: { minValue, maxValue } });
+
+  expect(boxAutoscaleProvider<Info>(undefined, undefined)).toBeUndefined();
+  expect(boxAutoscaleProvider<Info>([-5, 15], undefined)?.(info(-20, 8))?.priceRange).toEqual({
+    minValue: -5,
+    maxValue: 8,
+  });
+  expect(boxAutoscaleProvider<Info>(undefined, [1, 19])?.(info(7, 9))?.priceRange).toEqual({
+    minValue: 1,
+    maxValue: 19,
+  });
+  // 夹到 [-5, 10] 再撑到盖住 [0, 12]:上沿以撑为准(反过来先撑后夹会得到 10,参考线 12 出画面)
+  expect(boxAutoscaleProvider<Info>([-5, 10], [0, 12])?.(info(-20, 30))?.priceRange).toEqual({
+    minValue: -5,
+    maxValue: 12,
+  });
+  expect(boxAutoscaleProvider<Info>([0, 1], [0, 0])?.(() => null)).toBeNull();
 });

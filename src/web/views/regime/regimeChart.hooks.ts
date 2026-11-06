@@ -181,6 +181,8 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
       ...(l.render && { render: l.render }),
       ...(l.refLines && { refLines: l.refLines }),
       ...(l.percentile && { percentile: l.percentile }),
+      ...(scale?.clampVisibleTo && { clampVisibleTo: scale.clampVisibleTo }),
+      ...(scale?.expandVisibleTo && { expandVisibleTo: scale.expandVisibleTo }),
     };
   });
 

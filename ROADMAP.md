@@ -271,10 +271,10 @@ TradingView
   3. ~~`desc`：挂在格子上~~（另加了格子 `label`）
   4. ~~`percentile`：P5/P95 带和 riskTail~~
   5. `events`：事件竖线，做成图层画法 `render: { kind: 'events' }`（日期仍取注册表序列）
-  6. `clamp/expandVisibleTo`：做成纵轴（Scale）的属性
+  6. ~~`clamp/expandVisibleTo`：做成纵轴（Scale）的属性~~ ✅ `Scale.clampVisibleTo` / `expandVisibleTo`，编辑器能画、`docToPaneSpecs` 照传；不做 UI 入口（编辑器里拖轴即可，预设范围是固定面板的需求）
   7. 背景色带（按状态给背景上色）、两条线之间填色。背景色带 = 图层画法 `render: { kind: 'background' }` + 一条 0/1 序列；PaneSpec 的 `rollMismatch` 改由服务端发两条 0/1 序列（`oilRoll` 照算，按 WTI 交易日；改前逐日对账 4 格的错月日集合）
   8. 变换：均线、同比、Z-score、起点 = 100（期数按各序列自身频率算）。做成图层上的参数（如 `transform: { ma: 20 }`），不做成被引用序列的属性
-  9. 图层 `hidden`：默认隐藏（对应 PaneSpec `overlays[].hidden`）
+  9. ~~图层 `hidden`：默认隐藏（对应 PaneSpec `overlays[].hidden`）~~ ✅ 编辑器图例行有眼睛按钮切换；`docToPaneSpecs` 遇到会报错，等叠加线支持后转给 overlay
 
   ~~现状：ChartDoc 只有一种图层——折线序列（`chartDoc.ts` 的 `Layer`；相关性 study 图层已在 60aa49f 删除），以上全部缺。~~
   现状（2026-11-04）：划掉的几项已作为可选字段加进 ChartDoc（8f69743），固定面板经 `docToPaneSpecs` 能画，编辑器只保留不画；另加了计算图层 `calc`（730b9b8）。这一组不补齐，固定面板迁不过来，只能做到「编辑器像 TradingView」，做不到「整站由 JSON 配置」。

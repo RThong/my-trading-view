@@ -40,6 +40,11 @@ describe('固定面板的 ChartDoc', () => {
     expect(() => docToPaneSpecs(withLayer({ series: 'nope' }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({ shift: 5 }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({ hidden: true }))).toThrow();
+    // 轴的范围框照传(固定面板按格子画,格子只有右轴)
+    const boxed = docToPaneSpecs(
+      withLayer({}, { id: 'right', side: 'right', clampVisibleTo: [-5, 15], expandVisibleTo: [1, 19] }),
+    );
+    expect(boxed[0]).toMatchObject({ clampVisibleTo: [-5, 15], expandVisibleTo: [1, 19] });
     // 计算图层支持了,但两条腿都得在注册表里
     expect(() => docToPaneSpecs(withLayer({ calc: { op: '-', series: 'nope' } }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({ scale: 'left' }, { id: 'left', side: 'left' }))).toThrow();

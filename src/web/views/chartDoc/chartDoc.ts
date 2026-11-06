@@ -12,6 +12,13 @@ export type Scale = {
   invert?: true;
   /** 对数坐标。轴上有 ≤0 的值时渲染层按普通坐标画(对数画不了) */
   log?: true;
+  /**
+   * 自动缩放的上限框 [lo, hi]:轴最多显示到这么宽,一个尖刺不至于把日常波动压扁。只夹轴不改数据;
+   * 挂在轴上而不是图层上:同轴的线要一起夹,只夹一条的话别的线照样把轴撑开
+   */
+  clampVisibleTo?: [number, number];
+  /** 自动缩放的下限框 [lo, hi]:轴至少显示这么宽,数据没走到参考线附近时线也在画面里。[0, 0] = 轴要包含 0 */
+  expandVisibleTo?: [number, number];
 };
 
 /**
@@ -300,13 +307,15 @@ export function setLayerShift(doc: ChartDoc, layerId: string, shift: number): Ch
   return setLayerField(doc, layerId, 'shift', n || undefined);
 }
 
-/** 按固定字段顺序重建一根轴(id、side、invert、log):先开哪个开关都一样,复制出去的 JSON 再导入文本原样不变。 */
+/** 按固定字段顺序重建一根轴(id、side、invert、log、clampVisibleTo、expandVisibleTo):先开哪个开关都一样,复制出去的 JSON 再导入文本原样不变。 */
 function canonicalScale(sc: Scale): Scale {
   return {
     id: sc.id,
     side: sc.side,
     ...(sc.invert ? { invert: true as const } : {}),
     ...(sc.log ? { log: true as const } : {}),
+    ...(sc.clampVisibleTo ? { clampVisibleTo: [sc.clampVisibleTo[0], sc.clampVisibleTo[1]] } : {}),
+    ...(sc.expandVisibleTo ? { expandVisibleTo: [sc.expandVisibleTo[0], sc.expandVisibleTo[1]] } : {}),
   };
 }
 
@@ -509,8 +518,15 @@ function isScale(x: unknown): x is Scale {
     isStr(x.id) &&
     (x.id === 'right' || x.id === 'left' ? x.side === x.id : x.side === 'overlay') &&
     (x.invert === undefined || x.invert === true) &&
-    (x.log === undefined || x.log === true)
+    (x.log === undefined || x.log === true) &&
+    (x.clampVisibleTo === undefined || isRange(x.clampVisibleTo, false)) &&
+    (x.expandVisibleTo === undefined || isRange(x.expandVisibleTo, true))
   );
+}
+
+// 下限框允许 lo = hi:[0, 0] = 「轴要包含 0」;上限框 lo = hi 夹成一条线,没意义
+function isRange(x: unknown, allowPoint: boolean): x is [number, number] {
+  return Array.isArray(x) && x.length === 2 && isNum(x[0]) && isNum(x[1]) && (allowPoint ? x[0] <= x[1] : x[0] < x[1]);
 }
 
 // 颜色限定 #rrggbb:lw-charts 解析不了的颜色会直接抛错(整页白屏),<input type=color> 也只认这种

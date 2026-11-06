@@ -26,9 +26,16 @@ export function useLayerData(doc: ChartDoc, points: Record<string, LinePoint[]>)
   return useMemo(() => computeLayerData(doc, points), [doc, points]);
 }
 
-/** 这根轴能不能取对数:挂在上面的图层(画出来的值)全都大于 0。还没数据的、隐藏的图层不算阻碍。 */
+/**
+ * 这根轴能不能取对数:挂在上面的图层(画出来的值)全都大于 0,且轴的下限框不把范围撑到 ≤0。
+ * 还没数据的图层不算阻碍;隐藏的也不算 —— 除非它是被叠加的 A,那条照样撑轴(见 useEditorChart)。
+ */
 export function canLogScale(pane: Pane, scaleId: string, data: Record<string, LayerData>): boolean {
+  const expand = pane.scales.find((sc) => sc.id === scaleId)?.expandVisibleTo;
+  if (expand && expand[0] <= 0) return false;
+
+  const fitTargets = new Set(pane.layers.flatMap((l) => (l.fit ? [l.fit.target] : [])));
   return pane.layers
-    .filter((l) => l.scale === scaleId && !l.hidden)
+    .filter((l) => l.scale === scaleId && (!l.hidden || fitTargets.has(l.id)))
     .every((l) => (data[l.id]?.display ?? []).every((p) => p.value > 0));
 }
