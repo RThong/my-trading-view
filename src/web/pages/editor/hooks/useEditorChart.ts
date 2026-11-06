@@ -14,6 +14,7 @@ import {
   type IPaneApi,
   type IPriceLine,
   type ISeriesApi,
+  type SeriesDataItemTypeMap,
   type SeriesDefinition,
   type SeriesType,
   type Time,
@@ -49,32 +50,38 @@ function kindOf(l: Layer): Kind {
   return l.render?.kind ?? 'line';
 }
 
+type KindDef = { def: SeriesDefinition<SeriesType>; data: (color: string, pts: LinePoint[]) => unknown[] };
+
+/**
+ * 画法表的一项。泛型把「series 种类」和「换出来的点」绑在一起:缺了这种 series 的必填字段、字段类型不对,在这里就编译报错
+ * (多写了它不认的字段 TS 查不出 —— 回调返回值不做多余属性检查,比如面积图写成 color 而不是 topColor 要靠浏览器里看)。
+ * 出了这一层表里只剩宽类型,建 series 时不用再断言;灌数据那一处(setData)按宽类型断言一次
+ */
+function kindDef<T extends SeriesType>(
+  def: SeriesDefinition<T>,
+  data: (color: string, pts: LinePoint[]) => SeriesDataItemTypeMap[T][],
+): KindDef {
+  return { def: def as SeriesDefinition<SeriesType>, data };
+}
+
 /**
  * 每种画法:用哪种 lw-charts series、点怎么换。符号柱逐点上色;事件竖线值恒为 1;
  * 背景色带值恒为 1、标记非 0 的日子上色其余透明,用面积图(柱子之间有缝,放大后一段会碎成竖纹,同分位带)
  */
-const KINDS = {
-  line: { def: LineSeries, data: (_color: string, pts: LinePoint[]) => pts },
-  signed: {
-    def: HistogramSeries,
-    data: (_color: string, pts: LinePoint[]) =>
-      pts.map((p) => ({ ...p, color: p.value >= 0 ? SIGNED_UP : SIGNED_DOWN })),
-  },
-  events: {
-    def: HistogramSeries,
-    data: (color: string, pts: LinePoint[]) => pts.map((p) => ({ time: p.time, value: 1, color })),
-  },
-  background: {
-    def: AreaSeries,
-    data: (color: string, pts: LinePoint[]) => {
-      const tint = withAlpha(color, BACKGROUND_ALPHA);
-      return pts.map((p) => {
-        const fill = p.value !== 0 ? tint : TRANSPARENT;
-        return { time: p.time, value: 1, topColor: fill, bottomColor: fill };
-      });
-    },
-  },
-} satisfies Record<Kind, { def: { type: SeriesType }; data: (color: string, pts: LinePoint[]) => unknown[] }>;
+const KINDS: Record<Kind, KindDef> = {
+  line: kindDef(LineSeries, (_color, pts) => pts),
+  signed: kindDef(HistogramSeries, (_color, pts) =>
+    pts.map((p) => ({ ...p, color: p.value >= 0 ? SIGNED_UP : SIGNED_DOWN })),
+  ),
+  events: kindDef(HistogramSeries, (color, pts) => pts.map((p) => ({ time: p.time, value: 1, color }))),
+  background: kindDef(AreaSeries, (color, pts) => {
+    const tint = withAlpha(color, BACKGROUND_ALPHA);
+    return pts.map((p) => {
+      const fill = p.value !== 0 ? tint : TRANSPARENT;
+      return { time: p.time, value: 1, topColor: fill, bottomColor: fill };
+    });
+  }),
+};
 
 /** 各画法的 series 选项。每次对账整份写回,改色 / 换轴 / 显隐 / 范围框都走这里 */
 function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
@@ -117,7 +124,7 @@ function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
 function createLayerSeries(chart: IChartApi, layer: Layer, opts: object, paneIndex: number): ISeriesApi<SeriesType> {
   const kind = kindOf(layer);
   const s = chart.addSeries(
-    KINDS[kind].def as SeriesDefinition<SeriesType>,
+    KINDS[kind].def,
     { ...opts, ...(kind === 'line' && { lineWidth: 2 }), priceLineVisible: false },
     paneIndex,
   );

@@ -167,7 +167,7 @@ function rollOf(layers: Layer[]): RollMismatchKind | undefined {
   if (!l) return undefined;
   const kind = ROLL_KIND_BY_FLAG.get(l.series);
   // 颜色也得是错月那个灰蓝:固定面板按固定色画,写了别的颜色编辑器照画、这里不照画,两边就对不上
-  if (!kind || l.shift || l.hidden || l.calc || l.color !== ROLL_COLOR)
+  if (!kind || l.shift || l.hidden || l.calc || l.color.toLowerCase() !== ROLL_COLOR)
     throw new Error(
       `ChartDoc 背景图层 ${l.id}:固定面板只认错月标记(oilRollCrack / oilRollBrentWti),颜色须是 ${ROLL_COLOR},不能平移 / 隐藏 / 计算`,
     );

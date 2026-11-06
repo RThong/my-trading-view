@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Combobox, ComboboxChipsInput, ComboboxTrigger, useComboboxAnchor } from '@web/components/ui/combobox';
-import { seriesDef } from '../../../views/chartDoc/registry';
 import { type Group, labelOf, SeriesOptionList, useSeriesSearch } from './seriesSearch';
 
 type Props = {
@@ -18,8 +17,6 @@ export function SeriesSelect({ value, onChange, placeholder, disabled, title }: 
   const [open, setOpen] = useState(false);
   const anchor = useComboboxAnchor();
   const search = useSeriesSearch(query);
-  // 只用来选计算的第二条腿:事件日期的值无意义,不列
-  const groups = search.groups.map((g) => ({ ...g, items: g.items.filter((o) => !seriesDef(o.id)?.events) }));
 
   // 只认用户打字 / 清空:单选模式下组件库会在选中、收起时把输入框回填成所选序列的名称,
   // 照收的话下次展开就按那个名称过滤,下拉几乎只剩它自己(名称还会被拿去搜 Yahoo)
@@ -45,7 +42,7 @@ export function SeriesSelect({ value, onChange, placeholder, disabled, title }: 
   return (
     <Combobox<string, false, Group>
       autoHighlight
-      items={groups}
+      items={search.groups}
       filter={null}
       value={value ?? null}
       onValueChange={onValueChange}

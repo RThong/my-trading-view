@@ -49,20 +49,21 @@ export function wtiExpiryByMonth(dates: string[]): Map<string, string> {
  * 与旧做法(各格按自己的日期推)2018-01 ~ 2026-11 逐日对过 4 格,错月日集合全等。
  */
 export function rollMismatchFlags(dates: string[]): Record<RollMismatchKind, { date: string; value: number }[]> {
-  const crack = rollMismatchDates(dates, 'crack');
+  const crack = afterWtiExpiry(dates);
   return {
     crack: dates.map((date) => ({ date, value: crack.has(date) ? 1 : 0 })),
     brentWti: dates.map((date) => ({ date, value: crack.has(date) ? 0 : 1 })),
   };
 }
 
-/** 判定 `dates` 中哪些日子两条腿的合约月份对不上(按 kind 取到期日前 / 后那一段)。 */
-export function rollMismatchDates(dates: string[], kind: RollMismatchKind): Set<string> {
+/** `dates` 中落在当月 WTI 到期日之后的日子(= 裂解错月;Brent−WTI 错月是它的补集,见 rollMismatchFlags)。 */
+export function afterWtiExpiry(dates: string[]): Set<string> {
   const expiry = wtiExpiryByMonth(dates);
-  const afterExpiry = (d: string) => {
-    const e = expiry.get(d.slice(0, 7));
-    return e !== undefined && d > e;
-  };
 
-  return new Set(dates.filter((d) => (kind === 'crack' ? afterExpiry(d) : !afterExpiry(d))));
+  return new Set(
+    dates.filter((d) => {
+      const e = expiry.get(d.slice(0, 7));
+      return e !== undefined && d > e;
+    }),
+  );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { rollMismatchDates, rollMismatchFlags, wtiExpiryByMonth } from './oilRoll';
+import { afterWtiExpiry, rollMismatchFlags, wtiExpiryByMonth } from './oilRoll';
 
 // 某月的交易日:工作日扣掉给定休市日
 function tradingDays(month: string, holidays: string[] = [], upTo = 31) {
@@ -36,11 +36,11 @@ describe('wtiExpiryByMonth', () => {
   });
 });
 
-describe('rollMismatchDates', () => {
+describe('afterWtiExpiry / rollMismatchFlags', () => {
   const oct = tradingDays('2026-10');
 
   it('裂解:WTI 到期之后到月底错月(WTI 已是 12 月合约,柴油 / 汽油仍是 11 月)', () => {
-    expect([...rollMismatchDates(oct, 'crack')]).toEqual([
+    expect([...afterWtiExpiry(oct)]).toEqual([
       '2026-10-21',
       '2026-10-22',
       '2026-10-23',
@@ -52,25 +52,14 @@ describe('rollMismatchDates', () => {
     ]);
   });
 
-  it('Brent−WTI:恰好相反,到期日(含)之前错月,两段合起来覆盖全月', () => {
-    const brent = rollMismatchDates(oct, 'brentWti');
-    const crack = rollMismatchDates(oct, 'crack');
+  it('Brent−WTI:恰好相反,到期日(含)之前错月,两段合起来覆盖全月;每个交易日都有点(0 也发)', () => {
+    const { crack, brentWti } = rollMismatchFlags(oct);
+    const on = (flags: typeof crack, d: string) => flags.find((f) => f.date === d)?.value === 1;
 
-    expect(brent.has('2026-10-20')).toBe(true);
-    expect(brent.has('2026-10-21')).toBe(false);
-    expect(oct.every((d) => brent.has(d) !== crack.has(d))).toBe(true);
-  });
-});
-
-describe('rollMismatchFlags', () => {
-  it('每个交易日都有点(0 也发),两种的 1 各自 = rollMismatchDates', () => {
-    const oct = tradingDays('2026-10');
-    const flags = rollMismatchFlags(oct);
-
-    (['crack', 'brentWti'] as const).forEach((kind) => {
-      const set = rollMismatchDates(oct, kind);
-      expect(flags[kind].map((f) => f.date)).toEqual(oct);
-      expect(flags[kind].every((f) => f.value === (set.has(f.date) ? 1 : 0))).toBe(true);
-    });
+    expect(crack.map((f) => f.date)).toEqual(oct);
+    expect(on(brentWti, '2026-10-20')).toBe(true);
+    expect(on(brentWti, '2026-10-21')).toBe(false);
+    expect(oct.every((d) => on(brentWti, d) !== on(crack, d))).toBe(true);
+    expect(oct.filter((d) => on(crack, d))).toEqual([...afterWtiExpiry(oct)]);
   });
 });

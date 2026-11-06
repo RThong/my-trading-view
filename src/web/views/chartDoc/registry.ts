@@ -76,8 +76,6 @@ export type SeriesDef = {
   code?: string;
   /** 不进下拉、但 id 照常能解析(旧图引用它照样取得到数):能用 calc 拼出来的派生量、与别的序列同值的腿 */
   hidden?: true;
-  /** 事件日期(发布日、决议日):值无意义,加到图上画竖线 */
-  events?: true;
 };
 
 export type SeriesFamily =
@@ -449,7 +447,7 @@ const OVERRIDDEN = new Set(HAND.map((d) => d.id));
 
 // 下拉只放原始序列:能用 calc 现算的派生量(差 / 比值)从下拉隐藏(要看就在编辑器里拼),但 id 照常能解析,
 // 旧图引用它照样取得到数;calc 还表达不了的派生量暂留下拉,名称标「派生」(见 shared/seriesMeta 的 DERIVED)
-// 不能画成线的(chartable: false)里,标了 events 的是事件日期:进下拉,加到图上画竖线;其余(点阵图这种日期不是观测日的)不进
+// 不能画成线的(chartable: false)里,标了 events 的是事件日期:能解析(ChartDoc 里写竖线图层用)但不进下拉;其余(点阵图这种日期不是观测日的)不收
 const FROM_META: SeriesDef[] = REGIME_SERIES.filter(
   (k) => (SERIES_META[k].chartable !== false || SERIES_META[k].events) && !OVERRIDDEN.has(k),
 ).map((k) => {
@@ -463,8 +461,8 @@ const FROM_META: SeriesDef[] = REGIME_SERIES.filter(
     ...(unit && { unit }),
     ...(weekends && { weekends }),
     ...(aliases && { aliases }),
-    ...((DERIVED[k] === 'calc' || SERIES_META[k].hidden) && { hidden: true as const }),
-    ...(SERIES_META[k].events && { events: true as const }),
+    // 事件日期也不进下拉:只在 ChartDoc 里写(render: events),以后换成类似 Pine 的定义方式
+    ...((DERIVED[k] === 'calc' || SERIES_META[k].hidden || SERIES_META[k].events) && { hidden: true as const }),
   };
 });
 
