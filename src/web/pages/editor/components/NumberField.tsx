@@ -35,7 +35,8 @@ export function NumberField({ value, onCommit, className, title, disabled }: Pro
       disabled={disabled}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
-      onKeyDown={(e) => e.key === 'Enter' && commit()}
+      // Esc 也提交:输入框在弹层里,Esc 关弹层时它直接卸载、不触发 blur,不提交草稿就丢了(点外部关会先 blur,不受影响)
+      onKeyDown={(e) => (e.key === 'Enter' || e.key === 'Escape') && commit()}
       className={cn(
         'h-5 rounded bg-neutral-900 px-1 py-0 text-center text-xs tabular-nums text-neutral-200 disabled:opacity-40',
         className ?? 'w-12',

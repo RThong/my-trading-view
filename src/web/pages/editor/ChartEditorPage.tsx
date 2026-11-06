@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Copy, Upload } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Upload } from 'lucide-react';
 import type { Interval } from '../../hooks/interval';
 import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
@@ -17,6 +17,7 @@ import { useSeriesData } from '../../views/chartDoc/useSeriesData';
 import { useBaseBand } from './hooks/useBaseBand';
 import { useFitSync } from './hooks/useFitSync';
 import { useLineDrag } from './hooks/useLineDrag';
+import { useSidebar } from './hooks/useSidebar';
 import { useVisibleRange } from './hooks/useVisibleRange';
 
 // 图表编辑页:空白图上自己挑序列、分格叠放、把一条线叠到另一条上看劈叉。只负责组装 ——
@@ -42,6 +43,8 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
   useBaseBand(chartRef, doc, data);
 
   const empty = doc.panes.length === 0;
+  // 空图时不给收起按钮,侧栏强制展开(见 useSidebar)
+  const sidebar = useSidebar(empty);
   const status = [
     isLoading && !empty ? '加载中…' : undefined,
     error ? `取数失败:${error.message}` : undefined,
@@ -62,10 +65,27 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
             {status.join(' · ')}
           </div>
         )}
+        {/* 放在价格轴与时间轴交汇的右下角小方格里(lw-charts 那里不画东西),不另占一列宽度;
+            放右上角会压住价格轴最上面的刻度。展开 / 收起都在同一个位置 */}
+        {!empty && (
+          <Button
+            variant="ghost"
+            // 方格高 = 时间轴高 28px,按钮取同高
+            size="icon-sm"
+            onClick={sidebar.toggle}
+            className="absolute right-1 bottom-0 z-10 text-neutral-500 hover:text-neutral-200"
+            title={sidebar.open ? '收起操作区' : '展开操作区'}
+          >
+            {sidebar.open ? <PanelRightClose /> : <PanelRightOpen />}
+          </Button>
+        )}
       </div>
 
-      {/* 侧栏本身不滚:下拉框要能盖住下面的图层区;只有图层区自己滚 */}
-      <aside className="flex w-80 shrink-0 flex-col gap-3 border-l border-neutral-800 pl-3">
+      {/* 侧栏本身不滚:下拉框要能盖住下面的图层区;只有图层区自己滚。
+          收起用 hidden 而不卸载:导入 JSON 写了一半、卡片上选了一半的计算都还在 */}
+      <aside
+        className={`${sidebar.open ? 'flex' : 'hidden'} w-80 shrink-0 flex-col gap-3 border-l border-neutral-800 pl-3`}
+      >
         <SeriesPicker
           // 计算图层(A − B)不进标签:标签代表「这条序列在图上」,勾掉 A 不该连带删掉 A − B
           selected={seriesLayers.filter((l) => !l.calc).map((l) => ({ series: l.series, color: l.color }))}
