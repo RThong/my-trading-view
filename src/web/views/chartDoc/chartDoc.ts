@@ -85,8 +85,6 @@ export type Pane = {
   stretch: number;
   scales: Scale[];
   layers: Layer[];
-  /** 格子的短名(固定面板工具条上的开关);缺省用主图层的名称 */
-  label?: string;
   /** 读法说明(悬停 ⓘ 显示) */
   desc?: string;
 };
@@ -479,10 +477,10 @@ export function moveLayer(doc: ChartDoc, layerId: string, target: PaneTarget, be
   const builtin = layer.scale === 'right' || layer.scale === 'left' ? BUILTIN[layer.scale] : undefined;
   const carried = [overlay ?? builtin].filter((s) => s !== undefined);
 
-  // 源格只剩这一条线时,源格会被 normalize 删掉:拖到新格 = 整格换了位置,短名 / 说明跟着走;
+  // 源格只剩这一条线时,源格会被 normalize 删掉:拖到新格 = 整格换了位置,说明跟着走;
   // 拖进已有格 = 两格并成一格,只留目标格自己的(源格那段说明讲的是另一件事,带过去反而误导)
-  const { label, desc } = hit.pane.layers.length === 1 ? hit.pane : {};
-  const paneMeta = { ...(label !== undefined && { label }), ...(desc !== undefined && { desc }) };
+  const { desc } = hit.pane.layers.length === 1 ? hit.pane : {};
+  const paneMeta = desc !== undefined ? { desc } : {};
 
   const withoutLayer = doc.panes.map((p) => ({ ...p, layers: p.layers.filter((l) => l.id !== layerId) }));
   const panes =
@@ -713,7 +711,6 @@ function isPane(x: unknown): x is Pane {
     x.scales.every(isScale) &&
     Array.isArray(x.layers) &&
     x.layers.every(isLayer) &&
-    (x.label === undefined || isStr(x.label)) &&
     (x.desc === undefined || isStr(x.desc))
   );
 }
@@ -749,7 +746,6 @@ export function parseChartDoc(x: unknown): ChartDoc | null {
     stretch: p.stretch,
     scales: p.scales.map(canonicalScale),
     layers: p.layers.map(canonicalLayer),
-    ...(p.label !== undefined ? { label: p.label } : {}),
     ...(p.desc !== undefined ? { desc: p.desc } : {}),
   }));
 

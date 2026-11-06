@@ -190,7 +190,7 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
         ? (`${l.series}|${l.calc.op}${l.calc.fill ? 'f' : ''}|${l.calc.series}` as const)
         : (def.source as { key: SeriesKey }).key,
       ...(l.calc && { from: { series: l.series, calc: l.calc } }),
-      label: p.label ?? name,
+      label: name,
       title: l.title ?? name,
       color: l.color,
       ...(p.desc !== undefined && { desc: p.desc }),

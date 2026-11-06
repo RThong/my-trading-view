@@ -21,7 +21,6 @@ export const CONCENTRATION: ChartDoc = {
           title: '标普500 ÷ 等权',
         },
       ],
-      label: '市值 / 等权',
       desc: [
         '定义:标普 500(市值加权)÷ 标普 500 等权指数(^GSPC / ^SPXEW,都是价格指数,不含分红)。',
         '上行 = 大市值股在拉指数、多数股票没跟(缩圈,集中度上升);下行 = 上涨在扩散(变宽)。',
@@ -47,7 +46,6 @@ export const CONCENTRATION: ChartDoc = {
           percentile: { riskTail: 'high' },
         },
       ],
-      label: 'VIXEQ / VIX',
       desc: [
         '定义:标普成分股平均单股隐含波动率(VIXEQ)÷ 指数隐含波动率(VIX)。读它等于读隐含相关性 / 离散度。',
         SIGMA_ID,
@@ -77,7 +75,6 @@ export const CONCENTRATION: ChartDoc = {
           refLines: [{ price: 4, title: '临界 4', color: '#ef4444' }],
         },
       ],
-      label: '等权 − 加权回撤',
       desc: [
         '定义:标普 500 等权(^SPXEW)的 252 日回撤 − 标普 500(^GSPC)的 252 日回撤,百分点。',
         '回撤 = 1 − 收盘 / 过去 252 个交易日最高收盘;两个都是价格指数,按日期内连接。',

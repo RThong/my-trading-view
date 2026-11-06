@@ -15,17 +15,16 @@ describe('固定面板的 ChartDoc', () => {
     expect(dimPanes(dim as never).length).toBe(REGIME_DOCS[dim as keyof typeof REGIME_DOCS].panes.length);
   });
 
-  test('编辑器里把一格唯一的线拖到新格:格子的短名和说明跟着走,不丢', () => {
+  test('编辑器里把一格唯一的线拖到新格:格子的说明跟着走,不丢', () => {
     const moved = moveLayer(CONCENTRATION, 'l1', 'new');
     const pane = moved.panes.find((p) => p.layers.some((l) => l.id === 'l1'))!;
-    expect(pane).toMatchObject({ label: '市值 / 等权', desc: CONCENTRATION.panes[0].desc });
+    expect(pane.desc).toBe(CONCENTRATION.panes[0].desc);
     expect(moved.panes.length).toBe(3);
   });
 
-  test('拖进已有格(两格并成一格):只留目标格自己的短名和说明', () => {
+  test('拖进已有格(两格并成一格):只留目标格自己的说明', () => {
     const merged = moveLayer(CONCENTRATION, 'l2', 'p1');
-    expect(merged.panes.map((p) => p.label)).toEqual(['市值 / 等权', '等权 − 加权回撤']);
-    expect(merged.panes[0].desc).toBe(CONCENTRATION.panes[0].desc);
+    expect(merged.panes.map((p) => p.desc)).toEqual([CONCENTRATION.panes[0].desc, CONCENTRATION.panes[2].desc]);
   });
 
   test('固定面板画不了的设定(多线 / 非 regime 源 / 平移 / 叠加 / 隐藏 / 左轴 / 独立轴 / 倒轴 / 对数 / 同一序列占两格)直接报错,不静默', () => {

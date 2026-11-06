@@ -466,9 +466,11 @@ describe('固定面板用的可选字段', () => {
         refLines: [{ price: 4, title: '临界 4', color: '#ef4444' }],
         percentile: { riskTail: 'high', since: '2000-01-01' },
       },
-      { label: 'VIX', desc: '说明' },
+      { desc: '说明' },
     );
     expect(parseChartDoc(ok)).toEqual(ok as ChartDoc);
+    // 旧版存档带格子短名 label(已删的字段):照样载入,字段丢掉
+    expect(parseChartDoc(base({}, { label: 'VIX' }))?.panes[0]).not.toHaveProperty('label');
   });
 
   test.each([
@@ -483,10 +485,7 @@ describe('固定面板用的可选字段', () => {
     expect(parseChartDoc(base(patch))).toBeNull();
   });
 
-  test.each([
-    ['label 不能是空串', { label: '' }],
-    ['desc 须是字符串', { desc: 1 }],
-  ])('格:%s → 拒收', (_, patch) => {
+  test.each([['desc 须是字符串', { desc: 1 }]])('格:%s → 拒收', (_, patch) => {
     expect(parseChartDoc(base({}, patch))).toBeNull();
   });
 });
