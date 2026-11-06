@@ -5,12 +5,13 @@ import useSWR from 'swr';
 import { useServerRefresh } from '../../hooks/useServerRefresh';
 import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../chart/core';
 import { percentileRank } from '../../../shared/calc/stats';
-import type { SeriesKey } from '../../../shared/regimeSeries';
+import { REGIME_DB_OHLC_KEYS, REGIME_OHLC_KEYS, type SeriesKey } from '../../../shared/regimeSeries';
 import type { Interval } from '../../hooks/interval';
 import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../../chart/paneChart.types';
 import type { RollMismatchKind } from '../../../shared/calc/oilRoll';
 import {
   isMarkLayer,
+  markColor,
   type Calc,
   type ChartDoc,
   type Layer,
@@ -148,13 +149,32 @@ export type RegimeDims = Partial<Record<Exclude<FixedDim, DocDim>, DimConfig>>;
  */
 export type DocDim = 'concentration';
 
+/**
+ * 图层在 /api/regime 里的键(固定面板按它读 data.series / data.ohlc)。注册表源就是 regime 的取那个键;
+ * 注册表另给了取法的,用它显式登记的 regimeKey(见 registry 的 REGIME_ALIASES);
+ * 只进 ohlc 的(BTC)只有画蜡烛才认。都不是 → undefined(固定面板没有现成的数)
+ */
+function regimeKeyOf(l: Layer): SeriesKey | undefined {
+  const def = seriesDef(l.series);
+  const src = def?.source;
+  if (src?.kind === 'regime') return src.key;
+  if (def?.regimeKey) return def.regimeKey;
+  // BTC:服务端为省 ~196KB 不在 series 里另发收盘,画折线固定面板读不到
+  if (src?.kind === 'regimeOhlc') return l.render?.kind === 'candle' ? (src.key as SeriesKey) : undefined;
+  return undefined;
+}
+
+// 固定面板能画蜡烛的键:/api/regime 的 ohlc 里真有的(编辑器能从 Yahoo 按需取 K 线的 spx 等,固定面板拿不到)
+const FIXED_OHLC: ReadonlySet<string> = new Set([...REGIME_OHLC_KEYS, ...REGIME_DB_OHLC_KEYS]);
+
 /** 事件图层 → 格子的 events(固定面板的事件线挂在格子上,不是一条独立的线)。只认 /api/regime 的序列 */
 function eventsOf(l: Layer): NonNullable<PaneSpec['events']>[number] {
   const def = seriesDef(l.series);
-  if (def?.source.kind !== 'regime' || l.calc || l.shift || l.hidden)
+  const key = regimeKeyOf(l);
+  if (!def || !key || l.calc || l.shift || l.hidden)
     throw new Error(`ChartDoc 事件图层 ${l.id}:${l.series} 须是 /api/regime 的序列,且不能计算 / 平移 / 隐藏`);
 
-  return { key: def.source.key, title: l.title ?? def.label, color: l.color };
+  return { key, title: l.title ?? def.label, color: markColor(l) };
 }
 
 /**
@@ -176,15 +196,39 @@ function rollOf(layers: Layer[]): RollMismatchKind | undefined {
 }
 
 /**
+ * 主线之外的线图层 → 格子的 overlays(同格叠画)。固定面板的叠加线只认:/api/regime 的现成键、和主线同一根右轴、
+ * 阶梯线、隐藏;其余写了也不照画 → 报错(计算 / 平移 / 叠加对比 / 别的轴 / 柱状 / 蜡烛 / 基线 / 参考线 / 分位)
+ */
+function overlayOf(l: Layer): NonNullable<PaneSpec['overlays']>[number] {
+  const def = seriesDef(l.series);
+  const key = regimeKeyOf(l);
+  const render = l.render;
+  const plainLine = !render || (render.kind === 'line' && render.baseline === undefined);
+  if (!def || !key || l.calc || l.shift || l.fit || l.scale !== 'right' || !plainLine || l.refLines || l.percentile)
+    throw new Error(
+      `ChartDoc 图层 ${l.id}:固定面板的叠加线只能是 /api/regime 的序列、挂右轴的普通折线(可阶梯 / 隐藏),不能计算 / 平移 / 叠加对比 / 换轴 / 柱状 / 蜡烛 / 基线 / 参考线 / 分位`,
+    );
+
+  return {
+    key,
+    title: l.title ?? def.label,
+    color: l.color,
+    ...(render?.kind === 'line' && render.step && { step: true }),
+    ...(l.hidden && { hidden: true }),
+  };
+}
+
+/**
  * ChartDoc → 固定面板的格子定义。图层的序列 id 经注册表解析成 /api/regime 的键,下游(渲染规格、分位徽标、
- * 缺失提示)照旧按格子走。目前只支持「一格一条 regime 序列 + 若干事件竖线 + 至多一层错月背景」;不符合就是 doc 写错了,
+ * 缺失提示)照旧按格子走。一格 = 一条主线(第一条线图层)+ 若干叠加线 + 若干事件竖线 + 至多一层错月背景;不符合就是 doc 写错了,
  * 直接抛 —— 模块加载时就炸,不会静默少一格或静默不照画。叠加线 / 蜡烛等等迁到用它们的 tab 时再加。
  */
 export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
   const panes = doc.panes.map((p): PaneSpec => {
-    const lines = p.layers.filter((x) => !isMarkLayer(x));
-    if (lines.length !== 1) throw new Error(`ChartDoc 格 ${p.id}:固定面板目前只支持一格一条线(竖线、背景不算)`);
-    const [l] = lines;
+    // 主线 = 卡片列表里第一条线(竖线、背景不算);其余的线是同格叠加线
+    const [l, ...rest] = p.layers.filter((x) => !isMarkLayer(x));
+    if (!l) throw new Error(`ChartDoc 格 ${p.id}:没有线(只有竖线 / 背景),固定面板一格要有一条主线`);
+    const overlays = rest.map(overlayOf);
     const marks = p.layers.filter(isMarkLayer);
     const events = marks.filter((x) => x.render?.kind === 'events').map(eventsOf);
     const rollMismatch = rollOf(marks.filter((x) => x.render?.kind === 'background'));
@@ -192,10 +236,9 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
     const unknown = marks.find((x) => x.render?.kind !== 'events' && x.render?.kind !== 'background');
     if (unknown) throw new Error(`ChartDoc 图层 ${unknown.id}:固定面板不认识画法 ${unknown.render?.kind}`);
     const def = seriesDef(l.series);
-    // 普通图层读 /api/regime 的现成键(蜡烛也可以是只进 ohlc 的那几条,如 BTC);计算图层两条腿按注册表取数现算,只要都在注册表里
-    const regimeKind =
-      def?.source.kind === 'regime' || (def?.source.kind === 'regimeOhlc' && l.render?.kind === 'candle');
-    const legsOk = l.calc ? !!def && !!seriesDef(l.calc.series) : regimeKind;
+    // 普通图层读 /api/regime 的现成键(见 regimeKeyOf);计算图层两条腿按注册表取数现算,只要都在注册表里
+    const mainKey = regimeKeyOf(l);
+    const legsOk = l.calc ? !!def && !!seriesDef(l.calc.series) : !!mainKey;
     if (!def || !legsOk)
       throw new Error(
         `ChartDoc 图层 ${l.id}:${l.series}${l.calc ? ` / ${l.calc.series}` : ''} 不在注册表里或不是 /api/regime 的序列`,
@@ -207,21 +250,24 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
       throw new Error(
         `ChartDoc 图层 ${l.id}:固定面板只画右轴原值,不支持平移 / 叠加 / 隐藏 / 左轴 / 独立轴 / 倒轴 / 对数`,
       );
-    // 蜡烛:序列得有 K 线(编辑器画不了会退回折线,固定面板会读不到 ohlc 整格空白);
-    // 固定面板的蜡烛只画 K 线,参考线 / 分位 / 范围框 / 竖线 / 背景写了也不画 → 一并报错
-    if (l.render?.kind === 'candle') {
-      if (!canCandle(l)) throw new Error(`ChartDoc 图层 ${l.id}:${l.series} 没有开高低收,画不了蜡烛`);
+    // 蜡烛:/api/regime 的 ohlc 里得真有这条(编辑器画不了会退回折线;spx 等编辑器从 Yahoo 取 K 线,固定面板拿不到 → 整格空白)
+    if (l.render?.kind === 'candle' && !(canCandle(l) && mainKey && FIXED_OHLC.has(mainKey)))
+      throw new Error(`ChartDoc 图层 ${l.id}:${l.series} 在固定面板没有开高低收,画不了蜡烛`);
+    // 固定面板的蜡烛格、柱状格只画柱子 / K 线就返回,参考线 / 分位 / 范围框 / 竖线 / 背景 / 叠加线写了也不画 → 报错
+    if (l.render?.kind === 'candle' || l.render?.kind === 'signed') {
       const extra =
         l.refLines || l.percentile || scale?.clampVisibleTo || scale?.expandVisibleTo || events.length || rollMismatch;
-      if (extra)
-        throw new Error(`ChartDoc 图层 ${l.id}:固定面板的蜡烛格不画参考线 / 分位 / 范围框 / 竖线 / 背景,写了也不照画`);
+      if (extra || overlays.length)
+        throw new Error(
+          `ChartDoc 图层 ${l.id}:固定面板的${l.render.kind === 'candle' ? '蜡烛' : '柱状'}格不画参考线 / 分位 / 范围框 / 竖线 / 背景 / 叠加线,写了也不照画`,
+        );
     }
 
     const name = seriesLabel(l.series, l.calc);
     return {
       key: l.calc
         ? (`${l.series}|${l.calc.op}${l.calc.fill ? 'f' : ''}|${l.calc.series}` as const)
-        : (def.source as { key: SeriesKey }).key,
+        : (mainKey as SeriesKey),
       ...(l.calc && { from: { series: l.series, calc: l.calc } }),
       label: name,
       title: l.title ?? name,
@@ -232,14 +278,17 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
       ...(l.percentile && { percentile: l.percentile }),
       ...(scale?.clampVisibleTo && { clampVisibleTo: scale.clampVisibleTo }),
       ...(scale?.expandVisibleTo && { expandVisibleTo: scale.expandVisibleTo }),
+      ...(overlays.length > 0 && { overlays }),
       ...(events.length > 0 && { events }),
       ...(rollMismatch && { rollMismatch }),
     };
   });
 
-  // 格子按序列键做身份(说明 / 名称 / 配色的表、图上的线都按键存):同一序列占两格,后一格会悄悄盖掉前一格
-  const dup = panes.map((p) => p.key).find((k, i, keys) => keys.indexOf(k) !== i);
-  if (dup) throw new Error(`ChartDoc:序列 ${dup} 出现在不止一格,固定面板一格对应一条序列`);
+  // 主线和叠加线都按序列键做身份(说明 / 名称 / 配色的表、图上的线都按键存):同一序列出现两次(两格,或主线 + 叠加线),
+  // 后写的会悄悄盖掉前面那条 —— 线被抢走、名字和颜色串掉(手写面板有同一条测试守着)
+  const keys = panes.flatMap((p) => [p.key, ...(p.overlays ?? []).map((o) => o.key)]);
+  const dup = keys.find((k, i) => keys.indexOf(k) !== i);
+  if (dup) throw new Error(`ChartDoc:序列 ${dup} 出现了不止一次(主线 / 叠加线),固定面板一条序列只能画一次`);
 
   return panes;
 }

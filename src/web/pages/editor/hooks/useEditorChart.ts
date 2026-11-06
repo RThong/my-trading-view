@@ -32,7 +32,14 @@ import {
 } from '../../../chart/core';
 import { BACKGROUND_ALPHA, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, withAlpha } from '../../../chart/palette';
 import type { Interval } from '../../../hooks/interval';
-import { isMarkLayer, liveScaleIds, type ChartDoc, type Layer, type Pane } from '../../../views/chartDoc/chartDoc';
+import {
+  isMarkLayer,
+  liveScaleIds,
+  markColor,
+  type ChartDoc,
+  type Layer,
+  type Pane,
+} from '../../../views/chartDoc/chartDoc';
 import { drawnKind } from '../../../views/chartDoc/registry';
 import { canLogScale, layerMarks, type LayerData } from './layerPoints';
 import { commonRange } from '../../../views/chartDoc/useSeriesData';
@@ -42,7 +49,7 @@ export type LayerSeries = Map<string, ISeriesApi<SeriesType>>;
 type Kind = NonNullable<Layer['render']>['kind'];
 /**
  * 上次灌给某图层的数据、当时的画法和颜色:画法变了(符号柱 ↔ 事件)同一份点也要重灌,点的颜色 / 值不一样;
- * 标记图层(竖线、背景色带)的颜色逐点写在数据里(会盖过 series 的 color 选项),改色也得重灌
+ * 标记图层(竖线、背景色带)的颜色逐点写在数据里(会盖过 series 的 color 选项),改色 / 改竖线透明度也得重灌(color = markColor)
  */
 type Fed = { src: unknown[]; kind: Kind; color: string };
 
@@ -53,7 +60,7 @@ type KindDef = {
   def: SeriesDefinition<SeriesType>;
   /** 喂给这种 series 的原料(蜡烛读 K 线,其余读点);引用变了才重灌 */
   input: (d: LayerData) => unknown[] | undefined;
-  data: (color: string, d: LayerData) => unknown[];
+  data: (layer: Layer, d: LayerData) => unknown[];
 };
 
 /**
@@ -63,12 +70,12 @@ type KindDef = {
  */
 function kindDef<T extends SeriesType>(
   def: SeriesDefinition<T>,
-  data: (color: string, pts: LinePoint[]) => SeriesDataItemTypeMap[T][],
+  data: (layer: Layer, pts: LinePoint[]) => SeriesDataItemTypeMap[T][],
 ): KindDef {
   return {
     def: def as SeriesDefinition<SeriesType>,
     input: (d) => d.display,
-    data: (color, d) => data(color, d.display),
+    data: (layer, d) => data(layer, d.display),
   };
 }
 
@@ -77,19 +84,22 @@ function kindDef<T extends SeriesType>(
  * 背景色带值恒为 1、标记非 0 的日子上色其余透明,用面积图(柱子之间有缝,放大后一段会碎成竖纹,同分位带)
  */
 const KINDS: Record<Kind, KindDef> = {
-  line: kindDef(LineSeries, (_color, pts) => pts),
-  signed: kindDef(HistogramSeries, (_color, pts) =>
+  line: kindDef(LineSeries, (_layer, pts) => pts),
+  signed: kindDef(HistogramSeries, (_layer, pts) =>
     pts.map((p) => ({ ...p, color: p.value >= 0 ? SIGNED_UP : SIGNED_DOWN })),
   ),
-  events: kindDef(HistogramSeries, (color, pts) => pts.map((p) => ({ time: p.time, value: 1, color }))),
+  events: kindDef(HistogramSeries, (layer, pts) => {
+    const color = markColor(layer);
+    return pts.map((p) => ({ time: p.time, value: 1, color }));
+  }),
   // 蜡烛读 K 线不读点:涨跌颜色由 series 选项定(见 seriesOptions),图层颜色不起作用
   candle: {
     def: CandlestickSeries as SeriesDefinition<SeriesType>,
     input: (d) => d.bars,
-    data: (_color, d): CandlestickData[] => d.bars ?? [],
+    data: (_layer, d): CandlestickData[] => d.bars ?? [],
   },
-  background: kindDef(AreaSeries, (color, pts) => {
-    const tint = withAlpha(color, BACKGROUND_ALPHA);
+  background: kindDef(AreaSeries, (layer, pts) => {
+    const tint = withAlpha(layer.color, BACKGROUND_ALPHA);
     return pts.map((p) => {
       const fill = p.value !== 0 ? tint : TRANSPARENT;
       return { time: p.time, value: 1, topColor: fill, bottomColor: fill };
@@ -240,13 +250,15 @@ export function useEditorChart(
       const kind = drawnKind(l);
       const src = d && KINDS[kind].input(d);
       const prev = fedRef.current.get(l.id);
-      const changed = !prev || prev.src !== src || prev.kind !== kind || (isMarkLayer(l) && prev.color !== l.color);
+      // 标记图层的颜色逐点写在数据里:实际画出来的颜色变了(改色 / 改竖线透明度)就得重灌
+      const tint = markColor(l);
+      const changed = !prev || prev.src !== src || prev.kind !== kind || (isMarkLayer(l) && prev.color !== tint);
       // had:这条之前灌过非空数据(换画法 / 数据刷新),不算「第一次到位」,不去动横轴
-      return s && d && src && changed ? [{ l, s, d, src, kind, had: (prev?.src.length ?? 0) > 0 }] : [];
+      return s && d && src && changed ? [{ l, s, d, src, kind, tint, had: (prev?.src.length ?? 0) > 0 }] : [];
     });
-    stale.forEach(({ l, s, d, src, kind }) => {
-      s.setData(KINDS[kind].data(l.color, d) as never);
-      fedRef.current.set(l.id, { src, kind, color: l.color });
+    stale.forEach(({ l, s, d, src, kind, tint }) => {
+      s.setData(KINDS[kind].data(l, d) as never);
+      fedRef.current.set(l.id, { src, kind, color: tint });
     });
     // 这一轮有没有图层「第一次拿到真数据」(新加的线 / 加载完成)。隐藏的线、标记图层不参与:
     // 看不见的短历史线不该把视图截短;竖线 / 色带是标记,不是一段该对准的数据。

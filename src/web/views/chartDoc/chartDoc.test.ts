@@ -249,6 +249,9 @@ describe('平移 / 倒轴', () => {
     expect(parseChartDoc(JSON.parse(JSON.stringify(bg)))).toEqual(bg);
     expect(isMarkLayer(bg.panes[0].layers[1])).toBe(true);
 
+    const op = setLayerRender(twoOnMain(), 'l2', { kind: 'events', opacity: 0.35 });
+    expect(parseChartDoc(JSON.parse(JSON.stringify(op)))).toEqual(op);
+
     const e = addLayer(twoOnMain(), 'coreCpiRelease', '#333333', { kind: 'events' });
     expect(e.panes[0].layers[2]).toMatchObject({ series: 'coreCpiRelease', render: { kind: 'events' } });
     expect(parseChartDoc(JSON.parse(JSON.stringify(e)))).toEqual(e);
@@ -485,6 +488,8 @@ describe('固定面板用的可选字段', () => {
 
   test.each([
     ['render.kind 不认识', { render: { kind: 'ohlc-bars' } }],
+    ['竖线透明度须在 (0, 1]', { render: { kind: 'events', opacity: 0 } }],
+    ['竖线透明度不能大于 1', { render: { kind: 'events', opacity: 1.5 } }],
     ['step 只能是 true', { render: { kind: 'line', step: false } }],
     ['参考线颜色须 #rrggbb', { refLines: [{ price: 1, title: 'x', color: 'red' }] }],
     ['参考线缺价位', { refLines: [{ title: 'x' }] }],
