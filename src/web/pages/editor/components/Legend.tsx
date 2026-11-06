@@ -1,7 +1,7 @@
 import { Eye, EyeOff } from 'lucide-react';
 import type { Interval } from '../../../hooks/interval';
 import { shiftBusinessDays } from '../../../chart/analysis';
-import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
+import { isEventsLayer, type ChartDoc } from '../../../views/chartDoc/chartDoc';
 import { layerLabel, layerUnit } from '../layerLabel';
 import type { LayerData } from '../hooks/layerPoints';
 import { asOfPoint, type LegendLayout } from '../hooks/useCrosshairLegend';
@@ -50,8 +50,9 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
               >
                 <span className="h-0.5 w-3 rounded" style={{ background: l.color }} />
                 <span className="text-neutral-400">{layerLabel(doc, l)}</span>
-                <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>
-                {unit && <span className="text-neutral-600">{unit}</span>}
+                {/* 事件竖线的值无意义(恒为一个占位数),只给名字 */}
+                {!isEventsLayer(l) && <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>}
+                {unit && !isEventsLayer(l) && <span className="text-neutral-600">{unit}</span>}
                 {shift !== 0 && pt && interval === '1D' && (
                   <span className="text-neutral-600">原 {shiftBusinessDays(pt.time, -shift)}</span>
                 )}

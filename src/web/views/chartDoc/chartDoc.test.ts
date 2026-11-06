@@ -5,6 +5,8 @@ import {
   applyLayerFit,
   clearLayerFit,
   setLayerHidden,
+  setLayerRender,
+  liveScaleIds,
   setLayerShift,
   setScaleInvert,
   setScaleLog,
@@ -228,6 +230,25 @@ describe('平移 / 倒轴', () => {
     expect(setLayerShift(e, 'l2', 84)).toBe(e);
     expect(setLayerShift(e, 'l2', 99999).panes[0].layers[1]).toMatchObject({ shift: 3650 });
     expect('shift' in setLayerShift(e, 'l2', 0).panes[0].layers[1]).toBe(false);
+  });
+
+  test('画法:signed / events 往返解析保留,setLayerRender 设回折线删字段;addLayer 可带画法', () => {
+    const d = setLayerRender(twoOnMain(), 'l2', { kind: 'signed' });
+    expect(d.panes[0].layers[1].render).toEqual({ kind: 'signed' });
+    expect(setLayerRender(d, 'l2', { kind: 'signed' })).toBe(d);
+    expect('render' in setLayerRender(d, 'l2', undefined).panes[0].layers[1]).toBe(false);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
+
+    const e = addLayer(twoOnMain(), 'coreCpiRelease', '#333333', { kind: 'events' });
+    expect(e.panes[0].layers[2]).toMatchObject({ series: 'coreCpiRelease', render: { kind: 'events' } });
+    expect(parseChartDoc(JSON.parse(JSON.stringify(e)))).toEqual(e);
+  });
+
+  test('liveScaleIds:竖线占的独立轴 lw-charts 里没有,不列(对它调 priceScale 会抛)', () => {
+    const d = addLayer(twoOnMain(), 'coreCpiRelease', '#333333', { kind: 'events' });
+    const withOverlay = { ...d.panes[0], scales: [...d.panes[0].scales, { id: 's9', side: 'overlay' as const }] };
+    withOverlay.layers = withOverlay.layers.map((l) => (l.series === 'coreCpiRelease' ? { ...l, scale: 's9' } : l));
+    expect(liveScaleIds(withOverlay)).toEqual(['right']);
   });
 
   test('setLayerHidden:显示删字段、不变返回原引用、往返解析保留;hidden 只认 true', () => {

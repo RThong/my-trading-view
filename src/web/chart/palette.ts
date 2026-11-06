@@ -66,3 +66,7 @@ export function extendDistinct(seed: string[], n: number): string[] {
 
 // 32 = OIS 24 个期限 + 差值线等余量(按下标取色,加长不改前面的色)。
 export const SERIES_COLORS = extendDistinct(CATEGORICAL_DARK, 32);
+
+/** 符号柱:正绿负红(固定面板与图表编辑器共用) */
+export const SIGNED_UP = '#22c55e';
+export const SIGNED_DOWN = '#ef4444';

@@ -1,11 +1,13 @@
 import { type DragEvent, type ReactNode, useState } from 'react';
 import { CircleAlert, GripVertical, Settings2, X } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
+import { cn } from '../../../lib/utils';
 import { NativeSelect, NativeSelectOption } from '../../../components/ui/native-select';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
 import {
   fitScaleIds,
+  isEventsLayer,
   isFitTarget,
   type CalcOp,
   type ChartDoc,
@@ -21,7 +23,7 @@ import type { ChartDocActions } from '../hooks/useChartDoc';
 
 export type CardActions = Pick<
   ChartDocActions,
-  'setScale' | 'setColor' | 'remove' | 'setShift' | 'setCalc' | 'setInvert' | 'setLog' | 'clearFit'
+  'setScale' | 'setColor' | 'remove' | 'setShift' | 'setCalc' | 'setRender' | 'setInvert' | 'setLog' | 'clearFit'
 >;
 
 // <select> 的 value 只能是字符串:挂轴选择编码成 right / left / new / ov:<轴 id>
@@ -73,8 +75,12 @@ export function LayerCard({
   const fixed = !!layer.fit || isFitTarget(doc, layer.id);
   // 倒轴 / 对数是整根轴的属性:这根轴上只要挂着叠加的任一头,就锁住(和 A 共轴的第三条线也不能改)
   const axisLocked = pane.layers.some((l) => l.scale === layer.scale && (!!l.fit || isFitTarget(doc, l.id)));
-  // 同格里和它挂同一根轴的其它线:同一根轴只有一套刻度,拖线 = 挪这根轴,会一起动
-  const sharers = pane.layers.filter((l) => l.id !== layer.id && l.scale === layer.scale);
+  // 事件竖线挂自己的隐形轴、值不画:换轴、计算、平移、倒轴对数都没意义,卡片只留颜色和删除
+  const events = isEventsLayer(layer);
+  // 同格里和它挂同一根轴的其它线:同一根轴只有一套刻度,拖线 = 挪这根轴,会一起动。竖线不挂在这根轴上,不算
+  const sharers = events
+    ? []
+    : pane.layers.filter((l) => l.id !== layer.id && l.scale === layer.scale && !isEventsLayer(l));
   const scaleName =
     layer.scale === 'right'
       ? '右轴'
@@ -121,7 +127,7 @@ export function LayerCard({
             text={`和 ${sharers.map((l) => baseLabel(doc, l.id)).join('、')} 共用${scaleName},拖动会一起动;要单独拖,把纵轴改成别的轴`}
           />
         )}
-        {!fixed && (
+        {!fixed && !events && (
           <NativeSelect
             size="xs"
             className="shrink-0"
@@ -142,70 +148,79 @@ export function LayerCard({
             <NativeSelectOption value="new">新独立轴</NativeSelectOption>
           </NativeSelect>
         )}
-        <Popover>
-          <PopoverTrigger
-            render={
-              <Button variant="ghost" size="icon-xs" className="text-neutral-600 hover:text-neutral-200" title="设置" />
-            }
-          >
-            <Settings2 />
-          </PopoverTrigger>
-          <PopoverContent
-            align="end"
-            className="w-80 gap-2 p-2 text-xs text-neutral-400"
-            // 弹层经 Portal 画在 body 下,但 React 事件仍沿组件树冒泡到卡片 li:
-            // 在输入框里拖选文字会被当成开始拖这张卡片;往输入框里放文字会被卡片的 drop 拦掉。拖放事件一律不出弹层
-            onDragStart={stopPropagation}
-            onDragOver={stopPropagation}
-            onDrop={stopPropagation}
-            onDragEnd={stopPropagation}
-          >
-            <Tabs defaultValue="data">
-              <TabsList variant="line">
-                <TabsTrigger value="data">数据</TabsTrigger>
-                <TabsTrigger value="axis">纵轴</TabsTrigger>
-              </TabsList>
-              <TabsContent value="data" className="flex flex-col gap-2 text-xs">
-                <CalcRow
-                  layer={layer}
-                  locked={fixed}
-                  actions={actions}
-                  pending={pendingCalc}
-                  onPending={setPendingCalc}
+        {events && <span className="shrink-0 text-[10px] text-neutral-500">竖线</span>}
+        {!events && (
+          <Popover>
+            <PopoverTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="text-neutral-600 hover:text-neutral-200"
+                  title="设置"
                 />
-                <ShiftRow layer={layer} locked={fixed} actions={actions} />
-              </TabsContent>
-              <TabsContent value="axis" className="flex flex-col gap-2 text-xs">
-                <p className="text-neutral-500">{scaleName}的属性:这根轴上的线一起变</p>
-                <div className="flex items-center gap-2">
-                  <Toggle
-                    on={inverted}
-                    disabled={axisLocked}
-                    onClick={() => actions.setInvert(pane.id, layer.scale, !inverted)}
-                    title={axisLocked ? LOCKED_TITLE : '倒轴:整根轴上下颠倒,挂在这根轴上的线一起倒'}
-                  >
-                    倒轴
-                  </Toggle>
-                  <Toggle
-                    on={log}
-                    disabled={axisLocked || (!canLog && !log)}
-                    onClick={() => actions.setLog(pane.id, layer.scale, !log)}
-                    title={
-                      axisLocked
-                        ? LOCKED_TITLE
-                        : canLog
-                          ? '对数坐标:等比例的涨跌画成等高,适合跨好几个数量级的线(BTC、长历史指数)'
-                          : '这根轴上有 ≤0 的值(利率、利差常见),取不了对数'
-                    }
-                  >
-                    对数
-                  </Toggle>
-                </div>
-                {log && !canLog && <span className="text-amber-500">这根轴上有 ≤0 的值,暂按普通坐标显示</span>}
-              </TabsContent>
-            </Tabs>
-          </PopoverContent>
-        </Popover>
+              }
+            >
+              <Settings2 />
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-80 gap-2 p-2 text-xs text-neutral-400"
+              // 弹层经 Portal 画在 body 下,但 React 事件仍沿组件树冒泡到卡片 li:
+              // 在输入框里拖选文字会被当成开始拖这张卡片;往输入框里放文字会被卡片的 drop 拦掉。拖放事件一律不出弹层
+              onDragStart={stopPropagation}
+              onDragOver={stopPropagation}
+              onDrop={stopPropagation}
+              onDragEnd={stopPropagation}
+            >
+              <Tabs defaultValue="data">
+                <TabsList variant="line">
+                  <TabsTrigger value="data">数据</TabsTrigger>
+                  <TabsTrigger value="axis">纵轴</TabsTrigger>
+                </TabsList>
+                <TabsContent value="data" className="flex flex-col gap-2 text-xs">
+                  <CalcRow
+                    layer={layer}
+                    locked={fixed}
+                    actions={actions}
+                    pending={pendingCalc}
+                    onPending={setPendingCalc}
+                  />
+                  <ShiftRow layer={layer} locked={fixed} actions={actions} />
+                  <RenderRow layer={layer} locked={fixed} actions={actions} />
+                </TabsContent>
+                <TabsContent value="axis" className="flex flex-col gap-2 text-xs">
+                  <p className="text-neutral-500">{scaleName}的属性:这根轴上的线一起变</p>
+                  <div className="flex items-center gap-2">
+                    <Toggle
+                      on={inverted}
+                      disabled={axisLocked}
+                      onClick={() => actions.setInvert(pane.id, layer.scale, !inverted)}
+                      title={axisLocked ? LOCKED_TITLE : '倒轴:整根轴上下颠倒,挂在这根轴上的线一起倒'}
+                    >
+                      倒轴
+                    </Toggle>
+                    <Toggle
+                      on={log}
+                      disabled={axisLocked || (!canLog && !log)}
+                      onClick={() => actions.setLog(pane.id, layer.scale, !log)}
+                      title={
+                        axisLocked
+                          ? LOCKED_TITLE
+                          : canLog
+                            ? '对数坐标:等比例的涨跌画成等高,适合跨好几个数量级的线(BTC、长历史指数)'
+                            : '这根轴上有 ≤0 的值(利率、利差常见),取不了对数'
+                      }
+                    >
+                      对数
+                    </Toggle>
+                  </div>
+                  {log && !canLog && <span className="text-amber-500">这根轴上有 ≤0 的值,暂按普通坐标显示</span>}
+                </TabsContent>
+              </Tabs>
+            </PopoverContent>
+          </Popover>
+        )}
         <Button
           variant="ghost"
           size="icon-xs"
@@ -254,7 +269,8 @@ function StateBadges({
       {inverted && <span className={badge}>倒轴</span>}
       {log && (
         <span
-          className={logIneffective ? `${badge} text-amber-500` : badge}
+          // cn 而不是字符串拼接:两个文字色类并存时 CSS 里灰色排在后面,会盖掉警告色
+          className={cn(badge, logIneffective && 'text-amber-500')}
           title={logIneffective ? '这根轴上有 ≤0 的值,暂按普通坐标显示' : undefined}
         >
           对数
@@ -312,6 +328,27 @@ function CalcRow({
           disabled={locked}
         />
       )}
+    </div>
+  );
+}
+
+// 画法:折线 / 柱状(符号柱,正绿负红、0 基线 —— 净持仓、期限结构这类看正负的量)
+// 叠加中的线(两头)锁住:叠加只认折线(见 AnalysisPanel)
+function RenderRow({ layer, locked, actions }: { layer: Layer; locked: boolean; actions: CardActions }) {
+  const signed = layer.render?.kind === 'signed';
+
+  return (
+    <div className="flex items-center gap-1.5" title={locked ? LOCKED_TITLE : undefined}>
+      画法
+      <NativeSelect
+        size="xs"
+        disabled={locked}
+        value={signed ? 'signed' : 'line'}
+        onChange={(e) => actions.setRender(layer.id, e.target.value === 'signed' ? { kind: 'signed' } : undefined)}
+      >
+        <NativeSelectOption value="line">折线</NativeSelectOption>
+        <NativeSelectOption value="signed">柱状(正绿负红)</NativeSelectOption>
+      </NativeSelect>
     </div>
   );
 }

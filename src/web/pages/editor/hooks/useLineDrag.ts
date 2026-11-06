@@ -15,7 +15,7 @@ import {
   PriceScaleMode,
 } from 'lightweight-charts';
 import { fmtDate } from '../../../chart/core';
-import { findLayer, type ChartDoc, type Pane } from '../../../views/chartDoc/chartDoc';
+import { findLayer, liveScaleIds, type ChartDoc, type Layer, type Pane } from '../../../views/chartDoc/chartDoc';
 import type { LayerSeries } from './useEditorChart';
 
 // 鼠标离线多近算抓住(像素)
@@ -64,6 +64,10 @@ export function nativeScale(pane: Pane): 'right' | 'left' {
 export function shiftRange(t: Range & { perPx: number }, dy: number): Range {
   const d = t.perPx * dy;
   return { from: t.from + d, to: t.to + d };
+}
+
+function draggable(l: Layer) {
+  return !l.fit && !l.hidden && (l.render?.kind ?? 'line') === 'line';
 }
 
 /** 某条线在逻辑下标 [from, to] 内各点的屏幕 y(最多 MAX_HIT_BARS 根;窗口外 / 没数据的跳过)。 */
@@ -173,24 +177,22 @@ export function useLineDrag(
         lo === null || hi === null
           ? undefined
           : nearest(
-              // 叠加中的线轴跟着 A 走,拖了也会弹回:不让拖;隐藏的线看不见,点不中
-              pane.layers
-                .filter((l) => !l.fit && !l.hidden)
-                .flatMap((l) => {
-                  const s = seriesRef.current.get(l.id);
-                  // 鼠标落在这条线的数据范围外(比如别的线右移后延伸出的未来段):不算点中。
-                  // dataByIndex(NearestLeft) 不管多远都返回左边最近一点,不挡的话末值高度上处处「点得中」
-                  if (!s || !coversTime(s, cursorTime)) return [];
-                  const ys = lineYs(s, Math.floor(lo), Math.ceil(hi));
-                  return ys.length ? [{ item: l, dist: distToSpan(y, ys) }] : [];
-                }),
+              // 叠加中的线轴跟着 A 走,拖了也会弹回:不让拖;隐藏的线看不见,点不中;柱子(符号柱 / 事件竖线)不按线点选
+              pane.layers.filter(draggable).flatMap((l) => {
+                const s = seriesRef.current.get(l.id) as ISeriesApi<'Line'> | undefined;
+                // 鼠标落在这条线的数据范围外(比如别的线右移后延伸出的未来段):不算点中。
+                // dataByIndex(NearestLeft) 不管多远都返回左边最近一点,不挡的话末值高度上处处「点得中」
+                if (!s || !coversTime(s, cursorTime)) return [];
+                const ys = lineYs(s, Math.floor(lo), Math.ceil(hi));
+                return ys.length ? [{ item: l, dist: distToSpan(y, ys) }] : [];
+              }),
             );
       down = { x: e.clientX, y: e.clientY, onLine: !!picked };
       if (picked) select(picked.id);
 
       // 要拖的:按到的那条;没按到线就拖本格里已选中的那条;都没有 → 不接管
       // 叠加中的线不接管(和上面的点选同一条规则):它若在叠加前就被选中,空白处拖也不能挪它的轴
-      const layer = picked ?? pane.layers.find((l) => l.id === selectedRef.current && !l.fit && !l.hidden);
+      const layer = picked ?? pane.layers.find((l) => l.id === selectedRef.current && draggable(l));
       const series = layer && seriesRef.current.get(layer.id);
       if (!layer || !series) return;
 
@@ -265,7 +267,7 @@ export function useLineDrag(
     const onDblClick = (e: MouseEvent) => {
       const hit = hitPane(e);
       if (!hit) return;
-      const ids = new Set(['right', 'left', ...hit.pane.scales.map((sc) => sc.id)]);
+      const ids = new Set(['right', 'left', ...liveScaleIds(hit.pane)]);
       ids.forEach((id) => {
         hit.api.priceScale(id).setAutoScale(true);
       });

@@ -55,6 +55,8 @@ export type SeriesMeta = {
   weekends?: true;
   /** 不能当一条线画:事件日期(值无意义)或日期不是观测日(点阵图的日期是预测年份)。 */
   chartable?: false;
+  /** 事件日期(发布日、决议日):编辑器下拉里列出,加到图上画竖线。须同时 chartable: false */
+  events?: true;
   /** 不进编辑器下拉(id 照常能解析):与另一条同值、只是取法不同的腿,下拉里只该有一条 */
   hidden?: true;
 };
@@ -135,8 +137,8 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   coreCpi3m: { label: '核心 CPI 3 个月年化', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['cpi', '通胀'] },
   corePceYoy: { label: '核心 PCE 同比', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['pce', '通胀'] },
   corePce3m: { label: '核心 PCE 3 个月年化', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['pce', '通胀'] },
-  coreCpiRelease: { label: '核心 CPI 发布日', category: '通胀·宏观', freq: '不定', chartable: false },
-  corePceRelease: { label: '核心 PCE 发布日', category: '通胀·宏观', freq: '不定', chartable: false },
+  coreCpiRelease: { label: '核心 CPI 发布日', category: '通胀·宏观', freq: '不定', chartable: false, events: true },
+  corePceRelease: { label: '核心 PCE 发布日', category: '通胀·宏观', freq: '不定', chartable: false, events: true },
   ismMfg: { label: 'ISM 制造业 PMI', category: '通胀·宏观', freq: '月', aliases: ['pmi', 'ism'] },
   ismSvc: { label: 'ISM 服务业 PMI', category: '通胀·宏观', freq: '月', aliases: ['pmi', 'ism'] },
   ismMfgPrices: { label: 'ISM 制造业 Prices', category: '通胀·宏观', freq: '月', aliases: ['pmi', 'ism'] },
@@ -225,7 +227,7 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   jp2yMinusDeposit: daily('日本', 'JGB 2Y − 存款挂牌利率', '%', ['银行']),
   jpCallMinusDeposit: daily('日本', '拆借 − 存款', '%', ['银行']),
   jp2yMinusCall: daily('日本', 'JGB 2Y − 拆借', '%', ['银行']),
-  bojHikeDates: { label: '日银加息决定日', category: '日本', freq: '不定', chartable: false },
+  bojHikeDates: { label: '日银加息决定日', category: '日本', freq: '不定', chartable: false, events: true },
   jpCgpiYoy: { label: '日本企业物价 CGPI 同比', category: '日本', freq: '月', unit: '%', aliases: ['通胀'] },
   jpCoreCoreCpiYoy: {
     label: '日本新核心核心 CPI 同比',

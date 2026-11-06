@@ -56,6 +56,22 @@ describe('固定面板的 ChartDoc', () => {
     const twoLines = withLayer({});
     twoLines.panes[0].layers.push({ ...twoLines.panes[0].layers[0], id: 'l9' });
     expect(() => docToPaneSpecs(twoLines)).toThrow();
+    // 事件图层不算第二条线,转成格子的 events;它自己不能平移
+    const ev = {
+      id: 'l9',
+      series: 'coreCpiRelease',
+      scale: 'right',
+      color: '#eab308',
+      render: { kind: 'events' as const },
+    };
+    const withEvents = withLayer({ render: { kind: 'signed' } });
+    withEvents.panes[0].layers.push(ev);
+    expect(docToPaneSpecs(withEvents)[0]).toMatchObject({
+      render: { kind: 'signed' },
+      events: [{ key: 'coreCpiRelease', title: '核心 CPI 发布日', color: '#eab308' }],
+    });
+    withEvents.panes[0].layers[1] = { ...ev, shift: 3 };
+    expect(() => docToPaneSpecs(withEvents)).toThrow();
     const samePaneTwice: ChartDoc = {
       v: 1,
       panes: [

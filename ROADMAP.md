@@ -266,11 +266,11 @@ TradingView
 
 **提案**（这一组就是「逐步完善 JSON」的具体步骤）
 - **L2-1（P1）ChartDoc 补齐表达能力**。全部是可选字段，保持 v1，按下面的顺序加：
-  1. render：~~line（带 step、baseline）~~、signed、candle（candle 需要取数层出 OHLC）
+  1. render：~~line（带 step、baseline）~~、~~signed~~（编辑器 ⚙ 数据页可切「柱状」）、candle（candle 需要取数层出 OHLC）
   2. ~~`refLines`~~、~~`band`~~：跟随所在图层的纵轴。`band` 不另设字段，改写成两条 refLines（「常态下限 / 上限」），沿用「有参考线时 percentile 只染背景」的渲染规则。✅ PaneSpec 的 `band` 已删，8 格改为 `refLines: normalBand(lo, hi)`
   3. ~~`desc`：挂在格子上~~（另加了格子 `label`）
   4. ~~`percentile`：P5/P95 带和 riskTail~~
-  5. `events`：事件竖线，做成图层画法 `render: { kind: 'events' }`（日期仍取注册表序列）
+  5. ~~`events`：事件竖线，做成图层画法 `render: { kind: 'events' }`（日期仍取注册表序列）~~ ✅ 发布日 / 决议日序列进编辑器下拉，选中即画竖线；`docToPaneSpecs` 转成格子的 `events`
   6. ~~`clamp/expandVisibleTo`：做成纵轴（Scale）的属性~~ ✅ `Scale.clampVisibleTo` / `expandVisibleTo`，编辑器能画、`docToPaneSpecs` 照传；不做 UI 入口（编辑器里拖轴即可，预设范围是固定面板的需求）
   7. 背景色带（按状态给背景上色）、两条线之间填色。背景色带 = 图层画法 `render: { kind: 'background' }` + 一条 0/1 序列；PaneSpec 的 `rollMismatch` 改由服务端发两条 0/1 序列（`oilRoll` 照算，按 WTI 交易日；改前逐日对账 4 格的错月日集合）
   8. 变换：均线、同比、Z-score、起点 = 100（期数按各序列自身频率算）。做成图层上的参数（如 `transform: { ma: 20 }`），不做成被引用序列的属性
