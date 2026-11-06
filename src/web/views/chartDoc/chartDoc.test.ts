@@ -4,6 +4,7 @@ import {
   addLayer,
   applyLayerFit,
   clearLayerFit,
+  setLayerHidden,
   setLayerShift,
   setScaleInvert,
   setScaleLog,
@@ -229,6 +230,18 @@ describe('平移 / 倒轴', () => {
     expect('shift' in setLayerShift(e, 'l2', 0).panes[0].layers[1]).toBe(false);
   });
 
+  test('setLayerHidden:显示删字段、不变返回原引用、往返解析保留;hidden 只认 true', () => {
+    const d = setLayerHidden(twoOnMain(), 'l2', true);
+    expect(d.panes[0].layers[1]).toMatchObject({ hidden: true });
+    expect(setLayerHidden(d, 'l2', true)).toBe(d);
+    expect('hidden' in setLayerHidden(d, 'l2', false).panes[0].layers[1]).toBe(false);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
+
+    const raw = JSON.parse(JSON.stringify(d));
+    raw.panes[0].layers[1].hidden = false;
+    expect(parseChartDoc(raw)).toBeNull();
+  });
+
   test('setScaleLog 与倒轴互不影响,往返解析保留', () => {
     const d = setScaleLog(setScaleInvert(twoOnMain(), 'p1', 'right', true), 'p1', 'right', true);
     expect(d.panes[0].scales).toEqual([{ id: 'right', side: 'right', invert: true, log: true }]);
@@ -236,6 +249,27 @@ describe('平移 / 倒轴', () => {
       { id: 'right', side: 'right', invert: true },
     ]);
     expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
+  });
+
+  test('轴的范围框:往返解析保留;须是两个有限数,上限框 lo < hi、下限框 lo ≤ hi', () => {
+    const doc = (sc: object) => ({
+      v: 1,
+      panes: [
+        {
+          id: 'p1',
+          stretch: 1,
+          scales: [{ id: 'right', side: 'right', ...sc }],
+          layers: [{ id: 'l1', series: 'vix', scale: 'right', color: '#111111' }],
+        },
+      ],
+    });
+    const ok = doc({ clampVisibleTo: [-5, 15], expandVisibleTo: [1, 19] });
+    expect(parseChartDoc(ok)).toEqual(ok as ChartDoc);
+    expect(parseChartDoc(doc({ clampVisibleTo: [15, -5] }))).toBeNull();
+    expect(parseChartDoc(doc({ clampVisibleTo: [3, 3] }))).toBeNull();
+    expect(parseChartDoc(doc({ expandVisibleTo: [0, 0] }))).not.toBeNull();
+    expect(parseChartDoc(doc({ expandVisibleTo: [1] }))).toBeNull();
+    expect(parseChartDoc(doc({ expandVisibleTo: [1, null] }))).toBeNull();
   });
 
   test('setScaleInvert 作用于整根轴;关掉时删字段', () => {

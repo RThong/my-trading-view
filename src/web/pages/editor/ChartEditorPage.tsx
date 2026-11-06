@@ -58,7 +58,14 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
         {empty ? (
           <EmptyState onLoad={load} />
         ) : (
-          <Legend doc={doc} interval={interval} data={data} hoverTime={hoverTime} layout={layout} />
+          <Legend
+            doc={doc}
+            interval={interval}
+            data={data}
+            hoverTime={hoverTime}
+            layout={layout}
+            onHidden={actions.setHidden}
+          />
         )}
         {status.length > 0 && (
           <div className="pointer-events-none absolute right-16 top-1 z-10 rounded bg-neutral-950/80 px-2 py-0.5 text-xs text-amber-400">

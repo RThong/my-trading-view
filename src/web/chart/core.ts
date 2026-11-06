@@ -153,6 +153,26 @@ export function expandAutoscaleProvider<T extends { priceRange: PriceRange | nul
   }));
 }
 
+/**
+ * 上限框 + 下限框合成一个回调,两个渲染器(固定面板、图表编辑器)共用,同一份配置两边画得一样。
+ * 先夹后撑:两个都配时参考线看得见比压住尖刺优先。两个都没配返回 undefined(调用方按需写回默认)。
+ * 注意 clamp 是逐条线夹的:某条线在当前可视窗口里整段落在框外时,它退回原范围(见 clampPriceRange),
+ * 同轴取并集,轴就会出框 —— 有意为之,放大到框外那段时线不能消失。
+ */
+export function boxAutoscaleProvider<T extends { priceRange: PriceRange | null }>(
+  clamp: [number, number] | undefined,
+  expand: [number, number] | undefined,
+): ((original: () => T | null) => T | null) | undefined {
+  const c = clamp && clampAutoscaleProvider<T>(clamp);
+  const e = expand && expandAutoscaleProvider<T>(expand);
+  if (!c && !e) return undefined;
+
+  return (original) => {
+    const clamped = c ? () => c(original) : original;
+    return e ? e(clamped) : clamped();
+  };
+}
+
 type PriceRange = { minValue: number; maxValue: number };
 
 // null 守卫两者共用(见 clampAutoscaleProvider 的说明)。

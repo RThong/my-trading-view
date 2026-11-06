@@ -1,3 +1,4 @@
+import { Eye, EyeOff } from 'lucide-react';
 import type { Interval } from '../../../hooks/interval';
 import { shiftBusinessDays } from '../../../chart/analysis';
 import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
@@ -21,11 +22,14 @@ type Props = {
   data: Record<string, LayerData>;
   hoverTime: string | null;
   layout: LegendLayout;
+  onHidden: (layerId: string, hidden: boolean) => void;
 };
 
 // 每格左上角一块:该格各图层的名称 + 十字线当日(无十字线时为最新)的值。不挡鼠标。
 // 换算过的线读原始值(换算值只是为了叠图);平移过的线附上这个点的原始日期,免得把挪过的日子当真。
-export function Legend({ doc, interval, data, hoverTime, layout }: Props) {
+// 显隐按钮同 TradingView:悬停这一行才出现;隐藏了就常亮,线没了也找得到地方点回来。
+// 只有行本身接鼠标(要靠 hover 显出按钮),块的其余部分照旧不挡十字线。
+export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Props) {
   return (
     <>
       {doc.panes.map((pane, i) => (
@@ -40,7 +44,10 @@ export function Legend({ doc, interval, data, hoverTime, layout }: Props) {
             const shift = l.shift ?? 0;
             const unit = layerUnit(l);
             return (
-              <span key={l.id} className="flex items-center gap-1.5 whitespace-nowrap">
+              <span
+                key={l.id}
+                className={`group pointer-events-auto flex items-center gap-1.5 whitespace-nowrap ${l.hidden ? 'opacity-50' : ''}`}
+              >
                 <span className="h-0.5 w-3 rounded" style={{ background: l.color }} />
                 <span className="text-neutral-400">{layerLabel(doc, l)}</span>
                 <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>
@@ -48,6 +55,15 @@ export function Legend({ doc, interval, data, hoverTime, layout }: Props) {
                 {shift !== 0 && pt && interval === '1D' && (
                   <span className="text-neutral-600">原 {shiftBusinessDays(pt.time, -shift)}</span>
                 )}
+                <button
+                  type="button"
+                  onClick={() => onHidden(l.id, !l.hidden)}
+                  title={l.hidden ? '显示' : '隐藏'}
+                  // 用透明度藏而不是 invisible:invisible 的按钮 Tab 不到
+                  className={`text-neutral-400 hover:text-neutral-100 ${l.hidden ? '' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`}
+                >
+                  {l.hidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                </button>
               </span>
             );
           })}

@@ -28,7 +28,7 @@ describe('固定面板的 ChartDoc', () => {
     expect(merged.panes[0].desc).toBe(CONCENTRATION.panes[0].desc);
   });
 
-  test('固定面板画不了的设定(多线 / 非 regime 源 / 平移 / 叠加 / 左轴 / 独立轴 / 倒轴 / 对数 / 同一序列占两格)直接报错,不静默', () => {
+  test('固定面板画不了的设定(多线 / 非 regime 源 / 平移 / 叠加 / 隐藏 / 左轴 / 独立轴 / 倒轴 / 对数 / 同一序列占两格)直接报错,不静默', () => {
     // 底子用第三格(普通的 regime 序列,不是计算格)
     const withLayer = (patch: object, scale: object = { id: 'right', side: 'right' }): ChartDoc => ({
       v: 1,
@@ -39,6 +39,12 @@ describe('固定面板的 ChartDoc', () => {
     expect(() => docToPaneSpecs(withLayer({ series: 'SPY' }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({ series: 'nope' }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({ shift: 5 }))).toThrow();
+    expect(() => docToPaneSpecs(withLayer({ hidden: true }))).toThrow();
+    // 轴的范围框照传(固定面板按格子画,格子只有右轴)
+    const boxed = docToPaneSpecs(
+      withLayer({}, { id: 'right', side: 'right', clampVisibleTo: [-5, 15], expandVisibleTo: [1, 19] }),
+    );
+    expect(boxed[0]).toMatchObject({ clampVisibleTo: [-5, 15], expandVisibleTo: [1, 19] });
     // 计算图层支持了,但两条腿都得在注册表里
     expect(() => docToPaneSpecs(withLayer({ calc: { op: '-', series: 'nope' } }))).toThrow();
     expect(() => docToPaneSpecs(withLayer({ scale: 'left' }, { id: 'left', side: 'left' }))).toThrow();

@@ -110,7 +110,10 @@ export function LayerCard({
           className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border-0 bg-transparent p-0"
           title="颜色"
         />
-        <span className="min-w-0 flex-1 truncate text-sm text-neutral-200" title={layerLabel(doc, layer)}>
+        <span
+          className={`min-w-0 flex-1 truncate text-sm ${layer.hidden ? 'text-neutral-500' : 'text-neutral-200'}`}
+          title={layerLabel(doc, layer)}
+        >
           {layerLabel(doc, layer)}
         </span>
         {sharers.length > 0 && (
@@ -213,7 +216,13 @@ export function LayerCard({
           <X />
         </Button>
       </div>
-      <StateBadges shift={layer.shift ?? 0} inverted={inverted} log={log} logIneffective={log && !canLog} />
+      <StateBadges
+        hidden={!!layer.hidden}
+        shift={layer.shift ?? 0}
+        inverted={inverted}
+        log={log}
+        logIneffective={log && !canLog}
+      />
       {layer.fit && <FitRow fit={layer.fit} inverted={inverted} onClear={() => actions.clearFit(layer.id)} />}
     </li>
   );
@@ -221,22 +230,26 @@ export function LayerCard({
 
 // 卡片上只留「这条线被动过什么」的提示,改动去 ⚙ 弹层里做。
 // 单独占一行、没有就不占:侧栏只有 ~290px,和名字挤在一行会把名字截到只剩一两个字
+// 显隐开关在图例行上(同 TradingView),卡片只显示状态,不另设一个按钮
 function StateBadges({
+  hidden,
   shift,
   inverted,
   log,
   logIneffective,
 }: {
+  hidden: boolean;
   shift: number;
   inverted: boolean;
   log: boolean;
   logIneffective: boolean;
 }) {
   const badge = 'shrink-0 rounded bg-neutral-800 px-1 text-[10px] leading-4 text-neutral-400';
-  if (shift === 0 && !inverted && !log) return null;
+  if (!hidden && shift === 0 && !inverted && !log) return null;
 
   return (
     <div className="mt-1 flex gap-1 pl-5">
+      {hidden && <span className={badge}>隐藏</span>}
       {shift !== 0 && <span className={badge}>{`平移 ${shift > 0 ? '+' : ''}${shift}`}</span>}
       {inverted && <span className={badge}>倒轴</span>}
       {log && (

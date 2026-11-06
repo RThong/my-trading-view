@@ -16,7 +16,8 @@ export function useBaseBand(chartRef: RefObject<IChartApi | null>, doc: ChartDoc
 
     const bands = doc.panes.flatMap((pane, paneIndex) =>
       pane.layers.flatMap((l) => {
-        if (!l.fit) return [];
+        // 隐藏的线不标:线不在图上,剩一条底色带说不清是谁的
+        if (!l.fit || l.hidden) return [];
         const { target, start, end } = l.fit;
         // 用 A 画在图上的日期,不凭空给时间轴添点
         const times = (data[target]?.display ?? []).filter((p) => p.time >= start && p.time <= end).map((p) => p.time);

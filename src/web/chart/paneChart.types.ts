@@ -31,7 +31,7 @@ export type LineSpec = {
    * 等于让每个调用方自己去实现「求交 + 倒挂退回」那套语义,迟早各写各的。
    */
   clampVisibleTo?: [number, number];
-  /** 价格轴的**下限框**:自动缩放范围撑到至少覆盖 `[lo, hi]`(见 `chart/core` 的 `expandAutoscaleProvider`)。与 clampVisibleTo 互斥。 */
+  /** 价格轴的**下限框**:自动缩放范围撑到至少覆盖 `[lo, hi]`(见 `chart/core` 的 `expandAutoscaleProvider`)。与 clampVisibleTo 同配时先夹后撑(`boxAutoscaleProvider`)。 */
   expandVisibleTo?: [number, number];
 };
 export type CandleSpec = { key: string; pane: number; kind: 'candle'; title: string; data: Bar[] };

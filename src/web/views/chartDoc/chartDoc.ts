@@ -12,6 +12,13 @@ export type Scale = {
   invert?: true;
   /** 对数坐标。轴上有 ≤0 的值时渲染层按普通坐标画(对数画不了) */
   log?: true;
+  /**
+   * 自动缩放的上限框 [lo, hi]:轴最多显示到这么宽,一个尖刺不至于把日常波动压扁。只夹轴不改数据;
+   * 挂在轴上而不是图层上:同轴的线要一起夹,只夹一条的话别的线照样把轴撑开
+   */
+  clampVisibleTo?: [number, number];
+  /** 自动缩放的下限框 [lo, hi]:轴至少显示这么宽,数据没走到参考线附近时线也在画面里。[0, 0] = 轴要包含 0 */
+  expandVisibleTo?: [number, number];
 };
 
 /**
@@ -27,6 +34,15 @@ export type Fit = { target: string; start: string; end: string; alpha: number; b
 export type LayerRender = { kind: 'line'; baseline?: number; step?: true };
 /** 有绝对含义的阈值线(如「临界 4」),跟随图层所在的纵轴 */
 export type RefLine = { price: number; title: string; color?: string };
+
+/** 固定常态带的上下两条参考线(基本面锚,替代自指的 P5/P95;出带 = 告警,不是确诊)。同 TradingView 的两条 hline */
+export function normalBand(lo: number, hi: number): RefLine[] {
+  return [
+    { price: lo, title: '常态下限' },
+    { price: hi, title: '常态上限' },
+  ];
+}
+
 /** 按图层自身历史算 P5 / P95 参考线;riskTail = 哪一端是风险(背景染红 / 绿);since = 只用这天起的数据算分位 */
 export type PercentileBand = { riskTail?: 'low' | 'high'; since?: string };
 
@@ -52,6 +68,8 @@ export type Layer = {
   fit?: Fit;
   /** 图例名;缺省用注册表里的名称 */
   title?: string;
+  /** 隐藏:不画线、不撑纵轴,图例里照给读数(同 TradingView 图例行的眼睛) */
+  hidden?: true;
   render?: LayerRender;
   refLines?: RefLine[];
   percentile?: PercentileBand;
@@ -202,6 +220,17 @@ function mapLayer(doc: ChartDoc, layerId: string, fn: (l: Layer, p: Pane) => Par
   };
 }
 
+/** 改图层的一个可选字段(undefined = 删掉)。经 canonicalLayer 重建:字段顺序固定,值为 undefined 的字段不留 */
+function setLayerField<K extends keyof Layer>(doc: ChartDoc, layerId: string, key: K, value: Layer[K]): ChartDoc {
+  return {
+    ...doc,
+    panes: doc.panes.map((p) => ({
+      ...p,
+      layers: p.layers.map((l) => (l.id === layerId ? canonicalLayer({ ...l, [key]: value }) : l)),
+    })),
+  };
+}
+
 export function findLayer(doc: ChartDoc, layerId: string): { pane: Pane; layer: Layer } | undefined {
   const pane = doc.panes.find((p) => p.layers.some((l) => l.id === layerId));
   const layer = pane?.layers.find((l) => l.id === layerId);
@@ -258,17 +287,15 @@ export function setLayerCalc(doc: ChartDoc, layerId: string, calc: Calc | undefi
   if (!cur || (cur.calc?.op === calc?.op && cur.calc?.series === calc?.series && cur.calc?.fill === calc?.fill))
     return doc;
 
-  return {
-    ...doc,
-    panes: doc.panes.map((p) => ({
-      ...p,
-      layers: p.layers.map((l) => {
-        if (l.id !== layerId) return l;
-        const { calc: _old, ...rest } = l;
-        return canonicalLayer(calc ? { ...rest, calc } : rest);
-      }),
-    })),
-  };
+  return setLayerField(doc, layerId, 'calc', calc);
+}
+
+/** 显隐。显示 = 删掉字段 */
+export function setLayerHidden(doc: ChartDoc, layerId: string, hidden: boolean): ChartDoc {
+  const cur = findLayer(doc, layerId)?.layer;
+  if (!cur || !!cur.hidden === hidden) return doc;
+
+  return setLayerField(doc, layerId, 'hidden', hidden ? true : undefined);
 }
 
 /** 平移(交易日)。0 = 不平移,字段删掉;超过上限按上限截。 */
@@ -277,26 +304,18 @@ export function setLayerShift(doc: ChartDoc, layerId: string, shift: number): Ch
   const cur = findLayer(doc, layerId)?.layer;
   if (!cur || (cur.shift ?? 0) === n) return doc;
 
-  return {
-    ...doc,
-    panes: doc.panes.map((p) => ({
-      ...p,
-      layers: p.layers.map((l) => {
-        if (l.id !== layerId) return l;
-        const { shift: _old, ...rest } = l;
-        return canonicalLayer(n === 0 ? rest : { ...rest, shift: n });
-      }),
-    })),
-  };
+  return setLayerField(doc, layerId, 'shift', n || undefined);
 }
 
-/** 按固定字段顺序重建一根轴(id、side、invert、log):先开哪个开关都一样,复制出去的 JSON 再导入文本原样不变。 */
+/** 按固定字段顺序重建一根轴(id、side、invert、log、clampVisibleTo、expandVisibleTo):先开哪个开关都一样,复制出去的 JSON 再导入文本原样不变。 */
 function canonicalScale(sc: Scale): Scale {
   return {
     id: sc.id,
     side: sc.side,
     ...(sc.invert ? { invert: true as const } : {}),
     ...(sc.log ? { log: true as const } : {}),
+    ...(sc.clampVisibleTo ? { clampVisibleTo: [sc.clampVisibleTo[0], sc.clampVisibleTo[1]] } : {}),
+    ...(sc.expandVisibleTo ? { expandVisibleTo: [sc.expandVisibleTo[0], sc.expandVisibleTo[1]] } : {}),
   };
 }
 
@@ -499,8 +518,15 @@ function isScale(x: unknown): x is Scale {
     isStr(x.id) &&
     (x.id === 'right' || x.id === 'left' ? x.side === x.id : x.side === 'overlay') &&
     (x.invert === undefined || x.invert === true) &&
-    (x.log === undefined || x.log === true)
+    (x.log === undefined || x.log === true) &&
+    (x.clampVisibleTo === undefined || isRange(x.clampVisibleTo, false)) &&
+    (x.expandVisibleTo === undefined || isRange(x.expandVisibleTo, true))
   );
+}
+
+// 下限框允许 lo = hi:[0, 0] = 「轴要包含 0」;上限框 lo = hi 夹成一条线,没意义
+function isRange(x: unknown, allowPoint: boolean): x is [number, number] {
+  return Array.isArray(x) && x.length === 2 && isNum(x[0]) && isNum(x[1]) && (allowPoint ? x[0] <= x[1] : x[0] < x[1]);
 }
 
 // 颜色限定 #rrggbb:lw-charts 解析不了的颜色会直接抛错(整页白屏),<input type=color> 也只认这种
@@ -580,6 +606,7 @@ function isLayer(x: unknown): x is Layer {
     (x.shift === undefined || isInt(x.shift, -MAX_SHIFT, MAX_SHIFT)) &&
     (x.fit === undefined || isFit(x.fit)) &&
     (x.title === undefined || isStr(x.title)) &&
+    (x.hidden === undefined || x.hidden === true) &&
     (x.render === undefined || isRender(x.render)) &&
     (x.refLines === undefined || (Array.isArray(x.refLines) && x.refLines.every(isRefLine))) &&
     (x.percentile === undefined || isPercentile(x.percentile))
@@ -608,7 +635,7 @@ function canonicalPercentile(p: PercentileBand): PercentileBand {
 }
 
 /**
- * 按字段白名单、固定顺序重建图层(id、series、calc、scale、color、shift、fit、title、render、refLines、percentile):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
+ * 按字段白名单、固定顺序重建图层(id、series、calc、scale、color、shift、fit、title、hidden、render、refLines、percentile):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
  * 守住「图层不存数据」;编辑操作改 shift / fit 后也走这里,先改哪个字段都一样,复制出去的 JSON 再导入文本原样不变。
  */
 function canonicalLayer(l: Layer): Layer {
@@ -632,6 +659,7 @@ function canonicalLayer(l: Layer): Layer {
         }
       : {}),
     ...(l.title !== undefined ? { title: l.title } : {}),
+    ...(l.hidden ? { hidden: true as const } : {}),
     ...(l.render ? { render: canonicalRender(l.render) } : {}),
     ...(l.refLines ? { refLines: l.refLines.map(canonicalRefLine) } : {}),
     ...(l.percentile ? { percentile: canonicalPercentile(l.percentile) } : {}),

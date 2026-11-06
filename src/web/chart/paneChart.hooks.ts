@@ -11,7 +11,7 @@ import {
   type AutoscaleInfo,
 } from 'lightweight-charts';
 import { useStable } from '../hooks/useStable';
-import { CHART_OPTIONS, changeStats, needsLogScale, clampAutoscaleProvider, expandAutoscaleProvider } from './core';
+import { CHART_OPTIONS, boxAutoscaleProvider, changeStats, needsLogScale } from './core';
 import type { PaneDef, Spec, LegendCell, AnySeries } from './paneChart.types';
 import { useTrendlines } from './trendlines.hooks';
 import { BandFillPrimitive } from './bandFill';
@@ -99,12 +99,11 @@ function addSeries(chart: IChartApi, spec: Spec): AnySeries {
     },
     spec.pane,
   );
-  // 轴的上限框。lightweight-charts 只开 autoscaleInfoProvider 这一个口子,故回调在这里就地收掉 ——
-  // spec 层只声明 [lo, hi];语义(求交 / 倒挂退回 / null 守卫)在 chart/core 的纯函数里,那边有变异检验覆盖。
-  if (spec.clampVisibleTo)
-    s.applyOptions({ autoscaleInfoProvider: clampAutoscaleProvider<AutoscaleInfo>(spec.clampVisibleTo) });
-  if (spec.expandVisibleTo)
-    s.applyOptions({ autoscaleInfoProvider: expandAutoscaleProvider<AutoscaleInfo>(spec.expandVisibleTo) });
+  // 轴的上 / 下限框。lightweight-charts 只开 autoscaleInfoProvider 这一个口子,故回调在这里就地收掉 ——
+  // spec 层只声明 [lo, hi];语义(求交 / 倒挂退回 / 先夹后撑 / null 守卫)在 chart/core 的纯函数里,那边有测试覆盖。
+  // 隐形线不套:它的回调是「不参与缩放」,套了框反而让它撑轴
+  const box = boxAutoscaleProvider<AutoscaleInfo>(spec.clampVisibleTo, spec.expandVisibleTo);
+  if (box && !spec.hidden) s.applyOptions({ autoscaleInfoProvider: box });
   if (spec.baseline !== undefined) {
     s.createPriceLine({
       price: spec.baseline,
