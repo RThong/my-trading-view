@@ -1,21 +1,31 @@
-// 「利率」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
-import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
+// 「利率」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
+import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 import { FICC_TRIANGLE } from '../../views/regime/descSnippets';
 
 // 通胀发布日竖线:CPI 黄、PCE 蓝(与 desc 里的说明对应,改色要同步改文案)。
-const RELEASE_CPI = 'rgba(250,204,21,0.55)';
-const RELEASE_PCE = 'rgba(96,165,250,0.55)';
+const RELEASE_CPI = '#facc15';
+const RELEASE_PCE = '#60a5fa';
+const RELEASE_OPACITY = 0.55;
 
-export const RATES_DIMS = {
+export const RATES_DOCS = {
   // 利率水平 + 利率波动率:MOVE 是债市波动率,与利率同宗(和股市 VIX 相关性一般),故与 10Y 收益率配对。
   ratesVol: {
+    v: 1,
     panes: [
       {
-        key: 'dgs10',
-        label: '10Y 国债',
-        title: '10Y 国债收益率',
-        color: '#22d3ee',
-        percentile: {}, // 方向不单一,不设风险端,只给 P5/P95 参考
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l1',
+            series: 'dgs10',
+            scale: 'right',
+            color: '#22d3ee',
+            title: '10Y 国债收益率',
+            percentile: {}, // 方向不单一,不设风险端,只给 P5/P95 参考
+          },
+        ],
         desc: [
           '定义:美国 10 年期国债收益率。长端利率锚。',
           '方向不单一(增长 or 通胀 / 供给都能推),故不设风险端,只给 P5/P95 参考。',
@@ -27,11 +37,19 @@ export const RATES_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'move',
-        label: 'MOVE',
-        title: 'MOVE (债市波动率)',
-        color: '#f43f5e',
-        percentile: { riskTail: 'low' }, // MOVE 压扁=自满=风险
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l2',
+            series: 'move',
+            scale: 'right',
+            color: '#f43f5e',
+            title: 'MOVE (债市波动率)',
+            percentile: { riskTail: 'low' }, // MOVE 压扁=自满=风险
+          },
+        ],
         desc: [
           '定义:美银美林美债期权波动率指数。债市版 VIX。',
           '低 = 自满(风险端,红),也是集中度行情敢 all-in 的前提;',
@@ -46,21 +64,40 @@ export const RATES_DIMS = {
   // 加息定价走势:SOFR OIS 反推的「到 N 为止累计计入几次」逐日历史 + 核心 CPI / PCE 发布日竖线。
   // 快照(远期曲线 vs 点阵图)在「利率 → 加息定价」那个 tab。
   policyRepricing: {
+    v: 1,
     panes: [
       {
-        key: 'oisHikes12m',
-        label: '累计计入',
-        title: '12 个月内计入(次)',
-        color: '#f43f5e',
-        render: { kind: 'line', baseline: 0 },
-        overlays: [
-          { key: 'oisHikes3m', title: '3 个月内(次)', color: '#fde047' },
-          { key: 'oisHikes6m', title: '6 个月内(次)', color: '#fb923c' },
-          { key: 'oisHikes2y', title: '2 年内(次)', color: '#a78bfa' },
-        ],
-        events: [
-          { key: 'coreCpiRelease', title: '核心 CPI 发布日', color: RELEASE_CPI },
-          { key: 'corePceRelease', title: '核心 PCE 发布日', color: RELEASE_PCE },
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l1',
+            series: 'oisHikes12m',
+            scale: 'right',
+            color: '#f43f5e',
+            title: '12 个月内计入(次)',
+            render: { kind: 'line', baseline: 0 },
+          },
+          { id: 'l2', series: 'oisHikes3m', scale: 'right', color: '#fde047', title: '3 个月内(次)' },
+          { id: 'l3', series: 'oisHikes6m', scale: 'right', color: '#fb923c', title: '6 个月内(次)' },
+          { id: 'l4', series: 'oisHikes2y', scale: 'right', color: '#a78bfa', title: '2 年内(次)' },
+          {
+            id: 'l5',
+            series: 'coreCpiRelease',
+            scale: 'right',
+            color: RELEASE_CPI,
+            title: '核心 CPI 发布日',
+            render: { kind: 'events', opacity: RELEASE_OPACITY },
+          },
+          {
+            id: 'l6',
+            series: 'corePceRelease',
+            scale: 'right',
+            color: RELEASE_PCE,
+            title: '核心 PCE 发布日',
+            render: { kind: 'events', opacity: RELEASE_OPACITY },
+          },
         ],
         desc: [
           '定义:SOFR OIS(Eris)反推的分段远期 − 当日 SOFR 定盘值(FRED),÷ 25bp。「12 个月内」= 9M–12M 那段远期相对今天高几次。',
@@ -80,13 +117,22 @@ export const RATES_DIMS = {
   // 故只给前者套分位徽标 / 背景带,模型量一律不套分位:它们不是可交易价差,不该和判据线长一样。
   // (0 基线只给会穿零的 tp10Kw;expShort10Kw / r* 不穿零,补基线只会把纵轴压扁。)
   ratesDecomp: {
+    v: 1,
     panes: [
       {
-        key: 't5yifr',
-        label: '5y5y 通胀远期',
-        title: '5y5y 通胀远期 (T5YIFR)',
-        color: '#38bdf8',
-        percentile: { riskTail: 'high' }, // 高 = 长期通胀锚在上移 = 风险
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l1',
+            series: 't5yifr',
+            scale: 'right',
+            color: '#38bdf8',
+            title: '5y5y 通胀远期 (T5YIFR)',
+            percentile: { riskTail: 'high' }, // 高 = 长期通胀锚在上移 = 风险
+          },
+        ],
         desc: [
           '定义:5 年后起算、往后 5 年的通胀补偿(圣路易斯联储官方口径,日频 %)。',
           '剥掉了近 5 年的当期通胀噪声,只看**第 6-10 年**的定价 —— 比 10Y BEI 更贴「长期通胀锚」。',
@@ -97,14 +143,29 @@ export const RATES_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'tp10Kw',
-        label: '期限溢价 (KW)',
-        title: '10Y 期限溢价 · Kim-Wright 模型估计',
-        color: '#a78bfa',
-        render: { kind: 'line', baseline: 0 }, // 可转负,且**刻意不套分位** —— 见上方口径注释
-        // ACM(纽约联储,月频)叠同格当独立对照。**两条之间的间距才是这格的产品** ——
-        // 分成两格就读不出带宽了。ACM 月频走阶梯:一月一个点,中间画斜坡是伪造信息。
-        overlays: [{ key: 'tp10Acm', title: '对照:ACM 模型估计(纽约联储,月频)', color: '#f472b6', step: true }],
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l2',
+            series: 'tp10Kw',
+            scale: 'right',
+            color: '#a78bfa',
+            title: '10Y 期限溢价 · Kim-Wright 模型估计',
+            render: { kind: 'line', baseline: 0 }, // 可转负,且**刻意不套分位** —— 见上方口径注释
+          },
+          // ACM(纽约联储,月频)叠同格当独立对照。**两条之间的间距才是这格的产品** ——
+          // 分成两格就读不出带宽了。ACM 月频走阶梯:一月一个点,中间画斜坡是伪造信息。
+          {
+            id: 'l3',
+            series: 'tp10Acm',
+            scale: 'right',
+            color: '#f472b6',
+            title: '对照:ACM 模型估计(纽约联储,月频)',
+            render: { kind: 'line', step: true },
+          },
+        ],
         desc: [
           '定义:10 年期零息债的期限溢价 —— **两套模型并排**,不是一个数。',
           '  · 主线(日频)= Kim-Wright (2005) 三因子无套利模型,美联储理事会',
@@ -128,14 +189,23 @@ export const RATES_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'expShort10Kw',
-        label: 'A vs L 缺口',
-        title: 'A:10Y 预期短端均值(KW,日频)',
-        color: '#fbbf24',
+        id: 'p3',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
         // 两条线并排,**刻意不相减**(理由见 desc 的四层近似)。L 那条走阶梯:它的分辨率由季频的
         // r* 那一半决定,一眼看得出「下面这条一个季度才动一次」—— 相减成单序列会把这个信息抹平。
         // 也刻意不套分位:这格读的是「谁在上面」,给其中一条套背景带会把视觉重心压回单条线。
-        overlays: [{ key: 'lProxyHlwT5yifr', title: 'L 代理:HLW r* + 5y5y(季频)', color: '#34d399', step: true }],
+        layers: [
+          { id: 'l4', series: 'expShort10Kw', scale: 'right', color: '#fbbf24', title: 'A:10Y 预期短端均值(KW,日频)' },
+          {
+            id: 'l5',
+            series: 'lProxyHlwT5yifr',
+            scale: 'right',
+            color: '#34d399',
+            title: 'L 代理:HLW r* + 5y5y(季频)',
+            render: { kind: 'line', step: true },
+          },
+        ],
         desc: [
           '定义:分解式 `长端 = 预期短端路径均值 + 期限溢价` 里的**预期腿(A)**,并排叠上长期中枢的粗代理(L)。',
           '  · A(日频)= Kim-Wright 拟合的 10Y 零息收益率 − 同模型的 10Y 期限溢价(两条 FRED 序列现减)',
@@ -168,14 +238,29 @@ export const RATES_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'rstarHlwCurrent',
-        label: 'r* (HLW)',
-        title: '自然利率 r* · HLW current estimates(季频)',
-        color: '#34d399',
+        id: 'p4',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
         // 季频 → 阶梯线:一年只发 4 次,两次发布之间值就是不变的,平滑折线是在伪造发布间的信息。
         // 同 tp10Kw / expShort10Kw:模型估计值不套分位徽标 / 背景带。
-        render: { kind: 'line', step: true },
-        overlays: [{ key: 'rstarSepImplied', title: '联储口径:SEP 长期利率 − 2%(季频)', color: '#fbbf24', step: true }],
+        layers: [
+          {
+            id: 'l6',
+            series: 'rstarHlwCurrent',
+            scale: 'right',
+            color: '#34d399',
+            title: '自然利率 r* · HLW current estimates(季频)',
+            render: { kind: 'line', step: true },
+          },
+          {
+            id: 'l7',
+            series: 'rstarSepImplied',
+            scale: 'right',
+            color: '#fbbf24',
+            title: '联储口径:SEP 长期利率 − 2%(季频)',
+            render: { kind: 'line', step: true },
+          },
+        ],
         desc: [
           '定义:Holston-Laubach-Williams 估的美国**短期**自然实际利率(纽约联储,季频,一年只发 4 次)。',
           '= 产出处于潜在水平、通胀稳定时对应的实际短端利率。',
@@ -205,4 +290,4 @@ export const RATES_DIMS = {
       },
     ],
   },
-} satisfies RegimeDims;
+} satisfies RegimeDocs;

@@ -1,19 +1,28 @@
-// 「流动性」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
-import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
+// 「流动性」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
+import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 
 // 跨格复用的框架文本:同一判据被多个 desc 引用,抽常量避免改一处漏一处。
 // 一律写成条件判据,不写「某年某月读数」——快照会过期,而图上就有当期值。
 const FIVE_STEPS =
   '五步观测:① 净流动性转头(预警)→ ② RRP 见底(缓冲耗尽)→ ③ IORB−SOFR 跌破 0 + ④ repo 冒尖(咬人)→ ⑤ canary 齐跌(系统性)。';
 
-export const LIQUIDITY_DIMS = {
+export const LIQUIDITY_DOCS = {
   liquidity: {
+    v: 1,
     panes: [
       {
-        key: 'netLiquidity',
-        label: '净流动性',
-        title: '净流动性 (WALCL−TGA−RRP,十亿美元)',
-        color: '#22c55e',
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l1',
+            series: 'netLiquidity',
+            scale: 'right',
+            color: '#22c55e',
+            title: '净流动性 (WALCL−TGA−RRP,十亿美元)',
+          },
+        ],
         desc: [
           '定义:净流动性(粗略代理)= 总资产 WALCL − 财政部账户 TGA − 逆回购 RRP,周三时点,周频。',
           '升 = 宽松倾向(利多风险资产);降 = 收紧倾向。',
@@ -28,10 +37,18 @@ export const LIQUIDITY_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'reserves',
-        label: '准备金',
-        title: '准备金 (WRBWFRBL 周三时点,十亿美元)',
-        color: '#3b82f6',
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l2',
+            series: 'reserves',
+            scale: 'right',
+            color: '#3b82f6',
+            title: '准备金 (WRBWFRBL 周三时点,十亿美元)',
+          },
+        ],
         desc: [
           '定义:银行存在美联储的准备金余额,周三时点,周频(H.4.1 周四发)。',
           '升 = 银行体系现金变多;降 = 被 TGA 回补 / 缩表 / RRP 上升(资金停回联储)抽走。',
@@ -42,10 +59,10 @@ export const LIQUIDITY_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'reverseRepo',
-        label: '逆回购',
-        title: '逆回购 RRP (十亿美元)',
-        color: '#14b8a6',
+        id: 'p3',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [{ id: 'l3', series: 'reverseRepo', scale: 'right', color: '#14b8a6', title: '逆回购 RRP (十亿美元)' }],
         desc: [
           '定义:货币基金等把现金隔夜停在美联储的量(ON RRP)。过剩流动性的泄洪垫。',
           '高 = 缓冲厚;下降 = 现金回到货币市场、同时缓冲在消耗;',
@@ -58,10 +75,12 @@ export const LIQUIDITY_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'repoUsage',
-        label: '回购用量',
-        title: '回购用量 (隔夜正回购 RPONTSYD)',
-        color: '#ec4899',
+        id: 'p4',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          { id: 'l4', series: 'repoUsage', scale: 'right', color: '#ec4899', title: '回购用量 (隔夜正回购 RPONTSYD)' },
+        ],
         desc: [
           '定义:美联储隔夜正回购总量(含常备回购便利 SRF)。安全阀 —— 动用 = 联储后备融资相对私人市场变得划算。',
           '低 / 近零 = 后备融资少被调用;集群 / 持续抬升 = 市场融资相对变贵,结构性咬人。',
@@ -73,12 +92,20 @@ export const LIQUIDITY_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'repoStress',
-        from: { series: 'iorb', calc: { op: '-', series: 'sofr' } },
-        label: '回购压力',
-        title: '回购压力 (IORB−SOFR)',
-        color: '#a855f7',
-        render: { kind: 'line', baseline: 0 },
+        id: 'p5',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l5',
+            series: 'iorb',
+            calc: { op: '-', series: 'sofr' },
+            scale: 'right',
+            color: '#a855f7',
+            title: '回购压力 (IORB−SOFR)',
+            render: { kind: 'line', baseline: 0 },
+          },
+        ],
         desc: [
           '定义:准备金利率 IORB − 隔夜 SOFR。正 = SOFR 低于 IORB = 融资宽松。',
           '收窄 = 融资边际趋紧;跌破 0 = 从「摩擦」升级到「缺氧」,继续走负 = SOFR 上冲(2019 钱荒型)。',
@@ -89,4 +116,4 @@ export const LIQUIDITY_DIMS = {
       },
     ],
   },
-} satisfies RegimeDims;
+} satisfies RegimeDocs;

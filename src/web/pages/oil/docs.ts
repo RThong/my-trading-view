@@ -1,7 +1,7 @@
-// 「能源」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
+// 「能源」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
 import type { RollMismatchKind } from '../../../shared/calc/oilRoll';
 import { normalBand } from '../../views/chartDoc/chartDoc';
-import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
+import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 
 // 背景带的颜色含义。**只有颜色、图上没有图例** —— 而红色直觉上像「涨」,第一次看极易读反。
 // 能源两个 tab 的格子都带这句(一次只 hover 一格,漏哪格哪格就没提醒)。
@@ -45,7 +45,7 @@ function clampNote(box: string, tail: string) {
   );
 }
 
-export const OIL_DIMS = {
+export const OIL_DOCS = {
   // 油市结构(物理紧张):Brent−WTI(海运 vs 内陆)+ 柴油/汽油/3-2-1 三条裂解(炼厂利润/工业需求)。
   // 长期结构指标:海峡恢复后切回本职——读油市松紧、工业需求强弱。$/桶。
   // **参考线两套,判据是「锚还活着吗」**:Brent−WTI 用固定常态带(1.5~10,8 年只有 5% 在带外 ——
@@ -54,16 +54,24 @@ export const OIL_DIMS = {
   // 产品结构长期漂移 —— 原来给柴油裂解定的 10~48 已经失效(现值两倍多、20% 时间在带外),
   // 一条永远报警的带不提供任何信息,换成分位反而诚实。**别再给裂解定固定带,它会再死一次。**
   oil: {
+    v: 1,
     panes: [
       {
-        key: 'brentWti',
-        from: { series: 'brent', calc: { op: '-', series: 'wti' } },
-        label: 'Brent−WTI',
-        title: 'Brent − WTI ($/桶)',
-        color: '#38bdf8',
-        refLines: normalBand(1.5, 10),
-        clampVisibleTo: [-5, 15],
-        rollMismatch: 'brentWti',
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right', clampVisibleTo: [-5, 15] }],
+        layers: [
+          {
+            id: 'l1',
+            series: 'brent',
+            calc: { op: '-', series: 'wti' },
+            scale: 'right',
+            color: '#38bdf8',
+            title: 'Brent − WTI ($/桶)',
+            refLines: normalBand(1.5, 10),
+          },
+          { id: 'l2', series: 'oilRollBrentWti', scale: 'right', color: '#94a3b8', render: { kind: 'background' } },
+        ],
         desc: [
           '定义:国际海运原油(Brent)− 美国内陆原油(WTI),$/桶。看「紧张在哪、桶往哪流」。',
           '走阔 = 国际紧,美国相对绝缘。',
@@ -77,12 +85,20 @@ export const OIL_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'dieselCrack',
-        label: '柴油裂解',
-        title: '柴油裂解 (ULSD×42 − WTI, $/桶) · 外称 取暖油 / Heating Oil / HO crack',
-        color: '#f97316',
-        percentile: { riskTail: 'high' },
-        rollMismatch: 'crack',
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l3',
+            series: 'dieselCrack',
+            scale: 'right',
+            color: '#f97316',
+            title: '柴油裂解 (ULSD×42 − WTI, $/桶) · 外称 取暖油 / Heating Oil / HO crack',
+            percentile: { riskTail: 'high' },
+          },
+          { id: 'l4', series: 'oilRollCrack', scale: 'right', color: '#94a3b8', render: { kind: 'background' } },
+        ],
         desc: [
           '定义:炼一桶原油出柴油的毛利(ULSD×42 − WTI,$/桶)。看下游 / 实体经济。',
           '高 = 产品端比原油紧,运输 / 工业 / 农业的燃料成本在涨;低 = 产品端偏松,实体在转冷。',
@@ -117,15 +133,23 @@ export const OIL_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'rbobCrack',
-        label: '汽油裂解',
-        title: '汽油裂解 (RBOB×42 − WTI, $/桶)',
-        color: '#22c55e',
-        // **刻意不配 riskTail,即不染背景带。** 实测 P95 以上的 109 天里 93% 落在 5~8 月
-        // (柴油同口径只有 49%)—— 夏季配方切换让这条例行走高,染红的是季节不是风险,
-        // 那种告警每年都响一遍,响了等于没响。P5/P95 参考线与分位徽标照留。
-        percentile: {},
-        rollMismatch: 'crack',
+        id: 'p3',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l5',
+            series: 'rbobCrack',
+            scale: 'right',
+            color: '#22c55e',
+            title: '汽油裂解 (RBOB×42 − WTI, $/桶)',
+            // **刻意不配 riskTail,即不染背景带。** 实测 P95 以上的 109 天里 93% 落在 5~8 月
+            // (柴油同口径只有 49%)—— 夏季配方切换让这条例行走高,染红的是季节不是风险,
+            // 那种告警每年都响一遍,响了等于没响。P5/P95 参考线与分位徽标照留。
+            percentile: {},
+          },
+          { id: 'l6', series: 'oilRollCrack', scale: 'right', color: '#94a3b8', render: { kind: 'background' } },
+        ],
         desc: [
           '定义:炼一桶原油出汽油的毛利(RBOB×42 − WTI,$/桶)。柴油那格的配对腿。',
           '**两条一起读才分得清「炼厂整体紧」还是「某个产品紧」**:同涨 = 炼能本身是瓶颈;',
@@ -141,12 +165,20 @@ export const OIL_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'crack321',
-        label: '3-2-1 裂解',
-        title: '3-2-1 裂解 ((2×RBOB + ULSD)×42/3 − WTI, $/桶)',
-        color: '#a78bfa',
-        percentile: { riskTail: 'high' },
-        rollMismatch: 'crack',
+        id: 'p4',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l7',
+            series: 'crack321',
+            scale: 'right',
+            color: '#a78bfa',
+            title: '3-2-1 裂解 ((2×RBOB + ULSD)×42/3 − WTI, $/桶)',
+            percentile: { riskTail: 'high' },
+          },
+          { id: 'l8', series: 'oilRollCrack', scale: 'right', color: '#94a3b8', render: { kind: 'background' } },
+        ],
         desc: [
           '定义:新闻和卖方报告里默认的那个「炼厂利润」—— 3 桶原油炼出 2 桶汽油 + 1 桶馏分油的加权毛利,$/桶。',
           '代数上等于 (2×汽油裂解 + 柴油裂解) / 3,所以它**不带新信息**,是上面两格的加权平均。',
@@ -166,13 +198,22 @@ export const OIL_DIMS = {
   // ⚠️ 七格里四格是**季节 z**,不是水位。库存的绝对水位单看不携带信息(1.05 亿桶是高是低
   // 取决于现在是 3 月还是 9 月),而「按季节性去看已经非常低」这句判断只有 z 画得出来。
   refinery: {
+    v: 1,
     panes: [
       {
-        key: 'refUtil',
-        label: '炼厂开工率',
-        title: '美国炼厂开工率 (% 可用产能)',
-        color: '#38bdf8',
-        refLines: normalBand(85, 97),
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l1',
+            series: 'refUtil',
+            scale: 'right',
+            color: '#38bdf8',
+            title: '美国炼厂开工率 (% 可用产能)',
+            refLines: normalBand(85, 97),
+          },
+        ],
         desc: [
           '定义:美国炼厂实际加工量 / 可用产能,%(EIA 周报 WPULEUS3)。**这格发水位不发 z** ——',
           '它有绝对刻度:100% 是硬顶,离顶多远就是「还剩多少余量」,不需要跟往年比才读得懂。',
@@ -189,13 +230,20 @@ export const OIL_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'refUtilZ5y',
-        label: '开工率季节z',
-        title: '炼厂开工率 · 季节 z (对往年同期)',
-        color: '#38bdf8',
-        render: { kind: 'line', baseline: 0 },
-        refLines: normalBand(-2, 2),
-        clampVisibleTo: [-5, 5],
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right', clampVisibleTo: [-5, 5] }],
+        layers: [
+          {
+            id: 'l2',
+            series: 'refUtilZ5y',
+            scale: 'right',
+            color: '#38bdf8',
+            title: '炼厂开工率 · 季节 z (对往年同期)',
+            render: { kind: 'line', baseline: 0 },
+            refLines: normalBand(-2, 2),
+          },
+        ],
         desc: [
           '定义:开工率相对**往年同期**分布的标准分。正 = 比往年这个时候开得狠。',
           '上面那格答「离满还有多远」,这格答「比往年同期努力多少」—— 秋季检修季的 92% 和',
@@ -208,11 +256,19 @@ export const OIL_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'distYield',
-        label: '馏分油收率',
-        title: '馏分油收率 (馏分油产量 / 炼厂加工量, %)',
-        color: '#f97316',
-        refLines: normalBand(28, 32),
+        id: 'p3',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l3',
+            series: 'distYield',
+            scale: 'right',
+            color: '#f97316',
+            title: '馏分油收率 (馏分油产量 / 炼厂加工量, %)',
+            refLines: normalBand(28, 32),
+          },
+        ],
         desc: [
           '定义:一桶进炼厂的原油里,炼出多少馏分油(柴油/取暖油),%。EIA 不直发这条,是 WDIRPUS2 / WGIRIUS2 算的。',
           '**这格答上面那格答不了的问题**:开工率说「开多狠」,收率说「开了之后出的是什么」。',
@@ -224,13 +280,20 @@ export const OIL_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'crudeRunsYoy',
-        label: '加工量vs产量',
-        title: '炼厂加工量 YoY (%) · 叠馏分油产量 YoY',
-        color: '#38bdf8',
-        render: { kind: 'line', baseline: 0 },
-        overlays: [{ key: 'distProdYoy', title: '馏分油产量 YoY (%)', color: '#f97316' }],
-        clampVisibleTo: [-15, 15],
+        id: 'p4',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right', clampVisibleTo: [-15, 15] }],
+        layers: [
+          {
+            id: 'l4',
+            series: 'crudeRunsYoy',
+            scale: 'right',
+            color: '#38bdf8',
+            title: '炼厂加工量 YoY (%) · 叠馏分油产量 YoY',
+            render: { kind: 'line', baseline: 0 },
+          },
+          { id: 'l5', series: 'distProdYoy', scale: 'right', color: '#f97316', title: '馏分油产量 YoY (%)' },
+        ],
         desc: [
           '定义:炼厂原油加工量(蓝)与馏分油产量(橙)各自的同比 %。**产品是两条线的间距,不是任一条的水位。**',
           '两条同涨 = 多炼的原油确实变成了更多柴油,供应端在响应。',
@@ -246,13 +309,21 @@ export const OIL_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'distStocksZ5y',
-        label: '馏分油库存z',
-        title: '馏分油(柴油/取暖油)库存 · 季节 z',
-        color: '#f97316',
-        render: { kind: 'line', baseline: 0 },
-        refLines: normalBand(-2, 2),
-        percentile: { riskTail: 'low' },
+        id: 'p5',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l6',
+            series: 'distStocksZ5y',
+            scale: 'right',
+            color: '#f97316',
+            title: '馏分油(柴油/取暖油)库存 · 季节 z',
+            render: { kind: 'line', baseline: 0 },
+            refLines: normalBand(-2, 2),
+            percentile: { riskTail: 'low' },
+          },
+        ],
         desc: [
           '定义:美国馏分油库存(EIA WDISTUS1,千桶)相对往年同期分布的标准分。**负 = 比往年同期低**。',
           '这是柴油裂解那格的因果配对腿:裂解高 + 库存 z 深负 = 物理是真紧;',
@@ -266,13 +337,21 @@ export const OIL_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'gasStocksZ5y',
-        label: '汽油库存z',
-        title: '汽油总库存 · 季节 z',
-        color: '#22c55e',
-        render: { kind: 'line', baseline: 0 },
-        refLines: normalBand(-2, 2),
-        percentile: { riskTail: 'low' },
+        id: 'p6',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l7',
+            series: 'gasStocksZ5y',
+            scale: 'right',
+            color: '#22c55e',
+            title: '汽油总库存 · 季节 z',
+            render: { kind: 'line', baseline: 0 },
+            refLines: normalBand(-2, 2),
+            percentile: { riskTail: 'low' },
+          },
+        ],
         desc: [
           '定义:美国汽油总库存(EIA WGTSTUS1,千桶)相对往年同期分布的标准分。',
           '和馏分油库存并读,分季节主线:**夏季看汽油(驾车季),冬季看柴油(取暖 + 运输)**。',
@@ -285,12 +364,20 @@ export const OIL_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'distExportsZ5y',
-        label: '馏分油出口z',
-        title: '馏分油出口 · 季节 z',
-        color: '#eab308',
-        render: { kind: 'line', baseline: 0 },
-        refLines: normalBand(-2, 2),
+        id: 'p7',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l8',
+            series: 'distExportsZ5y',
+            scale: 'right',
+            color: '#eab308',
+            title: '馏分油出口 · 季节 z',
+            render: { kind: 'line', baseline: 0 },
+            refLines: normalBand(-2, 2),
+          },
+        ],
         desc: [
           '定义:美国馏分油出口(EIA WDIEXUS2,千桶/日)相对往年同期分布的标准分。',
           '和库存 z 一起读才完整:**库存低 + 出口高 = 桶被拉去了海外**(国际需求 / 套利拉动),',
@@ -313,17 +400,18 @@ export const OIL_DIMS = {
   // 汽油那条是判别腿(全行业加价 vs 柴油独有)。
   // ⚠️ 本 tab 的 EIA 腿是**周一**调查,与「炼厂·库存」那批**周三**发的不同天 —— 两 tab 右端日期本就不齐。
   pump: {
+    v: 1,
     panes: [
       {
-        key: 'dieselRetail',
-        label: '零售柴油',
-        title: '全美零售柴油 ($/gal)',
-        color: '#f97316',
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
         // ⚠️ 三条同轴($/gal),不设常态带/分位:水位的高低要对照的是**加价**那两格,不是自身分位。
         // 泵价水位本身几乎全由原油驱动,给它配分位等于给原油配分位,读不出零售端的事。
-        overlays: [
-          { key: 'gasRetail', title: '零售汽油 ($/gal)', color: '#22c55e' },
-          { key: 'ulsd', title: 'ULSD 批发 (NYMEX HO, $/gal)', color: '#38bdf8' },
+        layers: [
+          { id: 'l1', series: 'dieselRetail', scale: 'right', color: '#f97316', title: '全美零售柴油 ($/gal)' },
+          { id: 'l2', series: 'gasRetail', scale: 'right', color: '#22c55e', title: '零售汽油 ($/gal)' },
+          { id: 'l3', series: 'ulsd', scale: 'right', color: '#38bdf8', title: 'ULSD 批发 (NYMEX HO, $/gal)' },
         ],
         desc: [
           '定义:EIA 周度零售价调查,全美均价 $/gal。柴油取 **ULSD 0-15ppm(on-highway)**,',
@@ -340,12 +428,20 @@ export const OIL_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'dieselRetailMargin',
-        from: { series: 'dieselRetail', calc: { op: '-', series: 'ulsd' } },
-        label: '柴油零售加价',
-        title: '柴油零售加价 (零售 − ULSD 批发, $/gal)',
-        color: '#f97316',
-        percentile: { riskTail: 'high' },
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l4',
+            series: 'dieselRetail',
+            calc: { op: '-', series: 'ulsd' },
+            scale: 'right',
+            color: '#f97316',
+            title: '柴油零售加价 (零售 − ULSD 批发, $/gal)',
+            percentile: { riskTail: 'high' },
+          },
+        ],
         desc: [
           '定义:零售柴油 − 同口径 ULSD 批发期货,$/gal(两腿同单位,**不 ×42** —— 那是裂解的换算)。',
           '这一格答的是裂解与泵价都答不了的问题:**这段涨跌里有多少是零售端自己加的**。',
@@ -360,12 +456,20 @@ export const OIL_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'gasRetailMargin',
-        from: { series: 'gasRetail', calc: { op: '-', series: 'rbob' } },
-        label: '汽油零售加价',
-        title: '汽油零售加价 (零售 − RBOB 批发, $/gal)',
-        color: '#22c55e',
-        percentile: {},
+        id: 'p3',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l5',
+            series: 'gasRetail',
+            calc: { op: '-', series: 'rbob' },
+            scale: 'right',
+            color: '#22c55e',
+            title: '汽油零售加价 (零售 − RBOB 批发, $/gal)',
+            percentile: {},
+          },
+        ],
         desc: [
           '定义:零售汽油 − RBOB 批发期货,$/gal。**柴油加价那格的判别腿,不是独立判据。**',
           '',
@@ -381,4 +485,4 @@ export const OIL_DIMS = {
       },
     ],
   },
-} satisfies RegimeDims;
+} satisfies RegimeDocs;

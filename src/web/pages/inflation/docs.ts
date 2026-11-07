@@ -1,17 +1,26 @@
-// 「通胀」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
-import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
+// 「通胀」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
+import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 
-export const INFLATION_DIMS = {
+export const INFLATION_DOCS = {
   // 通胀来源(供给侧):薪资增速 + 服务黏性 + 汽油同比,外加核心 CPI / PCE 发布值。与 BEI(市场前瞻预期)并读。高=通胀压力=风险。
   // RBOB YoY:CPI 汽油分项的高频前瞻(汽油是 headline CPI 波动最大的分项),领先约 0-1 月。
   inflSource: {
+    v: 1,
     panes: [
       {
-        key: 'wages',
-        label: '薪资增速',
-        title: '薪资增速 (Atlanta Fed)',
-        color: '#f59e0b',
-        percentile: { riskTail: 'high' }, // 高=通胀压力=风险(红);低=缓解=绿
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l1',
+            series: 'wages',
+            scale: 'right',
+            color: '#f59e0b',
+            title: '薪资增速 (Atlanta Fed)',
+            percentile: { riskTail: 'high' }, // 高=通胀压力=风险(红);低=缓解=绿
+          },
+        ],
         desc: [
           '定义:亚特兰大联储薪资增速 tracker(时薪同比中位数,3 个月移动平均)。月频。',
           '高 = 工资涨得快、通胀更黏(风险端,红);低 = 压力缓解(绿)。',
@@ -22,11 +31,19 @@ export const INFLATION_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'stickyCpi',
-        label: '服务黏性',
-        title: 'Sticky CPI (服务黏性)',
-        color: '#8b5cf6',
-        percentile: { riskTail: 'high' },
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l2',
+            series: 'stickyCpi',
+            scale: 'right',
+            color: '#8b5cf6',
+            title: 'Sticky CPI (服务黏性)',
+            percentile: { riskTail: 'high' },
+          },
+        ],
         desc: [
           '定义:亚特兰大联储 Core Sticky-Price CPI **同比**(剔除食品能源、调价频率低的篮子,服务为主)。月频。',
           '高 = 核心通胀顽固(风险端,红);低 = 黏性在松。',
@@ -37,12 +54,20 @@ export const INFLATION_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'rbobYoy',
-        label: '汽油同比',
-        title: 'RBOB 汽油 YoY%',
-        color: '#fb923c',
-        render: { kind: 'line', baseline: 0 }, // YoY 会穿零
-        percentile: { riskTail: 'high' },
+        id: 'p3',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l3',
+            series: 'rbobYoy',
+            scale: 'right',
+            color: '#fb923c',
+            title: 'RBOB 汽油 YoY%',
+            render: { kind: 'line', baseline: 0 }, // YoY 会穿零
+            percentile: { riskTail: 'high' },
+          },
+        ],
         desc: [
           '定义:RBOB 汽油近月期货的同比(YoY%)。CPI 汽油分项的高频前瞻,领先约 0-1 月。',
           '高 = 能源在给通胀加压(风险端,红);低于 0 = 拖累(绿)。只管 headline / 能源,不碰核心 CPI。',
@@ -53,11 +78,13 @@ export const INFLATION_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'coreCpiYoy',
-        label: '核心 CPI',
-        title: '核心 CPI 同比%',
-        color: '#e879f9',
-        overlays: [{ key: 'coreCpi3m', title: '核心 CPI 3 个月年化%', color: '#a3e635' }],
+        id: 'p4',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          { id: 'l4', series: 'coreCpiYoy', scale: 'right', color: '#e879f9', title: '核心 CPI 同比%' },
+          { id: 'l5', series: 'coreCpi3m', scale: 'right', color: '#a3e635', title: '核心 CPI 3 个月年化%' },
+        ],
         desc: [
           '定义:BLS 核心 CPI(CPILFESL,剔除食品能源,季调)的同比与 3 个月年化。月频 %。',
           '3 个月年化比同比早转向 —— 两条交叉、或 3 个月那条单月跳开,就是「这次数据推没推动重定价」要查的那种月份。',
@@ -68,11 +95,13 @@ export const INFLATION_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'corePceYoy',
-        label: '核心 PCE',
-        title: '核心 PCE 同比%',
-        color: '#60a5fa',
-        overlays: [{ key: 'corePce3m', title: '核心 PCE 3 个月年化%', color: '#a3e635' }],
+        id: 'p5',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          { id: 'l6', series: 'corePceYoy', scale: 'right', color: '#60a5fa', title: '核心 PCE 同比%' },
+          { id: 'l7', series: 'corePce3m', scale: 'right', color: '#a3e635', title: '核心 PCE 3 个月年化%' },
+        ],
         desc: [
           '定义:BEA 核心 PCE 价格指数(PCEPILFE)的同比与 3 个月年化。月频 %。**联储 2% 目标盯的是这条,不是 CPI**。',
           '比 CPI 晚两周左右出(同月的 CPI / PPI 已经把大部分信息放出来了),市场对它的反应通常小于 CPI。',
@@ -82,4 +111,4 @@ export const INFLATION_DIMS = {
       },
     ],
   },
-} satisfies RegimeDims;
+} satisfies RegimeDocs;

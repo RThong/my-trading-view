@@ -1,20 +1,30 @@
-// 「情绪」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
+// 「情绪」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
+import type { Pane } from '../../views/chartDoc/chartDoc';
 import { BREADTH_CHECK, SIGMA_ID, RESONANCE } from '../../views/regime/descSnippets';
-import type { PaneSpec, RegimeDims } from '../../views/regime/regimeChart.hooks';
+import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 
 /**
  * QQQ 现货,**波动率与情绪两个视角共用同一份**(不抄两遍 —— 抄了就会改一处漏一处)。
- * 放在两个视角的第一格,补的是各格自身读法之外的**第三层信息:背离**。
+ * 放在两个视角的第一格(故 id 固定 p1 / l1,两个 tab 的其余格从 p2 / l2 起编),
+ * 补的是各格自身读法之外的**第三层信息:背离**。
  * 各格原有的读法照旧(见各自 desc),这一格不取代它们 ——
  * 它只回答「同一时点价格在干什么」,那是单看任何一条恐慌线都答不了的。
- * ⚠️ 蜡烛格不套分位/背景带(见 PaneSpec.render):它是参照物,不是判据。
+ * ⚠️ 蜡烛格不套分位/背景带:它是参照物,不是判据。
  */
-const QQQ_SPOT_PANE: PaneSpec = {
-  key: 'qqq',
-  label: 'QQQ',
-  title: 'QQQ (纳指 100 现货)',
-  color: '#38bdf8',
-  render: { kind: 'candle' }, // 用 data.ohlc.qqq
+const QQQ_SPOT_PANE: Pane = {
+  id: 'p1',
+  stretch: 1,
+  scales: [{ id: 'right', side: 'right' }],
+  layers: [
+    {
+      id: 'l1',
+      series: 'qqq',
+      scale: 'right',
+      color: '#38bdf8',
+      title: 'QQQ (纳指 100 现货)',
+      render: { kind: 'candle' }, // 用 data.ohlc.qqq
+    },
+  ],
   desc: [
     '定义:QQQ(纳指 100 ETF)日线蜡烛。**不是判据,是参照物** —— 用来看恐慌线与价格背离。',
     '  · 价格新高 + 波动率不再下压 = 涨势在买保护,心虚。',
@@ -26,16 +36,25 @@ const QQQ_SPOT_PANE: PaneSpec = {
   ].join('\n'),
 };
 
-export const SENTIMENT_DIMS = {
+export const SENTIMENT_DOCS = {
   vol: {
+    v: 1,
     panes: [
       QQQ_SPOT_PANE,
       {
-        key: 'vix',
-        label: 'VIX',
-        title: 'VIX',
-        color: '#eab308',
-        percentile: { riskTail: 'low' }, // 波动率低=压扁=自满=风险(逆向,恐慌飙高=机会)
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l2',
+            series: 'vix',
+            scale: 'right',
+            color: '#eab308',
+            title: 'VIX',
+            percentile: { riskTail: 'low' }, // 波动率低=压扁=自满=风险(逆向,恐慌飙高=机会)
+          },
+        ],
         desc: [
           '定义:标普 500 未来 30 天隐含波动率。是波动率保险的价格,不是方向指标。',
           '高 = 恐慌 / 保险贵;低 = 自满,诱导加杠杆(风险端,红)。',
@@ -47,11 +66,19 @@ export const SENTIMENT_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'vxn',
-        label: 'VXN',
-        title: 'VXN (纳指波动率)',
-        color: '#f97316',
-        percentile: { riskTail: 'low' },
+        id: 'p3',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l3',
+            series: 'vxn',
+            scale: 'right',
+            color: '#f97316',
+            title: 'VXN (纳指波动率)',
+            percentile: { riskTail: 'low' },
+          },
+        ],
         desc: [
           '定义:纳指 100 隐含波动率。科技股版 VIX,通常高于 VIX。',
           '高 = 科技端定价了风险;低 = 自满(风险端,红)。',
@@ -61,11 +88,19 @@ export const SENTIMENT_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'vixeq',
-        label: 'VIXEQ',
-        title: '成分股波动率 VIXEQ',
-        color: '#ec4899',
-        percentile: { riskTail: 'low' },
+        id: 'p4',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l4',
+            series: 'vixeq',
+            scale: 'right',
+            color: '#ec4899',
+            title: '成分股波动率 VIXEQ',
+            percentile: { riskTail: 'low' },
+          },
+        ],
         desc: [
           '定义:标普成分股平均单股隐含波动率。低 = 个股层面也自满(风险端,红);高 = 单股波动定价高。',
           '⭐ 核心不是水平,是 VIXEQ / VIX 比值 —— 读它等于读相关性 / 离散度(比值曲线见「特色指标 · 集中度」)。',
@@ -78,11 +113,20 @@ export const SENTIMENT_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'vxTermSpread',
-        from: { series: 'db:VX1', calc: { op: '-', series: 'db:VX3' } },
-        label: 'VX1−V3',
-        title: 'VX1−V3 期限结构',
-        render: { kind: 'signed' }, // 期限结构:符号柱状图,不套分位带
+        id: 'p5',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l5',
+            series: 'db:VX1',
+            calc: { op: '-', series: 'db:VX3' },
+            scale: 'right',
+            color: '#a3a3a3', // 柱状正绿负红,颜色不起作用
+            title: 'VX1−V3 期限结构',
+            render: { kind: 'signed' }, // 期限结构:符号柱状图,不套分位带
+          },
+        ],
         desc: [
           '定义:VIX 期货近月 C1 − 三月 C3(绿正红负,仅表符号)。结构比水平更早给阶段信号。',
           '  · 红 / 负(contango,近低远高)= 常态。',
@@ -94,11 +138,20 @@ export const SENTIMENT_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'vixSpotTerm',
-        from: { series: 'vixSpot', calc: { op: '-', series: 'vix3m' } },
-        label: 'VIX−3M',
-        title: 'VIX−VIX3M 即期期限结构',
-        render: { kind: 'signed' }, // 同 VX1−V3:符号柱状图,不套分位带
+        id: 'p6',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l6',
+            series: 'vixSpot',
+            calc: { op: '-', series: 'vix3m' },
+            scale: 'right',
+            color: '#a3a3a3', // 柱状正绿负红,颜色不起作用
+            title: 'VIX−VIX3M 即期期限结构',
+            render: { kind: 'signed' }, // 同 VX1−V3:符号柱状图,不套分位带
+          },
+        ],
         desc: [
           '定义:VIX(30 天)− VIX3M(3 个月),两者都是恒定期限的即期隐含波动率。',
           '减号方向同 VX1−V3(近端 − 远端):绿 / 正 = backwardation,红 / 负 = contango(常态)。',
@@ -112,11 +165,19 @@ export const SENTIMENT_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'vix6m',
-        label: 'VIX6M',
-        title: 'VIX6M(6 个月隐含波动率)',
-        color: '#f97316',
-        percentile: { riskTail: 'low' }, // 同 VIX:低 = 压扁 = 自满 = 风险
+        id: 'p7',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l7',
+            series: 'vix6m',
+            scale: 'right',
+            color: '#f97316',
+            title: 'VIX6M(6 个月隐含波动率)',
+            percentile: { riskTail: 'low' }, // 同 VIX:低 = 压扁 = 自满 = 风险
+          },
+        ],
         desc: [
           '定义:SPX 6 个月恒定期限隐含波动率。上面几格全是 30 天口径,而保护很少只布置一个月。',
           '低 = 市场认为未来很久都没事(风险端,红);高 = 长端保护也在涨价。',
@@ -127,11 +188,19 @@ export const SENTIMENT_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'skew',
-        label: 'SKEW',
-        title: 'CBOE SKEW(SPX 尾部偏度)',
-        color: '#38bdf8',
-        percentile: { riskTail: 'high' }, // 高 = 尾部保护被抢贵
+        id: 'p8',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l8',
+            series: 'skew',
+            scale: 'right',
+            color: '#38bdf8',
+            title: 'CBOE SKEW(SPX 尾部偏度)',
+            percentile: { riskTail: 'high' }, // 高 = 尾部保护被抢贵
+          },
+        ],
         desc: [
           '定义:用 SPX 30 天整条期权曲线算的风险中性偏度。100 = 正态(30 天内跌 2σ 的隐含概率约 2.3%),140 约 7.8%(CBOE 换算表)。',
           'VIX 量平值附近的波动;SKEW 量**深度虚值 put 相对 call 贵多少** —— 谁在为远端极端下跌付钱。',
@@ -143,14 +212,22 @@ export const SENTIMENT_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'vixCotLm',
-        label: 'VIX 持仓(对冲基金)',
-        title: 'CFTC VIX 期货净持仓 · Leveraged Money (% of OI)',
-        color: '#c084fc',
-        // 不用 signed 柱:这条 95% 的周是净空,符号柱几乎恒红 = 零信息量。
-        // 判据全在「当前净空在自身历史的哪个位置」,所以走 line + 分位带,0 线仍画出来。
-        render: { kind: 'line', baseline: 0 },
-        percentile: { riskTail: 'low' }, // 极端净空 = 卖波动拥挤 = 风险端
+        id: 'p9',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l9',
+            series: 'vixCotLm',
+            scale: 'right',
+            color: '#c084fc',
+            title: 'CFTC VIX 期货净持仓 · Leveraged Money (% of OI)',
+            // 不用 signed 柱:这条 95% 的周是净空,符号柱几乎恒红 = 零信息量。
+            // 判据全在「当前净空在自身历史的哪个位置」,所以走 line + 分位带,0 线仍画出来。
+            render: { kind: 'line', baseline: 0 },
+            percentile: { riskTail: 'low' }, // 极端净空 = 卖波动拥挤 = 风险端
+          },
+        ],
         desc: [
           '定义:CFTC VIX 期货对冲基金净持仓 ÷ 总持仓。上面几格是期权市场在**定价**什么,这格是机构实际怎么**押注**。',
           '负 = 净空波动率(常态,95% 的周都是);跌到 P5 = 卖波动拥挤,一旦反转要回补,自己就是加速器。',
@@ -164,12 +241,20 @@ export const SENTIMENT_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'vixCotAm',
-        label: 'VIX 持仓(资管)',
-        title: 'CFTC VIX 期货净持仓 · Asset Manager (% of OI)',
-        color: '#2dd4bf',
-        render: { kind: 'line', baseline: 0 },
-        percentile: {}, // 方向不单一(信号在与上格的背离),不设风险端,只给 P5/P95 参考
+        id: 'p10',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l10',
+            series: 'vixCotAm',
+            scale: 'right',
+            color: '#2dd4bf',
+            title: 'CFTC VIX 期货净持仓 · Asset Manager (% of OI)',
+            render: { kind: 'line', baseline: 0 },
+            percentile: {}, // 方向不单一(信号在与上格的背离),不设风险端,只给 P5/P95 参考
+          },
+        ],
         desc: [
           '定义:CFTC VIX 期货资管盘净持仓 ÷ 总持仓。与上面对冲基金那格是两种钱。',
           '资管在 VIX 里更多是**买保护**的一侧(77% 的周净多),对冲基金是**卖波动**的一侧 ——',
@@ -182,14 +267,23 @@ export const SENTIMENT_DIMS = {
     ],
   },
   sentiment: {
+    v: 1,
     panes: [
       QQQ_SPOT_PANE,
       {
-        key: 'fng',
-        label: 'Fear&Greed',
-        title: 'Fear & Greed',
-        color: '#3b82f6',
-        percentile: { riskTail: 'high' }, // 高=贪婪=风险
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l2',
+            series: 'fng',
+            scale: 'right',
+            color: '#3b82f6',
+            title: 'Fear & Greed',
+            percentile: { riskTail: 'high' }, // 高=贪婪=风险
+          },
+        ],
         desc: [
           '定义:CNN Fear & Greed 综合情绪(0-100),多因子合成、粗略。',
           '高 = 贪婪(风险端,红);低 = 恐惧(常是机会)。读的是散户狂热度。',
@@ -200,11 +294,19 @@ export const SENTIMENT_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'cor1m',
-        label: 'COR1M',
-        title: '隐含相关性 COR1M',
-        color: '#22c55e',
-        percentile: { riskTail: 'low' }, // 低=分化/自满=风险
+        id: 'p3',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l3',
+            series: 'cor1m',
+            scale: 'right',
+            color: '#22c55e',
+            title: '隐含相关性 COR1M',
+            percentile: { riskTail: 'low' }, // 低=分化/自满=风险
+          },
+        ],
         desc: [
           '定义:标普隐含相关性,成分股共动程度。低 = 隐含分化(风险端,红);高 = 共动更强。',
           '与 VIXEQ / VIX 比值是同一件事的两种写法(相关性 ≈ 1/比值²):相关性低 = 比值抬升;高 = 比值回落到 1 附近。',
@@ -216,23 +318,39 @@ export const SENTIMENT_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'cor3m',
-        label: 'COR3M',
-        title: '隐含相关性 COR3M',
-        color: '#f59e0b',
-        percentile: { riskTail: 'low' }, // 同 COR1M:低=分化/自满=风险
+        id: 'p4',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l4',
+            series: 'cor3m',
+            scale: 'right',
+            color: '#f59e0b',
+            title: '隐含相关性 COR3M',
+            percentile: { riskTail: 'low' }, // 同 COR1M:低=分化/自满=风险
+          },
+        ],
         desc: [
           '定义:Cboe 3 个月隐含相关性,标普前 50 大成分股两两隐含相关性均值。读法同上一格 COR1M,期限更长、更平稳(2018 起日变动标准差 2.5,COR1M 3.8)。',
           '2018 起最低 7.19(2026-07-10)。与 COR1M 之差见下一格。',
         ].join('\n'),
       },
       {
-        key: 'corTermSpread',
-        from: { series: 'cor3m', calc: { op: '-', series: 'cor1m' } },
-        label: 'COR3M−1M',
-        title: '隐含相关性期限结构 COR3M − COR1M (pp)',
-        color: '#14b8a6',
-        render: { kind: 'line', baseline: 0 }, // 0 线即倒挂线
+        id: 'p5',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l5',
+            series: 'cor3m',
+            calc: { op: '-', series: 'cor1m' },
+            scale: 'right',
+            color: '#14b8a6',
+            title: '隐含相关性期限结构 COR3M − COR1M (pp)',
+            render: { kind: 'line', baseline: 0 }, // 0 线即倒挂线
+          },
+        ],
         desc: [
           '定义:COR3M − COR1M,百分点。同日两腿相减,缺日跳过、不前向填充。',
           '常态 3M 在 1M 之上(正值):2006 起 77% 的交易日为正,中位 +3.9;2018 起 75%,中位 +3.0。',
@@ -245,12 +363,20 @@ export const SENTIMENT_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'rxmSpx',
-        from: { series: 'rxm', calc: { op: '/', series: 'spx' } },
-        label: 'RXM/SPX',
-        title: 'RXM/SPX (风险逆转相对表现)',
-        color: '#a855f7',
-        percentile: {}, // 无可靠方向,只给 P5/P95 参考 + 徽标,不染背景带
+        id: 'p6',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l6',
+            series: 'rxm',
+            calc: { op: '/', series: 'spx' },
+            scale: 'right',
+            color: '#a855f7',
+            title: 'RXM/SPX (风险逆转相对表现)',
+            percentile: {}, // 无可靠方向,只给 P5/P95 参考 + 徽标,不染背景带
+          },
+        ],
         desc: [
           '定义:Cboe 风险逆转指数 RXM(买 25Δ call / 卖 25Δ put 滚动策略)÷ SPX。',
           '衡量为「上行参与」付出 vs 为「下行保护」收取的净平衡。',
@@ -262,4 +388,4 @@ export const SENTIMENT_DIMS = {
       },
     ],
   },
-} satisfies RegimeDims;
+} satisfies RegimeDocs;

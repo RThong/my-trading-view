@@ -130,7 +130,7 @@ src/
     │                        multi-pane infra (paneChart.hooks/types + PaneChartView), core (types / aggregate / dates),
     │                        indicators (EMA / Bollinger / MACD / RSI) · zigzag · palette · trendlines · bandFill · analysis
     ├── views/               business views reused across perspectives
-    │   ├── regime/          RegimeChart + data hook; REGIME_DIMS assembled from pages/*/dims
+    │   ├── regime/          RegimeChart + data hook; REGIME_DOCS (ChartDoc per tab) assembled from pages/*/docs
     │   ├── asset/           AssetChart + hooks (25Δ + optional VRP)
     │   ├── curve/           yield-curve + tenor-history (YieldCurve* / TenorHistory* / yieldCurve+rateSpread hooks)
     │   └── chartDoc/        ChartDoc format + series registry (shared by the editor and fixed panels)
@@ -146,7 +146,7 @@ src/
 
 Each view is a thin shell: **fetch model (data hook) → pure buildSpecs → shared pane infra**.
 "Add an indicator/tab/underlying" = add one entry to its domain source-of-truth
-(`pages/<perspective>/dims` / `pages/<perspective>/index` / `MARKET_CATALOG`), nothing else moves.
+(`pages/<perspective>/docs` / `pages/<perspective>/index` / `MARKET_CATALOG`), nothing else moves.
 
 ## Perspectives
 

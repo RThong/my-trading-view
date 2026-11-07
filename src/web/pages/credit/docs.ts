@@ -1,14 +1,15 @@
-// 「信用」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
-import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
+// 「信用」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
+import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 
-export const CREDIT_DIMS = {
+export const CREDIT_DOCS = {
   credit: {
+    v: 1,
     panes: [
       {
-        key: 'hyOas',
-        label: '信用利差',
-        title: 'HY 信用利差',
-        color: '#f59e0b',
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [{ id: 'l1', series: 'hyOas', scale: 'right', color: '#f59e0b', title: 'HY 信用利差' }],
         desc: [
           '定义:高收益债 vs 美债利差(OAS)。信用风险 / 融资环境的温度计。',
           '走阔 = 违约担忧升、risk-off,且是「流动性事件升级成信用事件」的确认。',
@@ -19,4 +20,4 @@ export const CREDIT_DIMS = {
       },
     ],
   },
-} satisfies RegimeDims;
+} satisfies RegimeDocs;

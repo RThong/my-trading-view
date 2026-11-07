@@ -1,23 +1,33 @@
-// 「日本」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
-import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
+// 「日本」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
+import type { Layer } from '../../views/chartDoc/chartDoc';
+import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 
 // 日银加息决定日竖线(「银行」四格共用)。取半透明浅灰:黄 / 橙 / 红 / 青 / 紫都被线占了;10Y 格的 2Y 对照线是实心蓝灰,形状也不同(线 vs 满高竖柱)。
-const BOJ_HIKE = 'rgba(229,229,229,0.35)';
-const BOJ_HIKE_EVENTS = [{ key: 'bojHikeDates' as const, title: '日银加息决定日', color: BOJ_HIKE }];
+function bojHikeEvents(id: string): Layer {
+  return {
+    id,
+    series: 'bojHikeDates',
+    scale: 'right',
+    color: '#e5e5e5',
+    title: '日银加息决定日',
+    render: { kind: 'events', opacity: 0.35 },
+  };
+}
 const BOJ_HIKE_NOTE =
   '竖线 = 日银加息**决定日**(2024-03 / 2024-07 / 2025-01 / 2025-12 / 2026-06 / 2026-09)。生效是翌营业日,拆借要到那天才跳。';
 
 const PINNED_VOL = '⚠️ 央行可信干预会诱使市场做多 gamma、内生压低波动率:这种低波不是真稳,可信度一破反向弹性极大。';
 
-export const JAPAN_DIMS = {
+export const JAPAN_DOCS = {
   // 日元 carry:价格(USD/JPY)+ 收益驱动(美日2Y利差)+ 拥挤度(CFTC 净持仓)。
   jpy: {
+    v: 1,
     panes: [
       {
-        key: 'usdjpy',
-        label: 'USD/JPY',
-        title: 'USD/JPY',
-        color: '#3987e5',
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [{ id: 'l1', series: 'usdjpy', scale: 'right', color: '#3987e5', title: 'USD/JPY' }],
         desc: [
           '定义:美元兑日元。日元 carry 的价格腿——日元是全球第一融资货币。',
           '走高(日元贬)= carry 顺风 / risk-on;急跌 = carry 平仓(unwind)。',
@@ -29,11 +39,19 @@ export const JAPAN_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'usjp2y',
-        from: { series: 'ust2y', calc: { op: '-', series: 'jgb2y', fill: true } },
-        label: '美日2Y利差',
-        title: '美日 2Y 利差 (DGS2−JGB2Y)',
-        color: '#c98500',
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l2',
+            series: 'ust2y',
+            calc: { op: '-', series: 'jgb2y', fill: true },
+            scale: 'right',
+            color: '#c98500',
+            title: '美日 2Y 利差 (DGS2−JGB2Y)',
+          },
+        ],
         desc: [
           '定义:美日 2 年期利差(DGS2 − JGB2Y)。carry 的收益驱动。',
           '走阔 = 借日元买美元更划算 = 支撑 USD/JPY;收窄 = 收益基础被侵蚀,平仓压力累积。',
@@ -44,10 +62,19 @@ export const JAPAN_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'cftcJpy',
-        label: 'CFTC 净持仓',
-        title: 'CFTC 日元净持仓 (多−空)',
-        render: { kind: 'signed' }, // 净持仓符号柱:净多绿、净空红、0 基线(拥挤度)
+        id: 'p3',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l3',
+            series: 'cftcJpy',
+            scale: 'right',
+            color: '#a3a3a3',
+            title: 'CFTC 日元净持仓 (多−空)',
+            render: { kind: 'signed' }, // 净持仓符号柱:净多绿、净空红、0 基线(拥挤度)
+          },
+        ],
         desc: [
           '定义:CFTC 投机盘日元净持仓(多 − 空)。拥挤度。绿 = 净多,红 = 净空。',
           '极端净空 + 总持仓高位 = 拥挤度快升,挤仓 / 踩踏概率升高。',
@@ -60,13 +87,22 @@ export const JAPAN_DIMS = {
   },
   // 日债 level + vol:10Y 收益率 + JGB VIX(对称美债 ratesVol 的 10Y+MOVE)。
   jgbVol: {
+    v: 1,
     panes: [
       {
-        key: 'jgb10y',
-        label: '10Y 国债',
-        title: 'JGB 10Y 收益率',
-        color: '#22d3ee',
-        percentile: {}, // 方向不单一,不设风险端
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l1',
+            series: 'jgb10y',
+            scale: 'right',
+            color: '#22d3ee',
+            title: 'JGB 10Y 收益率',
+            percentile: {}, // 方向不单一,不设风险端
+          },
+        ],
         desc: [
           '定义:日本 10 年期国债收益率。BOJ 政策的长端。方向不单一,只给参考线。',
           '⭐ 它是全球 carry 的**负债端成本锚**:上行 = 借日元成本抬升 = carry 收益基础被侵蚀,',
@@ -77,11 +113,19 @@ export const JAPAN_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'jgbVix',
-        label: 'JGB VIX',
-        title: 'S&P/JPX JGB VIX (日债波动率)',
-        color: '#f43f5e',
-        percentile: { riskTail: 'low' }, // 波动率压扁=自满=风险(同 MOVE)
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l2',
+            series: 'jgbVix',
+            scale: 'right',
+            color: '#f43f5e',
+            title: 'S&P/JPX JGB VIX (日债波动率)',
+            percentile: { riskTail: 'low' }, // 波动率压扁=自满=风险(同 MOVE)
+          },
+        ],
         desc: [
           '定义:S&P/JPX JGB VIX,日债期权隐含波动率。日债版 MOVE。',
           '低 = 自满(风险端,红);飙高 = 日债动荡,经 carry 负债端外溢到全球利率与风险资产。',
@@ -96,14 +140,17 @@ export const JAPAN_DIMS = {
   // 五格:10Y 主变量(叠 2Y)→ 8306 紧贴着对读 → 利差(验证项)→ 利差分解(已锁定 + 市场预期)→
   // 存款贝塔(修正项,青穿红 = 贝塔 > 60%)。期限溢价不单列(扣掉后与股价的相关不升),在「长端分解」那格。
   jpBanks: {
+    v: 1,
     panes: [
       {
-        key: 'jgb10y',
-        label: '日债 10Y',
-        title: 'JGB 10Y 收益率 (%,股价主变量)',
-        color: '#facc15',
-        overlays: [{ key: 'jgb2y', title: 'JGB 2Y (%,对照)', color: '#94a3b8' }],
-        events: BOJ_HIKE_EVENTS,
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          { id: 'l1', series: 'jgb10y', scale: 'right', color: '#facc15', title: 'JGB 10Y 收益率 (%,股价主变量)' },
+          { id: 'l2', series: 'jgb2y', scale: 'right', color: '#94a3b8', title: 'JGB 2Y (%,对照)' },
+          bojHikeEvents('l3'),
+        ],
         desc: [
           '定义:黄 = 日本 10 年期国债收益率(MOF 名义);灰 = 2Y,只作对照。',
           '⭐ 主变量(估值层):长端隐含生产力、经济发展与通胀,股价上涨 = 企业挣到名义增长里的通胀税,与 10Y 同源。',
@@ -124,11 +171,19 @@ export const JAPAN_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'mufg',
-        label: '8306',
-        title: '8306.T 三菱UFJ',
-        color: '#38bdf8',
-        render: { kind: 'candle' }, // 用 data.ohlc.mufg
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l4',
+            series: 'mufg',
+            scale: 'right',
+            color: '#38bdf8',
+            title: '8306.T 三菱UFJ',
+            render: { kind: 'candle' }, // 用 data.ohlc.mufg
+          },
+        ],
         desc: [
           '定义:三菱 UFJ(东证 8306)日线蜡烛,代表板块(与 2Y / 5Y / 10Y 的周度相关 0.54 / 0.58 / 0.53,和 TOPIX 银行业 ETF 1615 同形)。**不是判据,是参照物**。',
           '  · 判断**会不会跌**:看上一格 10Y 与大盘、风险偏好 —— 10Y 与大盘同源,不先扣大盘。',
@@ -139,15 +194,28 @@ export const JAPAN_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'jp2yMinusDeposit',
-        label: '利差',
-        title: 'JGB 2Y − 普通存款挂牌利率 (%)',
-        color: '#22c55e',
-        render: { kind: 'line', baseline: 0 },
-        overlays: [
-          { key: 'jpLoanDepositSpread', title: '存量贷款 − 存款 (%,粗代理 / 已兑现)', color: '#f59e0b', step: true },
+        id: 'p3',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l5',
+            series: 'jp2yMinusDeposit',
+            scale: 'right',
+            color: '#22c55e',
+            title: 'JGB 2Y − 普通存款挂牌利率 (%)',
+            render: { kind: 'line', baseline: 0 },
+          },
+          {
+            id: 'l6',
+            series: 'jpLoanDepositSpread',
+            scale: 'right',
+            color: '#f59e0b',
+            title: '存量贷款 − 存款 (%,粗代理 / 已兑现)',
+            render: { kind: 'line', step: true },
+          },
+          bojHikeEvents('l7'),
         ],
-        events: BOJ_HIKE_EVENTS,
         desc: [
           '定义:',
           '  · 主线 = JGB 2Y 日值 − 普通存款平均**挂牌**利率(日频;挂牌利率是阶梯量,按月前向填充)',
@@ -168,13 +236,27 @@ export const JAPAN_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'jpCallMinusDeposit',
-        label: '利差分解',
-        title: '无担保隔夜拆借 − 存款 (%,已锁定)',
-        color: '#a3a3a3',
-        render: { kind: 'line', baseline: 0 },
-        overlays: [{ key: 'jp2yMinusCall', title: 'JGB 2Y − 拆借 (%,市场还预期的加息)', color: '#a78bfa' }],
-        events: BOJ_HIKE_EVENTS,
+        id: 'p4',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l8',
+            series: 'jpCallMinusDeposit',
+            scale: 'right',
+            color: '#a3a3a3',
+            title: '无担保隔夜拆借 − 存款 (%,已锁定)',
+            render: { kind: 'line', baseline: 0 },
+          },
+          {
+            id: 'l9',
+            series: 'jp2yMinusCall',
+            scale: 'right',
+            color: '#a78bfa',
+            title: 'JGB 2Y − 拆借 (%,市场还预期的加息)',
+          },
+          bojHikeEvents('l10'),
+        ],
         desc: [
           '定义:上一格主线的两段,**逐日相加 = 主线**(同一天、同一组取值)。拆借用日值,存款按月前向填充。',
           '  · 灰 = 拆借 − 存款:政策已经加上去、存款没跟的那一截 —— 只要存款不追,这段就锁在银行手里',
@@ -189,13 +271,28 @@ export const JAPAN_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'jpDepositDelta',
-        label: '存款贝塔',
-        title: 'Δ存款挂牌利率 (%,2024-01 起累计)',
-        color: '#22d3ee',
-        render: { kind: 'line', baseline: 0, step: true }, // 月频:一个月内就是这一个调查值
-        overlays: [{ key: 'jpCallDelta60', title: '0.6 × Δ拆借月均 (%,2024-01 起累计)', color: '#f43f5e', step: true }],
-        events: BOJ_HIKE_EVENTS,
+        id: 'p5',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l11',
+            series: 'jpDepositDelta',
+            scale: 'right',
+            color: '#22d3ee',
+            title: 'Δ存款挂牌利率 (%,2024-01 起累计)',
+            render: { kind: 'line', baseline: 0, step: true }, // 月频:一个月内就是这一个调查值
+          },
+          {
+            id: 'l12',
+            series: 'jpCallDelta60',
+            scale: 'right',
+            color: '#f43f5e',
+            title: '0.6 × Δ拆借月均 (%,2024-01 起累计)',
+            render: { kind: 'line', step: true },
+          },
+          bojHikeEvents('l13'),
+        ],
         desc: [
           '定义:两条都是相对 2024-01(首次加息前)的累计变动,月频阶梯。',
           '  · 青 = Δ存款挂牌利率',
@@ -216,17 +313,31 @@ export const JAPAN_DIMS = {
   // 日本通胀:「银行」那格利差走阔若全靠「市场还预期的加息」,能不能兑现看日银会不会继续加 ——
   // 日银把决定挂在基础通胀上。CGPI 是先行(生产端),新核心核心是日银口径的主指标。
   jpInflation: {
+    v: 1,
     panes: [
       {
-        key: 'jpCgpiYoy',
-        label: '通胀',
-        title: '企业物价指数 CGPI 同比 (%)',
-        color: '#f59e0b',
-        // 虚线 = 2%(日银物价目标);月频画阶梯。
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
         // 不挂加息竖线:这格只有月频点,时间轴稀疏,竖线柱会被撑成一个月宽的灰带,读起来像时间段。
-        render: { kind: 'line', baseline: 2, step: true },
-        overlays: [
-          { key: 'jpCoreCoreCpiYoy', title: 'CPI 除生鲜食品及能源 同比 (%,新核心核心)', color: '#22d3ee', step: true },
+        layers: [
+          {
+            id: 'l1',
+            series: 'jpCgpiYoy',
+            scale: 'right',
+            color: '#f59e0b',
+            title: '企业物价指数 CGPI 同比 (%)',
+            // 虚线 = 2%(日银物价目标);月频画阶梯。
+            render: { kind: 'line', baseline: 2, step: true },
+          },
+          {
+            id: 'l2',
+            series: 'jpCoreCoreCpiYoy',
+            scale: 'right',
+            color: '#22d3ee',
+            title: 'CPI 除生鲜食品及能源 同比 (%,新核心核心)',
+            render: { kind: 'line', step: true },
+          },
         ],
         desc: [
           '定义:月频同比 %,点记在数据所属月份。虚线 = 2%。',
@@ -247,13 +358,22 @@ export const JAPAN_DIMS = {
   // 日本产能面(日银试算,季度更新):产出缺口 = 当下松紧,潜在增速 = 天花板在往哪走。
   // 两格频率不同、时间轴也不是一套(缺口=日历季度,潜在增速=财年半期),刻意分两格,别对齐读。
   jpGap: {
+    v: 1,
     panes: [
       {
-        key: 'jpOutputGap',
-        label: '产出缺口',
-        title: '需給ギャップ (产出缺口, %)',
-        color: '#eab308',
-        render: { kind: 'line', baseline: 0, step: true }, // 季频:两次发布之间就是不变的,平滑折线是伪造信息
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l1',
+            series: 'jpOutputGap',
+            scale: 'right',
+            color: '#eab308',
+            title: '需給ギャップ (产出缺口, %)',
+            render: { kind: 'line', baseline: 0, step: true }, // 季频:两次发布之间就是不变的,平滑折线是伪造信息
+          },
+        ],
         desc: [
           '定义:(实际 GDP − 潜在 GDP) / 潜在 GDP。日银调查统计局试算,**日历季度**,1/4/7/10 月第三个工作日更新。',
           '正 = 需求超过产能(物价往上的一侧),负 = 有闲置(物价往下的一侧)。',
@@ -267,17 +387,51 @@ export const JAPAN_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'jpPotentialGrowth',
-        label: '潜在增速',
-        title: '潜在成長率 (前年比 %)',
-        color: '#38bdf8',
-        render: { kind: 'line', baseline: 0, step: true },
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
         // 总量 + 四项贡献度同格:**四项相加 ≈ 总量**,分开成五格就读不出「谁在拖」这个唯一的产品。
-        overlays: [
-          { key: 'jpPotTfp', title: '贡献:TFP (全要素生产率)', color: '#22c55e', step: true },
-          { key: 'jpPotCapital', title: '贡献:资本存量', color: '#f59e0b', step: true },
-          { key: 'jpPotHours', title: '贡献:劳动时间', color: '#ef4444', step: true },
-          { key: 'jpPotWorkers', title: '贡献:就业者数', color: '#a78bfa', step: true },
+        layers: [
+          {
+            id: 'l2',
+            series: 'jpPotentialGrowth',
+            scale: 'right',
+            color: '#38bdf8',
+            title: '潜在成長率 (前年比 %)',
+            render: { kind: 'line', baseline: 0, step: true },
+          },
+          {
+            id: 'l3',
+            series: 'jpPotTfp',
+            scale: 'right',
+            color: '#22c55e',
+            title: '贡献:TFP (全要素生产率)',
+            render: { kind: 'line', step: true },
+          },
+          {
+            id: 'l4',
+            series: 'jpPotCapital',
+            scale: 'right',
+            color: '#f59e0b',
+            title: '贡献:资本存量',
+            render: { kind: 'line', step: true },
+          },
+          {
+            id: 'l5',
+            series: 'jpPotHours',
+            scale: 'right',
+            color: '#ef4444',
+            title: '贡献:劳动时间',
+            render: { kind: 'line', step: true },
+          },
+          {
+            id: 'l6',
+            series: 'jpPotWorkers',
+            scale: 'right',
+            color: '#a78bfa',
+            title: '贡献:就业者数',
+            render: { kind: 'line', step: true },
+          },
         ],
         desc: [
           '定义:潜在成長率(前年比 %)+ 四项贡献度(TFP / 资本存量 / 劳动时间 / 就业者数)。日银试算,**财年半期**。',
@@ -300,13 +454,22 @@ export const JAPAN_DIMS = {
   // 结论正好读反(实际 0.72 看着低于名义 1.70 → 误判成「政策已高于中性」,名义化后其实仍低于中性)。
   // 同图摆一起就是邀请人比高低,desc 拦不住 —— 所以分格,别再合回去。
   jpTermPremium: {
+    v: 1,
     panes: [
       {
-        key: 'jpTp10Nakajima',
-        label: '期限溢价',
-        title: 'JGB 10Y 期限溢价 (中島模型)',
-        color: '#c084fc',
-        render: { kind: 'line', baseline: 0 }, // 日本这条长期为负过,必须画 0 基线
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l1',
+            series: 'jpTp10Nakajima',
+            scale: 'right',
+            color: '#c084fc',
+            title: 'JGB 10Y 期限溢价 (中島模型)',
+            render: { kind: 'line', baseline: 0 }, // 日本这条长期为负过,必须画 0 基线
+          },
+        ],
         desc: [
           '定义:JGB 10Y 的期限溢价(久期风险补偿),中島上智(日银)模型估计,日频 %。',
           '⭐ 与同 tab 的「预期短端」互补:10Y 名义 = 预期短端均值 + 本条。长端上行时,这两格分',
@@ -320,11 +483,19 @@ export const JAPAN_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'jpExpShort10Nakajima',
-        label: '预期短端',
-        title: 'JGB 10Y 预期短端均值 (中島模型,名义)',
-        color: '#22d3ee',
-        render: { kind: 'line', baseline: 0 },
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l2',
+            series: 'jpExpShort10Nakajima',
+            scale: 'right',
+            color: '#22d3ee',
+            title: 'JGB 10Y 预期短端均值 (中島模型,名义)',
+            render: { kind: 'line', baseline: 0 },
+          },
+        ],
         desc: [
           '定义:未来 10 年**预期短端利率的平均**(中島模型,日频 %)。**名义口径** —— 它与上一格的期限溢价相加',
           '恰好重构 MOF 名义 10Y(实测重叠日残差 0.0000),能重构名义曲线的只能是名义。',
@@ -338,15 +509,35 @@ export const JAPAN_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'jpRstar10Nakajima',
-        label: '自然利率 r*',
-        title: '自然利率 r* 10Y (中島模型,实际口径)',
-        color: '#34d399',
-        render: { kind: 'line', baseline: 0, step: true }, // 季频:一季一个点,中间画斜坡是伪造发布间的信息
+        id: 'p3',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
         // 95% 区间两条同格。**带宽本身是产品** —— 它宽到让点估计几乎不可用,这件事必须看得见。
-        overlays: [
-          { key: 'jpRstar10NakajimaLo', title: 'r* 95% 下限', color: '#166534', step: true },
-          { key: 'jpRstar10NakajimaHi', title: 'r* 95% 上限', color: '#166534', step: true },
+        layers: [
+          {
+            id: 'l3',
+            series: 'jpRstar10Nakajima',
+            scale: 'right',
+            color: '#34d399',
+            title: '自然利率 r* 10Y (中島模型,实际口径)',
+            render: { kind: 'line', baseline: 0, step: true }, // 季频:一季一个点,中间画斜坡是伪造发布间的信息
+          },
+          {
+            id: 'l4',
+            series: 'jpRstar10NakajimaLo',
+            scale: 'right',
+            color: '#166534',
+            title: 'r* 95% 下限',
+            render: { kind: 'line', step: true },
+          },
+          {
+            id: 'l5',
+            series: 'jpRstar10NakajimaHi',
+            scale: 'right',
+            color: '#166534',
+            title: 'r* 95% 上限',
+            render: { kind: 'line', step: true },
+          },
         ],
         desc: [
           '定义:10 年期自然利率 r*(**中島模型**估计,季频 %)及 95% 区间。自然利率按**实际口径**定义',
@@ -369,4 +560,4 @@ export const JAPAN_DIMS = {
       },
     ],
   },
-} satisfies RegimeDims;
+} satisfies RegimeDocs;

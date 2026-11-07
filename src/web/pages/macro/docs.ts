@@ -1,16 +1,25 @@
-// 「宏观」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
-import type { RegimeDims } from '../../views/regime/regimeChart.hooks';
+// 「宏观」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
+import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 import { FICC_TRIANGLE } from '../../views/regime/descSnippets';
 
-export const MACRO_DIMS = {
+export const MACRO_DOCS = {
   macro: {
+    v: 1,
     panes: [
       {
-        key: 'usd',
-        label: '美元 DXY',
-        title: '美元指数 DXY',
-        color: '#38bdf8',
-        render: { kind: 'candle' }, // DXY 画蜡烛(用 data.ohlc.usd)
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l1',
+            series: 'usd',
+            scale: 'right',
+            color: '#38bdf8',
+            title: '美元指数 DXY',
+            render: { kind: 'candle' }, // DXY 画蜡烛(用 data.ohlc.usd)
+          },
+        ],
         desc: [
           '定义:美元指数 DXY(对一篮子货币),蜡烛图。',
           '走强 = 压新兴市场 / 商品 / 风险资产;走弱 = 宽松。',
@@ -26,14 +35,23 @@ export const MACRO_DIMS = {
   // 而且「谁在上面」本身就是信息(服务业景气 / 通胀是否脱离制造业单独走)。
   // **分界线是 50 不是分位**:扩散指数的 50 是定义上的「与上月持平」,锚不会漂;分位带在这里反而是自指。
   ism: {
+    v: 1,
     panes: [
       {
-        key: 'ismMfg',
-        label: 'ISM PMI',
-        title: 'ISM 制造业 PMI',
-        color: '#38bdf8',
-        render: { kind: 'line', baseline: 50 },
-        overlays: [{ key: 'ismSvc', title: 'ISM 服务业 PMI', color: '#f97316' }],
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l1',
+            series: 'ismMfg',
+            scale: 'right',
+            color: '#38bdf8',
+            title: 'ISM 制造业 PMI',
+            render: { kind: 'line', baseline: 50 },
+          },
+          { id: 'l2', series: 'ismSvc', scale: 'right', color: '#f97316', title: 'ISM 服务业 PMI' },
+        ],
         desc: [
           '定义:ISM 采购经理人调查的扩散指数(制造业 / 服务业),月频。**50 = 与上月持平**,',
           '上方 = 扩张、下方 = 收缩。每月第 1 个工作日发制造业、第 3 个工作日发服务业(10:00 ET)。',
@@ -49,12 +67,20 @@ export const MACRO_DIMS = {
         ].join('\n'),
       },
       {
-        key: 'ismMfgPrices',
-        label: 'ISM 价格',
-        title: 'ISM 制造业 Prices',
-        color: '#38bdf8',
-        render: { kind: 'line', baseline: 50 },
-        overlays: [{ key: 'ismSvcPrices', title: 'ISM 服务业 Prices', color: '#f97316' }],
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l3',
+            series: 'ismMfgPrices',
+            scale: 'right',
+            color: '#38bdf8',
+            title: 'ISM 制造业 Prices',
+            render: { kind: 'line', baseline: 50 },
+          },
+          { id: 'l4', series: 'ismSvcPrices', scale: 'right', color: '#f97316', title: 'ISM 服务业 Prices' },
+        ],
         desc: [
           '定义:ISM 调查的**价格分项**(采购端付出的价格,不是企业售价),扩散指数,50 = 价格与上月持平。',
           '**这是 PMI 里对利率最敏感的一格** —— 它是 CPI / PCE 的上游,领先商品通胀约 1~3 个月。',
@@ -68,4 +94,4 @@ export const MACRO_DIMS = {
       },
     ],
   },
-} satisfies RegimeDims;
+} satisfies RegimeDocs;

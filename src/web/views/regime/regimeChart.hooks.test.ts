@@ -3,15 +3,17 @@ import {
   buildRegimeSpecs,
   derivePaneMeta,
   regimePercentiles,
-  type RegimeDim,
   secFiledNote,
   secLagNote,
   secTrimNote,
   type RegimeData,
+  type FixedDim,
 } from './regimeChart.hooks';
-import { dimPanes, REGIME_DIMS, regimeView } from '../../pages/regimeDims';
+import { dimPanes, REGIME_DOCS, regimeView } from '../../pages/regimeDims';
 import { ACTIVE_TICKERS, fundKey, kindsOf, SEC_BUYER_FCF_KEY, SEC_BUYER_FCFQ_KEY } from '../../../shared/aiChain';
 import { REGIME_SERIES, isSeriesKey, type SeriesKey } from '../../../shared/regimeSeries';
+
+const FIXED_DIMS = Object.keys(REGIME_DOCS) as FixedDim[];
 
 const data: RegimeData = {
   series: {
@@ -21,7 +23,8 @@ const data: RegimeData = {
     ],
     reverseRepo: [{ date: '2020-01-01', value: 2 }],
     // repoUsage 缺失(模拟 unavailable)
-    repoStress: [{ date: '2020-01-01', value: -0.01 }],
+    // 回购压力是计算格(IORB − SOFR),键按「A|运算|B」;RegimeChart 现算后填在这个键下
+    'iorb|-|sofr': [{ date: '2020-01-01', value: -0.01 }],
   },
   unavailable: ['repoUsage'],
 };
@@ -29,7 +32,7 @@ const data: RegimeData = {
 test('流动性维度:pane 下标按 paneDefs 顺序,缺失序列被跳过', () => {
   const specs = buildRegimeSpecs(data, dimPanes('liquidity'), '1D');
   // 5 个 paneDef,reserves 无数据、repoUsage 缺 → 只出 3 条 spec
-  expect(specs.map((s) => s.key)).toEqual(['netLiquidity', 'reverseRepo', 'repoStress']);
+  expect(specs.map((s) => s.key)).toEqual(['netLiquidity', 'reverseRepo', 'iorb|-|sofr']);
   // pane 下标 = 原 paneDefs 索引(reserves 是第 1、repoUsage 是第 3,被跳过后 repoStress 仍是 4)
   expect(specs.map((s) => s.pane)).toEqual([0, 2, 4]);
 });
@@ -37,7 +40,7 @@ test('流动性维度:pane 下标按 paneDefs 顺序,缺失序列被跳过', () 
 test('repoStress 带 0 基线,其余无', () => {
   const specs = buildRegimeSpecs(data, dimPanes('liquidity'), '1D');
   const byKey = Object.fromEntries(specs.map((s) => [s.key, s]));
-  expect((byKey.repoStress as { baseline?: number }).baseline).toBe(0);
+  expect((byKey['iorb|-|sofr'] as { baseline?: number }).baseline).toBe(0);
   expect((byKey.netLiquidity as { baseline?: number }).baseline).toBeUndefined();
 });
 
@@ -92,12 +95,16 @@ test('percentiles 维度里无 riskTail 的序列不画背景带(方向不单一
 });
 
 test('期限结构:符号柱状图(正绿负红、0基线),不套分位带/徽标', () => {
-  const vxTermSpread = [
-    { date: '2021-01-01', value: 2 }, // 正 → 绿
-    { date: '2021-01-02', value: -1.5 }, // 负 → 红
-  ];
-  const specs = buildRegimeSpecs({ series: { vxTermSpread }, unavailable: [] }, dimPanes('vol'), '1D');
-  expect(specs.map((s) => s.key)).toEqual(['vxTermSpread']); // 单条 histo,无 bg/line 对
+  // VX1 − VX3 是计算格,键按「A|运算|B」
+  const key = 'db:VX1|-|db:VX3';
+  const series = {
+    [key]: [
+      { date: '2021-01-01', value: 2 }, // 正 → 绿
+      { date: '2021-01-02', value: -1.5 }, // 负 → 红
+    ],
+  };
+  const specs = buildRegimeSpecs({ series, unavailable: [] }, dimPanes('vol'), '1D');
+  expect(specs.map((s) => s.key)).toEqual([key]); // 单条 histo,无 bg/line 对
   const h = specs[0] as {
     kind: string;
     baseline?: number;
@@ -110,9 +117,7 @@ test('期限结构:符号柱状图(正绿负红、0基线),不套分位带/徽�
   expect(h.data[0].color).toBe('#22c55e'); // 正=绿
   expect(h.data[1].color).toBe('#ef4444'); // 负=红
   // 无分位徽标
-  expect(
-    regimePercentiles({ series: { vxTermSpread }, unavailable: [] }, dimPanes('vol')).vxTermSpread,
-  ).toBeUndefined();
+  expect(regimePercentiles({ series, unavailable: [] }, dimPanes('vol'))[key]).toBeUndefined();
 });
 
 test('jgbVol:jgb10y 无 riskTail → 无背景带', () => {
@@ -314,13 +319,13 @@ test('secTrimNote:没裁过就不出提示', () => {
 });
 
 test('QQQ 现货是两个 tab 共用的同一份定义', () => {
+  const qqqPane = (dim: FixedDim) => REGIME_DOCS[dim].panes.find((p) => p.layers[0]?.series === 'qqq');
   const [volQqq] = dimPanes('vol').filter((p) => p.key === 'qqq');
-  const [sentQqq] = dimPanes('sentiment').filter((p) => p.key === 'qqq');
 
-  // 断言「同一个对象引用」而不是「深相等」:这一格的存在意义就是不被抄成两份 ——
+  // 断言 doc 里是「同一个对象引用」而不是「深相等」:这一格的存在意义就是不被抄成两份 ——
   // 深相等会放过「复制粘贴且内容恰好一样」,而那正是本仓库反复踩的「改一处漏一处」。
-  expect(volQqq).toBeDefined();
-  expect(sentQqq).toBe(volQqq);
+  expect(qqqPane('vol')).toBeDefined();
+  expect(qqqPane('sentiment')).toBe(qqqPane('vol'));
 
   // 它是价格参照物不是判据:蜡烛 + 不套分位(套了会出徽标和红绿背景带,读成风险信号)。
   expect(volQqq?.render).toEqual({ kind: 'candle' });
@@ -354,9 +359,9 @@ test('VIX6M:低位染红(riskTail low),缺数据则整格不出', () => {
 // pane key 同时是 series 键、图表 series 句柄的 Map 键(paneChart.hooks 的 seriesRef)、
 // 以及 desc/colors 那几张 Object.fromEntries 的键。重键不会报错,只会让后一格静默覆盖前一格
 // (曾经真踩到:A vs L 那格想复用 expShort10Kw 当主线,结果把预期短端那格的说明冲掉了)。
-test('REGIME_DIMS:每个 dim 内的 pane key(含 overlay)不得重复', () => {
-  for (const [dim, cfg] of Object.entries(REGIME_DIMS)) {
-    const keys = cfg.panes.flatMap((p) => [p.key, ...(p.overlays ?? []).map((o) => o.key)]);
+test('固定 dim:每个 dim 内的 pane key(含 overlay)不得重复', () => {
+  for (const dim of FIXED_DIMS) {
+    const keys = dimPanes(dim).flatMap((p) => [p.key, ...(p.overlays ?? []).map((o) => o.key)]);
     expect(new Set(keys).size, `${dim} 有重复 pane/overlay key`).toBe(keys.length);
   }
 });
@@ -433,15 +438,15 @@ test('buildRegimeSpecs:日银潜在增速那格 = 总量 + 四项贡献度同 pa
 //
 // 写成**集合级**断言而不是钉死那两个 key:只钉「预期短端那格不叠东西」的话,把 r* 叠到**期限溢价**
 // 那格(同样是名义口径)照样全绿,洞还在。这里要求的是「任何一格都不得同时出现两种口径」。
-test('REGIME_DIMS:实际口径的 r* 只准独占自己那一格', () => {
+test('固定 dim:实际口径的 r* 只准独占自己那一格', () => {
   // **反着钉,不维护「名义白名单」**:白名单是开放集合(面板里绝大多数利率序列都是名义),
   // 漏登记一个就有洞 —— 把 r* 叠到美债的 expShort10Kw 那格,白名单版照样全绿。
   // 而实际口径的键是**封闭的三个**,所以约束写成「含 r* 的格,内容必须恰好是这三条」,
   // 覆盖全部 dim 的全部 pane,不需要知道别的键是什么口径。
   const REAL: SeriesKey[] = ['jpRstar10Nakajima', 'jpRstar10NakajimaLo', 'jpRstar10NakajimaHi'];
 
-  const panesWithReal = Object.entries(REGIME_DIMS).flatMap(([dim, cfg]) =>
-    cfg.panes
+  const panesWithReal = FIXED_DIMS.flatMap((dim) =>
+    dimPanes(dim)
       .map((p) => ({ dim, key: p.key, keys: [p.key, ...(p.overlays ?? []).map((o) => o.key)] as SeriesKey[] }))
       .filter((p) => p.keys.some((k) => REAL.includes(k))),
   );
@@ -453,9 +458,9 @@ test('REGIME_DIMS:实际口径的 r* 只准独占自己那一格', () => {
 
 // buildRegimeSpecs 在 candle / signed 两个分支提前 return,不带 overlay —— 那两种 pane 配了
 // overlay 会被静默丢弃(不报错、图上就是少一条线)。与其给用不到的分支拼代码,不如把约束钉住。
-test('REGIME_DIMS:overlay 只能配 line 型 pane(candle/signed 分支不带 overlay)', () => {
-  for (const [dim, cfg] of Object.entries(REGIME_DIMS)) {
-    const bad = cfg.panes.filter((p) => p.overlays?.length && p.render && p.render.kind !== 'line');
+test('固定 dim:overlay 只能配 line 型 pane(candle/signed 分支不带 overlay)', () => {
+  for (const dim of FIXED_DIMS) {
+    const bad = dimPanes(dim).filter((p) => p.overlays?.length && p.render && p.render.kind !== 'line');
     expect(
       bad.map((p) => p.key),
       `${dim} 给非 line 型 pane 配了 overlay`,
@@ -471,10 +476,10 @@ test('REGIME_SERIES:无重复、无 fund: 前缀(动态键不进枚举)', () => 
 });
 
 test('每个固定 dim 的 pane/overlay key 都是合法序列名', () => {
-  const dims = Object.keys(REGIME_DIMS) as RegimeDim[];
-  for (const dim of dims) {
+  for (const dim of FIXED_DIMS) {
     for (const p of dimPanes(dim)) {
-      expect(isSeriesKey(p.key), `${dim}.${p.key} 不是合法序列名`).toBe(true);
+      // 计算格的键是「A|运算|B」,不是服务端序列名(两条腿在不在注册表,见 withCalc.test)
+      if (!p.from) expect(isSeriesKey(p.key), `${dim}.${p.key} 不是合法序列名`).toBe(true);
       for (const o of p.overlays ?? []) expect(isSeriesKey(o.key), `${dim}.${o.key} 不合法`).toBe(true);
     }
   }
@@ -518,7 +523,7 @@ test('常态带 + percentile 同配:参考线用常态带、不被 P5/P95 覆盖
   // **整体重新赋值** refLines → 常态带写的 ±2 从来没画出来过,图上是 P5/P95。
   // 同屏另外两格 z 只配了常态带、画的是 ±2 —— 四条 z 两套尺,肉眼看不出,改回去测试也照绿。
   // 故这条必须断言「画的是哪两条」,不能只断言「有两条」。
-  const pane = REGIME_DIMS.refinery.panes.find((p) => p.key === 'distStocksZ5y');
+  const pane = dimPanes('refinery').find((p) => p.key === 'distStocksZ5y');
   expect(pane?.refLines?.map((l) => l.price)).toEqual([-2, 2]); // 前提:这格确实同配了两者
   expect(pane?.percentile?.riskTail).toBe('low');
 
@@ -546,7 +551,7 @@ test('clampVisibleTo:有 overlay 的格子,主线与叠加线必须都夹', () =
   // 两条线共用同一条价格轴 —— 只夹主线的话,overlay 的极值照样把整幅撑开,
   // 而这格的 overlay(distProdYoy)本身就是离群腿(min/P1 ≈ 2.3)。
   // 删掉 overlay 那侧的 spread 后本断言会 fail;不加这条则全套测试照绿。
-  const pane = REGIME_DIMS.refinery.panes.find((p) => p.key === 'crudeRunsYoy');
+  const pane = dimPanes('refinery').find((p) => p.key === 'crudeRunsYoy');
   expect(pane?.clampVisibleTo).toEqual([-15, 15]);
   expect(pane?.overlays?.[0]?.key).toBe('distProdYoy');
 
@@ -587,19 +592,19 @@ test('secFiledNote:单家 tab 标最新一期与申报日;没数据、合计与�
   expect(secFiledNote(data, 'liquidity')).toBeUndefined();
 });
 
-// REGIME_DIMS 由各视角的 dims 展开拼成:同一 key 出现在两个文件里,后者会静默盖掉前者(类型查不出来)。
-// 这里扫全部 pages/*/dims.ts,既查重名,也查有没有哪个文件漏拼进 REGIME_DIMS。
-test('各视角 dims 的 key 不重名,且全部拼进 REGIME_DIMS', async () => {
-  const files = [...new Bun.Glob('../../pages/*/dims.ts').scanSync(import.meta.dir)];
+// REGIME_DOCS 由各视角的 docs 展开拼成:同一 key 出现在两个文件里,后者会静默盖掉前者(类型查不出来)。
+// 这里扫全部 pages/*/docs.ts,既查重名,也查有没有哪个文件漏拼进 REGIME_DOCS(集中度单独一个文件,另算)。
+test('各视角 docs 的 key 不重名,且全部拼进 REGIME_DOCS', async () => {
+  const files = [...new Bun.Glob('../../pages/*/docs.ts').scanSync(import.meta.dir)];
   const modules = await Promise.all(files.map((f) => import(f)));
   const keys = modules.flatMap((m) =>
-    Object.entries(m).flatMap(([name, v]) => (name.endsWith('_DIMS') ? Object.keys(v as object) : [])),
+    Object.entries(m).flatMap(([name, v]) => (name.endsWith('_DOCS') ? Object.keys(v as object) : [])),
   );
   const dupes = keys.filter((k, i) => keys.indexOf(k) !== i);
 
   expect(files.length).toBeGreaterThan(0);
   expect(dupes).toEqual([]);
-  expect(keys.toSorted()).toEqual(Object.keys(REGIME_DIMS).toSorted());
+  expect([...keys, 'concentration'].toSorted()).toEqual(Object.keys(REGIME_DOCS).toSorted());
 });
 
 // RegimeChart 要求配置引用稳定:基本面维度的 panes 按名单现算,靠 regimeView 的缓存兜住

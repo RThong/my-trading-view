@@ -1,56 +1,50 @@
-// regime 视角的总表:各视角的 dims 汇总成 REGIME_DIMS,外加已迁 ChartDoc 的维度与按名单派生的基本面维度。
+// regime 视角的总表:各视角的 ChartDoc 汇总成 REGIME_DOCS,外加按名单派生的基本面维度。
 // 放在 pages 层:视图(views/regime)只收 panes,不认识具体有哪些视角。
 import { sourcesOf } from '../../shared/aiChain';
 import type { ChartDoc } from '../views/chartDoc/chartDoc';
 import {
   docToPaneSpecs,
-  type DimConfig,
-  type DocDim,
   type FixedDim,
   type PaneSpec,
   type RegimeDim,
   type RegimeView,
 } from '../views/regime/regimeChart.hooks';
+import { AI_DOCS } from './ai/docs';
 import { buyerAggregatePane, buyerQuarterlyPane, SOURCE_PANES } from './ai/fundamentals';
-import { AI_DIMS } from './ai/dims';
-import { BTC_DIMS } from './btc/dims';
-import { CREDIT_DIMS } from './credit/dims';
+import { BTC_DOCS } from './btc/docs';
+import { CREDIT_DOCS } from './credit/docs';
 import { CONCENTRATION } from './featured/concentration';
-import { INFLATION_DIMS } from './inflation/dims';
-import { JAPAN_DIMS } from './japan/dims';
-import { LIQUIDITY_DIMS } from './liquidity/dims';
-import { MACRO_DIMS } from './macro/dims';
-import { OIL_DIMS } from './oil/dims';
-import { RATES_DIMS } from './rates/dims';
-import { SENTIMENT_DIMS } from './sentiment/dims';
-import { VALUATION_DIMS } from './valuation/dims';
+import { INFLATION_DOCS } from './inflation/docs';
+import { JAPAN_DOCS } from './japan/docs';
+import { LIQUIDITY_DOCS } from './liquidity/docs';
+import { MACRO_DOCS } from './macro/docs';
+import { OIL_DOCS } from './oil/docs';
+import { RATES_DOCS } from './rates/docs';
+import { SENTIMENT_DOCS } from './sentiment/docs';
+import { VALUATION_DOCS } from './valuation/docs';
 
-export const REGIME_DOCS: Record<DocDim, ChartDoc> = {
+// 类型保证每个固定 dim 都有一份 doc;跨文件重名靠 regimeChart.hooks.test 查(展开时后者静默盖前者)
+export const REGIME_DOCS: Record<FixedDim, ChartDoc> = {
+  ...CREDIT_DOCS,
+  ...LIQUIDITY_DOCS,
+  ...SENTIMENT_DOCS,
+  ...MACRO_DOCS,
+  ...JAPAN_DOCS,
+  ...RATES_DOCS,
+  ...INFLATION_DOCS,
+  ...OIL_DOCS,
+  ...BTC_DOCS,
+  ...AI_DOCS,
+  ...VALUATION_DOCS,
   concentration: CONCENTRATION,
-};
-
-// 类型保证每个固定 dim 都有配置;跨文件重名靠 regimeChart.hooks.test 查(展开时后者静默盖前者)
-export const REGIME_DIMS: Record<Exclude<FixedDim, DocDim>, DimConfig> = {
-  ...CREDIT_DIMS,
-  ...LIQUIDITY_DIMS,
-  ...SENTIMENT_DIMS,
-  ...MACRO_DIMS,
-  ...JAPAN_DIMS,
-  ...RATES_DIMS,
-  ...INFLATION_DIMS,
-  ...OIL_DIMS,
-  ...BTC_DIMS,
-  ...AI_DIMS,
-  ...VALUATION_DIMS,
 };
 
 // 模块加载时转一次:doc 写错的话 docToPaneSpecs 会抛,在加载时就炸,不等到打开那个 tab
 const DOC_PANES = Object.fromEntries(
   Object.entries(REGIME_DOCS).map(([dim, doc]) => [dim, docToPaneSpecs(doc)]),
-) as Record<DocDim, PaneSpec[]>;
+) as Record<FixedDim, PaneSpec[]>;
 function buildPanes(dim: RegimeDim): PaneSpec[] {
-  if (Object.hasOwn(DOC_PANES, dim)) return DOC_PANES[dim as DocDim];
-  if (!dim.startsWith('fundamentals:')) return REGIME_DIMS[dim as Exclude<FixedDim, DocDim>].panes;
+  if (!dim.startsWith('fundamentals:')) return DOC_PANES[dim as FixedDim];
 
   const who = dim.slice('fundamentals:'.length);
   if (who === 'buyer') return [buyerAggregatePane, buyerQuarterlyPane];

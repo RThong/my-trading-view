@@ -1,17 +1,25 @@
-// 「BTC」视角各 regime tab 的 pane 配置(合进 pages/regimeDims 的 REGIME_DIMS)。
-import { normalBand } from '../../views/chartDoc/chartDoc';
-import type { PaneSpec, RegimeDims } from '../../views/regime/regimeChart.hooks';
+// 「BTC」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
+import { normalBand, type Pane } from '../../views/chartDoc/chartDoc';
+import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 
 /**
  * BTC 现货蜡烛,**「现货/夏普」与「链上」两个 tab 共用同一份**(同 QQQ_SPOT_PANE 的理由:抄两遍必漂)。
  * 链上那格要对着价格读:筹码密度冲高之后往哪边破,只有价格答得了。
  */
-const BTC_SPOT_PANE: PaneSpec = {
-  key: 'btc',
-  label: 'BTC',
-  title: 'BTC 现货 (USD)',
-  color: '#f7931a',
-  render: { kind: 'candle' }, // 用 data.ohlc.btc;跨 4 个数量级 → 价格轴自动走对数(见 needsLogScale)
+const BTC_SPOT_PANE: Pane = {
+  id: 'p1',
+  stretch: 1,
+  scales: [{ id: 'right', side: 'right' }],
+  layers: [
+    {
+      id: 'l1',
+      series: 'btc',
+      scale: 'right',
+      color: '#f7931a',
+      title: 'BTC 现货 (USD)',
+      render: { kind: 'candle' }, // 用 data.ohlc.btc;跨 4 个数量级 → 价格轴自动走对数(见 needsLogScale)
+    },
+  ],
   desc: [
     '定义:BTC 现货日线蜡烛,Bitstamp 全段(UTC 0 点切日;Yahoo BTC-USD 降级)。**参照物,不是判据**。',
     '「现货/夏普」tab 和下一格夏普同读:价格新高但夏普走低 = 这轮涨幅是靠加波动换来的,不是趋势变强。',
@@ -23,18 +31,27 @@ const BTC_SPOT_PANE: PaneSpec = {
   ].join('\n'),
 };
 
-export const BTC_DIMS = {
+export const BTC_DOCS = {
   // BTC:现货蜡烛 + 1Y 滚动夏普。两格一组读 ——「涨了多少」和「这些涨幅值不值那点波动」。
   btc: {
+    v: 1,
     panes: [
       BTC_SPOT_PANE,
       {
-        key: 'btcSharpe1y',
-        label: '1Y 夏普',
-        title: 'BTC 1Y 滚动夏普 (年化)',
-        color: '#8b5cf6',
-        render: { kind: 'line', baseline: 0 },
-        refLines: normalBand(-2, 2.9),
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l2',
+            series: 'btcSharpe1y',
+            scale: 'right',
+            color: '#8b5cf6',
+            title: 'BTC 1Y 滚动夏普 (年化)',
+            render: { kind: 'line', baseline: 0 },
+            refLines: normalBand(-2, 2.9),
+          },
+        ],
         desc: [
           '定义:过去 365 天日对数收益的 均值/标准差 × √365。「每承受一单位波动换回多少超额涨幅」。',
           '穿零 = 这一年白折腾(风险调整后没赚)。高 = 涨得又稳又多;深负 = 跌且乱。',
@@ -54,21 +71,36 @@ export const BTC_DIMS = {
   },
   // BTC 链上:筹码分布类指标(BRK URPD 派生),单独一个 tab。
   btcOnchain: {
+    v: 1,
     panes: [
       BTC_SPOT_PANE,
       {
-        key: 'btcSupplyDensity',
-        label: '供应密度',
-        title: 'BTC 已实现供应密度 (收盘价 ±5%,7 日均线,%)',
-        color: '#14b8a6',
-        // 配色与范围照 Murphy 原图(粉 13% 警戒 / 紫 15% 高风险,纵轴 1%~19%)。
-        refLines: [
-          { price: 13, title: '警戒 13%', color: '#ec4899' },
-          { price: 15, title: '高风险 15%', color: '#a855f7' },
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right', expandVisibleTo: [1, 19] }],
+        layers: [
+          {
+            id: 'l2',
+            series: 'btcSupplyDensity',
+            scale: 'right',
+            color: '#14b8a6',
+            title: 'BTC 已实现供应密度 (收盘价 ±5%,7 日均线,%)',
+            // 配色与范围照 Murphy 原图(粉 13% 警戒 / 紫 15% 高风险,纵轴 1%~19%)。
+            refLines: [
+              { price: 13, title: '警戒 13%', color: '#ec4899' },
+              { price: 15, title: '高风险 15%', color: '#a855f7' },
+            ],
+          },
+          // 原始日值只给悬停读数:比均线早过线几天,但单日能跳 10pp,上图就是一片毛刺。
+          {
+            id: 'l3',
+            series: 'btcSupplyDensityRaw',
+            scale: 'right',
+            color: '#94a3b8',
+            title: '原始日值 (%)',
+            hidden: true,
+          },
         ],
-        expandVisibleTo: [1, 19],
-        // 原始日值只给悬停读数:比均线早过线几天,但单日能跳 10pp,上图就是一片毛刺。
-        overlays: [{ key: 'btcSupplyDensityRaw', title: '原始日值 (%)', color: '#94a3b8', hidden: true }],
         desc: [
           '定义:链上成本价落在当日收盘价 ±5% 内的 BTC 占总供应的比例,取 7 日均线',
           '(Glassnode「Realized Supply Density」的免费复刻,@Murphychen888 叫它「供应集中度」)。',
@@ -89,4 +121,4 @@ export const BTC_DIMS = {
       },
     ],
   },
-} satisfies RegimeDims;
+} satisfies RegimeDocs;
