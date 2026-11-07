@@ -1,13 +1,13 @@
 // 从「文档 + 取到的序列数据」算出每个图层最终要画的点(平移后的序列)。渲染层与图例只认这里的结果,不再自己拼。
 import { useMemo } from 'react';
-import { aggregateMax, type Bar, type LinePoint } from '../../../chart/core';
-import type { Interval } from '../../../hooks/interval';
-import { earliestIso } from '../../../../shared/calc/isoDate';
-import { shiftBusinessDays } from '../../../chart/analysis';
-import { type BandPoint, percentileMarks } from '../../../chart/percentileMarks';
-import { isMarkLayer, type ChartDoc, type Layer, type Pane, type RefLine } from '../../../views/chartDoc/chartDoc';
-import { drawnKind } from '../../../views/chartDoc/registry';
-import { requestKey } from '../../../views/chartDoc/useSeriesData';
+import { aggregateMax, type Bar, type LinePoint } from '../../chart/core';
+import type { Interval } from '../../hooks/interval';
+import { earliestIso } from '../../../shared/calc/isoDate';
+import { shiftBusinessDays } from '../../chart/analysis';
+import { type BandPoint, percentileMarks } from '../../chart/percentileMarks';
+import { isMarkLayer, type ChartDoc, type Layer, type Pane, type RefLine } from './chartDoc';
+import { drawnKind, seriesDef } from './registry';
+import { requestKey } from './useSeriesData';
 
 export type LayerData = {
   /** 画在图上的点(蜡烛图层是收盘:图例、分位、对准横轴都读它) */
@@ -45,12 +45,21 @@ function periodMax(pts: LinePoint[], interval: Interval): LinePoint[] {
 }
 
 /**
- * 图层的取数请求。标记图层(竖线、背景)取不聚合的日线,自己按周期取最大值(见 computeLayerData):
- * 默认聚合取每期最后一天,周 / 月线下会漏掉期中出现过的事件 / 状态。取最大值 = 「这一期里出现过就标上」,
- * 适合衰退期这种持续数月的时期;错月这种每个月都会出现的状态,月线以上每期都是 1、整张染满 ——
- * 那是它本身比周期更细,看错月请用日 / 周线(固定面板始终按日频画,不受周期影响)
+ * 整张图的线(含计算图层的第二条腿)都是 7×24 序列(BTC、GPU 租赁价这类周末也有数的):取数时保留周末。
+ * 混了工作日序列才去周末 —— 共用一条时间轴,周末点会让工作日序列在周六日留空档;全是 7×24 时去掉反而丢了真实读数
+ * (周 / 月线也会从周日收盘变成周五收盘)。只认注册表静态标的 weekends;Yahoo 任意代码要拿到数据才知道,不算
  */
-export function layerRequest(l: Layer) {
+export function allSevenDay(doc: ChartDoc): boolean {
+  const ids = doc.panes.flatMap((p) => p.layers.flatMap((l) => [l.series, ...(l.calc ? [l.calc.series] : [])]));
+  return ids.length > 0 && ids.every((id) => seriesDef(id)?.weekends);
+}
+
+/**
+ * 图层的取数请求。标记图层(竖线、背景)取不聚合的日线,自己按周期处理(见 computeLayerData):
+ * 默认聚合取每期最后一天,周 / 月线下会漏掉期中出现过的事件。
+ * sevenDay:整张图都是 7×24(见 allSevenDay),保留周末。同一张图的所有请求要传同一个值,点按请求键对回图层
+ */
+export function layerRequest(l: Layer, sevenDay = false) {
   return {
     series: l.series,
     ...(l.calc && { calc: l.calc }),
@@ -58,6 +67,7 @@ export function layerRequest(l: Layer) {
     ...(isMarkLayer(l) && { daily: true as const }),
     // 蜡烛图层多要一份 K 线(按 drawnKind:写了 candle 却画不了的按折线取)
     ...(drawnKind(l) === 'candle' && { bars: true as const }),
+    ...(sevenDay && { weekends: true as const }),
   };
 }
 
@@ -67,23 +77,37 @@ export function computeLayerData(
   interval: Interval,
   bars: Record<string, Bar[]> = {},
 ): Record<string, LayerData> {
-  const layers = doc.panes.flatMap((p) => p.layers);
-  const raw = (l: Layer) => points[requestKey(layerRequest(l))] ?? EMPTY;
-  // 标记图层(竖线、色带)裁到其它线最早的起点:比线早开始的话,时间轴会给那段只有竖线的日子留位置,把线挤到一边
-  const starts = layers
-    .filter((l) => !isMarkLayer(l))
-    .flatMap((l) =>
-      raw(l)
-        .slice(0, 1)
-        .map((p) => p.time),
-    );
-  const from = starts.length ? earliestIso(starts) : undefined;
+  const sevenDay = allSevenDay(doc);
+  const raw = (l: Layer) => points[requestKey(layerRequest(l, sevenDay))] ?? EMPTY;
+  // 标记图层(竖线、色带)裁到本格线最早的起点:比线早开始的话,时间轴会给那段只有竖线的日子留位置,把线挤到一边;
+  // 按格算不按整张图:别格的长历史线不该让短历史那格在没数据的地方也画满竖线(同旧固定面板)
+  const paneStart = (p: Pane) => {
+    const starts = p.layers
+      .filter((l) => !isMarkLayer(l))
+      .flatMap((l) =>
+        raw(l)
+          .slice(0, 1)
+          .map((pt) => pt.time),
+      );
+    return starts.length ? earliestIso(starts) : undefined;
+  };
 
-  const display = (l: Layer) => (isMarkLayer(l) ? clipFrom(periodMax(raw(l), interval), from) : raw(l));
+  // 事件竖线按周期取最大值 =「这一期里出现过就标上」。背景色带只在日线画:状态(如错月)比周还细,
+  // 按期标的话错月这种每月都有一段的状态在月线下整格染满、周线下过半的周都标上,读不出东西(2026-11-07 用户定)
+  const display = (l: Layer, from: string | undefined) => {
+    if (!isMarkLayer(l)) return raw(l);
+    if (drawnKind(l) === 'background' && interval !== '1D') return EMPTY;
+    return clipFrom(periodMax(raw(l), interval), from);
+  };
   const candle = (l: Layer) =>
-    drawnKind(l) === 'candle' ? { bars: bars[requestKey(layerRequest(l))] ?? EMPTY_BARS } : {};
+    drawnKind(l) === 'candle' ? { bars: bars[requestKey(layerRequest(l, sevenDay))] ?? EMPTY_BARS } : {};
 
-  return Object.fromEntries(layers.map((l) => [l.id, { display: display(l), ...candle(l) }]));
+  return Object.fromEntries(
+    doc.panes.flatMap((p) => {
+      const from = paneStart(p);
+      return p.layers.map((l) => [l.id, { display: display(l, from), ...candle(l) }]);
+    }),
+  );
 }
 
 /** 文档或数据变了才重算。 */
@@ -98,7 +122,7 @@ export function useLayerData(
 
 /**
  * 这根轴能不能取对数:挂在上面的图层(画出来的值)全都大于 0,且轴的下限框不把范围撑到 ≤0。
- * 还没数据的图层不算阻碍;隐藏的也不算 —— 除非它是被叠加的 A,那条照样撑轴(见 useEditorChart)。
+ * 还没数据的图层不算阻碍;隐藏的也不算 —— 除非它是被叠加的 A,那条照样撑轴(见 useDocChart)。
  */
 export function canLogScale(pane: Pane, scaleId: string, data: Record<string, LayerData>): boolean {
   const expand = pane.scales.find((sc) => sc.id === scaleId)?.expandVisibleTo;
@@ -111,16 +135,16 @@ export function canLogScale(pane: Pane, scaleId: string, data: Record<string, La
     .every((l) => (data[l.id]?.display ?? []).every((p) => p.value > 0));
 }
 
-/** 一个图层要画的水平线和背景带 */
-export type LayerMarks = { lines: RefLine[]; band: BandPoint[] | null };
+/** 一个图层要画的水平线和背景带;window = 算分位用的那段值(图例的分位排名徽标也按它排),没配分位为 null */
+export type LayerMarks = { lines: RefLine[]; band: BandPoint[] | null; window: number[] | null };
 
 // 同一图层对象 + 同一份点只算一次:价位线和背景带两处都要它;文档改了别处(改色、拖分隔条)时没动的图层对象不变,直接复用
 const marksCache = new WeakMap<Layer, { pts: LinePoint[]; marks: LayerMarks }>();
 
 /**
  * 图层的水平线(基线、参考线、分位 P5 / P95)与分位背景带。分位规则(参考线优先、riskTail 定染色)在 chart/percentileMarks,
- * 与固定面板共用;这里只管编辑器自己的口径:
- * - 阈值按画在图上的点算(周 / 月线是聚合点),同 TradingView 指标默认跟随图表周期;固定面板按原始日频算
+ * 这里定口径(编辑器与固定面板同一套):
+ * - 阈值按画在图上的点算(周 / 月线是聚合点),同 TradingView 指标默认跟随图表周期
  * - since 比的是平移前的日期(画在图上的日期已按 shift 挪过)
  * - 符号柱恒有一条 0 线(同固定面板)
  */
@@ -138,7 +162,7 @@ function computeMarks(layer: Layer, pts: LinePoint[]): LayerMarks {
   const baseline = render?.kind === 'signed' ? 0 : render?.kind === 'line' ? render.baseline : undefined;
   const base: RefLine[] = baseline !== undefined ? [{ price: baseline, title: String(baseline) }] : [];
   const pctl = layer.percentile;
-  if (!pctl) return { lines: [...base, ...(layer.refLines ?? [])], band: null };
+  if (!pctl) return { lines: [...base, ...(layer.refLines ?? [])], band: null, window: null };
 
   const since = pctl.since;
   const shift = layer.shift ?? 0;
@@ -147,5 +171,5 @@ function computeMarks(layer: Layer, pts: LinePoint[]): LayerMarks {
   );
   const marks = percentileMarks(window, pts, { riskTail: pctl.riskTail, refLines: layer.refLines });
 
-  return { lines: [...base, ...(marks?.lines ?? layer.refLines ?? [])], band: marks?.band ?? null };
+  return { lines: [...base, ...(marks?.lines ?? layer.refLines ?? [])], band: marks?.band ?? null, window };
 }

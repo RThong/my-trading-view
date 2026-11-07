@@ -3,8 +3,9 @@
 import type { ReactNode } from 'react';
 import { AssetChart } from '../views/asset/AssetChart';
 import { RegimeChart } from '../views/regime/RegimeChart';
-import type { RegimeDim } from '../views/regime/regimeChart.hooks';
-import { regimeView } from './regimeDims';
+import { isFundDim, type RegimeDim } from '../views/regime/regimeChart.hooks';
+import { REGIME_DOCS, regimeView } from './regimeDims';
+import { DocChart } from '../views/chartDoc/DocChart';
 import { YieldCurvePanel } from '../views/curve/YieldCurvePanel';
 import { TenorHistoryPanel, type SpreadDef } from '../views/curve/TenorHistoryPanel';
 import type { Interval } from '../hooks/interval';
@@ -25,7 +26,13 @@ export function regimeTab(id: string, label: string, dim: RegimeDim, group?: str
     id,
     label,
     group,
-    render: (interval) => <RegimeChart view={regimeView(dim)} interval={interval} />,
+    // 固定 dim 是内置 ChartDoc,与图表编辑器同一套渲染;按名单派生的基本面维度仍走旧 regime 图
+    render: (interval) =>
+      isFundDim(dim) ? (
+        <RegimeChart view={regimeView(dim)} interval={interval} />
+      ) : (
+        <DocChart doc={REGIME_DOCS[dim]} interval={interval} />
+      ),
   };
 }
 

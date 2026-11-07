@@ -4,8 +4,8 @@
 // 每次文档 / 数据变了整套重建(同 useBaseBand):色带随分位阈值变,增量对账不划算。
 import { type RefObject, useEffect } from 'react';
 import { AreaSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
-import { FULL_HEIGHT_AREA, fullHeightScale } from '../../../chart/core';
-import { isMarkLayer, type ChartDoc } from '../../../views/chartDoc/chartDoc';
+import { FULL_HEIGHT_AREA, fullHeightScale } from '../../chart/core';
+import { isMarkLayer, type ChartDoc } from './chartDoc';
 import { layerMarks, type LayerData } from './layerPoints';
 
 export function usePercentileBand(

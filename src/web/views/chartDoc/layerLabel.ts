@@ -1,6 +1,6 @@
 // 图层的显示名与单位(卡片、图例、分析面板共用一处,免得几处写法漂移)。
-import { findLayer, type ChartDoc, type Layer } from '../../views/chartDoc/chartDoc';
-import { seriesDef, seriesLabel } from '../../views/chartDoc/registry';
+import { findLayer, type ChartDoc, type Layer } from './chartDoc';
+import { seriesDef, seriesLabel } from './registry';
 
 /** 只取序列本名(不带平移 / 换算等修饰),给「A × B」这类组合名用。 */
 export function baseLabel(doc: ChartDoc, layerId: string): string {
@@ -15,7 +15,8 @@ export function shiftText(shift: number) {
 }
 
 export function layerLabel(doc: ChartDoc, l: Layer): string {
-  const name = seriesLabel(l.series, l.calc);
+  // 图层写了 title 就用它(固定面板的格子都给了图例名),缺省才用注册表名
+  const name = l.title ?? seriesLabel(l.series, l.calc);
   const shift = l.shift ? `(${shiftText(l.shift)})` : '';
   const fit = l.fit ? ` · 叠加在${baseLabel(doc, l.fit.target)}上` : '';
   return `${name}${shift}${fit}`;

@@ -17,7 +17,7 @@ import {
 import { fmtDate } from '../../../chart/core';
 import { findLayer, liveScaleIds, type ChartDoc, type Layer, type Pane } from '../../../views/chartDoc/chartDoc';
 import { drawnKind } from '../../../views/chartDoc/registry';
-import type { LayerSeries } from './useEditorChart';
+import type { LayerSeries } from '../../../views/chartDoc/useDocChart';
 
 // 鼠标离线多近算抓住(像素)
 const GRAB_PX = 15;

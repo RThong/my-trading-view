@@ -33,17 +33,20 @@ export function weekdayOnly(points: LinePoint[]): LinePoint[] {
  * 一次取数请求:哪条序列、平移多少交易日;daily = 不按页头周期聚合、固定日线
  * (领先滞后扫描要逐交易日平移,周 / 月线聚合过的序列扫不出日级领先)。同一序列参数不同就是不同请求。
  */
-export type SeriesRequest = { series: string; calc?: Calc; shift: number; daily?: true; bars?: true };
+/** weekends:保留 7×24 序列的周末点(整张图的线都是 7×24 时才要,见 layerPoints 的 allSevenDay);缺省去周末,好与工作日序列共用时间轴 */
+export type SeriesRequest = { series: string; calc?: Calc; shift: number; daily?: true; bars?: true; weekends?: true };
 
 /** 请求的键(也是 points 的键)。序列 id 里不会有 '|' / '@' / '#'(parseChartDoc 拒收,注册表也没有)。 */
-export function requestKey({ series, calc, shift, daily, bars }: SeriesRequest): string {
+export function requestKey({ series, calc, shift, daily, bars, weekends }: SeriesRequest): string {
   const c = calc ? `|${calc.op}${calc.fill ? 'f' : ''}|${calc.series}` : '';
-  return `${series}${c}${shift ? `@${shift}` : ''}${daily ? '#d' : ''}${bars ? '#b' : ''}`;
+  return `${series}${c}${shift ? `@${shift}` : ''}${daily ? '#d' : ''}${bars ? '#b' : ''}${weekends ? '#w' : ''}`;
 }
 
 function parseKey(key: string): SeriesRequest {
-  const bars = key.endsWith('#b');
-  const rest = bars ? key.slice(0, -2) : key;
+  const weekends = key.endsWith('#w');
+  const tail = weekends ? key.slice(0, -2) : key;
+  const bars = tail.endsWith('#b');
+  const rest = bars ? tail.slice(0, -2) : tail;
   const daily = rest.endsWith('#d');
   const body = daily ? rest.slice(0, -2) : rest;
   const at = body.lastIndexOf('@');
@@ -58,6 +61,7 @@ function parseKey(key: string): SeriesRequest {
     shift,
     ...(calc && { calc }),
     ...(daily && { daily: true as const }),
+    ...(weekends && { weekends: true as const }),
     ...(bars && { bars: true as const }),
   };
 }
@@ -196,8 +200,14 @@ const EXTRACT: {
  * 单条序列:从原始响应取出 → 统一形状 → (7×24 的)去周末 → 平移 → 按周期聚合。取不到 → []。
  * 先平移再聚合:反过来的话周线键(周一)平移后落在周中,时间轴上会多出空位。
  */
-export function seriesPoints(def: SeriesDef, data: SourceData, interval: Interval, shift = 0): LinePoint[] {
-  return aggregate(shiftPoints(dailyPoints(def, data), shift), interval);
+export function seriesPoints(
+  def: SeriesDef,
+  data: SourceData,
+  interval: Interval,
+  shift = 0,
+  keepWeekends = false,
+): LinePoint[] {
+  return aggregate(shiftPoints(dailyPoints(def, data, keepWeekends), shift), interval);
 }
 
 /**
@@ -211,8 +221,14 @@ export function calcPoints(
   data: SourceData,
   interval: Interval,
   shift = 0,
+  keepWeekends = false,
 ): LinePoint[] {
-  const values = combineSeries(dailyPoints(a, data), dailyPoints(b, data), calc.op, calc.fill);
+  const values = combineSeries(
+    dailyPoints(a, data, keepWeekends),
+    dailyPoints(b, data, keepWeekends),
+    calc.op,
+    calc.fill,
+  );
   return aggregate(shiftPoints(values, shift), interval);
 }
 
@@ -251,36 +267,45 @@ const BAR_EXTRACT: Partial<{
  * 单条序列的 K 线(蜡烛图层用):取整根日 K → (7×24 的)去周末 → 平移 → 按周期聚合(开取首、收取尾、高低取极值)。
  * 注册表没标 ohlc 的返回 [](画法下拉里「蜡烛」本来就置灰)。
  */
-export function seriesBars(def: SeriesDef, data: SourceData, interval: Interval, shift = 0): Bar[] {
+export function seriesBars(
+  def: SeriesDef,
+  data: SourceData,
+  interval: Interval,
+  shift = 0,
+  keepWeekends = false,
+): Bar[] {
   const src = def.source;
   const extract = def.ohlc
     ? (BAR_EXTRACT[src.kind] as ((s: SeriesSource, d: SourceData) => Bar[]) | undefined)
     : undefined;
   // 收盘走本源、K 线另从 Yahoo 取的(标普 500 等,见注册表 barsFrom)
   const raw = def.barsFrom ? fromYahoo(def.barsFrom, data) : (extract?.(src, data) ?? []);
-  const daily = isSevenDay(
-    def,
-    src,
-    raw.map((b) => b.time),
-  )
-    ? raw.filter((b) => !isWeekend(b.time))
-    : raw;
+  const daily =
+    !keepWeekends &&
+    isSevenDay(
+      def,
+      src,
+      raw.map((b) => b.time),
+    )
+      ? raw.filter((b) => !isWeekend(b.time))
+      : raw;
 
   return aggregateBars(shiftBars(daily, shift), interval);
 }
 
 /** 单条序列的日线:从原始响应取出 → 统一形状 → 丢非有限值 → (7×24 的)去周末。 */
-function dailyPoints(def: SeriesDef, data: SourceData): LinePoint[] {
+function dailyPoints(def: SeriesDef, data: SourceData, keepWeekends: boolean): LinePoint[] {
   const src = def.source;
   const raw = (EXTRACT[src.kind] as (s: SeriesSource, d: SourceData) => LinePoint[])(src, data);
 
   const finite = raw.filter((p) => Number.isFinite(p.value));
 
-  return isSevenDay(
-    def,
-    src,
-    finite.map((p) => p.time),
-  )
+  return !keepWeekends &&
+    isSevenDay(
+      def,
+      src,
+      finite.map((p) => p.time),
+    )
     ? weekdayOnly(finite)
     : finite;
 }
@@ -386,10 +411,10 @@ export function useSeriesData(requests: SeriesRequest[], interval: Interval): Se
       const data = { regime, yahoo, endpoints, curves };
       const iv = req.daily ? '1D' : interval;
       if (!def) return undefined;
-      if (!req.calc) return seriesPoints(def, data, iv, req.shift);
+      if (!req.calc) return seriesPoints(def, data, iv, req.shift, req.weekends);
 
       const b = seriesDef(req.calc.series);
-      return b ? calcPoints(def, req.calc, b, data, iv, req.shift) : undefined;
+      return b ? calcPoints(def, req.calc, b, data, iv, req.shift, req.weekends) : undefined;
     }
 
     return Object.fromEntries(
@@ -413,7 +438,18 @@ export function useSeriesData(requests: SeriesRequest[], interval: Interval): Se
             const def = seriesDef(req.series);
             // 只给蜡烛图层的请求(bars 标记)算 K 线:画成折线的 SPY 不必每次刷新都多跑一遍
             if (!req.bars || !def?.ohlc || req.calc) return [];
-            return [[k, seriesBars(def, { regime, yahoo, endpoints, curves }, req.daily ? '1D' : interval, req.shift)]];
+            return [
+              [
+                k,
+                seriesBars(
+                  def,
+                  { regime, yahoo, endpoints, curves },
+                  req.daily ? '1D' : interval,
+                  req.shift,
+                  req.weekends,
+                ),
+              ],
+            ];
           }),
       ),
     [keysStr, regime, yahoo, endpoints, curves, interval],

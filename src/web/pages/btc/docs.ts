@@ -9,7 +9,8 @@ import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 const BTC_SPOT_PANE: Pane = {
   id: 'p1',
   stretch: 1,
-  scales: [{ id: 'right', side: 'right' }],
+  // 2012 起跨 4 个数量级(约 2.9 万倍):普通坐标下早年几轮周期全压在底部,走对数轴
+  scales: [{ id: 'right', side: 'right', log: true }],
   layers: [
     {
       id: 'l1',
@@ -17,7 +18,7 @@ const BTC_SPOT_PANE: Pane = {
       scale: 'right',
       color: '#f7931a',
       title: 'BTC 现货 (USD)',
-      render: { kind: 'candle' }, // 用 data.ohlc.btc;跨 4 个数量级 → 价格轴自动走对数(见 needsLogScale)
+      render: { kind: 'candle' },
     },
   ],
   desc: [

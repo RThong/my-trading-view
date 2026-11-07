@@ -68,8 +68,8 @@ lightweight-charts 的映射：`right` / `left` 用内置轴，`overlay` 用自�
 | `chartDoc.ts` + `.test.ts` | 类型、`parseChartDoc` 守卫、`normalize`、纯函数编辑操作（addLayer / removeLayer / removeSeries / moveLayer（含插到某图层前、同格调顺序）/ setLayerScale / setLayerColor / setStretches / nextColor），id 生成 |
 | `registry.ts` | 静态序列注册表 `id → { label, category, freq, unit, source }` |
 | `useEditorSeriesData.ts` + `.test.ts` | 按注册表取数，统一成 `{ time, value }[]`，按 Header 的周期（interval）聚合；纯转换函数（`seriesPoints` / `weekdayOnly` / `commonRange`）单独导出供测试 |
-| `useEditorChart.ts` | 渲染 hook：建一次图（`createChart` + 项目的 `CHART_OPTIONS`），之后按 layer id 增量对账：`addSeries(LineSeries, …, paneIndex)` / `moveToPane` / `applyOptions({ priceScaleId, color })` / `setSeriesOrder`（同格层次）/ `removeSeries` / `setStretchFactor` / `setData` |
-| `useCrosshairLegend.ts` + `Legend.tsx` | 编辑器自己的悬停图例：每格左上角列出该格各图层的名称和当前值（`pane.getHTMLElement()` 取各格顶边，开左轴时用左轴宽度让开刻度） |
+| `useDocChart.ts`（现在 `views/chartDoc/`，固定面板与编辑器共用） | 渲染 hook：建一次图（`createChart` + 项目的 `CHART_OPTIONS`），之后按 layer id 增量对账：`addSeries(LineSeries, …, paneIndex)` / `moveToPane` / `applyOptions({ priceScaleId, color })` / `setSeriesOrder`（同格层次）/ `removeSeries` / `setStretchFactor` / `setData` |
+| `useCrosshairLegend.ts` + `Legend.tsx`（现在 `views/chartDoc/`，固定面板与编辑器共用） | 悬停图例：每格左上角列出该格各图层的名称、当前值（蜡烛给开高低收）、相对前一点的涨跌、分位排名（`pane.getHTMLElement()` 取各格顶边，开左轴时用左轴宽度让开刻度） |
 | `ChartEditorPage.tsx` | 只负责组装：图 + 右侧面板 + 可折叠的只读「查看 JSON」 |
 | `useChartDoc.ts` | 编辑状态（一份 `ChartDoc`）+ 各编辑动作，全部走 `chartDoc.ts` 的纯函数 |
 | `SeriesPicker.tsx` | 右侧顶部：搜索框 + 多选下拉（按分类分组）。勾选 = 加到第 1 格右轴、自动配色；取消勾选 = 从图上拿掉该序列 |

@@ -80,11 +80,6 @@ export type SeriesDef = {
   ohlc?: true;
   /** 收盘走本源、K 线另从这个 Yahoo 代码取(蜡烛图层才请求;/api/regime 不为编辑器多发整段 K 线) */
   barsFrom?: string;
-  /**
-   * 编辑器另给了取法、但 /api/regime 也发同名键的(qqq 走 ETF 现货、dgs10 等走收益曲线):固定面板读的 regime 键。
-   * 显式登记,不按名字碰巧相等去认;注意两边历史长度不同(regime 截到 2018),分位阈值会有差
-   */
-  regimeKey?: SeriesKey;
 };
 
 export type SeriesFamily =
@@ -464,9 +459,8 @@ const OVERRIDDEN = new Set(HAND.map((d) => d.id));
 const REGIME_WITH_OHLC: ReadonlySet<string> = new Set(REGIME_OHLC_KEYS);
 // 收盘在 /api/regime、K 线按需从 Yahoo 取的(代码与服务端拉收盘用的同一个)
 const YAHOO_BARS: Partial<Record<string, string>> = { spx: '^GSPC', spxew: '^SPXEW', usdjpy: 'JPY=X' };
-// 手写表覆盖了同名 regime 键的(编辑器走别的源,固定面板仍读 regime 那份)。新撞名会被测试拦下,要么加进来、要么改 id
-export const REGIME_ALIASES: readonly SeriesKey[] = ['qqq', 'dgs10', 'jgb2y', 'jgb10y'];
-const ALIASES: ReadonlySet<string> = new Set(REGIME_ALIASES);
+// 手写表覆盖了同名 regime 键的(qqq 走 ETF 现货、dgs10 / jgb2y / jgb10y 走收益曲线):编辑器和固定面板都用手写那份
+// (历史更长,2026-11-07 用户定统一用长历史),regime 那份不再经注册表引用
 
 const FROM_META: SeriesDef[] = REGIME_SERIES.filter(
   (k) => (SERIES_META[k].chartable !== false || SERIES_META[k].events) && !OVERRIDDEN.has(k),
@@ -488,10 +482,9 @@ const FROM_META: SeriesDef[] = REGIME_SERIES.filter(
 
 // 「能画蜡烛」在合并后的整张表上打:只打在 FROM_META 上的话,某条以后挪进手写表(HAND)就会悄悄丢掉
 function withOhlc(d: SeriesDef): SeriesDef {
-  const aliased = ALIASES.has(d.id) ? { ...d, regimeKey: d.id as SeriesKey } : d;
   const barsFrom = YAHOO_BARS[d.id];
-  if (barsFrom) return { ...aliased, ohlc: true, barsFrom };
-  return REGIME_WITH_OHLC.has(d.id) ? { ...aliased, ohlc: true } : aliased;
+  if (barsFrom) return { ...d, ohlc: true, barsFrom };
+  return REGIME_WITH_OHLC.has(d.id) ? { ...d, ohlc: true } : d;
 }
 
 export const REGISTRY: SeriesDef[] = [...HAND, ...FROM_META, ...FUNDAMENTALS].map(withOhlc);

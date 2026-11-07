@@ -12,9 +12,9 @@ import {
   vxContractDefs,
   yahooId,
 } from './registry';
-import { asOfValue } from '../../pages/editor/hooks/useCrosshairLegend';
+import { asOfValue } from './useCrosshairLegend';
 import { calcPoints, commonRange, requestKey, seriesBars, seriesPoints, weekdayOnly } from './useSeriesData';
-import { layerUnit } from '../../pages/editor/layerLabel';
+import { layerUnit } from './layerLabel';
 import { REGIME_SERIES, isSeriesKey } from '../../../shared/regimeSeries';
 import { DERIVED } from '../../../shared/seriesMeta';
 
@@ -122,8 +122,11 @@ describe('seriesPoints', () => {
     expect(seriesPoints(seriesDef('vix')!, src, '1D')).toEqual([{ time: '2026-10-30', value: 19.4 }]);
   });
 
-  test('BTC 走 ohlc 收盘,并去掉周末', () => {
+  test('BTC 走 ohlc 收盘,并去掉周末;整张图都是 7×24 时保留周末', () => {
     expect(seriesPoints(seriesDef('btc')!, src, '1D').map((p) => p.time)).toEqual(['2026-10-30', '2026-11-02']);
+    const kept = seriesPoints(seriesDef('btc')!, src, '1D', 0, true).map((p) => p.time);
+    expect(kept.length).toBeGreaterThan(2);
+    expect(kept).toContain('2026-10-30');
   });
 
   test('price 源取收盘', () => {
@@ -206,11 +209,6 @@ describe('registry', () => {
     const ids = new Set(REGISTRY.map((d) => d.id));
     // 点阵图的日期是预测年份,不进;事件日期、错月标记能解析(ChartDoc 里写竖线 / 背景图层用),但不进下拉
     expect(REGIME_SERIES.filter((k) => !ids.has(k))).toEqual(['sepMedian']);
-    // 注册表 id 撞上 regime 键、源却不是 regime 的:必须显式登记 regimeKey(固定面板读哪份),或是 BTC 这种只进 ohlc 的。
-    // 新撞名在这里拦下,别让固定面板转换按名字碰巧相等去认
-    const keys = new Set<string>(REGIME_SERIES);
-    const collide = REGISTRY.filter((d) => keys.has(d.id) && d.source.kind !== 'regime');
-    expect(collide.filter((d) => !d.regimeKey && d.source.kind !== 'regimeOhlc').map((d) => d.id)).toEqual([]);
     const markOnly = ['bojHikeDates', 'coreCpiRelease', 'corePceRelease', 'oilRollCrack', 'oilRollBrentWti'];
     expect(markOnly.every((k) => seriesDef(k)?.hidden)).toBe(true);
     // 旧图引用的派生 id 照样能解析(取得到数),只是下拉里不列
@@ -411,8 +409,9 @@ describe('计算图层', () => {
       { series: 'dgs10', calc: { op: '/' as const, series: 'ust2y' }, shift: 0 },
       { series: 'dgs10', calc: { op: '-' as const, series: 'ust2y' }, shift: 3, daily: true as const },
       { series: 'dgs10', calc: { op: '-' as const, series: 'ust2y', fill: true as const }, shift: 0 },
+      { series: 'dgs10', shift: 0, weekends: true as const },
     ].map(requestKey);
-    expect(new Set(keys).size).toBe(5);
+    expect(new Set(keys).size).toBe(6);
   });
 
   test('名称与单位:% − % 是百分点,比值没有单位,单位不同的相减也没有单位', () => {

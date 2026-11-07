@@ -283,9 +283,9 @@ TradingView
 - **L2-3（P1）固定面板迁移成 ChartDoc，加「在编辑器中打开」**。视角配置改为按 id 引用 ChartDoc，同一张图只有一份，避免参考站那种重复挂载。先迁移一个视角做验证，再整体迁移。约 2 到 3 天。进度：~~先迁一个做验证~~ 已迁「特色指标 · 集中度」一个 tab（8f69743）；~~整体迁移~~ ✅ 2026-11-07 全部 24 个固定 tab（79 格）都是 ChartDoc（`pages/<视角>/docs.ts`），手写 PaneSpec 已删；「在编辑器中打开」未做。
   目标是 PaneSpec 退场，分两步：
   ① ✅ 2026-11-07 完成（没写 `paneSpecsToDoc`：改成按源码逐视角改写，保留注释与说明片段常量；迁移期用测试逐格断言 `docToPaneSpecs(新 doc)` 与旧 PaneSpec 逐字段相同，只放过格子短名 label 与计算格的键（改为「A|运算|B」），23 个 tab 全部相等后切换、删旧文件和该测试）。原计划：L2-1 补齐后，写反向转换 `paneSpecsToDoc`，用脚本生成全部视角的 ChartDoc（不手抄）；测试断言转换前后画的东西、读数一致。删掉各 `dims.ts` 的手写 PaneSpec，类型退为转换层内部类型。**不兼容老面板的界面功能**（2026-11-06 定）：格子工具条的上移下移、折叠、ⓘ 说明、画线、「只看 X」等不为它们在 JSON 里留字段，按 key 存的顺序 / 折叠 / 趋势线本地存档可以丢。约 2 天。
-  ② 编辑器渲染器补齐 L2-1 全部画法，固定面板改用它的只读模式，删掉 `docToPaneSpecs` 与旧 regime 渲染链路。老面板的画线不迁（见上）。约 3 到 4 天。
+  ② ✅ 2026-11-07 完成：渲染零件（`useDocChart` / `Legend` / `layerPoints` / 分位带）从 `pages/editor` 挪到 `views/chartDoc`，固定面板的 24 个 tab 改由只读壳 `DocChart` 画（眼睛按钮、拖分隔条只改本页副本、不存档），`docToPaneSpecs` 与旧链路里计算格 / 叠加线 / 竖线 / 错月 / 参考线 / 轴范围分支已删，旧工具条随之消失。用户定的口径：分位**跟随图表周期**（周 / 月线按聚合点算，编辑器原口径）；dgs10 / jgb2y / jgb10y / qqq **统一用长历史**（不再读 regime 那份 2018 截断的）；初始窗口**从 2018 起**、往左拖看更早。图例补了分位排名徽标（十字线所在点的排名）。基本面维度（按名单现算的 PaneSpec）仍走旧 `RegimeChart`，没迁。原计划：编辑器渲染器补齐 L2-1 全部画法，固定面板改用它的只读模式，删掉 `docToPaneSpecs` 与旧 regime 渲染链路。老面板的画线不迁（见上）。约 3 到 4 天。
      进度（2026-11-06）：编辑器已能画 refLines、baseline、step、percentile（P5/P95 线 + riskTail 背景带）、desc（图例 ⓘ）、events、signed、hidden、纵轴范围框；还缺变换（均线 / 同比 / Z-score）。蜡烛已做。`docToPaneSpecs` 支持一格多线（第一条线是主线，其余转成 overlays）与竖线透明度（`render.events.opacity`），已用「利率 · 加息定价」格端到端对过（主线 + 3 叠加 + 2 竖线，画法字段逐一相等）。背景色带已做（`render: { kind: 'background' }`）。
-     口径差异：编辑器的分位阈值按图上的点算（周 / 月线是聚合点），同 TradingView 指标默认「跟随图表周期」；固定面板按原始日频算，相当于 TradingView 指定 `timeframe = "D"`。要两种都支持时再加参数（如 `percentile.tf`），默认跟随图表。
+     口径（2026-11-07 定）：分位阈值统一按图上的点算（周 / 月线是聚合点），同 TradingView 指标默认「跟随图表周期」；以前固定面板按原始日频算（相当于 `timeframe = "D"`），已不再这样。背景色带（错月）只在日线画。要按日频的话再加参数（如 `percentile.tf`）。
   不在范围：旧引擎 `PaneChartView` 还给 AssetChart / TenorHistoryPanel / AttackDefensePanel 用；SEC 申报提示、「暂不可用」提示按视角和数据状态生成，留在固定面板外层，不进 ChartDoc。
   验收：任意 regime 格右上角有「编辑」入口，点开后编辑器内容和原格一致，修改不影响原格。
 - ~~**L2-4（P1）ChartDoc 校验测试**~~ ✅ 已完成（`views/regime/docs.test.ts`：内置 ChartDoc 逐个过 JSON 往返 + 序列都在注册表）。存成 JSON 会丢掉编译期的拼写检查，要用一个测试补回来：遍历所有内置 ChartDoc，检查每个 series 都在注册表里。注册表 id 一旦用过就不再改名；真要改，在 parseChartDoc 里按 v 做迁移。约 30 分钟。
