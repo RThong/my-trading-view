@@ -1,5 +1,5 @@
 // 右侧操作区的收起 / 展开。收起状态记在 localStorage(读写不了就当展开,不影响使用)。
-// 收起 / 展开改变图宽时可视区间不被截掉,靠建图时的 lockVisibleTimeRangeOnResize(见 useEditorChart),这里不管图。
+// 收起 / 展开改变图宽时可视区间不被截掉,靠建图时的 lockVisibleTimeRangeOnResize(见 useDocChart),这里不管图。
 import { useState } from 'react';
 
 const STORAGE_KEY = 'mtv:chartEditor:sidebar';

@@ -1,4 +1,4 @@
-// 编辑器的渲染层:只吃「ChartDoc + 取到的数据」,直接用 lightweight-charts v5 API。
+// ChartDoc 的渲染层(图表编辑器与固定面板共用):只吃「ChartDoc + 取到的数据」,直接用 lightweight-charts v5 API。
 // 图只建一次;之后每次文档变化按图层 id 增量对账(加 / 删 / 换格 / 换轴 / 改色 / 倒轴 / 对数),不重建整张图,
 // 所以加格删格时缩放与十字线状态都还在。不依赖旧图表引擎(chart/ 下的 PaneChart*)。
 import { type RefObject, useEffect, useRef } from 'react';
@@ -29,20 +29,14 @@ import {
   boxAutoscaleProvider,
   fullHeightScale,
   type LinePoint,
-} from '../../../chart/core';
-import { BACKGROUND_ALPHA, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, withAlpha } from '../../../chart/palette';
-import type { Interval } from '../../../hooks/interval';
-import {
-  isMarkLayer,
-  liveScaleIds,
-  markColor,
-  type ChartDoc,
-  type Layer,
-  type Pane,
-} from '../../../views/chartDoc/chartDoc';
-import { drawnKind } from '../../../views/chartDoc/registry';
+} from '../../chart/core';
+import { BACKGROUND_ALPHA, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, withAlpha } from '../../chart/palette';
+import type { Interval } from '../../hooks/interval';
+import { isMarkLayer, liveScaleIds, markColor, type ChartDoc, type Layer, type Pane } from './chartDoc';
+import { drawnKind } from './registry';
 import { canLogScale, layerMarks, type LayerData } from './layerPoints';
-import { commonRange } from '../../../views/chartDoc/useSeriesData';
+import { commonRange } from './useSeriesData';
+import { latestIso } from '../../../shared/calc/isoDate';
 
 /** 折线是 Line;符号柱、事件竖线是 Histogram;背景色带是 Area。拖线 / 选中高亮只对折线(见 useLineDrag) */
 export type LayerSeries = Map<string, ISeriesApi<SeriesType>>;
@@ -173,8 +167,14 @@ function createLayerSeries(chart: IChartApi, layer: Layer, opts: object, paneInd
 type Options = {
   /** 拖完分隔条后读回的各格高度比例(写回 JSON,保持 JSON 是唯一真源)。 */
   onStretches: (stretches: number[]) => void;
-  /** 页头周期:变了就重新对准共同时段(否则整段换数据后柱宽不变,月线会挤在最右边一小条) */
+  /** 页头周期:变了就重新对准(否则整段换数据后柱宽不变,月线会挤在最右边一小条) */
   interval: Interval;
+  /**
+   * 对准到哪:common = 所有线都有数据的那一段(编辑器:临时拼的线历史长短不一,短的不挤在右边);
+   * { from } = 从这天到最新(固定面板:QQQ 1999 起、美债 10Y 1990 起这类长历史,全段显示会把其余格挤在右边一小截;
+   * 用户定 2018 起,与以前全站的视野一致)。两种都能往左拖看更早的历史
+   */
+  fit: 'common' | { from: string };
 };
 
 const STRETCH_EPS = 1e-3;
@@ -183,11 +183,11 @@ function round3(n: number) {
   return Math.round(n * 1000) / 1000;
 }
 
-export function useEditorChart(
+export function useDocChart(
   containerRef: RefObject<HTMLDivElement | null>,
   doc: ChartDoc,
   data: Record<string, LayerData>,
-  { onStretches, interval }: Options,
+  { onStretches, interval, fit }: Options,
 ) {
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<LayerSeries>(new Map());
@@ -278,9 +278,14 @@ export function useEditorChart(
     if (!range && !seriesPts.some((p) => p.length)) return;
 
     alignedIntervalRef.current = interval;
-    if (range) chart.timeScale().setVisibleRange(range);
+    const withData = seriesPts.filter((p) => p.length > 0);
+    const target =
+      fit === 'common'
+        ? range
+        : withData.length && { from: fit.from, to: latestIso(withData.map((p) => p.at(-1)!.time)) };
+    if (target) chart.timeScale().setVisibleRange(target);
     else chart.timeScale().fitContent();
-  }, [doc, data, interval]);
+  }, [doc, data, interval, fit]);
 
   // 纵轴显示模式(倒轴 / 对数)。放在结构与数据之后:对数要看数据,轴上有 ≤0 的值就按普通坐标画。
   // 内置左右轴每格都在,没声明的也要明确设回默认(轴被回收后再挂上图层,不能沿用旧状态)。

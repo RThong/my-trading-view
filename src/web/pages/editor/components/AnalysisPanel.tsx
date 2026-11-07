@@ -13,7 +13,7 @@ import {
 } from '../../../chart/analysis';
 import { isFitTarget, type ChartDoc, type Layer } from '../../../views/chartDoc/chartDoc';
 import { drawnKind } from '../../../views/chartDoc/registry';
-import { baseLabel } from '../layerLabel';
+import { baseLabel } from '../../../views/chartDoc/layerLabel';
 import type { ChartDocActions } from '../hooks/useChartDoc';
 import { requestKey } from '../../../views/chartDoc/useSeriesData';
 import type { DateRange } from '../hooks/useVisibleRange';

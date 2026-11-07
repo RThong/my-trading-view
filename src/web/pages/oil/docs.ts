@@ -45,6 +45,9 @@ function clampNote(box: string, tail: string) {
   );
 }
 
+// 错月背景:中性灰蓝,刻意不与分位带的红 / 绿(风险 / 机会)同色系
+const ROLL_BG = '#94a3b8';
+
 export const OIL_DOCS = {
   // 油市结构(物理紧张):Brent−WTI(海运 vs 内陆)+ 柴油/汽油/3-2-1 三条裂解(炼厂利润/工业需求)。
   // 长期结构指标:海峡恢复后切回本职——读油市松紧、工业需求强弱。$/桶。
@@ -70,7 +73,7 @@ export const OIL_DOCS = {
             title: 'Brent − WTI ($/桶)',
             refLines: normalBand(1.5, 10),
           },
-          { id: 'l2', series: 'oilRollBrentWti', scale: 'right', color: '#94a3b8', render: { kind: 'background' } },
+          { id: 'l2', series: 'oilRollBrentWti', scale: 'right', color: ROLL_BG, render: { kind: 'background' } },
         ],
         desc: [
           '定义:国际海运原油(Brent)− 美国内陆原油(WTI),$/桶。看「紧张在哪、桶往哪流」。',
@@ -97,7 +100,7 @@ export const OIL_DOCS = {
             title: '柴油裂解 (ULSD×42 − WTI, $/桶) · 外称 取暖油 / Heating Oil / HO crack',
             percentile: { riskTail: 'high' },
           },
-          { id: 'l4', series: 'oilRollCrack', scale: 'right', color: '#94a3b8', render: { kind: 'background' } },
+          { id: 'l4', series: 'oilRollCrack', scale: 'right', color: ROLL_BG, render: { kind: 'background' } },
         ],
         desc: [
           '定义:炼一桶原油出柴油的毛利(ULSD×42 − WTI,$/桶)。看下游 / 实体经济。',
@@ -148,7 +151,7 @@ export const OIL_DOCS = {
             // 那种告警每年都响一遍,响了等于没响。P5/P95 参考线与分位徽标照留。
             percentile: {},
           },
-          { id: 'l6', series: 'oilRollCrack', scale: 'right', color: '#94a3b8', render: { kind: 'background' } },
+          { id: 'l6', series: 'oilRollCrack', scale: 'right', color: ROLL_BG, render: { kind: 'background' } },
         ],
         desc: [
           '定义:炼一桶原油出汽油的毛利(RBOB×42 − WTI,$/桶)。柴油那格的配对腿。',
@@ -177,7 +180,7 @@ export const OIL_DOCS = {
             title: '3-2-1 裂解 ((2×RBOB + ULSD)×42/3 − WTI, $/桶)',
             percentile: { riskTail: 'high' },
           },
-          { id: 'l8', series: 'oilRollCrack', scale: 'right', color: '#94a3b8', render: { kind: 'background' } },
+          { id: 'l8', series: 'oilRollCrack', scale: 'right', color: ROLL_BG, render: { kind: 'background' } },
         ],
         desc: [
           '定义:新闻和卖方报告里默认的那个「炼厂利润」—— 3 桶原油炼出 2 桶汽油 + 1 桶馏分油的加权毛利,$/桶。',

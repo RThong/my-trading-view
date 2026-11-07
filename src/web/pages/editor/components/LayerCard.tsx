@@ -17,8 +17,8 @@ import {
   type ScaleChoice,
 } from '../../../views/chartDoc/chartDoc';
 import { canCandle, drawnKind } from '../../../views/chartDoc/registry';
-import { CandleSwatch } from './CandleSwatch';
-import { baseLabel, layerLabel } from '../layerLabel';
+import { CandleSwatch } from '../../../views/chartDoc/CandleSwatch';
+import { baseLabel, layerLabel } from '../../../views/chartDoc/layerLabel';
 import { NumberField } from './NumberField';
 import { SeriesSelect } from './SeriesSelect';
 import type { ChartDocActions } from '../hooks/useChartDoc';

@@ -1,13 +1,16 @@
 import { Eye, EyeOff } from 'lucide-react';
-import { InfoTip } from '../../../components/InfoTip';
-import { drawnKind } from '../../../views/chartDoc/registry';
+import { InfoTip } from '../../components/InfoTip';
+import { drawnKind } from './registry';
 import { CandleSwatch } from './CandleSwatch';
-import type { Interval } from '../../../hooks/interval';
-import { shiftBusinessDays } from '../../../chart/analysis';
-import { isMarkLayer, type ChartDoc } from '../../../views/chartDoc/chartDoc';
-import { layerLabel, layerUnit } from '../layerLabel';
-import type { LayerData } from '../hooks/layerPoints';
-import { asOfPoint, type LegendLayout } from '../hooks/useCrosshairLegend';
+import type { Interval } from '../../hooks/interval';
+import { shiftBusinessDays } from '../../chart/analysis';
+import { isMarkLayer, type ChartDoc, type Layer } from './chartDoc';
+import { changeStats, type Bar, type LinePoint } from '../../chart/core';
+import { SIGNED_DOWN, SIGNED_UP } from '../../chart/palette';
+import { layerLabel, layerUnit } from './layerLabel';
+import { layerMarks, type LayerData } from './layerPoints';
+import { percentileRank } from '../../../shared/calc/stats';
+import { asOfPoint, type LegendLayout } from './useCrosshairLegend';
 
 /** 数值按量级定小数位:BTC 这种五位数不带小数,利率 / 波动率 / 相关性留两位。 */
 export function fmtValue(v: number | undefined): string {
@@ -16,6 +19,27 @@ export function fmtValue(v: number | undefined): string {
   const digits = abs >= 1000 ? 0 : abs >= 100 ? 1 : 2;
 
   return v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+/** 配了分位的线:当前读数在分位窗口里的排名(0~100);没配分位、没数据为 undefined */
+function pctlRank(l: Layer, pts: LinePoint[] | undefined, value: number | undefined): number | undefined {
+  if (!l.percentile || !pts || value === undefined) return undefined;
+  const window = layerMarks(l, pts).window;
+  const rank = window ? percentileRank(window, value) : Number.NaN;
+
+  return Number.isNaN(rank) ? undefined : rank;
+}
+
+/** 十字线当日(无十字线时为最新)的那根 K 线,规则同 asOfPoint */
+function asOfBar(bars: Bar[] | undefined, time: string | null): Bar | undefined {
+  if (!bars?.length) return undefined;
+  return time === null ? bars.at(-1) : bars.findLast((b) => b.time <= time);
+}
+
+/** 相对前一个点的涨跌:「+0.12 (+0.53%)」;前值为 0 时只给差值(同旧固定面板) */
+function fmtChange({ delta, pct }: { delta: number; pct: number | null }): string {
+  const sign = (n: number) => (n >= 0 ? '+' : '');
+  return `${sign(delta)}${fmtValue(delta)}${pct === null ? '' : ` (${sign(pct)}${pct.toFixed(2)}%)`}`;
 }
 
 type Props = {
@@ -54,9 +78,17 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
             </span>
           )}
           {pane.layers.map((l) => {
-            const pt = asOfPoint(data[l.id]?.display, hoverTime);
+            const pts = data[l.id]?.display;
+            const pt = asOfPoint(pts, hoverTime);
             const shift = l.shift ?? 0;
-            const unit = layerUnit(l);
+            // 写了 title 的(固定面板的格子)名字里已带单位,不再追加
+            const unit = l.title === undefined ? layerUnit(l) : undefined;
+            const rank = pctlRank(l, pts, pt?.value);
+            // 蜡烛给开高低收;涨跌比的是前一个点(周 / 月线就是上一期),涨绿跌红,同旧固定面板与 TradingView
+            const bar = drawnKind(l) === 'candle' ? asOfBar(data[l.id]?.bars, hoverTime) : undefined;
+            const change = pt && pts && !isMarkLayer(l) ? changeStats(pt.value, pts[pts.indexOf(pt) - 1]?.value) : null;
+            const tone = change && change.delta !== 0 ? (change.delta > 0 ? SIGNED_UP : SIGNED_DOWN) : undefined;
+            const num = (v: number) => <span style={{ color: tone }}>{fmtValue(v)}</span>;
             return (
               <span
                 key={l.id}
@@ -69,8 +101,21 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
                 )}
                 <span className="text-neutral-400">{layerLabel(doc, l)}</span>
                 {/* 标记图层(竖线、背景色带)的值无意义,只给名字 */}
-                {!isMarkLayer(l) && <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>}
+                {!isMarkLayer(l) &&
+                  (bar ? (
+                    <span className="tabular-nums text-neutral-400">
+                      O {num(bar.open)} H {num(bar.high)} L {num(bar.low)} C {num(bar.close)}
+                    </span>
+                  ) : (
+                    <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>
+                  ))}
                 {unit && !isMarkLayer(l) && <span className="text-neutral-600">{unit}</span>}
+                {change && (
+                  <span className="tabular-nums" style={{ color: tone }}>
+                    {fmtChange(change)}
+                  </span>
+                )}
+                {rank !== undefined && <span className="tabular-nums text-neutral-500">P{rank}</span>}
                 {shift !== 0 && pt && interval === '1D' && (
                   <span className="text-neutral-600">原 {shiftBusinessDays(pt.time, -shift)}</span>
                 )}

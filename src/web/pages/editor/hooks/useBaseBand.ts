@@ -5,7 +5,7 @@ import { type RefObject, useEffect } from 'react';
 import { AreaSeries, type IChartApi, type ISeriesApi } from 'lightweight-charts';
 import { FULL_HEIGHT_AREA, fullHeightScale } from '../../../chart/core';
 import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
-import type { LayerData } from './layerPoints';
+import type { LayerData } from '../../../views/chartDoc/layerPoints';
 
 // 暖色:和蓝 / 绿等线色都拉得开,深色底上一眼能分出段内段外
 const BAND_COLOR = 'rgba(250, 204, 21, 0.1)';

@@ -220,8 +220,6 @@ export type RegimeSeries = (typeof REGIME_SERIES)[number];
  */
 export const REGIME_OHLC_KEYS = ['usd', 'mufg'] as const satisfies readonly RegimeSeries[];
 export type RegimeOhlcKey = (typeof REGIME_OHLC_KEYS)[number];
-/** /api/regime 的 ohlc 里从库读的那几条(server/routes/regimeDb 写入)。连同上表 = 固定面板能画蜡烛的全部键 */
-export const REGIME_DB_OHLC_KEYS = ['qqq', 'btc'] as const satisfies readonly RegimeSeries[];
 
 /** 面板 pane / 后端 put 能用的键:枚举名,或基本面那类动态键。 */
 export type SeriesKey = RegimeSeries | FundSeries;

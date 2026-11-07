@@ -2,8 +2,8 @@
 // 各图层的数值在渲染时由 asOfValue 现算,不进 state。
 import { type RefObject, useEffect, useState } from 'react';
 import type { IChartApi, MouseEventParams } from 'lightweight-charts';
-import { fmtDate, type LinePoint } from '../../../chart/core';
-import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
+import { fmtDate, type LinePoint } from '../../chart/core';
+import type { ChartDoc } from './chartDoc';
 
 /** 各格绘图区顶边 + 绘图区左边(开了左轴时要让开刻度),相对图表容器的像素。 */
 export type LegendLayout = { tops: number[]; left: number };
@@ -56,7 +56,7 @@ export function useCrosshairLegend(
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    // 同 useEditorChart 的读回:分隔条可以拖出图外再松手,听 window 才不漏
+    // 同 useDocChart 的读回:分隔条可以拖出图外再松手,听 window 才不漏
     window.addEventListener('pointerup', measure);
     // 左轴宽度随刻度文字变(平移 / 缩放到另一个量级时),跟着重量;rAF + 等值比较保证不多渲染
     const ts = chart.timeScale();

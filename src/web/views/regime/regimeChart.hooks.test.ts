@@ -6,169 +6,119 @@ import {
   secFiledNote,
   secLagNote,
   secTrimNote,
+  type PaneSpec,
   type RegimeData,
-  type FixedDim,
 } from './regimeChart.hooks';
-import { dimPanes, REGIME_DOCS, regimeView } from '../../pages/regimeDims';
+import { dimPanes, regimeView } from '../../pages/regimeDims';
 import { ACTIVE_TICKERS, fundKey, kindsOf, SEC_BUYER_FCF_KEY, SEC_BUYER_FCFQ_KEY } from '../../../shared/aiChain';
-import { REGIME_SERIES, isSeriesKey, type SeriesKey } from '../../../shared/regimeSeries';
+import { REGIME_SERIES } from '../../../shared/regimeSeries';
 
-const FIXED_DIMS = Object.keys(REGIME_DOCS) as FixedDim[];
-
+// 旧 regime 图(RegimeChart)只剩基本面维度用:画法用例用内联的格子,不依赖任何真实 tab 的配置
+// (固定 tab 是 ChartDoc,配置层面的约束见 docs.test,画法见 views/chartDoc 的测试)。
+const PANES: PaneSpec[] = [
+  { key: 'netLiquidity', label: '净流动性', title: '净流动性', color: '#22c55e' },
+  { key: 'reserves', label: '准备金', title: '准备金', color: '#3b82f6' },
+  { key: 'repoUsage', label: '回购用量', title: '回购用量', color: '#ec4899' },
+  { key: 'repoStress', label: '回购压力', title: '回购压力', render: { kind: 'line', baseline: 0 } },
+];
 const data: RegimeData = {
   series: {
     netLiquidity: [
       { date: '2020-01-01', value: 5 },
       { date: '2020-01-02', value: 6 },
     ],
-    reverseRepo: [{ date: '2020-01-01', value: 2 }],
-    // repoUsage 缺失(模拟 unavailable)
-    // 回购压力是计算格(IORB − SOFR),键按「A|运算|B」;RegimeChart 现算后填在这个键下
-    'iorb|-|sofr': [{ date: '2020-01-01', value: -0.01 }],
+    // reserves 无数据、repoUsage 缺失(模拟 unavailable)
+    repoStress: [{ date: '2020-01-01', value: -0.01 }],
   },
   unavailable: ['repoUsage'],
 };
 
-test('流动性维度:pane 下标按 paneDefs 顺序,缺失序列被跳过', () => {
-  const specs = buildRegimeSpecs(data, dimPanes('liquidity'), '1D');
-  // 5 个 paneDef,reserves 无数据、repoUsage 缺 → 只出 3 条 spec
-  expect(specs.map((s) => s.key)).toEqual(['netLiquidity', 'reverseRepo', 'iorb|-|sofr']);
-  // pane 下标 = 原 paneDefs 索引(reserves 是第 1、repoUsage 是第 3,被跳过后 repoStress 仍是 4)
-  expect(specs.map((s) => s.pane)).toEqual([0, 2, 4]);
-});
-
-test('repoStress 带 0 基线,其余无', () => {
-  const specs = buildRegimeSpecs(data, dimPanes('liquidity'), '1D');
-  const byKey = Object.fromEntries(specs.map((s) => [s.key, s]));
-  expect((byKey['iorb|-|sofr'] as { baseline?: number }).baseline).toBe(0);
-  expect((byKey.netLiquidity as { baseline?: number }).baseline).toBeUndefined();
+test('pane 下标按 panes 顺序,缺失序列被跳过', () => {
+  const specs = buildRegimeSpecs(data, PANES, '1D');
+  expect(specs.map((s) => s.key)).toEqual(['netLiquidity', 'repoStress']);
+  // pane 下标 = 原 panes 索引(reserves、repoUsage 被跳过后 repoStress 仍是 3)
+  expect(specs.map((s) => s.pane)).toEqual([0, 3]);
+  expect((specs[1] as { baseline?: number }).baseline).toBe(0);
+  expect((specs[0] as { baseline?: number }).baseline).toBeUndefined();
 });
 
 test('全部缺失 → 空 specs', () => {
-  expect(buildRegimeSpecs({ series: {}, unavailable: [] }, dimPanes('sentiment'), '1D')).toEqual([]);
+  expect(buildRegimeSpecs({ series: {}, unavailable: [] }, PANES, '1D')).toEqual([]);
 });
 
-test('情绪维度:分位带 + 极端期背景带按 riskTail 语义上色', () => {
-  // fng 0..100 步长 10,共 11 点 → P5=5、P95=95。fng riskTail=high:高端=风险(红)、低端=机会(绿)。
+test('分位带 + 极端期背景带按 riskTail 语义上色;无 riskTail 只留 P5/P95 线;since 只限阈值窗口', () => {
   const fng = Array.from({ length: 11 }, (_, i) => ({
     date: `2021-01-${String(i + 1).padStart(2, '0')}`,
     value: i * 10,
   }));
-  const specs = buildRegimeSpecs({ series: { fng }, unavailable: [] }, dimPanes('sentiment'), '1D');
+  const high: PaneSpec = { key: 'fng', label: 'F&G', title: 'F&G', percentile: { riskTail: 'high' } };
+  const specs = buildRegimeSpecs({ series: { fng }, unavailable: [] }, [high], '1D');
 
-  // 每个有数据的 pane 出 [背景直方图, 线] 两条;这里只有 fng
+  // [背景直方图, 线] 两条,背景先建 → 画在下层
   expect(specs.map((s) => s.key)).toEqual(['fng-bg', 'fng']);
-
-  const line = specs[1] as { refLines?: { price: number; title: string }[] };
-  expect(line.refLines).toEqual([
+  expect((specs[1] as { refLines?: unknown }).refLines).toEqual([
     { price: 5, title: 'P5' },
     { price: 95, title: 'P95' },
   ]);
-
   const bg = specs[0] as { data: Array<{ value: number; color: string }>; priceScaleId?: string };
   expect(bg.priceScaleId).toBe('bg-fng');
-  expect(bg.data[0]).toMatchObject({ value: 1, color: 'rgba(34,197,94,0.45)' }); // 值0 < P5,低端=机会=绿
-  expect(bg.data[10]).toMatchObject({ value: 1, color: 'rgba(239,68,68,0.45)' }); // 值100 > P95,高端=风险=红
-  expect(bg.data[5].color).toBe('rgba(0,0,0,0)'); // 值50 不极端 → 透明(值统一为 1,编辑器的面积图才不出斜坡)
+  expect(bg.data[0]).toMatchObject({ value: 1, color: 'rgba(34,197,94,0.45)' }); // 低端 = 机会 = 绿
+  expect(bg.data[10]).toMatchObject({ value: 1, color: 'rgba(239,68,68,0.45)' }); // 高端 = 风险 = 红
+
+  const plain = buildRegimeSpecs({ series: { fng }, unavailable: [] }, [{ ...high, percentile: {} }], '1D');
+  expect(plain.map((s) => s.key)).toEqual(['fng']);
+
+  // since:阈值只用 01-06 起的 6 个点(50 … 100),线仍画全部 11 个点
+  const since = buildRegimeSpecs(
+    { series: { fng }, unavailable: [] },
+    [{ ...high, percentile: { riskTail: 'high', since: '2021-01-06' } }],
+    '1D',
+  );
+  const line = since.find((s) => s.key === 'fng') as { data: unknown[]; refLines?: Array<{ price: number }> };
+  expect(line.data).toHaveLength(11);
+  expect(line.refLines?.[0].price).toBe(52.5);
+  expect(regimePercentiles({ series: { fng }, unavailable: [] }, [high])).toEqual({ fng: 'P95' });
 });
 
-test('candle 维度:标 candle 的序列用 ohlc 出蜡烛 spec', () => {
+test('蜡烛用 ohlc 出 spec;符号柱正绿负红、0 基线,不套分位徽标', () => {
   const ohlc = {
     usd: [
       { time: '2021-01-04', open: 89, high: 90, low: 88, close: 89.5 },
       { time: '2021-01-05', open: 89.5, high: 91, low: 89, close: 90.8 },
     ],
   };
-  const specs = buildRegimeSpecs({ series: { usd: [] }, unavailable: [], ohlc }, dimPanes('macro'), '1D');
-  expect(specs.map((s) => s.key)).toEqual(['usd']);
-  expect((specs[0] as { kind: string }).kind).toBe('candle');
-  expect((specs[0] as { data: unknown[] }).data.length).toBe(2);
-});
+  const candle: PaneSpec = { key: 'usd', label: 'DXY', title: 'DXY', render: { kind: 'candle' } };
+  const specs = buildRegimeSpecs({ series: { usd: [] }, unavailable: [], ohlc }, [candle], '1D');
+  expect(specs.map((s) => (s as { kind: string }).kind)).toEqual(['candle']);
 
-test('percentiles 维度里无 riskTail 的序列不画背景带(方向不单一,只留 P5/P95 线)', () => {
-  const dgs10 = Array.from({ length: 21 }, (_, i) => ({ date: `2021-01-${String(i + 1).padStart(2, '0')}`, value: i }));
-  const specs = buildRegimeSpecs({ series: { dgs10 }, unavailable: [] }, dimPanes('ratesVol'), '1D');
-  expect(specs.map((s) => s.key)).toEqual(['dgs10']); // 无 dgs10-bg 背景带
-  const line = specs[0] as { kind: string; refLines?: unknown[] };
-  expect(line.kind).toBe('line');
-  expect(line.refLines).toHaveLength(2); // P5/P95 参考线仍在
-});
-
-test('期限结构:符号柱状图(正绿负红、0基线),不套分位带/徽标', () => {
-  // VX1 − VX3 是计算格,键按「A|运算|B」
-  const key = 'db:VX1|-|db:VX3';
   const series = {
-    [key]: [
-      { date: '2021-01-01', value: 2 }, // 正 → 绿
-      { date: '2021-01-02', value: -1.5 }, // 负 → 红
+    cftcJpy: [
+      { date: '2021-01-01', value: 2 },
+      { date: '2021-01-02', value: -1.5 },
     ],
   };
-  const specs = buildRegimeSpecs({ series, unavailable: [] }, dimPanes('vol'), '1D');
-  expect(specs.map((s) => s.key)).toEqual([key]); // 单条 histo,无 bg/line 对
-  const h = specs[0] as {
+  const signed: PaneSpec = { key: 'cftcJpy', label: '净持仓', title: '净持仓', render: { kind: 'signed' } };
+  const [h] = buildRegimeSpecs({ series, unavailable: [] }, [signed], '1D') as Array<{
     kind: string;
     baseline?: number;
-    refLines?: unknown;
-    data: Array<{ value: number; color: string }>;
-  };
+    data: Array<{ color: string }>;
+  }>;
   expect(h.kind).toBe('histogram');
   expect(h.baseline).toBe(0);
-  expect(h.refLines).toBeUndefined();
-  expect(h.data[0].color).toBe('#22c55e'); // 正=绿
-  expect(h.data[1].color).toBe('#ef4444'); // 负=红
-  // 无分位徽标
-  expect(regimePercentiles({ series, unavailable: [] }, dimPanes('vol'))[key]).toBeUndefined();
+  expect(h.data.map((d) => d.color)).toEqual(['#22c55e', '#ef4444']);
+  expect(regimePercentiles({ series, unavailable: [] }, [signed]).cftcJpy).toBeUndefined();
 });
 
-test('jgbVol:jgb10y 无 riskTail → 无背景带', () => {
-  const jgb10y = [
-    { date: '2020-01-01', value: 0.1 },
-    { date: '2020-01-02', value: 0.12 },
-  ];
-  const specs = buildRegimeSpecs({ series: { jgb10y }, unavailable: [] }, dimPanes('jgbVol'), '1D');
-  expect(specs.map((s) => s.key)).toEqual(['jgb10y']); // 无 jgb10y-bg
+test('derivePaneMeta:每格一条线,名字 / 颜色 / 说明按 key 取', () => {
+  const meta = derivePaneMeta([{ ...PANES[0], desc: '说明' }, PANES[3]]);
+  expect(meta.paneDefs).toEqual([
+    { key: 'netLiquidity', label: '净流动性', series: ['netLiquidity'] },
+    { key: 'repoStress', label: '回购压力', series: ['repoStress'] },
+  ]);
+  expect(meta.colors).toEqual({ netLiquidity: '#22c55e' });
+  expect(meta.desc).toEqual({ netLiquidity: '说明' });
 });
 
-test('jgbVol:jgbVix 有 riskTail → 带背景带', () => {
-  const jgbVix = [
-    { date: '2020-01-01', value: 2 },
-    { date: '2020-01-02', value: 3 },
-  ];
-  const specs = buildRegimeSpecs({ series: { jgbVix }, unavailable: [] }, dimPanes('jgbVol'), '1D');
-  expect(specs.map((s) => s.key)).toEqual(['jgbVix-bg', 'jgbVix']);
-});
-
-test('valuation:cape 有 riskTail high → 带背景带', () => {
-  const cape = [
-    { date: '2020-01-01', value: 30 },
-    { date: '2020-02-01', value: 42 },
-  ];
-  const specs = buildRegimeSpecs({ series: { cape }, unavailable: [] }, dimPanes('valuation'), '1D');
-  expect(specs.map((s) => s.key)).toEqual(['cape-bg', 'cape']);
-});
-
-test('valuation:cape 分位只用 pctlSince(2000+)窗口,线仍画全部', () => {
-  // 1995 的极低值不该进分位(会把 P5 拉到 10);2000+ 三点才算分位。
-  const cape = [
-    { date: '1995-01-01', value: 10 },
-    { date: '2000-01-01', value: 30 },
-    { date: '2000-02-01', value: 40 },
-    { date: '2000-03-01', value: 50 },
-  ];
-  const specs = buildRegimeSpecs({ series: { cape }, unavailable: [] }, dimPanes('valuation'), '1D');
-  const line = specs.find((s) => s.key === 'cape')!;
-  expect(line.data.length).toBe(4); // 线画全部 4 点(含 1995)
-  const refLines = (line as { refLines: { price: number; title: string }[] }).refLines;
-  const p5 = refLines.find((r) => r.title === 'P5')!.price;
-  expect(p5).toBeGreaterThanOrEqual(30); // 分位不含 1995 的 10 → P5 落在 2000+ 区间
-
-  // 徽标分位:最新值 50 只对 2000+ 三点(中位排名 =(3−0.5)/3=P83)排名,不被 1995 稀释
-  // (含 1995 会是 4 点 → P88,借此证明窗口生效)
-  const pctls = regimePercentiles({ series: { cape }, unavailable: [] }, dimPanes('valuation'));
-  expect(pctls.cape).toBe('P83');
-});
-
-// SEC 滞后提示:判据只认后端算好的 secLag,不做任何日期差推断(各家财年季末天然错开)。
 const LAG = { ticker: 'META', remoteFiled: '2026-07-30', localFiled: '2026-04-30', latestPeriodEnd: '2026-03-31' };
 function withLag(secLag: (typeof LAG)[]): RegimeData {
   return { series: {}, unavailable: [], secLag };
@@ -318,171 +268,11 @@ test('secTrimNote:没裁过就不出提示', () => {
   expect(secTrimNote({ series: {}, unavailable: [], secTrim: [] }, dimPanes('fundamentals:NVDA'))).toBeUndefined();
 });
 
-test('QQQ 现货是两个 tab 共用的同一份定义', () => {
-  const qqqPane = (dim: FixedDim) => REGIME_DOCS[dim].panes.find((p) => p.layers[0]?.series === 'qqq');
-  const [volQqq] = dimPanes('vol').filter((p) => p.key === 'qqq');
-
-  // 断言 doc 里是「同一个对象引用」而不是「深相等」:这一格的存在意义就是不被抄成两份 ——
-  // 深相等会放过「复制粘贴且内容恰好一样」,而那正是本仓库反复踩的「改一处漏一处」。
-  expect(qqqPane('vol')).toBeDefined();
-  expect(qqqPane('sentiment')).toBe(qqqPane('vol'));
-
-  // 它是价格参照物不是判据:蜡烛 + 不套分位(套了会出徽标和红绿背景带,读成风险信号)。
-  expect(volQqq?.render).toEqual({ kind: 'candle' });
-  expect(volQqq?.percentile).toBeUndefined();
-});
-
-test('VIX6M:低位染红(riskTail low),缺数据则整格不出', () => {
-  // 单调升序 → 首点在 P5 以下、末点在 P95 以上。riskTail 决定哪一端染红:
-  // low 表示「低 = 压扁 = 自满 = 风险」,所以**低端红、高端绿**;写成 high 就正好反过来。
-  // 只断言 refLines 有两条是不够的 —— 那对 low/high 都成立,改反了测试照绿。
-  const vix6m = Array.from({ length: 30 }, (_, i) => ({
-    date: `2021-01-${String(i + 1).padStart(2, '0')}`,
-    value: 15 + i,
-  }));
-  const data = { series: { vix6m }, unavailable: [] };
-  const specs = buildRegimeSpecs(data, dimPanes('vol'), '1D');
-  const bg = specs.find((s) => s.key === 'vix6m-bg') as { data: Array<{ color: string }> };
-  const line = specs.find((s) => s.key === 'vix6m') as { refLines?: unknown[] };
-
-  expect(line.refLines).toHaveLength(2); // P5/P95 —— 「这一段在自身历史什么位置」全靠它
-  expect(bg.data[0].color).toBe('rgba(239,68,68,0.45)'); // 最低那天 < P5 → 风险端 = 红
-  expect(bg.data.at(-1)?.color).toBe('rgba(34,197,94,0.45)'); // 最高那天 > P95 → 另一端 = 绿
-  expect(regimePercentiles(data, dimPanes('vol')).vix6m).toBeDefined();
-
-  // 源缺失(CBOE 404 / 空 CSV)→ 那一格不出,不画空线
-  expect(
-    buildRegimeSpecs({ series: {}, unavailable: ['vix6m'] }, dimPanes('vol'), '1D').some((s) => s.key === 'vix6m'),
-  ).toBe(false);
-});
-
-// pane key 同时是 series 键、图表 series 句柄的 Map 键(paneChart.hooks 的 seriesRef)、
-// 以及 desc/colors 那几张 Object.fromEntries 的键。重键不会报错,只会让后一格静默覆盖前一格
-// (曾经真踩到:A vs L 那格想复用 expShort10Kw 当主线,结果把预期短端那格的说明冲掉了)。
-test('固定 dim:每个 dim 内的 pane key(含 overlay)不得重复', () => {
-  for (const dim of FIXED_DIMS) {
-    const keys = dimPanes(dim).flatMap((p) => [p.key, ...(p.overlays ?? []).map((o) => o.key)]);
-    expect(new Set(keys).size, `${dim} 有重复 pane/overlay key`).toBe(keys.length);
-  }
-});
-
-test('derivePaneMeta:overlay 进同一 pane 的 series,且带上自己的名字与颜色', () => {
-  const meta = derivePaneMeta(dimPanes('ratesDecomp'));
-  const gap = meta.paneDefs.find((d) => d.key === 'expShort10Kw')!;
-
-  expect(gap.series).toEqual(['expShort10Kw', 'lProxyHlwT5yifr']);
-  expect(meta.seriesName.lProxyHlwT5yifr).toContain('L 代理');
-  expect(meta.colors.lProxyHlwT5yifr).toBeTruthy();
-});
-
-test('derivePaneMeta:r* 那格叠上 SEP 口径 r*', () => {
-  const meta = derivePaneMeta(dimPanes('ratesDecomp'));
-
-  expect(meta.paneDefs.find((d) => d.key === 'rstarHlwCurrent')!.series).toEqual([
-    'rstarHlwCurrent',
-    'rstarSepImplied',
-  ]);
-});
-
-test('buildRegimeSpecs:overlay 缺失只少那条线,主线照画', () => {
-  const withL: RegimeData = {
-    series: {
-      expShort10Kw: [{ date: '2026-01-02', value: 3.9 }],
-      lProxyHlwT5yifr: [{ date: '2026-01-01', value: 3.4 }],
-    },
-    unavailable: [],
-  };
-  const noL: RegimeData = { series: withL.series, unavailable: ['lProxyHlwT5yifr'] };
-
-  const keysOf = (d: RegimeData) =>
-    buildRegimeSpecs(d, dimPanes('ratesDecomp'), '1D')
-      .filter((s) => s.pane === dimPanes('ratesDecomp').findIndex((p) => p.key === 'expShort10Kw'))
-      .map((s) => s.key);
-
-  expect(keysOf(withL)).toEqual(['expShort10Kw', 'lProxyHlwT5yifr']);
-  expect(keysOf(noL)).toEqual(['expShort10Kw']);
-});
-
-// 多条 overlay(总量 + 四项贡献度)。单条那版只证明了「第一条」画得出来,
-// 而这格的产品是**五条同框**:四项相加 ≈ 总量,分开成五格就读不出「谁在拖」。
-test('buildRegimeSpecs:日银潜在增速那格 = 总量 + 四项贡献度同 pane,缺哪条只少哪条', () => {
-  const pt = { date: '2026-03-31', value: 0.69 };
-  const full: RegimeData = {
-    series: {
-      jpPotentialGrowth: [pt],
-      jpPotTfp: [pt],
-      jpPotCapital: [pt],
-      jpPotHours: [pt],
-      jpPotWorkers: [pt],
-    },
-    unavailable: [],
-  };
-  const pane = dimPanes('jpGap').findIndex((p) => p.key === 'jpPotentialGrowth');
-  const keysOf = (d: RegimeData) =>
-    buildRegimeSpecs(d, dimPanes('jpGap'), '1D')
-      .filter((sp) => sp.pane === pane)
-      .map((sp) => sp.key);
-
-  expect(keysOf(full)).toEqual(['jpPotentialGrowth', 'jpPotTfp', 'jpPotCapital', 'jpPotHours', 'jpPotWorkers']);
-  expect(keysOf({ series: full.series, unavailable: ['jpPotHours'] })).toEqual([
-    'jpPotentialGrowth',
-    'jpPotTfp',
-    'jpPotCapital',
-    'jpPotWorkers',
-  ]);
-});
-
-// 口径隔离。**这条守的是一个已经犯过的错**:r* 曾被叠在「预期短端」同格,而两者一个实际、一个名义,
-// 图上比高低得到的结论正好是反的(实际 0.72 < 名义 1.70 → 误判成「政策已高于中性」)。
-// 分格是唯一有效的防线 —— desc 拦不住「两条线摆在一起就去比」。
-//
-// 写成**集合级**断言而不是钉死那两个 key:只钉「预期短端那格不叠东西」的话,把 r* 叠到**期限溢价**
-// 那格(同样是名义口径)照样全绿,洞还在。这里要求的是「任何一格都不得同时出现两种口径」。
-test('固定 dim:实际口径的 r* 只准独占自己那一格', () => {
-  // **反着钉,不维护「名义白名单」**:白名单是开放集合(面板里绝大多数利率序列都是名义),
-  // 漏登记一个就有洞 —— 把 r* 叠到美债的 expShort10Kw 那格,白名单版照样全绿。
-  // 而实际口径的键是**封闭的三个**,所以约束写成「含 r* 的格,内容必须恰好是这三条」,
-  // 覆盖全部 dim 的全部 pane,不需要知道别的键是什么口径。
-  const REAL: SeriesKey[] = ['jpRstar10Nakajima', 'jpRstar10NakajimaLo', 'jpRstar10NakajimaHi'];
-
-  const panesWithReal = FIXED_DIMS.flatMap((dim) =>
-    dimPanes(dim)
-      .map((p) => ({ dim, key: p.key, keys: [p.key, ...(p.overlays ?? []).map((o) => o.key)] as SeriesKey[] }))
-      .filter((p) => p.keys.some((k) => REAL.includes(k))),
-  );
-
-  // 恰好一格,且那一格里除了这三条没有别的 —— 混进任何名义序列都会在这里红。
-  expect(panesWithReal.map((p) => `${p.dim}.${p.key}`)).toEqual(['jpTermPremium.jpRstar10Nakajima']);
-  expect(new Set(panesWithReal[0].keys)).toEqual(new Set(REAL));
-});
-
-// buildRegimeSpecs 在 candle / signed 两个分支提前 return,不带 overlay —— 那两种 pane 配了
-// overlay 会被静默丢弃(不报错、图上就是少一条线)。与其给用不到的分支拼代码,不如把约束钉住。
-test('固定 dim:overlay 只能配 line 型 pane(candle/signed 分支不带 overlay)', () => {
-  for (const dim of FIXED_DIMS) {
-    const bad = dimPanes(dim).filter((p) => p.overlays?.length && p.render && p.render.kind !== 'line');
-    expect(
-      bad.map((p) => p.key),
-      `${dim} 给非 line 型 pane 配了 overlay`,
-    ).toEqual([]);
-  }
-});
-
 // 类型已经挡住「pane key 拼错」了(PaneSpec.key 收窄成 SeriesKey),这两条守的是**另一半**:
 // 枚举本身与后端实际产出漂移。类型只保证两端用同一份名单,不保证名单还对得上代码。
 test('REGIME_SERIES:无重复、无 fund: 前缀(动态键不进枚举)', () => {
   expect(new Set(REGIME_SERIES).size).toBe(REGIME_SERIES.length);
   expect(REGIME_SERIES.filter((k) => k.startsWith('fund:'))).toEqual([]);
-});
-
-test('每个固定 dim 的 pane/overlay key 都是合法序列名', () => {
-  for (const dim of FIXED_DIMS) {
-    for (const p of dimPanes(dim)) {
-      // 计算格的键是「A|运算|B」,不是服务端序列名(两条腿在不在注册表,见 withCalc.test)
-      if (!p.from) expect(isSeriesKey(p.key), `${dim}.${p.key} 不是合法序列名`).toBe(true);
-      for (const o of p.overlays ?? []) expect(isSeriesKey(o.key), `${dim}.${o.key} 不合法`).toBe(true);
-    }
-  }
 });
 
 // 买方合计那两条聚合键**不走 kindsOf**,所以上面「每家的 panes 与 kindsOf 一一对应」那条
@@ -493,90 +283,6 @@ test('fundamentals:buyer 的 pane key 是后端真会产的那两条', () => {
   const keys = dimPanes('fundamentals:buyer').map((p) => p.key);
 
   expect(new Set(keys)).toEqual(emitted);
-});
-
-// ACM 与 KW 必须同格:这条线的产品是**两个模型的分歧带宽**(实测平均 57bp),
-// 分成两格就读不出带宽了。ACM 月频、KW 日频,故 ACM 走阶梯线。
-test('tp10Kw 那格叠 ACM 对照线,ACM 缺失只少那条、KW 主线照画', () => {
-  const both: RegimeData = {
-    series: {
-      tp10Kw: [{ date: '2026-08-31', value: 0.88 }],
-      tp10Acm: [{ date: '2026-08-31', value: 0.7625 }],
-    },
-    unavailable: [],
-  };
-  const noAcm: RegimeData = { series: both.series, unavailable: ['tp10Acm'] };
-
-  const specsOf = (d: RegimeData) =>
-    buildRegimeSpecs(d, dimPanes('ratesDecomp'), '1D').filter(
-      (s) => s.pane === dimPanes('ratesDecomp').findIndex((p) => p.key === 'tp10Kw'),
-    );
-
-  expect(specsOf(both).map((s) => s.key)).toEqual(['tp10Kw', 'tp10Acm']);
-  expect(specsOf(noAcm).map((s) => s.key)).toEqual(['tp10Kw']);
-  // 月频线不能在两次发布之间画斜坡
-  expect(specsOf(both).find((s) => s.key === 'tp10Acm')).toHaveProperty('step', true);
-});
-
-test('常态带 + percentile 同配:参考线用常态带、不被 P5/P95 覆盖,而背景带仍由 riskTail 染', () => {
-  // 回归点。这两个配置曾经同时存在于库存 z 两格,而 spec 构造里 percentile 分支
-  // **整体重新赋值** refLines → 常态带写的 ±2 从来没画出来过,图上是 P5/P95。
-  // 同屏另外两格 z 只配了常态带、画的是 ±2 —— 四条 z 两套尺,肉眼看不出,改回去测试也照绿。
-  // 故这条必须断言「画的是哪两条」,不能只断言「有两条」。
-  const pane = dimPanes('refinery').find((p) => p.key === 'distStocksZ5y');
-  expect(pane?.refLines?.map((l) => l.price)).toEqual([-2, 2]); // 前提:这格确实同配了两者
-  expect(pane?.percentile?.riskTail).toBe('low');
-
-  // 构造分布使 P5/P95 明显不等于 ±2,否则断言区分不出两种来源。
-  const distStocksZ5y = Array.from({ length: 21 }, (_, i) => ({
-    date: `2021-01-${String(i + 1).padStart(2, '0')}`,
-    value: (i - 10) * 0.5, // −5 … +5,P5=−4.5、P95=4.5
-  }));
-  const specs = buildRegimeSpecs({ series: { distStocksZ5y }, unavailable: [] }, dimPanes('refinery'), '1D');
-
-  const line = specs.find((s) => s.key === 'distStocksZ5y') as { refLines?: { price: number; title: string }[] };
-  expect(line.refLines).toEqual([
-    { price: -2, title: '常态下限' },
-    { price: 2, title: '常态上限' },
-  ]);
-
-  // 背景带是另一条代码路径,不依赖 refLines —— 必须仍在,且按 riskTail='low' 把低端染红。
-  const bg = specs.find((s) => s.key === 'distStocksZ5y-bg') as { data: Array<{ value: number; color: string }> };
-  expect(bg).toBeDefined();
-  expect(bg.data[0]).toMatchObject({ value: 1, color: 'rgba(239,68,68,0.45)' }); // 最低值 < P5,低端=风险=红
-  expect(bg.data[20]).toMatchObject({ value: 1, color: 'rgba(34,197,94,0.45)' }); // 最高值 > P95,反向=绿
-});
-
-test('clampVisibleTo:有 overlay 的格子,主线与叠加线必须都夹', () => {
-  // 两条线共用同一条价格轴 —— 只夹主线的话,overlay 的极值照样把整幅撑开,
-  // 而这格的 overlay(distProdYoy)本身就是离群腿(min/P1 ≈ 2.3)。
-  // 删掉 overlay 那侧的 spread 后本断言会 fail;不加这条则全套测试照绿。
-  const pane = dimPanes('refinery').find((p) => p.key === 'crudeRunsYoy');
-  expect(pane?.clampVisibleTo).toEqual([-15, 15]);
-  expect(pane?.overlays?.[0]?.key).toBe('distProdYoy');
-
-  const pt = (d: string, v: number) => ({ date: d, value: v });
-  const specs = buildRegimeSpecs(
-    {
-      series: {
-        crudeRunsYoy: [pt('2021-01-01', 1), pt('2021-01-02', 2)],
-        distProdYoy: [pt('2021-01-01', -3), pt('2021-01-02', 60)],
-      },
-      unavailable: [],
-    },
-    dimPanes('refinery'),
-    '1D',
-  );
-
-  const clamped = specs
-    .filter((s) => s.key === 'crudeRunsYoy' || s.key === 'distProdYoy')
-    .map((s) => (s as { clampVisibleTo?: [number, number] }).clampVisibleTo);
-
-  expect(clamped).toHaveLength(2);
-  expect(clamped).toEqual([
-    [-15, 15],
-    [-15, 15],
-  ]);
 });
 
 test('secFiledNote:单家 tab 标最新一期与申报日;没数据、合计与非基本面不标', () => {
@@ -592,40 +298,8 @@ test('secFiledNote:单家 tab 标最新一期与申报日;没数据、合计与�
   expect(secFiledNote(data, 'liquidity')).toBeUndefined();
 });
 
-// REGIME_DOCS 由各视角的 docs 展开拼成:同一 key 出现在两个文件里,后者会静默盖掉前者(类型查不出来)。
-// 这里扫全部 pages/*/docs.ts,既查重名,也查有没有哪个文件漏拼进 REGIME_DOCS(集中度单独一个文件,另算)。
-test('各视角 docs 的 key 不重名,且全部拼进 REGIME_DOCS', async () => {
-  const files = [...new Bun.Glob('../../pages/*/docs.ts').scanSync(import.meta.dir)];
-  const modules = await Promise.all(files.map((f) => import(f)));
-  const keys = modules.flatMap((m) =>
-    Object.entries(m).flatMap(([name, v]) => (name.endsWith('_DOCS') ? Object.keys(v as object) : [])),
-  );
-  const dupes = keys.filter((k, i) => keys.indexOf(k) !== i);
-
-  expect(files.length).toBeGreaterThan(0);
-  expect(dupes).toEqual([]);
-  expect([...keys, 'concentration'].toSorted()).toEqual(Object.keys(REGIME_DOCS).toSorted());
-});
-
 // RegimeChart 要求配置引用稳定:基本面维度的 panes 按名单现算,靠 regimeView 的缓存兜住
-test('regimeView:同一 dim 每次拿到同一个对象(含按名单现算的基本面维度)', () => {
-  expect(regimeView('credit')).toBe(regimeView('credit'));
+test('regimeView:同一 dim 每次拿到同一个对象', () => {
   expect(regimeView('fundamentals:NVDA')).toBe(regimeView('fundamentals:NVDA'));
   expect(regimeView('fundamentals:NVDA').panes).toBe(dimPanes('fundamentals:NVDA'));
-});
-
-test('错月背景读服务端的 0 / 1 标记:标 1 的日子上色;标记缺失就不画背景,主线照画', () => {
-  const pane = dimPanes('oil').find((p) => p.rollMismatch === 'crack');
-  expect(pane).toBeDefined(); // 前提:油市结构里确实有按裂解错月染背景的格
-  const key = pane!.key as string;
-  const rows = ['2026-10-20', '2026-10-21', '2026-10-22'].map((date, i) => ({ date, value: 10 + i }));
-  const flags = [0, 1, 1].map((value, i) => ({ date: rows[i].date, value }));
-
-  const withFlags = buildRegimeSpecs({ series: { [key]: rows, oilRollCrack: flags }, unavailable: [] }, [pane!], '1D');
-  const roll = withFlags.find((s) => s.key === `${key}-roll`) as { data: Array<{ value: number }> };
-  expect(roll.data.map((d) => d.value)).toEqual([0, 1, 1]);
-
-  const without = buildRegimeSpecs({ series: { [key]: rows }, unavailable: [] }, [pane!], '1D');
-  expect(without.some((s) => s.key === `${key}-roll`)).toBe(false);
-  expect(without.some((s) => s.key === key)).toBe(true);
 });

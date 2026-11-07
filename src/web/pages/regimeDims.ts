@@ -1,14 +1,8 @@
-// regime 视角的总表:各视角的 ChartDoc 汇总成 REGIME_DOCS,外加按名单派生的基本面维度。
+// regime 视角的总表:各视角的 ChartDoc 汇总成 REGIME_DOCS(DocChart 画),外加按名单派生的基本面维度(PaneSpec,RegimeChart 画)。
 // 放在 pages 层:视图(views/regime)只收 panes,不认识具体有哪些视角。
 import { sourcesOf } from '../../shared/aiChain';
 import type { ChartDoc } from '../views/chartDoc/chartDoc';
-import {
-  docToPaneSpecs,
-  type FixedDim,
-  type PaneSpec,
-  type RegimeDim,
-  type RegimeView,
-} from '../views/regime/regimeChart.hooks';
+import type { FixedDim, FundDim, PaneSpec, RegimeView } from '../views/regime/regimeChart.hooks';
 import { AI_DOCS } from './ai/docs';
 import { buyerAggregatePane, buyerQuarterlyPane, SOURCE_PANES } from './ai/fundamentals';
 import { BTC_DOCS } from './btc/docs';
@@ -23,7 +17,7 @@ import { RATES_DOCS } from './rates/docs';
 import { SENTIMENT_DOCS } from './sentiment/docs';
 import { VALUATION_DOCS } from './valuation/docs';
 
-// 类型保证每个固定 dim 都有一份 doc;跨文件重名靠 regimeChart.hooks.test 查(展开时后者静默盖前者)
+// 类型保证每个固定 dim 都有一份 doc;跨文件重名靠 views/regime/docs.test 查(展开时后者静默盖前者)
 export const REGIME_DOCS: Record<FixedDim, ChartDoc> = {
   ...CREDIT_DOCS,
   ...LIQUIDITY_DOCS,
@@ -39,13 +33,7 @@ export const REGIME_DOCS: Record<FixedDim, ChartDoc> = {
   concentration: CONCENTRATION,
 };
 
-// 模块加载时转一次:doc 写错的话 docToPaneSpecs 会抛,在加载时就炸,不等到打开那个 tab
-const DOC_PANES = Object.fromEntries(
-  Object.entries(REGIME_DOCS).map(([dim, doc]) => [dim, docToPaneSpecs(doc)]),
-) as Record<FixedDim, PaneSpec[]>;
-function buildPanes(dim: RegimeDim): PaneSpec[] {
-  if (!dim.startsWith('fundamentals:')) return DOC_PANES[dim as FixedDim];
-
+function buildPanes(dim: FundDim): PaneSpec[] {
   const who = dim.slice('fundamentals:'.length);
   if (who === 'buyer') return [buyerAggregatePane, buyerQuarterlyPane];
 
@@ -59,10 +47,10 @@ function buildPanes(dim: RegimeDim): PaneSpec[] {
 
 // 按 dim 缓存:同一 dim 永远拿到同一个对象。RegimeChart 要求 panes 引用稳定(基本面维度按名单现算,
 // 不缓存的话每次都是新数组),缓存放在这里,调用方在 render 里直接调也安全;没打开的 tab 也不会提前算。
-const VIEWS = new Map<RegimeDim, RegimeView>();
+const VIEWS = new Map<FundDim, RegimeView>();
 
-/** dim → 这张 regime 图的配置(dim + panes)。 */
-export function regimeView(dim: RegimeDim): RegimeView {
+/** 基本面 dim → 这张 regime 图的配置(dim + panes)。固定 dim 是 ChartDoc,见 REGIME_DOCS。 */
+export function regimeView(dim: FundDim): RegimeView {
   const hit = VIEWS.get(dim);
   if (hit) return hit;
 
@@ -72,6 +60,6 @@ export function regimeView(dim: RegimeDim): RegimeView {
 }
 
 /** dim → panes(同 regimeView,只取格子)。 */
-export function dimPanes(dim: RegimeDim): PaneSpec[] {
+export function dimPanes(dim: FundDim): PaneSpec[] {
   return regimeView(dim).panes;
 }

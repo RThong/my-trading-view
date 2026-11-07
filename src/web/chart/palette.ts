@@ -80,8 +80,6 @@ export const TRANSPARENT = 'rgba(0,0,0,0)';
  * 不是「这段数据不能用」—— 0.28 时全历史视图满屏条纹,读起来像大半数据都坏了
  */
 export const BACKGROUND_ALPHA = 0.14;
-/** 期货错月背景:中性灰蓝,刻意不与红 / 绿(风险 / 机会)同色系 */
-export const ROLL_COLOR = '#94a3b8';
 
 /** 分位背景带:风险端红、机会端绿(固定面板与图表编辑器共用) */
 export const BAND_RISK = 'rgba(239,68,68,0.45)';

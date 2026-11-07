@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { BAND_CALM, BAND_RISK } from '../../../chart/palette';
-import { normalBand, type Layer, type Pane } from '../../../views/chartDoc/chartDoc';
-import { canLogScale, computeLayerData, layerMarks, type LayerData } from './layerPoints';
+import { BAND_CALM, BAND_RISK } from '../../chart/palette';
+import { normalBand, type Layer, type Pane } from './chartDoc';
+import { allSevenDay, canLogScale, computeLayerData, layerMarks, layerRequest, type LayerData } from './layerPoints';
+import { layerLabel } from './layerLabel';
 
 function pane(layers: Partial<Layer>[], expandVisibleTo?: [number, number]): Pane {
   return {
@@ -41,6 +42,26 @@ test('computeLayerData:事件竖线裁到其它线最早的起点,不把时间�
   // 数据没变时再算一遍(文档改了别的,比如颜色):裁剪结果是同一个数组,渲染层不重灌
   const again = computeLayerData({ ...doc }, points, '1D');
   expect(again.l2.display).toBe(out.l2.display);
+});
+
+test('computeLayerData:竖线按本格裁,别格的长历史线不让短历史那格在没数据处画满竖线', () => {
+  const pt = (time: string) => ({ time, value: 1 });
+  const long = { ...pane([{ series: 'spx' }]), id: 'p1' };
+  const short = {
+    ...pane([{ series: 'vix' }, { series: 'coreCpiRelease', render: { kind: 'events' } }]),
+    id: 'p2',
+    layers: [
+      { id: 'l2', series: 'vix', scale: 'right', color: '#111111' },
+      { id: 'l3', series: 'coreCpiRelease', scale: 'right', color: '#111111', render: { kind: 'events' as const } },
+    ],
+  };
+  const points = {
+    spx: [pt('2018-01-02'), pt('2022-06-01')],
+    vix: [pt('2022-03-01'), pt('2022-06-01')],
+    'coreCpiRelease#d': [pt('2019-12-11'), pt('2022-04-12')],
+  };
+  const out = computeLayerData({ v: 1, panes: [long, short] }, points, '1D');
+  expect(out.l3.display.map((p) => p.time)).toEqual(['2022-04-12']);
 });
 
 describe('layerMarks', () => {
@@ -84,11 +105,12 @@ describe('layerMarks', () => {
   test('since:只用这天起的点算阈值;比的是平移前的日期;筛空了不画分位线(不出 NaN)', () => {
     const m = layerMarks({ ...base, percentile: { since: '2021-01-11' } }, pts);
     expect(m.lines[0]).toEqual({ price: 0.25, title: 'P5' }); // 0 … 5 共 11 点,P5 = 0.25
+    expect(m.window).toHaveLength(11); // 图例的分位排名徽标按同一段排
     // 往右平移 5 个交易日:画在图上的 01-18 原本是 01-11,窗口按原日期从 01-11 起 = 图上 01-18 起,样本更靠后、P5 更高
     const shifted = layerMarks({ ...base, shift: 5, percentile: { since: '2021-01-11' } }, pts);
     expect(shifted.lines[0].price).toBeGreaterThan(0.25);
     const empty = layerMarks({ ...base, percentile: { since: '2030-01-01' }, refLines: normalBand(-2, 2) }, pts);
-    expect(empty).toEqual({ lines: normalBand(-2, 2), band: null });
+    expect(empty).toEqual({ lines: normalBand(-2, 2), band: null, window: [] });
   });
 
   test('符号柱恒有 0 线(同固定面板);同一图层 + 同一份点只算一次', () => {
@@ -98,13 +120,47 @@ describe('layerMarks', () => {
   });
 });
 
-test('computeLayerData:背景色带周 / 月线按期取最大值(这一期有一天是 1 就算 1),不按期末一天', () => {
-  const doc = { v: 1 as const, panes: [pane([{ series: 'oilRollBrentWti', render: { kind: 'background' } }])] };
-  // 10 月:20 号(含)之前是 1、之后是 0 —— 月末那天是 0,按期末取会整月不染
+test('computeLayerData:背景色带只在日线画;竖线周 / 月线按期取最大值(这一期出现过就标),不按期末一天', () => {
   const flags = ['2026-10-01', '2026-10-20', '2026-10-21', '2026-10-30'].map((time, i) => ({
     time,
     value: i < 2 ? 1 : 0,
   }));
-  const out = computeLayerData(doc, { 'oilRollBrentWti#d': flags }, '1M');
-  expect(out.l1.display).toEqual([{ time: '2026-10-01', value: 1 }]);
+  const bg = { v: 1 as const, panes: [pane([{ series: 'oilRollBrentWti', render: { kind: 'background' } }])] };
+  expect(computeLayerData(bg, { 'oilRollBrentWti#d': flags }, '1M').l1.display).toEqual([]);
+  expect(computeLayerData(bg, { 'oilRollBrentWti#d': flags }, '1D').l1.display).toEqual(flags);
+
+  // 10 月:20 号(含)之前是 1、之后是 0 —— 月末那天是 0,按期末取会整月漏掉
+  const ev = { v: 1 as const, panes: [pane([{ series: 'coreCpiRelease', render: { kind: 'events' } }])] };
+  expect(computeLayerData(ev, { 'coreCpiRelease#d': flags }, '1M').l1.display).toEqual([
+    { time: '2026-10-01', value: 1 },
+  ]);
+});
+
+describe('整张图都是 7×24 才保留周末', () => {
+  const doc = (series: string[]) => ({
+    v: 1 as const,
+    panes: [
+      {
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' as const }],
+        layers: series.map((s, i) => ({ id: `l${i}`, series: s, scale: 'right', color: '#fff' })),
+      },
+    ],
+  });
+
+  test('BTC + 供应密度全是 7×24:保留;混进 VIX(工作日)就去周末;空图不算', () => {
+    expect(allSevenDay(doc(['btc', 'btcSupplyDensity']))).toBe(true);
+    expect(allSevenDay(doc(['btc', 'vix']))).toBe(false);
+    expect(allSevenDay(doc([]))).toBe(false);
+    expect(layerRequest(doc(['btc']).panes[0].layers[0], true).weekends).toBe(true);
+    expect(layerRequest(doc(['btc']).panes[0].layers[0]).weekends).toBeUndefined();
+  });
+
+  test('图例名:写了 title 用 title,缺省用注册表名', () => {
+    const d = doc(['vix']);
+    const l = d.panes[0].layers[0];
+    expect(layerLabel(d, l)).toBe('VIX');
+    expect(layerLabel(d, { ...l, title: '恐慌指数' })).toBe('恐慌指数');
+  });
 });

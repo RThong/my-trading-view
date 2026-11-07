@@ -6,23 +6,23 @@ import { Textarea } from '../../components/ui/textarea';
 import { AnalysisPanel, pairRequests, resolvePair } from './components/AnalysisPanel';
 import { type ChartDoc, EMPTY_DOC, parseChartDoc } from '../../views/chartDoc/chartDoc';
 import { EmptyState } from './components/EmptyState';
-import { layerRequest, useLayerData } from './hooks/layerPoints';
+import { allSevenDay, layerRequest, useLayerData } from '../../views/chartDoc/layerPoints';
 import { LayerList } from './components/LayerList';
-import { Legend } from './components/Legend';
+import { Legend } from '../../views/chartDoc/Legend';
 import { SeriesPicker } from './components/SeriesPicker';
 import { useChartDoc } from './hooks/useChartDoc';
-import { useCrosshairLegend } from './hooks/useCrosshairLegend';
-import { useEditorChart } from './hooks/useEditorChart';
+import { useCrosshairLegend } from '../../views/chartDoc/useCrosshairLegend';
+import { useDocChart } from '../../views/chartDoc/useDocChart';
 import { useSeriesData } from '../../views/chartDoc/useSeriesData';
 import { useBaseBand } from './hooks/useBaseBand';
-import { usePercentileBand } from './hooks/usePercentileBand';
+import { usePercentileBand } from '../../views/chartDoc/usePercentileBand';
 import { useFitSync } from './hooks/useFitSync';
 import { useLineDrag } from './hooks/useLineDrag';
 import { useSidebar } from './hooks/useSidebar';
 import { useVisibleRange } from './hooks/useVisibleRange';
 
 // 图表编辑页:空白图上自己挑序列、分格叠放、把一条线叠到另一条上看劈叉。只负责组装 ——
-// 状态见 useChartDoc,取数见 views/chartDoc/useSeriesData,各图层最终数据见 layerPoints,渲染见 useEditorChart。
+// 状态见 useChartDoc,取数见 views/chartDoc/useSeriesData,各图层最终数据见 layerPoints,渲染见 useDocChart。
 // 全部编辑状态就是 doc 这一份 JSON(右下角可查看)。
 export function ChartEditorPage({ interval }: { interval: Interval }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -33,10 +33,15 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
   const [pair, setPair] = useState<{ a?: string; b?: string }>({});
 
   const seriesLayers = doc.panes.flatMap((p) => p.layers);
-  const requests = [...seriesLayers.map(layerRequest), ...pairRequests(resolvePair(doc, pair))];
+  const sevenDay = allSevenDay(doc);
+  const requests = [...seriesLayers.map((l) => layerRequest(l, sevenDay)), ...pairRequests(resolvePair(doc, pair))];
   const { points, bars, isLoading, error, missing } = useSeriesData(requests, interval);
   const data = useLayerData(doc, points, interval, bars);
-  const { chartRef, seriesRef } = useEditorChart(containerRef, doc, data, { onStretches: setStretches, interval });
+  const { chartRef, seriesRef } = useDocChart(containerRef, doc, data, {
+    onStretches: setStretches,
+    interval,
+    fit: 'common',
+  });
   const { hoverTime, layout } = useCrosshairLegend(containerRef, chartRef, doc);
   const visibleRange = useVisibleRange(chartRef);
   useLineDrag(containerRef, chartRef, seriesRef, doc);
