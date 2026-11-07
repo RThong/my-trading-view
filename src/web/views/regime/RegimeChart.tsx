@@ -94,9 +94,8 @@ export function calcRequest(p: PaneSpec): SeriesRequest {
 }
 
 /**
- * 计算格的结果填回 data:有数就覆盖这个 key(服务端若也发了同名派生量,以前端现算为准),算完仍没数就记缺失;
+ * 计算格的结果填回 data(键是「A|运算|B」,服务端不发这种键):有数就填上,算完仍没数就记缺失;
  * 任一条腿是服务端「沿用上次数据」的,这格也记进 fallback(提示里照样说明不是最新)。
- * 算不出来、但服务端发了同名派生量的(代码刚升级、盘上缓存里还没有新腿的那一会儿),先沿用服务端的,不报缺。
  */
 export function withCalc(
   data: RegimeData,
@@ -109,22 +108,17 @@ export function withCalc(
 
   const keyOf = (p: PaneSpec) => requestKey(calcRequest(p));
   const computed = calcPanes.map((p) => [p.key, points[keyOf(p)] ?? []] as const);
-  const keys = new Set<string>(computed.map(([k]) => k));
   const filled = computed
     .filter(([, pts]) => pts.length > 0)
     .map(([k, pts]) => [k, pts.map((pt) => ({ date: pt.time, value: pt.value }))]);
-  // 取数中先不判缺(服务端同名派生量还在就先画它,算好再换),免得一闪「暂不可用」
-  const empty = loading
-    ? []
-    : computed.filter(([k, pts]) => pts.length === 0 && !data.series[k]?.length).map(([k]) => k);
-  const filledKeys = new Set<string>(filled.map(([k]) => k as string));
+  // 取数中先不判缺,免得一闪「暂不可用」
+  const empty = loading ? [] : computed.filter(([, pts]) => pts.length === 0).map(([k]) => k);
   const stale = calcPanes.filter((p) => staleKeys.includes(keyOf(p))).map((p) => p.key);
 
   return {
     ...data,
     series: { ...data.series, ...Object.fromEntries(filled) },
-    unavailable: [...data.unavailable.filter((k) => !keys.has(k)), ...empty],
-    // 只剔掉真正换成现算结果的格子;没算出来、沿用服务端同名派生量的,保留服务端「沿用上次数据」的标记
-    fallback: [...(data.fallback ?? []).filter((k) => !filledKeys.has(k)), ...stale],
+    unavailable: [...data.unavailable, ...empty],
+    fallback: [...(data.fallback ?? []), ...stale],
   };
 }

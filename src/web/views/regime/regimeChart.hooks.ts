@@ -1,5 +1,5 @@
 // regime 视图(各视角共用)的数据层:取数 + pane 配置的类型 + spec 构造。
-// 各 dim 的 pane 配置按视角放在 pages/<视角>/dims.ts,汇总与 dim → panes 查表在 pages/regimeDims.ts(视图不反向依赖页面)。
+// 各 dim 的配置是 ChartDoc,按视角放在 pages/<视角>/docs.ts;汇总、经 docToPaneSpecs 转成格子、dim → panes 查表在 pages/regimeDims.ts(视图不反向依赖页面)。
 // 图表引擎(usePaneChart/usePaneLayout/useCrosshairLegend)与展示壳(PaneChartView)全复用期权侧。
 import useSWR from 'swr';
 import { useServerRefresh } from '../../hooks/useServerRefresh';
@@ -103,7 +103,7 @@ export type PaneSpec = {
   /**
    * 计算格:这一格的数不读服务端的 key,而是前端按注册表取两条腿现算「series 运算 calc.series」
    * (写法同 ChartDoc 图层,两条腿都是注册表 id;算好填回 data.series[key],见 RegimeChart)。
-   * 手写的格子用它时 key 仍是原来的派生名(格子顺序 / 折叠的存档按 key 认,不丢)。
+   * 由 ChartDoc 的计算图层转来,key 是「A|运算|B」(见 docToPaneSpecs)。
    */
   from?: { series: string; calc: Calc };
   label: string; // 工具条 chip 名
@@ -138,16 +138,10 @@ export type PaneSpec = {
   /** 两条期货腿相减的格子:灰蓝背景标出合约月份对不上的日子(见 shared/calc/oilRoll)。 */
   rollMismatch?: RollMismatchKind;
 };
-export type DimConfig = { panes: PaneSpec[] };
 /** 一个 regime 图要的全部配置:dim(存储键 / SEC 提示按它认公司)与它的 panes 绑在一起传,不会配错对。 */
 export type RegimeView = { dim: RegimeDim; panes: PaneSpec[] };
-/** 一个视角贡献的那几个 dim 的配置(pages/<视角>/dims.ts 用 satisfies 对齐)。 */
-export type RegimeDims = Partial<Record<Exclude<FixedDim, DocDim>, DimConfig>>;
-/**
- * 已迁成 ChartDoc 的 tab(与图表编辑器同一格式,序列引注册表 id;见 ./docs)。
- * 逐 tab 往这里挪:挪一个,就从 pages/regimeDims 的 REGIME_DIMS 删掉对应的手写 panes —— 两边同时有,类型会报错。
- */
-export type DocDim = 'concentration';
+/** 一个视角贡献的那几个 dim 的 ChartDoc(pages/<视角>/docs.ts 用 satisfies 对齐,汇总在 pages/regimeDims)。 */
+export type RegimeDocs = Partial<Record<FixedDim, ChartDoc>>;
 
 /**
  * 图层在 /api/regime 里的键(固定面板按它读 data.series / data.ohlc)。注册表源就是 regime 的取那个键;
@@ -271,7 +265,8 @@ export function docToPaneSpecs(doc: ChartDoc): PaneSpec[] {
       ...(l.calc && { from: { series: l.series, calc: l.calc } }),
       label: name,
       title: l.title ?? name,
-      color: l.color,
+      // 柱状格正绿负红,图层颜色不起作用;不带过去,图例按默认色(同手写格子不配色)
+      ...(l.render?.kind !== 'signed' && { color: l.color }),
       ...(p.desc !== undefined && { desc: p.desc }),
       ...(l.render && { render: l.render as Exclude<LayerRender, { kind: 'events' | 'background' }> }),
       ...(l.refLines && { refLines: l.refLines }),

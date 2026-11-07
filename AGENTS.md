@@ -178,7 +178,7 @@
 - 注释用中文。声明式优先于命令式 `for` 循环。
 - **目录按「纯计算 / 业务」划界,业务再按视角(路由)分**:纯计算放 `web/chart`、`shared/calc`、
   `server/analytics`、`server/backtest`(允许循环);前端业务里跨视角复用的视图放 `web/views/`,
-  只属于某个视角的 tab 定义 / regime 配置(`dims.ts`)/ 组件放 `web/pages/<视角>/`。业务代码禁循环由 Biome 插件
+  只属于某个视角的 tab 定义 / regime 配置(`docs.ts`,每个 tab 一份 ChartDoc,与图表编辑器同一格式)/ 组件放 `web/pages/<视角>/`。业务代码禁循环由 Biome 插件
   `biome-plugins/no-loop.grit` 按目录执行(范围见 `biome.jsonc`):计算逻辑夹在业务文件里就拆进计算目录,别加 `biome-ignore`。
 - **UI 组件库:shadcn/ui**(base-nova 风格,底层 Base UI `@base-ui/react`),组件源码在 `src/web/components/ui/`(拷进来归自己,可改),
   类名合并 `cn` 在 `src/web/lib/utils.ts`(clsx + tailwind-merge),颜色变量在 `styles.css` 的 `@theme inline`(只映射到 neutral 深色,
