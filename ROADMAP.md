@@ -288,7 +288,7 @@ TradingView
      进度（2026-11-06）：编辑器已能画 refLines、baseline、step、percentile（P5/P95 线 + riskTail 背景带）、desc（图例 ⓘ）、events、signed、hidden、纵轴范围框；还缺变换（均线 / 同比 / Z-score）。蜡烛已做。`docToPaneSpecs` 支持一格多线（第一条线是主线，其余转成 overlays）与竖线透明度（`render.events.opacity`），已用「利率 · 加息定价」格端到端对过（主线 + 3 叠加 + 2 竖线，画法字段逐一相等）。背景色带已做（`render: { kind: 'background' }`）。
      口径（2026-11-07 定）：分位阈值统一按图上的点算（周 / 月线是聚合点），同 TradingView 指标默认「跟随图表周期」；以前固定面板按原始日频算（相当于 `timeframe = "D"`），已不再这样。背景色带（错月）只在日线画。要按日频的话再加参数（如 `percentile.tf`）。
   2026-11-07 续：期限走势 6 个 tab（美债 / OIS / 实际 / BEI / 日债 / AI CDS，`pages/curveHistory` 按注册表同族生成，`TenorHistoryPanel` 已删）与基本面 2 个 tab（买方合计、产业链，`ai/fundamentals` 的 `fundDoc` 按名单现算，SEC 三条提示由 `views/regime/FundChart` 外层给）也已迁成 ChartDoc，旧 `RegimeChart` / `PaneSpec` 已删。图例里隐藏的线收成一行小字（名字 + 读数，点一下显示），ⓘ 挂在第一条线名后面。
-  仍是旧引擎 `PaneChartView` 的：期权 / 现货 8 个（`AssetChart`）、攻防 1 个 —— 依赖 EMA / 布林 / RSI / MACD / ZigZag 等指标，要先有变换 / 指标图层（L2-1 第 8 项）。横轴不是时间的 8 个（收益曲线类、加息定价）不进 ChartDoc。
+  2026-11-08 续：指标图层上线（`Layer.indicator`，内置 EMA / 布林带 / MACD / RSI 在 `chart/indicatorDefs`，同 TradingView 指标实例只存 id + 参数），期权 / 现货 8 个 tab 迁成 ChartDoc（`pages/assetDoc`，EMA / 布林带默认隐藏、不占 MACD / RSI 格、初始窗口对准共同时段），`AssetChart` / `priceIndicators` / `oscillator` 已删。仍是旧引擎 `PaneChartView` 的只剩攻防 1 个（ZigZag 攻防分区 + 均线滞回，带状态，等「类 Pine」时再迁）。横轴不是时间的 8 个（收益曲线类、加息定价）不进 ChartDoc。
   验收：任意 regime 格右上角有「编辑」入口，点开后编辑器内容和原格一致，修改不影响原格。
 - ~~**L2-4（P1）ChartDoc 校验测试**~~ ✅ 已完成（`views/regime/docs.test.ts`：内置 ChartDoc 逐个过 JSON 往返 + 序列都在注册表）。存成 JSON 会丢掉编译期的拼写检查，要用一个测试补回来：遍历所有内置 ChartDoc，检查每个 series 都在注册表里。注册表 id 一旦用过就不再改名；真要改，在 parseChartDoc 里按 v 做迁移。约 30 分钟。
 - L2-5（P2）编辑器补「标、记」：标题和叙述、竖线事件、导出 PNG（lightweight-charts 自带 `takeScreenshot()`）。约半天。

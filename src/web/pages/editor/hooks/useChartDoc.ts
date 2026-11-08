@@ -2,6 +2,7 @@
 // 最后一次显示的图存在 localStorage,刷新 / 切页回来接着用。
 import { useEffect, useState } from 'react';
 import { SERIES_COLORS } from '../../../chart/palette';
+import type { IndicatorId } from '../../../chart/indicatorDefs';
 import {
   EMPTY_DOC,
   addLayer,
@@ -11,6 +12,8 @@ import {
   nextColor,
   removeLayer,
   removeSeries,
+  addIndicator,
+  setIndicatorPeriods,
   setLayerCalc,
   setLayerColor,
   setLayerScale,
@@ -84,6 +87,9 @@ export function useChartDoc() {
     setHidden: (layerId: string, hidden: boolean) => setDoc((d) => setLayerHidden(d, layerId, hidden)),
     setRender: (layerId: string, render: LayerRender | undefined) => setDoc((d) => setLayerRender(d, layerId, render)),
     setCalc: (layerId: string, calc: Calc | undefined) => setDoc((d) => setLayerCalc(d, layerId, calc)),
+    addIndicator: (layerId: string, id: IndicatorId) => setDoc((d) => addIndicator(d, layerId, id)),
+    setPeriods: (layerId: string, periods: number[] | undefined) =>
+      setDoc((d) => setIndicatorPeriods(d, layerId, periods)),
     setInvert: (paneId: string, scaleId: string, invert: boolean) =>
       setDoc((d) => setScaleInvert(d, paneId, scaleId, invert)),
     setLog: (paneId: string, scaleId: string, log: boolean) => setDoc((d) => setScaleLog(d, paneId, scaleId, log)),

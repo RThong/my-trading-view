@@ -5,6 +5,7 @@ import type { Interval } from '../../hooks/interval';
 import { earliestIso } from '../../../shared/calc/isoDate';
 import { shiftBusinessDays } from '../../chart/analysis';
 import { type BandPoint, percentileMarks } from '../../chart/percentileMarks';
+import { INDICATORS, periodsOf, type PlotSpec } from '../../chart/indicatorDefs';
 import { isMarkLayer, type ChartDoc, type Layer, type Pane, type RefLine } from './chartDoc';
 import { drawnKind, seriesDef } from './registry';
 import { requestKey } from './useSeriesData';
@@ -17,6 +18,73 @@ export type LayerData = {
 };
 
 const EMPTY: LinePoint[] = [];
+
+// ── 指标图层:展开成普通子线(id = 图层 id#样名)。渲染层只画展开后的,改色 / 换轴 / 显隐的对账全部复用;
+// 图例按原图层分组(一个指标一行)。子线不进 JSON,只在内存里
+export function plotId(l: Layer, p: PlotSpec): string {
+  return `${l.id}#${p.key}`;
+}
+
+/** 渲染用文档里的指标子线(id 带 #;用户的图层 id 由 nextId 生成,不含 #) */
+export function isPlotLayer(l: Layer): boolean {
+  return l.id.includes('#');
+}
+
+/**
+ * 指标画哪几样(与数据无关)。sevenDay = 整张图都是 7×24(见 allSevenDay):这时 EMA 默认那组才带 365 年线 ——
+ * 混了工作日序列的图会去掉 BTC 的周末,365 根就成了约 1.45 年、不是年线了(用户定:混合图不自动带)
+ */
+export function plotsOf(l: Layer, sevenDay: boolean): PlotSpec[] {
+  if (!l.indicator) return [];
+  const { id, periods } = l.indicator;
+  return INDICATORS[id].plots(periodsOf(id, periods, sevenDay));
+}
+
+function expandLayer(l: Layer, sevenDay: boolean): Layer[] {
+  if (!l.indicator) return [l];
+  return plotsOf(l, sevenDay).map((p) => ({
+    id: plotId(l, p),
+    series: l.series,
+    scale: l.scale,
+    color: p.color,
+    title: p.title,
+    ...(p.kind === 'signed' && { render: { kind: 'signed' as const } }),
+    ...(l.hidden && { hidden: true as const }),
+  }));
+}
+
+// 同一份文档展开一次:渲染层的 effect 按引用判断文档变没变,每次新展开一份会让它们白跑
+const expanded = new WeakMap<ChartDoc, ChartDoc>();
+/** 渲染用的文档:指标图层换成它的各条子线,其余原样 */
+export function expandIndicators(doc: ChartDoc): ChartDoc {
+  const hit = expanded.get(doc);
+  if (hit) return hit;
+
+  const out = doc.panes.some((p) => p.layers.some((l) => l.indicator))
+    ? {
+        ...doc,
+        panes: doc.panes.map((p) => ({ ...p, layers: p.layers.flatMap((l) => expandLayer(l, allSevenDay(doc))) })),
+      }
+    : doc;
+  expanded.set(doc, out);
+  return out;
+}
+
+// 指标结果按「源序列的点 × 指标签名」缓存:同一条现货上同时有 EMA 和布林带(期权页就是)各存各的,
+// 切眼睛、改色时不重算、子线不重灌
+const computed = new WeakMap<LinePoint[], Map<string, LinePoint[][]>>();
+function indicatorPoints(l: Layer, pts: LinePoint[], daily: boolean, sevenDay: boolean): LinePoint[][] {
+  const { id, periods } = l.indicator!;
+  const sig = JSON.stringify([id, periods, sevenDay, daily]);
+  const bySig = computed.get(pts) ?? new Map<string, LinePoint[][]>();
+  computed.set(pts, bySig);
+  const hit = bySig.get(sig);
+  if (hit) return hit;
+
+  const out = INDICATORS[id].compute(pts, periodsOf(id, periods, sevenDay), { daily, autoYear: sevenDay && !periods });
+  bySig.set(sig, out);
+  return out;
+}
 // 取不到 K 线时给同一个空数组:渲染层按引用判断要不要重灌,每次新建 [] 会让蜡烛图层随每次文档改动 setData([])
 const EMPTY_BARS: Bar[] = [];
 
@@ -102,10 +170,19 @@ export function computeLayerData(
   const candle = (l: Layer) =>
     drawnKind(l) === 'candle' ? { bars: bars[requestKey(layerRequest(l, sevenDay))] ?? EMPTY_BARS } : {};
 
+  // 指标图层:源序列的点照给(图例取不到子线时兜底),每条子线另给一份算好的点
+  const plotData = (l: Layer) => {
+    const out = indicatorPoints(l, raw(l), interval === '1D', sevenDay);
+    return plotsOf(l, sevenDay).map((p, i) => [plotId(l, p), { display: out[i] ?? EMPTY }] as const);
+  };
+
   return Object.fromEntries(
     doc.panes.flatMap((p) => {
       const from = paneStart(p);
-      return p.layers.map((l) => [l.id, { display: display(l, from), ...candle(l) }]);
+      return p.layers.flatMap((l) => [
+        [l.id, { display: display(l, from), ...candle(l) }] as const,
+        ...(l.indicator ? plotData(l) : []),
+      ]);
     }),
   );
 }
@@ -129,10 +206,16 @@ export function canLogScale(pane: Pane, scaleId: string, data: Record<string, La
   if (expand && expand[0] <= 0) return false;
 
   const fitTargets = new Set(pane.layers.flatMap((l) => (l.fit ? [l.fit.target] : [])));
+  // 指标图层画的是子线:看子线算出来的值(MACD 柱、穿 0 序列上的 RSI 有 ≤0 的值),不看源序列。
+  // 渲染层传的是展开后的格(子线自带数据),编辑器侧栏传的是原格,两边结论要一致
+  const values = (l: Layer) =>
+    l.indicator
+      ? Object.entries(data).flatMap(([id, d]) => (id.startsWith(`${l.id}#`) ? d.display : []))
+      : (data[l.id]?.display ?? []);
   // 标记图层挂自己的隐形轴,不在这根轴上
   return pane.layers
     .filter((l) => l.scale === scaleId && !isMarkLayer(l) && (!l.hidden || fitTargets.has(l.id)))
-    .every((l) => (data[l.id]?.display ?? []).every((p) => p.value > 0));
+    .every((l) => values(l).every((p) => p.value > 0));
 }
 
 /** 一个图层要画的水平线和背景带;window = 算分位用的那段值(图例的分位排名徽标也按它排),没配分位为 null */

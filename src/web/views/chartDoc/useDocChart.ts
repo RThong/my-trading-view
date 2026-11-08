@@ -34,7 +34,17 @@ import { BACKGROUND_ALPHA, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, withAlpha } from
 import type { Interval } from '../../hooks/interval';
 import { isMarkLayer, liveScaleIds, markColor, type ChartDoc, type Layer, type Pane } from './chartDoc';
 import { drawnKind } from './registry';
-import { canLogScale, layerMarks, type LayerData } from './layerPoints';
+import {
+  allSevenDay,
+  canLogScale,
+  expandIndicators,
+  isPlotLayer,
+  layerMarks,
+  plotId,
+  plotsOf,
+  type LayerData,
+} from './layerPoints';
+import { BandFillPrimitive } from '../../chart/bandFill';
 import { commonRange } from './useSeriesData';
 import { latestIso } from '../../../shared/calc/isoDate';
 
@@ -135,7 +145,13 @@ function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
       wickDownColor: SIGNED_DOWN,
     };
   if (drawnKind(layer) === 'signed')
-    return { priceScaleId: layer.scale, visible: !hidden, lastValueVisible: !hidden, base: 0, autoscaleInfoProvider };
+    return {
+      priceScaleId: layer.scale,
+      visible: !hidden,
+      lastValueVisible: !hidden && !isPlotLayer(layer),
+      base: 0,
+      autoscaleInfoProvider,
+    };
 
   // 隐藏 = visible: false:不画、不进自动缩放(lw-charts 自带);图例读数取自 layerPoints,不受影响。
   // 例外是被叠加的 A:B 轴每帧按 A 轴的范围换算(useFitSync),A 不进自动缩放的话 A 轴定住、B 也跟着定住 —— 只关线和标签
@@ -147,7 +163,8 @@ function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
     priceScaleId: layer.scale,
     visible: !hidden || fitTargets.has(layer.id),
     lineVisible: !hidden,
-    lastValueVisible: !hidden,
+    // 指标子线(EMA 一组、布林带四条…)不出右轴最新值标签:十来个标签会把现货自己的价签埋掉,读数看图例(同旧期权页)
+    lastValueVisible: !hidden && !isPlotLayer(layer),
     crosshairMarkerVisible: !hidden,
     autoscaleInfoProvider,
   };
@@ -157,7 +174,8 @@ function createLayerSeries(chart: IChartApi, layer: Layer, opts: object, paneInd
   const kind = drawnKind(layer);
   const s = chart.addSeries(
     KINDS[kind].def,
-    { ...opts, ...(kind === 'line' && { lineWidth: 2 }), priceLineVisible: false },
+    // 指标子线画细线(1px,同旧期权页),让主线 / 蜡烛压得住
+    { ...opts, ...(kind === 'line' && { lineWidth: isPlotLayer(layer) ? 1 : 2 }), priceLineVisible: false },
     paneIndex,
   );
   if (isMarkLayer(layer)) fullHeightScale(s);
@@ -189,6 +207,8 @@ export function useDocChart(
   data: Record<string, LayerData>,
   { onStretches, interval, fit }: Options,
 ) {
+  // 渲染用展开后的文档:指标图层换成它的各条子线(见 layerPoints 的 expandIndicators),其余原样
+  const view = expandIndicators(doc);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<LayerSeries>(new Map());
   // 每条图层上次 setData 的数组引用:引用没变就不重设(改色 / 换轴不该触发整段重灌数据)。
@@ -234,15 +254,15 @@ export function useDocChart(
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    reconcile(chart, seriesRef.current, fedRef.current, doc);
-  }, [doc]);
+    reconcile(chart, seriesRef.current, fedRef.current, view);
+  }, [view]);
 
   // 数据:只给新建的、或数据引用变了的图层 setData
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
 
-    const layers = doc.panes.flatMap((p) => p.layers);
+    const layers = view.panes.flatMap((p) => p.layers);
     // 要重灌的:新建的、或数据引用变了的图层(改色、换格都不会换数据引用)
     const stale = layers.flatMap((l) => {
       const s = seriesRef.current.get(l.id);
@@ -264,7 +284,8 @@ export function useDocChart(
     // 看不见的短历史线不该把视图截短;竖线 / 色带是标记,不是一段该对准的数据。
     // 但图上只有标记图层时就按它们对准,不然视图停在默认位置,色带挤在右边一截
     const visible = layers.filter((l) => !l.hidden);
-    const lines = visible.filter((l) => !isMarkLayer(l));
+    // 指标子线不参与(用户定,同 TradingView 加指标不挪视图):EMA200 这类开头要先攒一段才有值,算进来起点会被推后
+    const lines = visible.filter((l) => !isMarkLayer(l) && !isPlotLayer(l));
     const seriesIds = new Set((lines.length ? lines : visible).map((l) => l.id));
     const arrived = stale.filter(({ l, src, had }) => seriesIds.has(l.id) && src.length > 0 && !had);
 
@@ -285,7 +306,7 @@ export function useDocChart(
         : withData.length && { from: fit.from, to: latestIso(withData.map((p) => p.at(-1)!.time)) };
     if (target) chart.timeScale().setVisibleRange(target);
     else chart.timeScale().fitContent();
-  }, [doc, data, interval, fit]);
+  }, [view, data, interval, fit]);
 
   // 纵轴显示模式(倒轴 / 对数)。放在结构与数据之后:对数要看数据,轴上有 ≤0 的值就按普通坐标画。
   // 内置左右轴每格都在,没声明的也要明确设回默认(轴被回收后再挂上图层,不能沿用旧状态)。
@@ -296,12 +317,12 @@ export function useDocChart(
     const panes = chart.panes();
     // 文档里已没有的格 / 图里已删掉的 lw 格,对应关系作废(清空后再加线时新格可能复用同一个 id)
     const live = new Set(panes);
-    const docIds = new Set(doc.panes.map((p) => p.id));
+    const docIds = new Set(view.panes.map((p) => p.id));
     [...paneOwnerRef.current].forEach(([api, id]) => {
       if (!live.has(api) || !docIds.has(id)) paneOwnerRef.current.delete(api);
     });
 
-    doc.panes.forEach((pane, i) => {
+    view.panes.forEach((pane, i) => {
       const api = panes[i];
       if (!api) return;
       // 新格(或 lw 格换了主人):lw-charts 写某一格内置轴的选项时会顺手 merge 进整张图的全局选项,新格按全局建轴;
@@ -325,7 +346,7 @@ export function useDocChart(
         if (cur.mode !== mode) ps.applyOptions({ mode });
       });
     });
-  }, [doc, data]);
+  }, [view, data]);
 
   // 水平线(基线、参考线、分位 P5 / P95):文档或数据变了就整套重画。分位线要看数据,所以不放进结构对账。
   // 记下画在哪条 series 上:换画法时 series 被删了重建,旧线跟着旧 series 没了,不能再去删
@@ -340,7 +361,7 @@ export function useDocChart(
     });
     drawn.clear();
 
-    doc.panes
+    view.panes
       .flatMap((p) => p.layers)
       // 隐藏的线不画(被叠加的 A 隐藏时 series 仍 visible,线会留着);标记图层没有值
       .filter((l) => !l.hidden && !isMarkLayer(l))
@@ -352,7 +373,7 @@ export function useDocChart(
         );
         drawn.set(l.id, { s, lines });
       });
-  }, [doc, data]);
+  }, [view, data]);
 
   // 分隔条拖完:读回各格比例。原生拖拽改的是图内状态,不读回的话下次结构变化会被 JSON 里的旧值盖掉。
   // 挂在 window 上:lw-charts 允许拖出图外再松手(它自己在 documentElement 上听 mouseup),
@@ -367,6 +388,45 @@ export function useDocChart(
 
     return () => window.removeEventListener('pointerup', onUp);
   }, []);
+
+  // 布林带通道填色:挂在声明了 fillTo 的那条子线上(lw-charts 没有原生线间填充,见 chart/bandFill)。
+  // 隐藏的图层不填;子线被删了重建(换画法)时旧图元跟着旧 series 没了,重新挂
+  const fillsRef = useRef(new Map<string, { s: ISeriesApi<SeriesType>; prim: BandFillPrimitive }>());
+  useEffect(() => {
+    const fills = fillsRef.current;
+    const wanted = doc.panes
+      .flatMap((p) => p.layers)
+      .flatMap((l) =>
+        l.hidden
+          ? []
+          : plotsOf(l, allSevenDay(doc)).flatMap((pl) =>
+              pl.fillTo ? [{ id: plotId(l, pl), other: `${l.id}#${pl.fillTo.key}`, color: pl.fillTo.color }] : [],
+            ),
+      );
+    const wantedIds = new Set(wanted.map((w) => w.id));
+    [...fills].forEach(([id, f]) => {
+      const live = seriesRef.current.get(id) === f.s;
+      if (wantedIds.has(id) && live) return;
+      if (live) f.s.detachPrimitive(f.prim);
+      fills.delete(id);
+    });
+
+    wanted.forEach((w) => {
+      const s = seriesRef.current.get(w.id);
+      if (!s) return;
+      const f = fills.get(w.id) ?? { s, prim: new BandFillPrimitive() };
+      if (!fills.has(w.id)) {
+        s.attachPrimitive(f.prim);
+        fills.set(w.id, f);
+      }
+      const lower = new Map((data[w.other]?.display ?? []).map((pt) => [pt.time, pt.value]));
+      const band = (data[w.id]?.display ?? []).flatMap((pt) => {
+        const lo = lower.get(pt.time);
+        return lo === undefined ? [] : [{ time: pt.time, upper: pt.value, lower: lo }];
+      });
+      f.prim.setData(band, w.color);
+    });
+  }, [doc, data]);
 
   return { chartRef, seriesRef };
 }
@@ -406,10 +466,12 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, Fed>,
     });
 
     // 层次同 TradingView:卡片列表最上面那条画在最上层(lw-charts 里序号越大越靠上)。
-    // 标记图层(背景色带、竖线)一律压在线下面,不看卡片顺序。从底层往上逐个归位,前面已归位的不会被后面的挪动打乱。
+    // 标记图层(背景色带、竖线)一律压在线下面;指标的子线一律压在普通线 / 蜡烛上面(均线从 K 线实体前面过,
+    // 同旧期权页与 TradingView;布林带填色是挂在线上的 bottom 图元,照旧在最底下)。从底层往上逐个归位
     const marks = pane.layers.filter(isMarkLayer).toReversed();
-    const lines = pane.layers.filter((l) => !isMarkLayer(l)).toReversed();
-    [...marks, ...lines].forEach((layer, order) => {
+    const lines = pane.layers.filter((l) => !isMarkLayer(l) && !isPlotLayer(l)).toReversed();
+    const plots = pane.layers.filter(isPlotLayer).toReversed();
+    [...marks, ...lines, ...plots].forEach((layer, order) => {
       const s = series.get(layer.id);
       if (s && s.seriesOrder() !== order) s.setSeriesOrder(order);
     });

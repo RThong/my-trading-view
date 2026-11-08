@@ -6,6 +6,7 @@ import { NativeSelect, NativeSelectOption } from '../../../components/ui/native-
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
 import {
+  canAddIndicator,
   fitScaleIds,
   isMarkLayer,
   isFitTarget,
@@ -20,12 +21,24 @@ import { canCandle, drawnKind } from '../../../views/chartDoc/registry';
 import { CandleSwatch } from '../../../views/chartDoc/CandleSwatch';
 import { baseLabel, layerLabel } from '../../../views/chartDoc/layerLabel';
 import { NumberField } from './NumberField';
+import { INDICATOR_IDS, INDICATORS, periodsOf } from '../../../chart/indicatorDefs';
+import { allSevenDay, plotsOf } from '../../../views/chartDoc/layerPoints';
 import { SeriesSelect } from './SeriesSelect';
 import type { ChartDocActions } from '../hooks/useChartDoc';
 
 export type CardActions = Pick<
   ChartDocActions,
-  'setScale' | 'setColor' | 'remove' | 'setShift' | 'setCalc' | 'setRender' | 'setInvert' | 'setLog' | 'clearFit'
+  | 'setScale'
+  | 'setColor'
+  | 'remove'
+  | 'setShift'
+  | 'setCalc'
+  | 'setRender'
+  | 'setInvert'
+  | 'setLog'
+  | 'clearFit'
+  | 'addIndicator'
+  | 'setPeriods'
 >;
 
 // <select> 的 value 只能是字符串:挂轴选择编码成 right / left / new / ov:<轴 id>
@@ -111,9 +124,15 @@ export function LayerCard({
     >
       <div className="flex items-center gap-1.5">
         <GripVertical size={14} className={`shrink-0 ${fixed ? 'invisible' : 'text-neutral-600'}`} />
-        {/* 蜡烛按涨绿跌红画,图层颜色不起作用:不给取色器(占同样宽度,名字不跳) */}
+        {/* 蜡烛按涨绿跌红画、指标各条线配色固定,图层颜色都不起作用:不给取色器(占同样宽度,名字不跳) */}
         {drawnKind(layer) === 'candle' ? (
           <CandleSwatch className="h-4 w-4 shrink-0" />
+        ) : layer.indicator ? (
+          <span
+            className="h-4 w-4 shrink-0 rounded"
+            style={{ background: plotsOf(layer, false)[0]?.color }}
+            title="配色固定"
+          />
         ) : (
           <input
             type="color"
@@ -188,18 +207,49 @@ export function LayerCard({
                 <TabsList variant="line">
                   <TabsTrigger value="data">数据</TabsTrigger>
                   <TabsTrigger value="axis">纵轴</TabsTrigger>
+                  {/* 指标是对一条序列算的,指标自己不再套指标 */}
+                  {!layer.indicator && !isMarkLayer(layer) && <TabsTrigger value="indicator">指标</TabsTrigger>}
                 </TabsList>
                 <TabsContent value="data" className="flex flex-col gap-2 text-xs">
-                  <CalcRow
-                    layer={layer}
-                    locked={fixed}
-                    actions={actions}
-                    pending={pendingCalc}
-                    onPending={setPendingCalc}
-                  />
-                  <ShiftRow layer={layer} locked={fixed} actions={actions} />
-                  <RenderRow layer={layer} locked={fixed} actions={actions} />
+                  {layer.indicator ? (
+                    <PeriodsRow layer={layer} sevenDay={allSevenDay(doc)} actions={actions} />
+                  ) : (
+                    <>
+                      <CalcRow
+                        layer={layer}
+                        locked={fixed}
+                        actions={actions}
+                        pending={pendingCalc}
+                        onPending={setPendingCalc}
+                      />
+                      <ShiftRow layer={layer} locked={fixed} actions={actions} />
+                      <RenderRow layer={layer} locked={fixed} actions={actions} />
+                    </>
+                  )}
                 </TabsContent>
+                {!layer.indicator && !isMarkLayer(layer) && (
+                  <TabsContent value="indicator" className="flex flex-col gap-2 text-xs">
+                    <p className="text-neutral-500">
+                      对这条线算指标,加成新的一层(叠加类放在同一格,振荡类在下方新开一格)
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {INDICATOR_IDS.map((id) => (
+                        <Button
+                          key={id}
+                          variant="outline"
+                          size="2xs"
+                          disabled={!canAddIndicator(layer, id)}
+                          title={
+                            canAddIndicator(layer, id) ? undefined : '叠加对比里被对齐的线独占一根轴,叠加类指标挂不上去'
+                          }
+                          onClick={() => actions.addIndicator(layer.id, id)}
+                        >
+                          {INDICATORS[id].label}
+                        </Button>
+                      ))}
+                    </div>
+                  </TabsContent>
+                )}
                 <TabsContent value="axis" className="flex flex-col gap-2 text-xs">
                   <p className="text-neutral-500">{scaleName}的属性:这根轴上的线一起变</p>
                   <div className="flex items-center gap-2">
@@ -340,6 +390,41 @@ function CalcRow({
         />
       )}
     </div>
+  );
+}
+
+// 指标的周期(EMA / RSI):逗号分隔,失焦或回车生效;清空 = 回到默认那组。布林带 / MACD 参数固定,只给说明
+function PeriodsRow({ layer, sevenDay, actions }: { layer: Layer; sevenDay: boolean; actions: CardActions }) {
+  const { id, periods } = layer.indicator!;
+  const shown = periodsOf(id, periods, sevenDay).join(', ');
+  const [draft, setDraft] = useState<string | null>(null);
+  if (!INDICATORS[id].periods) return <p className="text-neutral-500">{INDICATORS[id].label}:参数固定</p>;
+
+  const commit = () => {
+    if (draft === null) return;
+    const ns = draft
+      .split(/[,，\s]+/)
+      .filter(Boolean)
+      .map(Number);
+    const ok = ns.length > 0 && ns.length <= 10 && ns.every((n) => Number.isInteger(n) && n >= 1 && n <= 1000);
+    if (draft.trim() === '') actions.setPeriods(layer.id, undefined);
+    else if (ok) actions.setPeriods(layer.id, ns);
+    setDraft(null);
+  };
+
+  return (
+    <label className="flex items-center gap-1.5">
+      周期
+      <input
+        className="h-6 flex-1 rounded border border-neutral-700 bg-neutral-900 px-1.5 text-neutral-200"
+        value={draft ?? shown}
+        placeholder={(INDICATORS[id].periods ?? []).join(', ')}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === 'Enter' && commit()}
+        title="逗号分隔,如 5, 20, 60;清空 = 默认那组"
+      />
+    </label>
   );
 }
 

@@ -130,7 +130,7 @@ async function getYahoo([, ...symbols]: string[]): Promise<YahooData> {
   return Object.fromEntries(rows);
 }
 
-/** 日线里周末点超过一成 = 7×24 资产(加密);美股的周末快照入库前已归到周五,不会误判。同 AssetChart 的判据。 */
+/** 日线里周末点超过一成 = 7×24 资产(加密);美股的周末快照入库前已归到周五,不会误判。 */
 function hasWeekends(times: string[]) {
   return times.filter(isWeekend).length > times.length * 0.1;
 }

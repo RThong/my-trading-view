@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { Interval } from '../../hooks/interval';
-import { type ChartDoc, setLayerHidden, setStretches } from './chartDoc';
+import { type ChartDoc, type Layer, setLayerHidden, setStretches } from './chartDoc';
 import { layerLabel } from './layerLabel';
 import { allSevenDay, layerRequest, useLayerData } from './layerPoints';
 import { Legend } from './Legend';
@@ -21,9 +21,11 @@ type Props = {
   notes?: string[];
   /** 调用方另给的说明(中性,如「截至 … 申报」) */
   caption?: string;
+  /** 初始窗口:缺省从 2018 起;期权页给 'common'(25Δ 是快照、今年才攒,从 2018 起它只剩右边一小条) */
+  fit?: 'common' | { from: string };
 };
 
-export function DocChart({ doc: builtin, interval, notes = [], caption }: Props) {
+export function DocChart({ doc: builtin, interval, notes = [], caption, fit = FIT }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState(builtin);
 
@@ -35,17 +37,20 @@ export function DocChart({ doc: builtin, interval, notes = [], caption }: Props)
   const { chartRef } = useDocChart(containerRef, doc, data, {
     onStretches: (s) => setDoc((d) => setStretches(d, s)),
     interval,
-    fit: FIT,
+    fit,
   });
   const { hoverTime, layout } = useCrosshairLegend(containerRef, chartRef, doc);
   usePercentileBand(chartRef, doc, data);
 
+  // 同一条序列(含计算)只报一次,名字取第一层的:期权页的现货、EMA、布林带是同一条现货
+  const namesOf = (hit: Layer[]) =>
+    hit
+      .filter((l, i) => hit.findIndex((x) => x.series === l.series && x.calc?.series === l.calc?.series) === i)
+      .map((l) => layerLabel(doc, l));
   // 源这次没拉到、服务端拿上一份顶上的:线照画,但要说明不是最新
-  const staleNames = layers.filter((_, i) => stale.includes(requestKey(requests[i]))).map((l) => layerLabel(doc, l));
+  const staleNames = namesOf(layers.filter((_, i) => stale.includes(requestKey(requests[i]))));
   // 缺数的也按图例名报(missing 是注册表名,与图例、上一条提示对不上)
-  const missingNames = missing.length
-    ? layers.filter((_, i) => !points[requestKey(requests[i])]?.length).map((l) => layerLabel(doc, l))
-    : [];
+  const missingNames = missing.length ? namesOf(layers.filter((_, i) => !points[requestKey(requests[i])]?.length)) : [];
   const status = [
     isLoading ? '加载中…' : undefined,
     error ? `取数失败:${error.message}` : undefined,
