@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { BAND_CALM, BAND_RISK } from '../../chart/palette';
-import { normalBand, type Layer, type Pane } from './chartDoc';
-import { allSevenDay, canLogScale, computeLayerData, layerMarks, layerRequest, type LayerData } from './layerPoints';
+import { normalBand, type ChartDoc, type Layer, type Pane } from './chartDoc';
+import {
+  allSevenDay,
+  canLogScale,
+  computeLayerData,
+  expandIndicators,
+  layerMarks,
+  layerRequest,
+  type LayerData,
+} from './layerPoints';
 import { layerLabel } from './layerLabel';
 
 function pane(layers: Partial<Layer>[], expandVisibleTo?: [number, number]): Pane {
@@ -16,6 +24,17 @@ const data: Record<string, LayerData> = {
   l1: { display: [{ time: '2026-01-02', value: 5 }] },
   l2: { display: [{ time: '2026-01-02', value: -1 }] },
 };
+
+test('canLogScale:指标图层看子线算出来的值(MACD 柱有负值就不能对数),不看源序列', () => {
+  const macd = pane([{ series: 'SPY', indicator: { id: 'macd' } }]);
+  const d = {
+    l1: { display: [{ time: '2026-01-02', value: 700 }] },
+    'l1#hist': { display: [{ time: '2026-01-02', value: -3 }] },
+  };
+  expect(canLogScale(macd, 'right', d)).toBe(false);
+  const ok = { ...d, 'l1#hist': { display: [{ time: '2026-01-02', value: 3 }] } };
+  expect(canLogScale(macd, 'right', ok)).toBe(true);
+});
 
 test('canLogScale:隐藏的线不挡;被叠加的 A 隐藏了照样挡;下限框撑到 ≤0 也不行', () => {
   expect(canLogScale(pane([{}, {}]), 'right', data)).toBe(false);
@@ -162,5 +181,77 @@ describe('整张图都是 7×24 才保留周末', () => {
     const l = d.panes[0].layers[0];
     expect(layerLabel(d, l)).toBe('VIX');
     expect(layerLabel(d, { ...l, title: '恐慌指数' })).toBe('恐慌指数');
+  });
+});
+
+describe('指标图层展开成子线', () => {
+  const doc = {
+    v: 1 as const,
+    panes: [
+      pane([
+        { series: 'SPY', render: { kind: 'candle' } },
+        { series: 'SPY', indicator: { id: 'rsi', periods: [6, 12] }, hidden: true },
+      ]),
+    ],
+  };
+
+  test('渲染用的文档:指标换成各条子线(颜色 / 隐藏跟着走),同一份文档只展开一次', () => {
+    const view = expandIndicators(doc);
+    expect(view.panes[0].layers.map((l) => [l.id, l.hidden ?? false])).toEqual([
+      ['l1', false],
+      ['l2#rsi6', true],
+      ['l2#rsi12', true],
+    ]);
+    expect(expandIndicators(doc)).toBe(view);
+    const plain = { v: 1 as const, panes: [pane([{ series: 'SPY' }])] };
+    expect(expandIndicators(plain)).toBe(plain); // 没有指标就原样
+  });
+
+  test('每条子线有自己算好的点;源序列的点相同就复用结果(切显隐不重算)', () => {
+    const pts = Array.from({ length: 40 }, (_, i) => ({
+      time: `2026-01-${String((i % 28) + 1).padStart(2, '0')}`,
+      value: 100 + i,
+    }));
+    const out = computeLayerData(doc, { SPY: pts, 'SPY#b': pts }, '1D');
+    expect(out['l2#rsi6'].display.length).toBe(pts.length - 6);
+    expect(out['l2#rsi12'].display.length).toBe(pts.length - 12);
+    expect(computeLayerData({ ...doc }, { SPY: pts, 'SPY#b': pts }, '1D')['l2#rsi6'].display).toBe(
+      out['l2#rsi6'].display,
+    );
+  });
+
+  test('同一条源上两个指标(期权页:EMA + 布林带)各缓存各的,互不顶掉', () => {
+    const two = {
+      v: 1 as const,
+      panes: [
+        pane([
+          { series: 'SPY', indicator: { id: 'ema', periods: [5] } },
+          { series: 'SPY', indicator: { id: 'bb' } },
+        ]),
+      ],
+    };
+    const pts = Array.from({ length: 60 }, (_, i) => ({
+      time: `2026-0${Math.floor(i / 28) + 1}-${String((i % 28) + 1).padStart(2, '0')}`,
+      value: 100 + i,
+    }));
+    const a = computeLayerData(two, { SPY: pts }, '1D');
+    const b = computeLayerData({ ...two }, { SPY: pts }, '1D');
+    expect(b['l1#ema5'].display).toBe(a['l1#ema5'].display);
+    expect(b['l2#upper'].display).toBe(a['l2#upper'].display);
+  });
+});
+
+describe('365 年线:整张图都是 7×24 才自动带(混了工作日序列会去掉 BTC 的周末,365 根就不是年线了)', () => {
+  const titles = (doc: ChartDoc) =>
+    expandIndicators(doc).panes.flatMap((p) => p.layers.filter((l) => l.id.includes('#')).map((l) => l.title));
+
+  test('纯 BTC:默认那组带 EMA365;BTC + SPY 同图:不带', () => {
+    const btcOnly = { v: 1 as const, panes: [pane([{ series: 'btc' }, { series: 'btc', indicator: { id: 'ema' } }])] };
+    const mixed = {
+      v: 1 as const,
+      panes: [pane([{ series: 'btc' }, { series: 'SPY' }, { series: 'btc', indicator: { id: 'ema' } }])],
+    };
+    expect(titles(btcOnly)).toContain('EMA365');
+    expect(titles(mixed)).not.toContain('EMA365');
   });
 });

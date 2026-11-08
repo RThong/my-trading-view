@@ -9,7 +9,7 @@ import { isMarkLayer, type ChartDoc, type Layer } from './chartDoc';
 import { changeStats, type Bar, type LinePoint } from '../../chart/core';
 import { SIGNED_DOWN, SIGNED_UP } from '../../chart/palette';
 import { layerLabel, layerUnit } from './layerLabel';
-import { layerMarks, type LayerData } from './layerPoints';
+import { allSevenDay, layerMarks, plotId, plotsOf, type LayerData } from './layerPoints';
 import { percentileRank } from '../../../shared/calc/stats';
 import { asOfPoint, type LegendLayout } from './useCrosshairLegend';
 
@@ -90,7 +90,7 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
                     className="whitespace-nowrap text-neutral-500 hover:text-neutral-200"
                   >
                     {layerLabel(doc, l)}
-                    {!isMarkLayer(l) && (
+                    {!isMarkLayer(l) && !l.indicator && (
                       <span className="ml-1 tabular-nums">
                         {fmtValue(asOfPoint(data[l.id]?.display, hoverTime)?.value)}
                       </span>
@@ -108,8 +108,48 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
 
 type RowProps = Omit<Props, 'layout'> & { layer: Layer; info: ReactNode };
 
-/** 显示中的一条线:名称、读数(蜡烛给开高低收)、涨跌、分位排名、平移原日期、显隐按钮 */
-function LayerRow({ doc, interval, data, hoverTime, onHidden, layer: l, info }: RowProps) {
+function LayerRow(props: RowProps) {
+  return props.layer.indicator ? <IndicatorRow {...props} /> : <SeriesRow {...props} />;
+}
+
+/** 指标:一个指标一行,各条子线的读数按自己的颜色排开(EMA 5 652 · 20 640 …) */
+function IndicatorRow({ doc, data, hoverTime, onHidden, layer: l, info }: RowProps) {
+  const plots = plotsOf(l, allSevenDay(doc));
+  return (
+    <span className="group pointer-events-auto flex items-center gap-1.5 whitespace-nowrap">
+      <span className="h-0.5 w-3 rounded" style={{ background: plots[0]?.color }} />
+      <span className="text-neutral-400">{layerLabel(doc, l)}</span>
+      {info}
+      {plots.map((p) => {
+        const v = asOfPoint(data[plotId(l, p)]?.display, hoverTime)?.value;
+        // 没数(如周线下的 365 年线)不占位
+        return v === undefined ? null : (
+          <span key={p.key} className="tabular-nums" style={{ color: p.color }}>
+            {p.title} {fmtValue(v)}
+          </span>
+        );
+      })}
+      <HideButton onClick={() => onHidden(l.id, true)} />
+    </span>
+  );
+}
+
+/** 用透明度藏而不是 invisible:invisible 的按钮 Tab 不到 */
+function HideButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="隐藏"
+      className="text-neutral-400 opacity-0 hover:text-neutral-100 group-hover:opacity-100 focus-visible:opacity-100"
+    >
+      <Eye className="size-3.5" />
+    </button>
+  );
+}
+
+/** 显示中的一条序列:名称、读数(蜡烛给开高低收)、涨跌、分位排名、平移原日期、显隐按钮 */
+function SeriesRow({ doc, interval, data, hoverTime, onHidden, layer: l, info }: RowProps) {
   const pts = data[l.id]?.display;
   const pt = asOfPoint(pts, hoverTime);
   const shift = l.shift ?? 0;
@@ -150,15 +190,7 @@ function LayerRow({ doc, interval, data, hoverTime, onHidden, layer: l, info }: 
       {shift !== 0 && pt && interval === '1D' && (
         <span className="text-neutral-600">原 {shiftBusinessDays(pt.time, -shift)}</span>
       )}
-      {/* 用透明度藏而不是 invisible:invisible 的按钮 Tab 不到 */}
-      <button
-        type="button"
-        onClick={() => onHidden(l.id, true)}
-        title="隐藏"
-        className="text-neutral-400 opacity-0 hover:text-neutral-100 group-hover:opacity-100 focus-visible:opacity-100"
-      >
-        <Eye className="size-3.5" />
-      </button>
+      <HideButton onClick={() => onHidden(l.id, true)} />
     </span>
   );
 }

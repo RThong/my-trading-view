@@ -131,7 +131,6 @@ src/
     │                        indicators (EMA / Bollinger / MACD / RSI) · zigzag · palette · trendlines · bandFill · analysis
     ├── views/               business views reused across perspectives
     │   ├── regime/          /api/regime data hook + FundChart (SEC notes); REGIME_DOCS (ChartDoc per tab) from pages/*/docs
-    │   ├── asset/           AssetChart + hooks (25Δ + optional VRP)
     │   ├── curve/           yield-curve snapshot panel (YieldCurve* + yieldCurve hooks); tenor history is a ChartDoc (pages/curveHistory)
     │   └── chartDoc/        ChartDoc format + series registry (shared by the editor and fixed panels)
     └── pages/               one dir per perspective (= route): index (its tabs) + docs (its ChartDocs)
@@ -163,20 +162,16 @@ IV + skew, plus implied-vs-realized + VRP where a free vol index exists:
 | USO | `USO`  | moomoo OpenD | OVX / USO |
 | BTC (tab sits under the **BTC** rail, not 期权) | `BTC`  | Deribit | DVOL / BTC |
 
-### Spot chart tools
+### Indicators
 
-The spot candle pane on every options tab has a small toolbar:
-
-- **指标 (Indicators)** — a multi-select of overlays drawn on the candles: an EMA ribbon
-  (5/20/50/144/169/200/365) and Bollinger bands (20, at 2σ and 3σ, with the 2σ channel shaded).
-  Overlays are thin, carry no right-axis labels, and show values only in the hover legend.
-  Each indicator is one entry in a registry (`priceIndicators.ts`), so adding one is a
-  pure function plus a row.
-- **只看现货 (Spot only)** — collapses every other pane in one click and restores the previous
-  layout on the second click. In this mode **MACD (12,26,9)** and **RSI (6/12/24)** become
-  available as separate sub-charts pinned under the main chart; they follow its zoom/scroll
-  and crosshair, with right axes width-matched so bars line up exactly.
-- **画线 (Draw)** — persistent trend lines per pane.
+Indicators are ChartDoc layers: a layer with `indicator: { id, periods? }` draws that indicator computed
+from its own `series` (any registry series, not just spot), like a TradingView indicator instance —
+the JSON stores only the id and parameters, never the code or the computed values.
+Built-ins live in `web/chart/indicatorDefs.ts`: an EMA ribbon (5/20/50/144/169/200; when every line on the chart is 24/7 like BTC and the periods are left at the default, a 365 year line is added, drawn on daily only),
+Bollinger bands (20, 2σ/3σ, 2σ channel shaded), MACD (12,26,9) and RSI (6/12/24). Overlays default to the
+source pane and axis, oscillators open a new pane; afterwards they move like any layer. In the chart editor
+a layer's ⚙ → 指标 adds one; ⚙ → 数据 edits EMA / RSI periods. Every options tab carries the EMA ribbon
+and Bollinger bands on the spot candles, hidden by default (click them in the legend).
 
 Formulas follow TradingView / moomoo conventions (EMA seeded with an SMA, Bollinger on the
 population σ, Wilder-smoothed RSI, MACD histogram ×2 as moomoo shows it) and were checked

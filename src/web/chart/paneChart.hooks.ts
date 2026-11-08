@@ -1,5 +1,5 @@
 // 通用多 pane 图表栈:图表引擎(建图/series 同步)+ 布局(换位/折叠)+ 图例(crosshair)。
-// 与数据源无关——AssetChart / AttackDefensePanel 复用,故从 assetChart.hooks 抽出。
+// 与数据源无关;只剩攻防(AttackDefensePanel)在用,其余固定面板已迁成 ChartDoc。
 import { useEffect, useRef, useState } from 'react';
 import {
   createChart,
@@ -22,7 +22,7 @@ import { BandFillPrimitive } from './bandFill';
  * = 上边界超出实际最高价近一个数量级(轴顶会标到 $2,000,000),刻度也因此只剩一条。
  *
  * **只单向切、且每次同步都判**:数据是异步到的,series 建的那一刻可能还空着
- * (AssetChart 的现货 spec 就是先发出、后到数),只在建线时判会让那格永久停在线性轴。
+ * (现货 spec 常是先发出、后到数),只在建线时判会让那格永久停在线性轴。
  * 单向 = 不用在这里硬编码 lightweight-charts 的线性默认 margins —— 同一格的标的不会变,
  * 数据只会从空变全,不存在要切回去的情形。
  */
@@ -376,7 +376,7 @@ export function useCrosshairLegend(
   return { cells, hovering, tops };
 }
 
-// ── 组合:引擎 + 布局 + 图例 一处接线,供 AssetChart / AttackDefensePanel 共用(避免两处接线漂移)。
+// ── 组合:引擎 + 布局 + 图例 一处接线,供攻防(AttackDefensePanel)用。
 // drawable 传入 → 额外接入趋势线画线能力(opt-in;纯折线曲线图不传即零影响)。
 export function usePaneChartStack(
   containerRef: React.RefObject<HTMLDivElement | null>,

@@ -458,7 +458,8 @@ const OVERRIDDEN = new Set(HAND.map((d) => d.id));
 // 收盘进 series、整根 K 线另进 /api/regime 的 ohlc 的那几条(服务端按同一张表发,见 REGIME_OHLC_KEYS)
 const REGIME_WITH_OHLC: ReadonlySet<string> = new Set(REGIME_OHLC_KEYS);
 // 收盘在 /api/regime、K 线按需从 Yahoo 取的(代码与服务端拉收盘用的同一个)
-const YAHOO_BARS: Partial<Record<string, string>> = { spx: '^GSPC', spxew: '^SPXEW', usdjpy: 'JPY=X' };
+// vix:收盘读 regime,期权页的 VIX 现货蜡烛要整根 K 线
+const YAHOO_BARS: Partial<Record<string, string>> = { spx: '^GSPC', spxew: '^SPXEW', usdjpy: 'JPY=X', vix: '^VIX' };
 // 手写表覆盖了同名 regime 键的(qqq 走 ETF 现货、dgs10 / jgb2y / jgb10y 走收益曲线):编辑器和固定面板都用手写那份
 // (历史更长,2026-11-07 用户定统一用长历史),regime 那份不再经注册表引用
 

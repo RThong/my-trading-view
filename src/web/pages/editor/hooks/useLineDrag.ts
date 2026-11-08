@@ -68,7 +68,7 @@ export function shiftRange(t: Range & { perPx: number }, dy: number): Range {
 }
 
 function draggable(l: Layer) {
-  return !l.fit && !l.hidden && drawnKind(l) === 'line';
+  return !l.fit && !l.hidden && !l.indicator && drawnKind(l) === 'line';
 }
 
 /** 某条线在逻辑下标 [from, to] 内各点的屏幕 y(最多 MAX_HIT_BARS 根;窗口外 / 没数据的跳过)。 */

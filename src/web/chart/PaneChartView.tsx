@@ -1,16 +1,12 @@
-import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { Button } from '../components/ui/button';
-import { Checkbox } from '../components/ui/checkbox';
 import type { LegendCell, PaneDef } from './paneChart.types';
 import { InfoTip } from '../components/InfoTip';
 
 // 多 pane 堆叠图的通用展示壳:pane 工具条(↑↓ 换位 / ▾ 折叠)+ 竖线图例 + 容器 + loading/error。
-// 与数据源无关——期权(AssetChart)与攻防(AttackDefensePanel)共用,靠 props 注入 paneDefs/图例/命名/配色。
+// 与数据源无关,靠 props 注入 paneDefs/图例/命名/配色。只剩攻防(AttackDefensePanel)在用,其余都已迁成 ChartDoc。
 
 // 格子 chip 里的 ↑ ↓ ▸:禁用时压到几乎看不见(半透明的灰箭头看着像能点)
 const CHIP_BTN = 'text-neutral-300 disabled:text-neutral-700 disabled:opacity-100';
-// 开关打开时的蓝框(只看现货 / 指标)
-const ACTIVE_SKY = 'border-sky-600 text-sky-300 hover:text-sky-200';
 
 type Props = {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -36,16 +32,6 @@ type Props = {
   toggleDrawing?: () => void;
   selection?: { x: number; y: number } | null; // 选中线时浮动操作条的位置(容器相对像素)
   deleteSelected?: () => void;
-  /** K 线叠加指标多选(EMA / 布林带);不传即不显示「指标」按钮。options.series = 该指标产出的线(图例只显示数值)。 */
-  indicators?: {
-    options: { id: string; label: string; series: { key: string }[] }[];
-    active: string[];
-    toggle: (id: string) => void;
-    /** 暂不可用的选项:置灰、显示为未勾(勾选状态由调用方保留),悬停给 hint。 */
-    disabled?: { ids: string[]; hint: string };
-  };
-  /** 工具条上的「单独看某格」切换钮;不传即不显示。 */
-  solo?: { label: string; active: boolean; onClick: () => void };
 };
 
 export function PaneChartView({
@@ -72,12 +58,7 @@ export function PaneChartView({
   toggleDrawing,
   selection,
   deleteSelected,
-  indicators,
-  solo,
 }: Props) {
-  // 指标线的图例只给数值:均线的单日涨跌没有信息量,十来行涨跌幅只会把读数淹掉。
-  const valueOnly = new Set(indicators?.options.flatMap((o) => o.series.map((s) => s.key)) ?? []);
-
   return (
     <div className="relative flex h-full w-full flex-col">
       {/* 工具条按固定顺序排列(便于查找);↑↓ 只改 chart 里 pane 的显示位置,不改本行顺序。 */}
@@ -126,19 +107,8 @@ export function PaneChartView({
         })}
         {toolbarNote && <span className="self-center px-1 text-xs text-neutral-400">{toolbarNote}</span>}
       </div>
-      {(toggleDrawing || indicators || solo) && (
+      {toggleDrawing && (
         <div className="mb-2 flex items-center gap-1.5 text-xs">
-          {solo && (
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={solo.onClick}
-              className={solo.active ? ACTIVE_SKY : undefined}
-              title={solo.active ? '再点一下恢复之前的布局' : '收起其它格,只看这一格'}
-            >
-              {solo.label}
-            </Button>
-          )}
           {toggleDrawing && (
             <Button
               variant="outline"
@@ -149,38 +119,6 @@ export function PaneChartView({
             >
               ✏ 画线{drawing ? '中' : ''}
             </Button>
-          )}
-          {indicators && (
-            <Popover>
-              <PopoverTrigger
-                render={
-                  <Button variant="outline" size="xs" className={indicators.active.length ? ACTIVE_SKY : undefined} />
-                }
-              >
-                指标{indicators.active.length ? ` (${indicators.active.length})` : ''} ▾
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-auto gap-0.5 p-1.5 text-xs">
-                {indicators.options.map((o) => {
-                  const off = indicators.disabled?.ids.includes(o.id) ?? false;
-                  return (
-                    <label
-                      key={o.id}
-                      title={off ? indicators.disabled?.hint : undefined}
-                      className={`flex items-center gap-2 rounded px-2 py-1 ${
-                        off ? 'cursor-not-allowed text-neutral-600' : 'cursor-pointer hover:bg-neutral-800'
-                      }`}
-                    >
-                      <Checkbox
-                        disabled={off}
-                        checked={!off && indicators.active.includes(o.id)}
-                        onCheckedChange={() => indicators.toggle(o.id)}
-                      />
-                      {o.label}
-                    </label>
-                  );
-                })}
-              </PopoverContent>
-            </Popover>
           )}
         </div>
       )}
@@ -222,7 +160,7 @@ export function PaneChartView({
                   const dColor =
                     c.delta == null ? undefined : c.delta > 0 ? '#22c55e' : c.delta < 0 ? '#ef4444' : undefined;
                   const dTxt =
-                    c.delta == null || valueOnly.has(sk)
+                    c.delta == null
                       ? null
                       : `${c.delta >= 0 ? '+' : ''}${c.delta.toFixed(2)}${c.pct == null ? '' : ` (${c.pct >= 0 ? '+' : ''}${c.pct.toFixed(2)}%)`}`;
                   // O/H/L/C 字母保持中性,只有数字按涨跌上色(对齐 TradingView);线的值保持 series 原色。

@@ -24,6 +24,9 @@ import {
   setStretches,
   type ChartDoc,
   type Layer,
+  addIndicator,
+  setIndicatorPeriods,
+  findLayer,
 } from './chartDoc';
 
 function seriesOf(l: Layer) {
@@ -540,5 +543,118 @@ describe('计算图层(calc)', () => {
     const raw = JSON.parse(JSON.stringify(withCalc()));
     raw.panes[0].layers[0].calc = calc;
     expect(parseChartDoc(raw)).toBeNull();
+  });
+});
+
+describe('指标图层', () => {
+  const sc = [{ id: 'right', side: 'right' as const }];
+  const base: ChartDoc = {
+    v: 1,
+    panes: [
+      { id: 'p1', stretch: 2, scales: sc, layers: [{ id: 'l1', series: 'SPY', scale: 'right', color: '#3987e5' }] },
+      { id: 'p2', stretch: 1, scales: sc, layers: [{ id: 'l2', series: 'vix', scale: 'right', color: '#e66767' }] },
+    ],
+  };
+
+  test('叠加类(EMA / 布林带)放在源线同格同轴、紧跟其后;振荡类(MACD / RSI)在源线那格下方新开一格', () => {
+    const ema = addIndicator(base, 'l1', 'ema');
+    expect(ema.panes[0].layers.map((l) => [l.series, l.indicator?.id, l.scale])).toEqual([
+      ['SPY', undefined, 'right'],
+      ['SPY', 'ema', 'right'],
+    ]);
+    const rsiDoc = addIndicator(base, 'l1', 'rsi');
+    expect(rsiDoc.panes.map((p) => p.layers.map((l) => l.indicator?.id ?? l.series))).toEqual([
+      ['SPY'],
+      ['rsi'],
+      ['vix'],
+    ]);
+  });
+
+  test('改周期写进 indicator.periods;清空回默认;非指标图层不动', () => {
+    const doc = addIndicator(base, 'l1', 'ema');
+    const id = doc.panes[0].layers[1].id;
+    expect(findLayer(setIndicatorPeriods(doc, id, [10, 30]), id)?.layer.indicator).toEqual({
+      id: 'ema',
+      periods: [10, 30],
+    });
+    expect(findLayer(setIndicatorPeriods(doc, id, undefined), id)?.layer.indicator).toEqual({ id: 'ema' });
+    expect(setIndicatorPeriods(doc, 'l1', [10])).toBe(doc);
+  });
+
+  test('JSON 校验:认识的指标 id、周期是 1~1000 的整数(最多 10 个);导出再导入原样不变', () => {
+    const doc = addIndicator(addIndicator(base, 'l1', 'ema'), 'l1', 'macd');
+    expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+    const withInd = (indicator: unknown) => ({
+      v: 1,
+      panes: [
+        {
+          id: 'p1',
+          stretch: 1,
+          scales: sc,
+          layers: [{ id: 'l1', series: 'SPY', scale: 'right', color: '#3987e5', indicator }],
+        },
+      ],
+    });
+    expect(parseChartDoc(withInd({ id: 'ema', periods: [5, 20] }))).not.toBeNull();
+    expect(parseChartDoc(withInd({ id: 'kdj' }))).toBeNull();
+    expect(parseChartDoc(withInd({ id: 'ema', periods: [0] }))).toBeNull();
+    expect(parseChartDoc(withInd({ id: 'ema', periods: [] }))).toBeNull();
+    expect(parseChartDoc(withInd({ id: 'rsi', periods: [6.5] }))).toBeNull();
+    // 重复周期会展开出同 id 的两条子线;布林带 / MACD 参数固定,不收 periods
+    expect(parseChartDoc(withInd({ id: 'ema', periods: [5, 5] }))).toBeNull();
+    expect(parseChartDoc(withInd({ id: 'bb', periods: [20] }))).toBeNull();
+    const markWithInd = withInd({ id: 'ema' });
+    (markWithInd.panes[0].layers[0] as Record<string, unknown>).render = { kind: 'events' };
+    expect(parseChartDoc(markWithInd)).toBeNull();
+  });
+
+  test('改周期:非法的(重复)不改', () => {
+    const doc = addIndicator(base, 'l1', 'ema');
+    const id = doc.panes[0].layers[1].id;
+    expect(setIndicatorPeriods(doc, id, [5, 5])).toBe(doc);
+  });
+
+  test('叠加对比里被对齐的 B 腿:叠加类指标挂不上去(会拆掉叠加),振荡类照加;指标不再套指标', () => {
+    const fit = { target: 'l1', start: '2026-01-01', end: '2026-06-01', alpha: 0, beta: 1, r: 0.9 };
+    const withFit: ChartDoc = {
+      v: 1,
+      panes: [
+        {
+          id: 'p1',
+          stretch: 2,
+          scales: [...sc, { id: 's1', side: 'overlay' }],
+          layers: [
+            { id: 'l1', series: 'SPY', scale: 'right', color: '#3987e5' },
+            { id: 'l2', series: 'vix', scale: 's1', color: '#e66767', fit },
+          ],
+        },
+      ],
+    };
+    expect(addIndicator(withFit, 'l2', 'ema')).toBe(withFit);
+    expect(findLayer(addIndicator(withFit, 'l2', 'rsi'), 'l2')?.layer.fit).toEqual(fit);
+    expect(addIndicator(withFit, 'l2', 'rsi').panes).toHaveLength(2);
+    // 跟着源线平移
+    const shifted: ChartDoc = {
+      ...base,
+      panes: [{ ...base.panes[0], layers: [{ ...base.panes[0].layers[0], shift: 20 }] }, base.panes[1]],
+    };
+    expect(addIndicator(shifted, 'l1', 'ema').panes[0].layers[1].shift).toBe(20);
+    const ema = addIndicator(base, 'l1', 'ema');
+    expect(addIndicator(ema, ema.panes[0].layers[1].id, 'rsi')).toBe(ema);
+    // 标记图层(竖线、色带)的值只是 0 / 1 标志:不加指标
+    const marks: ChartDoc = {
+      v: 1,
+      panes: [
+        {
+          id: 'p1',
+          stretch: 1,
+          scales: sc,
+          layers: [
+            { id: 'l1', series: 'coreCpiRelease', scale: 'right', color: '#facc15', render: { kind: 'events' } },
+          ],
+        },
+      ],
+    };
+    expect(addIndicator(marks, 'l1', 'rsi')).toBe(marks);
   });
 });

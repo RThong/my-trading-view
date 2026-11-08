@@ -1,11 +1,11 @@
 // 各视角共用的 tab 工厂:每个 tab 自带渲染闭包(label/source/render 一处配置)。
 // 注意 tab id 与面板 source 是两回事(如收益曲线 / 期限走势可指向同一 source)。
 import type { ReactNode } from 'react';
-import { AssetChart } from '../views/asset/AssetChart';
 import { FundChart } from '../views/regime/FundChart';
 import { isFundDim, type RegimeDim } from '../views/regime/regimeChart.hooks';
 import { fundamentalDoc, REGIME_DOCS } from './regimeDims';
 import { DocChart } from '../views/chartDoc/DocChart';
+import { assetDoc } from './assetDoc';
 import { YieldCurvePanel } from '../views/curve/YieldCurvePanel';
 import type { Interval } from '../hooks/interval';
 
@@ -13,10 +13,12 @@ export type TabDef = { id: string; label: string; group?: string; render: (inter
 export type Perspective = { id: string; label: string; tabs: TabDef[] };
 
 export function assetTab(id: string, label: string, underlying: string, vrpUnderlying?: string): TabDef {
+  // 建 tab 时生成一次:DocChart 以它为初值,引用要稳定
+  const doc = assetDoc(underlying, !!vrpUnderlying);
   return {
     id,
     label,
-    render: (interval) => <AssetChart interval={interval} underlying={underlying} vrpUnderlying={vrpUnderlying} />,
+    render: (interval) => <DocChart doc={doc} interval={interval} fit="common" />,
   };
 }
 

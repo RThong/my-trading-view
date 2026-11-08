@@ -1,6 +1,7 @@
 // 图表编辑器的状态模型:整张图 = 一份带版本号的 JSON(图 → 格 → 纵轴 → 图层)。
 // 这份结构是标准 —— 以后旧图表往它上面映射,不是它迁就旧代码。图层只存序列 id,不存数据。
 // 本文件全是纯函数:编辑操作返回新文档,并经 normalize 保证不变式。
+import { INDICATOR_IDS, INDICATORS, type IndicatorId } from '../../chart/indicatorDefs';
 import { withAlpha } from '../../chart/palette';
 
 export type ScaleSide = 'right' | 'left' | 'overlay';
@@ -66,6 +67,12 @@ export type CalcOp = '-' | '/';
 /** fill:两条日期取并集、各自沿用最近值(跨市场利差用,一边休市时那边确实没变);缺省按频率自动对齐 */
 export type Calc = { op: CalcOp; series: string; fill?: true };
 
+/**
+ * 指标:本图层画的不是 series 本身,而是对它算的指标(EMA 一组、布林带、MACD、RSI;计算见 chart/indicatorDefs)。
+ * 同 TradingView 布局里的指标实例:只存 id + 参数,不存代码、不存算出来的数。periods 只给 EMA / RSI(缺省用默认那组)
+ */
+export type Indicator = { id: IndicatorId; periods?: number[] };
+
 export type Layer = {
   id: string;
   /** 引用同一格 scales 里的某个 id */
@@ -84,6 +91,7 @@ export type Layer = {
   render?: LayerRender;
   refLines?: RefLine[];
   percentile?: PercentileBand;
+  indicator?: Indicator;
 };
 
 export type Pane = {
@@ -276,6 +284,61 @@ export function addLayer(doc: ChartDoc, series: string, color: string, render?: 
     : [{ id: nextId(doc, 'p'), stretch: MAIN_STRETCH, scales: [BUILTIN.right], layers: [layer] }, ...doc.panes];
 
   return normalize({ ...doc, panes });
+}
+
+/**
+ * 给某条线加一个指标(同 TradingView 的「添加指标」):对同一条序列(含它的计算)算。
+ * 叠加类(EMA、布林带)放在源线同一格、同一根轴,紧跟在源线后面;振荡类(MACD、RSI)在源线那格下方新开一格。
+ * 之后能像普通图层一样挪格、换轴
+ */
+export function addIndicator(doc: ChartDoc, layerId: string, id: IndicatorId): ChartDoc {
+  const src = findLayer(doc, layerId);
+  if (!src || !canAddIndicator(src.layer, id)) return doc;
+
+  const layer: Layer = {
+    id: nextId(doc, 'l'),
+    series: src.layer.series,
+    ...(src.layer.calc && { calc: src.layer.calc }),
+    // 跟着源线平移(同 TradingView,指标跟源线走;之后两层各改各的)
+    ...(src.layer.shift && { shift: src.layer.shift }),
+    scale: INDICATORS[id].place === 'overlay' ? src.layer.scale : 'right',
+    color: src.layer.color,
+    indicator: { id },
+  };
+  const at = doc.panes.indexOf(src.pane);
+  const panes =
+    INDICATORS[id].place === 'overlay'
+      ? doc.panes.map((p) => {
+          if (p !== src.pane) return p;
+          const i = p.layers.indexOf(src.layer);
+          return { ...p, layers: [...p.layers.slice(0, i + 1), layer, ...p.layers.slice(i + 1)] };
+        })
+      : [
+          ...doc.panes.slice(0, at + 1),
+          { id: nextId(doc, 'p'), stretch: SUB_STRETCH, scales: [BUILTIN.right], layers: [layer] },
+          ...doc.panes.slice(at + 1),
+        ];
+
+  return normalize({ ...doc, panes });
+}
+
+/**
+ * 能不能给这条线加这个指标:指标不再套指标、标记图层不加;叠加对比里被对齐的 B 腿独占一根轴(每帧按 A 的范围换算),
+ * 叠加类指标挂上去会让 normalize 判叠加失效、悄悄拆掉 —— 振荡类新开一格不受影响
+ */
+export function canAddIndicator(l: Layer, id: IndicatorId): boolean {
+  // 标记图层(竖线、色带)的值只是 0 / 1 标志,算均线没有意义
+  if (l.indicator || isMarkLayer(l)) return false;
+  return !(l.fit && INDICATORS[id].place === 'overlay');
+}
+
+/** 改指标的周期(EMA / RSI);undefined = 回到默认那组;周期非法(重复等)不改 */
+export function setIndicatorPeriods(doc: ChartDoc, layerId: string, periods: number[] | undefined): ChartDoc {
+  const l = findLayer(doc, layerId)?.layer;
+  const next = l?.indicator && { id: l.indicator.id, ...(periods && { periods }) };
+  if (!next || !isIndicator(next)) return doc;
+
+  return setLayerField(doc, layerId, 'indicator', next);
 }
 
 export function removeLayer(doc: ChartDoc, layerId: string): ChartDoc {
@@ -641,6 +704,21 @@ function isCalc(x: unknown): x is Calc {
   );
 }
 
+// 周期:1~1000 的整数,1~10 个、不重复(重复会展开出同 id 的两条子线);布林带 / MACD 参数固定,不收 periods
+function isIndicator(x: unknown): x is Indicator {
+  if (!isObj(x) || !INDICATOR_IDS.includes(x.id as IndicatorId)) return false;
+  if (x.periods === undefined) return true;
+
+  return (
+    !!INDICATORS[x.id as IndicatorId].periods &&
+    Array.isArray(x.periods) &&
+    x.periods.length > 0 &&
+    x.periods.length <= 10 &&
+    x.periods.every((n) => isInt(n, 1, 1000)) &&
+    new Set(x.periods).size === x.periods.length
+  );
+}
+
 function isLayer(x: unknown): x is Layer {
   return (
     isObj(x) &&
@@ -655,7 +733,11 @@ function isLayer(x: unknown): x is Layer {
     (x.hidden === undefined || x.hidden === true) &&
     (x.render === undefined || isRender(x.render)) &&
     (x.refLines === undefined || (Array.isArray(x.refLines) && x.refLines.every(isRefLine))) &&
-    (x.percentile === undefined || isPercentile(x.percentile))
+    (x.percentile === undefined || isPercentile(x.percentile)) &&
+    // 标记图层(竖线、色带)的值只是 0 / 1 标志,不能同时是指标(编辑器里加不出,手写 JSON 也拒收)
+    (x.indicator === undefined ||
+      (isIndicator(x.indicator) &&
+        !(isObj(x.render) && (x.render.kind === 'events' || x.render.kind === 'background'))))
   );
 }
 
@@ -684,7 +766,7 @@ function canonicalPercentile(p: PercentileBand): PercentileBand {
 }
 
 /**
- * 按字段白名单、固定顺序重建图层(id、series、calc、scale、color、shift、fit、title、hidden、render、refLines、percentile):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
+ * 按字段白名单、固定顺序重建图层(id、series、calc、scale、color、shift、fit、title、hidden、render、refLines、percentile、indicator):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
  * 守住「图层不存数据」;编辑操作改 shift / fit 后也走这里,先改哪个字段都一样,复制出去的 JSON 再导入文本原样不变。
  */
 function canonicalLayer(l: Layer): Layer {
@@ -712,6 +794,9 @@ function canonicalLayer(l: Layer): Layer {
     ...(l.render ? { render: canonicalRender(l.render) } : {}),
     ...(l.refLines ? { refLines: l.refLines.map(canonicalRefLine) } : {}),
     ...(l.percentile ? { percentile: canonicalPercentile(l.percentile) } : {}),
+    ...(l.indicator
+      ? { indicator: { id: l.indicator.id, ...(l.indicator.periods && { periods: [...l.indicator.periods] }) } }
+      : {}),
   };
 }
 
