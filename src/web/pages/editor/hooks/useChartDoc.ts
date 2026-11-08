@@ -6,7 +6,11 @@ import { SERIES_COLORS } from '../../../chart/palette';
 import type { IndicatorId } from '../../../chart/indicatorDefs';
 import {
   EMPTY_DOC,
+  addDrawing,
   addLayer,
+  clearDrawings,
+  removeDrawing,
+  updateDrawing,
   applyLayerFit,
   clearLayerFit,
   moveLayer,
@@ -27,6 +31,7 @@ import {
   setStretches,
   type Calc,
   type ChartDoc,
+  type Drawing,
   type Fit,
   type LayerRender,
   type PaneTarget,
@@ -104,6 +109,10 @@ export function useChartDoc() {
     overlay: (layerId: string, shift: number, fit: Fit, invert: boolean) =>
       setDoc((d) => applyLayerFit(setLayerShift(d, layerId, shift), layerId, fit, invert)),
     clearFit: (layerId: string) => setDoc((d) => clearLayerFit(d, layerId)),
+    addDrawing: (layerId: string, drawing: Drawing) => setDoc((d) => addDrawing(d, layerId, drawing)),
+    updateDrawing: (drawing: Drawing) => setDoc((d) => updateDrawing(d, drawing)),
+    removeDrawing: (id: string) => setDoc((d) => removeDrawing(d, id)),
+    clearDrawings: () => setDoc((d) => clearDrawings(d)),
   };
 }
 

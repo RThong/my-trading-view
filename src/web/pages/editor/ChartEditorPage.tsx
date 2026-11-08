@@ -4,7 +4,8 @@ import type { Interval } from '../../hooks/interval';
 import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
 import { AnalysisPanel, pairRequests, resolvePair } from './components/AnalysisPanel';
-import { type ChartDoc, EMPTY_DOC, parseChartDoc } from '../../views/chartDoc/chartDoc';
+import { allDrawings, type ChartDoc, EMPTY_DOC, parseChartDoc } from '../../views/chartDoc/chartDoc';
+import { DrawingBar, DrawingToolbar } from './components/DrawingToolbar';
 import { EmptyState } from './components/EmptyState';
 import { allSevenDay, layerRequest, useLayerData } from '../../views/chartDoc/layerPoints';
 import { LayerList } from './components/LayerList';
@@ -17,6 +18,7 @@ import { useSeriesData } from '../../views/chartDoc/useSeriesData';
 import { useBaseBand } from './hooks/useBaseBand';
 import { usePercentileBand } from '../../views/chartDoc/usePercentileBand';
 import { useFitSync } from './hooks/useFitSync';
+import { useDrawings } from './hooks/useDrawings';
 import { useLineDrag } from './hooks/useLineDrag';
 import { useSidebar } from './hooks/useSidebar';
 import { useVisibleRange } from './hooks/useVisibleRange';
@@ -44,7 +46,8 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
   });
   const { hoverTime, layout } = useCrosshairLegend(containerRef, chartRef, doc);
   const visibleRange = useVisibleRange(chartRef);
-  useLineDrag(containerRef, chartRef, seriesRef, doc);
+  const selectedLineRef = useLineDrag(containerRef, chartRef, seriesRef, doc);
+  const drawing = useDrawings(containerRef, chartRef, seriesRef, selectedLineRef, doc, data, actions);
   useFitSync(chartRef, seriesRef, doc);
   useBaseBand(chartRef, doc, data);
   usePercentileBand(chartRef, doc, data);
@@ -60,6 +63,15 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
 
   return (
     <div className="flex h-full gap-3">
+      <DrawingToolbar
+        tool={drawing.tool}
+        onTool={drawing.chooseTool}
+        hidden={drawing.hidden}
+        onToggleHidden={drawing.toggleHidden}
+        count={allDrawings(doc).length}
+        onClear={actions.clearDrawings}
+        disabled={empty}
+      />
       <div className="relative min-w-0 flex-1">
         <div ref={containerRef} className="absolute inset-0" />
         {empty ? (
@@ -74,6 +86,15 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
             onHidden={actions.setHidden}
           />
         )}
+        <DrawingBar
+          doc={doc}
+          selected={drawing.selected}
+          onUpdate={actions.updateDrawing}
+          onRemove={(id) => {
+            actions.removeDrawing(id);
+            drawing.setSelected(null);
+          }}
+        />
         {status.length > 0 && (
           <div className="pointer-events-none absolute right-16 top-1 z-10 rounded bg-neutral-950/80 px-2 py-0.5 text-xs text-amber-400">
             {status.join(' · ')}
