@@ -27,6 +27,11 @@ import {
   addIndicator,
   setIndicatorPeriods,
   findLayer,
+  addDrawing,
+  allDrawings,
+  clearDrawings,
+  removeDrawing,
+  updateDrawing,
 } from './chartDoc';
 
 function seriesOf(l: Layer) {
@@ -657,4 +662,86 @@ describe('指标图层', () => {
     };
     expect(addIndicator(marks, 'l1', 'rsi')).toBe(marks);
   });
+});
+
+describe('画线', () => {
+  const base = addLayer(addLayer(EMPTY_DOC, 'vix', '#ff0000'), 'spy', '#00ff00');
+  const vix = base.panes[0].layers[0].id;
+  const trend = {
+    id: 'd1',
+    kind: 'trend' as const,
+    a: { time: '2026-01-05', value: 15 },
+    b: { time: '2026-02-02', value: 20 },
+  };
+
+  test('加到图层上,id 进 nextId 序列;JSON 往返无损', () => {
+    const doc = addDrawing(base, vix, trend);
+    expect(findLayer(doc, vix)?.layer.drawings).toEqual([trend]);
+    expect(nextId(doc, 'd')).toBe('d2');
+    expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+  });
+
+  test('改 / 删 / 清空;删光了不留空数组', () => {
+    const doc = addDrawing(addDrawing(base, vix, trend), vix, { id: 'd2', kind: 'vline', time: '2026-03-18' });
+    const moved = updateDrawing(doc, { id: 'd2', kind: 'vline', time: '2026-03-18', paneOnly: true });
+    expect(allDrawings(moved).map((e) => e.drawing)).toContainEqual({
+      id: 'd2',
+      kind: 'vline',
+      time: '2026-03-18',
+      paneOnly: true,
+    });
+    expect(allDrawings(removeDrawing(doc, 'd1')).map((e) => e.drawing.id)).toEqual(['d2']);
+    expect(findLayer(clearDrawings(doc), vix)?.layer).not.toHaveProperty('drawings');
+  });
+
+  test('id 已被占用(画线或图层)就不加,免得存档载不回来', () => {
+    const doc = addDrawing(base, vix, trend);
+    expect(addDrawing(doc, vix, { id: 'd1', kind: 'hline', value: 1 })).toBe(doc);
+    expect(addDrawing(doc, vix, { id: vix, kind: 'hline', value: 1 })).toBe(doc);
+  });
+
+  test('删图层连同它的画线;隐藏的线不能挂', () => {
+    const doc = addDrawing(base, vix, trend);
+    expect(allDrawings(removeLayer(doc, vix))).toEqual([]);
+    expect(addDrawing(setLayerHidden(base, vix, true), vix, trend)).toEqual(setLayerHidden(base, vix, true));
+  });
+
+  test('校验:坏日期、画线 id 与图层重名一律拒收', () => {
+    const doc = addDrawing(base, vix, trend);
+    const bad = (d: unknown) => {
+      const raw = JSON.parse(JSON.stringify(doc));
+      raw.panes[0].layers[0].drawings = [d];
+      return parseChartDoc(raw);
+    };
+    expect(bad({ ...trend, a: { time: '2026-02-30', value: 1 } })).toBeNull();
+    expect(bad({ ...trend, id: vix })).toBeNull();
+    expect(bad({ id: 'd9', kind: 'vline', time: '2026-01-05', paneOnly: false })).toBeNull();
+    expect(bad({ id: 'd9', kind: 'hline', value: 3 })).not.toBeNull();
+  });
+});
+
+describe('画线与标记图层', () => {
+  const base = addLayer(EMPTY_DOC, 'vix', '#ff0000');
+  const id = base.panes[0].layers[0].id;
+  const doc = addDrawing(base, id, { id: 'd1', kind: 'hline', value: 20 });
+
+  test('改成竖线 / 色带时画线跟着丢,存档仍能载回', () => {
+    const marked = setLayerRender(doc, id, { kind: 'events' });
+    expect(findLayer(marked, id)?.layer).not.toHaveProperty('drawings');
+    expect(parseChartDoc(JSON.parse(JSON.stringify(marked)))).not.toBeNull();
+  });
+
+  test('导入时标记图层带画线拒收', () => {
+    const raw = JSON.parse(JSON.stringify(doc));
+    raw.panes[0].layers[0].render = { kind: 'background' };
+    expect(parseChartDoc(raw)).toBeNull();
+  });
+});
+
+test('画线:日期超出 0000–9999 年(外推太远)的不写进文档', () => {
+  const base = addLayer(EMPTY_DOC, 'vix', '#ff0000');
+  const id = base.panes[0].layers[0].id;
+  expect(addDrawing(base, id, { id: 'd1', kind: 'vline', time: '-000282-08-01' })).toBe(base);
+  const doc = addDrawing(base, id, { id: 'd1', kind: 'vline', time: '2026-01-05' });
+  expect(updateDrawing(doc, { id: 'd1', kind: 'vline', time: '+01702-01-01' })).toBe(doc);
 });

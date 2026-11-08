@@ -43,13 +43,14 @@ export function useBackGuard() {
 
     // 点击 / 按键时才压:Chrome 防滥用,页面没被操作过就加的历史项,后退时会被直接跳过。
     // 常驻不只听一次:离开后又从后退缓存回来时,用户一操作就重新压上
-    window.addEventListener('pointerdown', arm);
-    window.addEventListener('keydown', arm);
+    // 捕获阶段:图表编辑器拖画线 / 画线工具会在半路截下按键(stopPropagation),冒泡阶段就收不到了
+    window.addEventListener('pointerdown', arm, true);
+    window.addEventListener('keydown', arm, true);
     window.addEventListener('popstate', onPop);
 
     return () => {
-      window.removeEventListener('pointerdown', arm);
-      window.removeEventListener('keydown', arm);
+      window.removeEventListener('pointerdown', arm, true);
+      window.removeEventListener('keydown', arm, true);
       window.removeEventListener('popstate', onPop);
     };
   }, []);

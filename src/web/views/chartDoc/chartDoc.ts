@@ -73,6 +73,17 @@ export type Calc = { op: CalcOp; series: string; fill?: true };
  */
 export type Indicator = { id: IndicatorId; periods?: number[] };
 
+/** 画线的锚点:日期 + 所属图层那条序列的数值。不存第几根 K 线:换周 / 月线下标就变了,线会跑位 */
+export type DrawingPoint = { time: string; value: number };
+/**
+ * 手画的线(同 TradingView 的绘图对象,属于这张图、挂在画它的那条图层上,纵坐标是那条序列的单位)。
+ * 竖线默认延伸到所有格(同 TradingView 竖线的 Extend);paneOnly = 只画所属图层那一格
+ */
+export type Drawing =
+  | { id: string; kind: 'trend'; a: DrawingPoint; b: DrawingPoint }
+  | { id: string; kind: 'hline'; value: number }
+  | { id: string; kind: 'vline'; time: string; paneOnly?: true };
+
 export type Layer = {
   id: string;
   /** 引用同一格 scales 里的某个 id */
@@ -92,6 +103,7 @@ export type Layer = {
   refLines?: RefLine[];
   percentile?: PercentileBand;
   indicator?: Indicator;
+  drawings?: Drawing[];
 };
 
 export type Pane = {
@@ -125,10 +137,18 @@ const BUILTIN: Record<'right' | 'left', Scale> = {
   left: { id: 'left', side: 'left' },
 };
 
+/** 文档里用掉的全部 id(格、轴、图层、画线) */
+function docIds(doc: ChartDoc): string[] {
+  return doc.panes.flatMap((p) => [
+    p.id,
+    ...p.scales.map((s) => s.id),
+    ...p.layers.flatMap((l) => [l.id, ...(l.drawings ?? []).map((d) => d.id)]),
+  ]);
+}
+
 /** 某前缀下的下一个 id:取全文档同前缀的现存最大序号 + 1。纯函数、确定性;代价是删掉的恰好是最大号时该号会被复用。 */
-export function nextId(doc: ChartDoc, prefix: 'p' | 'l' | 's'): string {
-  const ids = doc.panes.flatMap((p) => [p.id, ...p.scales.map((s) => s.id), ...p.layers.map((l) => l.id)]);
-  const max = ids
+export function nextId(doc: ChartDoc, prefix: 'p' | 'l' | 's' | 'd'): string {
+  const max = docIds(doc)
     .filter((id) => id.startsWith(prefix))
     .map((id) => Number(id.slice(prefix.length)))
     .filter(Number.isInteger)
@@ -601,6 +621,59 @@ export function setStretches(doc: ChartDoc, stretches: number[]): ChartDoc {
   return { ...doc, panes: doc.panes.map((p, i) => ({ ...p, stretch: stretches[i] })) };
 }
 
+/** 全图的画线,带所属图层与所在格的下标(渲染与命中检测按格分) */
+export function allDrawings(doc: ChartDoc): { drawing: Drawing; layer: Layer; paneIndex: number }[] {
+  return doc.panes.flatMap((p, paneIndex) =>
+    p.layers.flatMap((layer) => (layer.drawings ?? []).map((drawing) => ({ drawing, layer, paneIndex }))),
+  );
+}
+
+/** 画线可以挂的图层:看得见的普通线 / 柱 / 蜡烛 / 指标(竖线、色带挂隐形轴,没有能读的纵坐标) */
+export function canOwnDrawings(l: Layer): boolean {
+  return !l.hidden && !isMarkLayer(l);
+}
+
+/**
+ * 加一条画线到某条图层上(id 由调用方用 nextId(doc, 'd') 取好,画完要选中它)。
+ * id 已被占用就不加:重复 id 过不了 parseChartDoc,存档下次整张载不回来
+ */
+export function addDrawing(doc: ChartDoc, layerId: string, drawing: Drawing): ChartDoc {
+  const l = findLayer(doc, layerId)?.layer;
+  // 不合法的画线(比如缩到极小时在数据两端外很远处点出公元前 / 万年后的日期)不写进去:存档下次校验不过整张图就丢了
+  if (!l || !canOwnDrawings(l) || !isDrawing(drawing) || docIds(doc).includes(drawing.id)) return doc;
+
+  return setLayerField(doc, layerId, 'drawings', [...(l.drawings ?? []), drawing]);
+}
+
+/** 所有图层的画线过一遍 fn;改完是空的就删掉字段 */
+function mapDrawings(doc: ChartDoc, fn: (ds: Drawing[]) => Drawing[]): ChartDoc {
+  return {
+    ...doc,
+    panes: doc.panes.map((p) => ({
+      ...p,
+      layers: p.layers.map((l) => {
+        if (!l.drawings) return l;
+        const next = fn(l.drawings);
+        return canonicalLayer({ ...l, drawings: next.length ? next : undefined });
+      }),
+    })),
+  };
+}
+
+/** 按 id 换掉一条画线(拖完写回;类型不同也照换,调用方保证同一条) */
+export function updateDrawing(doc: ChartDoc, drawing: Drawing): ChartDoc {
+  if (!isDrawing(drawing)) return doc;
+  return mapDrawings(doc, (ds) => ds.map((d) => (d.id === drawing.id ? drawing : d)));
+}
+
+export function removeDrawing(doc: ChartDoc, id: string): ChartDoc {
+  return mapDrawings(doc, (ds) => ds.filter((d) => d.id !== id));
+}
+
+export function clearDrawings(doc: ChartDoc): ChartDoc {
+  return mapDrawings(doc, () => []);
+}
+
 /** 文档里还没用到的第一个调色板颜色;全用过了就按图层数轮转。 */
 export function nextColor(doc: ChartDoc, palette: readonly string[]): string {
   const used = new Set(doc.panes.flatMap((p) => p.layers.map((l) => l.color)));
@@ -719,6 +792,18 @@ function isIndicator(x: unknown): x is Indicator {
   );
 }
 
+function isPoint(x: unknown): x is DrawingPoint {
+  return isObj(x) && isDate(x.time) && isNum(x.value);
+}
+
+function isDrawing(x: unknown): x is Drawing {
+  if (!isObj(x) || !isStr(x.id)) return false;
+  if (x.kind === 'trend') return isPoint(x.a) && isPoint(x.b);
+  if (x.kind === 'hline') return isNum(x.value);
+
+  return x.kind === 'vline' && isDate(x.time) && (x.paneOnly === undefined || x.paneOnly === true);
+}
+
 function isLayer(x: unknown): x is Layer {
   return (
     isObj(x) &&
@@ -737,8 +822,21 @@ function isLayer(x: unknown): x is Layer {
     // 标记图层(竖线、色带)的值只是 0 / 1 标志,不能同时是指标(编辑器里加不出,手写 JSON 也拒收)
     (x.indicator === undefined ||
       (isIndicator(x.indicator) &&
+        !(isObj(x.render) && (x.render.kind === 'events' || x.render.kind === 'background')))) &&
+    // 画线不能挂在标记图层上(竖线、色带挂隐形 0~1 轴,纵坐标没有意义),同 canOwnDrawings
+    (x.drawings === undefined ||
+      (Array.isArray(x.drawings) &&
+        x.drawings.every(isDrawing) &&
         !(isObj(x.render) && (x.render.kind === 'events' || x.render.kind === 'background'))))
   );
+}
+
+function canonicalDrawing(d: Drawing): Drawing {
+  const pt = (p: DrawingPoint) => ({ time: p.time, value: p.value });
+  if (d.kind === 'trend') return { id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b) };
+  if (d.kind === 'hline') return { id: d.id, kind: d.kind, value: d.value };
+
+  return { id: d.id, kind: d.kind, time: d.time, ...(d.paneOnly && { paneOnly: true as const }) };
 }
 
 function canonicalRender(r: LayerRender): LayerRender {
@@ -766,7 +864,7 @@ function canonicalPercentile(p: PercentileBand): PercentileBand {
 }
 
 /**
- * 按字段白名单、固定顺序重建图层(id、series、calc、scale、color、shift、fit、title、hidden、render、refLines、percentile、indicator):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
+ * 按字段白名单、固定顺序重建图层(id、series、calc、scale、color、shift、fit、title、hidden、render、refLines、percentile、indicator、drawings):载入的 JSON 里多出来的字段(比如数据)一律丢掉,
  * 守住「图层不存数据」;编辑操作改 shift / fit 后也走这里,先改哪个字段都一样,复制出去的 JSON 再导入文本原样不变。
  */
 function canonicalLayer(l: Layer): Layer {
@@ -797,6 +895,8 @@ function canonicalLayer(l: Layer): Layer {
     ...(l.indicator
       ? { indicator: { id: l.indicator.id, ...(l.indicator.periods && { periods: [...l.indicator.periods] }) } }
       : {}),
+    // 改成标记图层(setLayerRender 换成竖线 / 色带)时画线跟着丢:留着的话存档下次校验不过,整张图都载不回来
+    ...(l.drawings?.length && !isMarkLayer(l) ? { drawings: l.drawings.map(canonicalDrawing) } : {}),
   };
 }
 
@@ -822,7 +922,7 @@ function allUnique(ids: string[]) {
 }
 
 /**
- * id 唯一性:格 / 图层 / 独立轴的 id 全文档唯一(渲染层按图层 id 建 Map,重复会让多条图层坍缩成一条);
+ * id 唯一性:格 / 图层 / 独立轴 / 画线的 id 全文档唯一(渲染层按图层 id 建 Map,重复会让多条图层坍缩成一条);
  * 内置轴 'right' / 'left' 每格各有一根,只要求格内不重复。
  */
 function idsUnique(panes: Pane[]): boolean {
@@ -830,7 +930,7 @@ function idsUnique(panes: Pane[]): boolean {
     allUnique(
       panes.flatMap((p) => [
         p.id,
-        ...p.layers.map((l) => l.id),
+        ...p.layers.flatMap((l) => [l.id, ...(l.drawings ?? []).map((d) => d.id)]),
         ...p.scales.filter((s) => s.side === 'overlay').map((s) => s.id),
       ]),
     ) && panes.every((p) => allUnique(p.scales.map((s) => s.id)))

@@ -18,6 +18,7 @@ import { fmtDate } from '../../../chart/core';
 import { findLayer, liveScaleIds, type ChartDoc, type Layer, type Pane } from '../../../views/chartDoc/chartDoc';
 import { drawnKind } from '../../../views/chartDoc/registry';
 import type { LayerSeries } from '../../../views/chartDoc/useDocChart';
+import { paneAt } from './paneHit';
 
 // 鼠标离线多近算抓住(像素)
 const GRAB_PX = 15;
@@ -139,26 +140,12 @@ export function useLineDrag(
       selectedRef.current = layerId;
     };
 
-    /** 鼠标落在哪一格的绘图区(不含两侧刻度、不含时间轴)。 */
+    /** 鼠标落在哪一格的绘图区,连同那一格的文档格 */
     const hitPane = (e: MouseEvent) => {
       const chart = chartRef.current;
-      if (!chart) return undefined;
-      const box = el.getBoundingClientRect();
-      const plotLeft = box.left + chart.priceScale('left').width();
-      if (e.clientX < plotLeft) return undefined;
-      if (e.clientX > box.right - chart.priceScale('right').width()) return undefined;
-
-      const panes = chart.panes();
-      const i = panes.findIndex((p) => {
-        const r = p.getHTMLElement()?.getBoundingClientRect();
-        return r && e.clientY >= r.top && e.clientY <= r.bottom;
-      });
-      const pane = docRef.current.panes[i];
-      const top = panes[i]?.getHTMLElement()?.getBoundingClientRect().top;
-      return pane && top !== undefined
-        ? // 时间轴坐标从绘图区左边算起(不含左轴刻度);按容器算的话开了左轴就整体右偏一个轴宽,永远点不中
-          { chart, api: panes[i], pane, x: e.clientX - plotLeft, y: e.clientY - top }
-        : undefined;
+      const at = chart ? paneAt(el, chart, e) : undefined;
+      const pane = at && docRef.current.panes[at.index];
+      return chart && at && pane ? { chart, api: at.api, pane, x: at.x, y: at.y } : undefined;
     };
 
     const onDown = (e: PointerEvent) => {
@@ -288,4 +275,7 @@ export function useLineDrag(
       window.removeEventListener('keydown', onKey);
     };
   }, [containerRef, chartRef, seriesRef]);
+
+  // 画线挂到哪条图层时先看这里:这一格里已选中的那条(先点选再画)
+  return selectedRef;
 }
