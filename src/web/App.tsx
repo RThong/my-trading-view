@@ -4,6 +4,7 @@ import { TabBar } from './components/TabBar';
 import { PERSPECTIVES } from './perspectives';
 import { usePerspectiveNavigation } from './hooks/usePerspectiveNavigation';
 import { useOpenInEditor } from './views/chartDoc/openInEditor';
+import { useBackGuard } from './hooks/useBackGuard';
 import type { Interval } from './hooks/interval';
 
 // 外壳:Header + 竖 tab(视角)+ 横 tab + keep-alive 内容区。视角/tab 配置见 pages/<视角>/index(perspectives.tsx 组装),
@@ -13,6 +14,8 @@ export function App() {
   const { perspId, persp, activeTab, seen, selectPersp, selectTab } = usePerspectiveNavigation(PERSPECTIVES);
   // 固定面板点了「在编辑器中打开」:跳到图表编辑页(图由编辑器自己接)
   useOpenInEditor(() => selectPersp('editor'));
+  // 浏览器后退(触摸板左滑等)先弹窗确认,不直接离开看板
+  useBackGuard();
 
   return (
     <div className="flex h-screen flex-col">
