@@ -13,6 +13,7 @@
 2. 最高杠杆的一步：把规则从界面里抽出来（L3），做每日状态存档、变化扫描和推送（L4）。约 1 天，不依赖其他改造。
 3. 第二步：ChartDoc 补齐表达能力，把固定面板迁成 JSON（L2）。这样看板和图表编辑器之间就有了桥，「图表联动」也随之打通。
 4. **不要在 L0 到 L2 继续堆数量**。参考站有 945 个侧栏入口、883 张图，真正帮它省时间的只有一个「信号触发」页。数据源按具体问题去接，不主动扩张。
+5. **2026-11-07 调整（用户定）**：第 3 条已完成（固定面板 24 个 tab 全是 ChartDoc，并改用编辑器的只读渲染）。第 2 条「规则 + 报警」**往后放**：监控是「看」的上一级，「看」本身还没做好，先把看图做扎实。到时作为一个功能整体做（规则抽离、每日存档、变化扫描、推送一起交付，不按 L3 / L4 拆开）；机制参照 TradingView —— 规则写在指标里一份、报警是独立对象且创建时固定口径（日线、每天收盘判一次）；已有的分位 / 阈值线报警不需要「类似 Pine」的脚本，组合条件、状态机那类才需要。
 
 ## 0.5 总原则（所有层都适用）
 
@@ -180,7 +181,7 @@ L0 数据         采集 · 调度 · 存储 · 新鲜度
 本项目现状：这一层很强，不需要大改。
 - AGENTS.md 的取数总览表，以及 launchd 的 daily / crypto / SEC 三组 job。
 - `job_run` 加核心与可选分组：可选源失败不拖垮整次运行。
-- 顶栏状态灯分绿、黄、红、灰四种；`RegimeChart.tsx` 在数据沿用上次值时会提示。
+- 顶栏状态灯分绿、黄、红、灰四种；`DocChart`（固定面板）在数据沿用上次值时会提示。
 
 参考站
 - 可借：**数据健康页**，按 tab 给出 `latest_date`、`lag_days`、`stale`，并区分 weekly_release 和 slow_release 两类节奏；逐条序列判，用「当前不变段比历史最长不变段长 1.5 倍」识别「停更后被前向填充」；已知停更的序列逐条写明原因。另有一条硬原则：「取不到的数据会明确显示暂无数据或数据过期，不参与计分，也不会用默认值冒充」。本项目已经这么做，保持即可。
@@ -286,7 +287,8 @@ TradingView
   ② ✅ 2026-11-07 完成：渲染零件（`useDocChart` / `Legend` / `layerPoints` / 分位带）从 `pages/editor` 挪到 `views/chartDoc`，固定面板的 24 个 tab 改由只读壳 `DocChart` 画（眼睛按钮、拖分隔条只改本页副本、不存档），`docToPaneSpecs` 与旧链路里计算格 / 叠加线 / 竖线 / 错月 / 参考线 / 轴范围分支已删，旧工具条随之消失。用户定的口径：分位**跟随图表周期**（周 / 月线按聚合点算，编辑器原口径）；dgs10 / jgb2y / jgb10y / qqq **统一用长历史**（不再读 regime 那份 2018 截断的）；初始窗口**从 2018 起**、往左拖看更早。图例补了分位排名徽标（十字线所在点的排名）。基本面维度（按名单现算的 PaneSpec）仍走旧 `RegimeChart`，没迁。原计划：编辑器渲染器补齐 L2-1 全部画法，固定面板改用它的只读模式，删掉 `docToPaneSpecs` 与旧 regime 渲染链路。老面板的画线不迁（见上）。约 3 到 4 天。
      进度（2026-11-06）：编辑器已能画 refLines、baseline、step、percentile（P5/P95 线 + riskTail 背景带）、desc（图例 ⓘ）、events、signed、hidden、纵轴范围框；还缺变换（均线 / 同比 / Z-score）。蜡烛已做。`docToPaneSpecs` 支持一格多线（第一条线是主线，其余转成 overlays）与竖线透明度（`render.events.opacity`），已用「利率 · 加息定价」格端到端对过（主线 + 3 叠加 + 2 竖线，画法字段逐一相等）。背景色带已做（`render: { kind: 'background' }`）。
      口径（2026-11-07 定）：分位阈值统一按图上的点算（周 / 月线是聚合点），同 TradingView 指标默认「跟随图表周期」；以前固定面板按原始日频算（相当于 `timeframe = "D"`），已不再这样。背景色带（错月）只在日线画。要按日频的话再加参数（如 `percentile.tf`）。
-  不在范围：旧引擎 `PaneChartView` 还给 AssetChart / TenorHistoryPanel / AttackDefensePanel 用；SEC 申报提示、「暂不可用」提示按视角和数据状态生成，留在固定面板外层，不进 ChartDoc。
+  2026-11-07 续：期限走势 6 个 tab（美债 / OIS / 实际 / BEI / 日债 / AI CDS，`pages/curveHistory` 按注册表同族生成，`TenorHistoryPanel` 已删）与基本面 2 个 tab（买方合计、产业链，`ai/fundamentals` 的 `fundDoc` 按名单现算，SEC 三条提示由 `views/regime/FundChart` 外层给）也已迁成 ChartDoc，旧 `RegimeChart` / `PaneSpec` 已删。图例里隐藏的线收成一行小字（名字 + 读数，点一下显示），ⓘ 挂在第一条线名后面。
+  仍是旧引擎 `PaneChartView` 的：期权 / 现货 8 个（`AssetChart`）、攻防 1 个 —— 依赖 EMA / 布林 / RSI / MACD / ZigZag 等指标，要先有变换 / 指标图层（L2-1 第 8 项）。横轴不是时间的 8 个（收益曲线类、加息定价）不进 ChartDoc。
   验收：任意 regime 格右上角有「编辑」入口，点开后编辑器内容和原格一致，修改不影响原格。
 - ~~**L2-4（P1）ChartDoc 校验测试**~~ ✅ 已完成（`views/regime/docs.test.ts`：内置 ChartDoc 逐个过 JSON 往返 + 序列都在注册表）。存成 JSON 会丢掉编译期的拼写检查，要用一个测试补回来：遍历所有内置 ChartDoc，检查每个 series 都在注册表里。注册表 id 一旦用过就不再改名；真要改，在 parseChartDoc 里按 v 做迁移。约 30 分钟。
 - L2-5（P2）编辑器补「标、记」：标题和叙述、竖线事件、导出 PNG（lightweight-charts 自带 `takeScreenshot()`）。约半天。

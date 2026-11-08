@@ -1,5 +1,5 @@
 // 通用多 pane 图表栈:图表引擎(建图/series 同步)+ 布局(换位/折叠)+ 图例(crosshair)。
-// 与数据源无关——AssetChart / RegimeChart / AttackDefensePanel 三方复用,故从 assetChart.hooks 抽出。
+// 与数据源无关——AssetChart / AttackDefensePanel 复用,故从 assetChart.hooks 抽出。
 import { useEffect, useRef, useState } from 'react';
 import {
   createChart,
@@ -376,7 +376,7 @@ export function useCrosshairLegend(
   return { cells, hovering, tops };
 }
 
-// ── 组合:引擎 + 布局 + 图例 一处接线,供 AssetChart / RegimeChart 共用(避免两处接线漂移)。
+// ── 组合:引擎 + 布局 + 图例 一处接线,供 AssetChart / AttackDefensePanel 共用(避免两处接线漂移)。
 // drawable 传入 → 额外接入趋势线画线能力(opt-in;纯折线曲线图不传即零影响)。
 export function usePaneChartStack(
   containerRef: React.RefObject<HTMLDivElement | null>,

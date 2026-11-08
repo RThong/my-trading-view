@@ -1,5 +1,6 @@
 // 「通胀」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
+import { curveHistoryDoc } from '../curveHistory';
 
 export const INFLATION_DOCS = {
   // 通胀来源(供给侧):薪资增速 + 服务黏性 + 汽油同比,外加核心 CPI / PCE 发布值。与 BEI(市场前瞻预期)并读。高=通胀压力=风险。
@@ -111,4 +112,22 @@ export const INFLATION_DOCS = {
       },
     ],
   },
+  // 实际收益率与 BEI 同档位、刻意同一组默认显示 —— 与「实际走势」并排就是「名义 − BEI = 实际」的两边
+  beiHistory: curveHistoryDoc({
+    family: 'bei',
+    shown: ['5Y', '10Y', '30Y'],
+    desc: [
+      '定义:盈亏平衡通胀率(BEI)各期限的时间走势。',
+      'BEI = 名义 − TIPS 实际收益率 = 市场通胀补偿(含通胀风险溢价),可作预期代理但非纯预期。',
+      '差值读法见下方那格的 ⓘ。',
+    ].join('\n'),
+    spreads: [
+      {
+        long: '10Y',
+        short: '5Y',
+        title: '10Y − 5Y',
+        desc: '定义:10Y − 5Y BEI(虚线 = 0)。远端通胀补偿相对近端的差:正 = 市场把通胀风险定价在更远端。',
+      },
+    ],
+  }),
 } satisfies RegimeDocs;

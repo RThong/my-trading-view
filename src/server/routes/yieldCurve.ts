@@ -129,7 +129,7 @@ function buildOis(): CurveBody {
 }
 
 // AI 巨头 + 甲骨文 + CoreWeave + SpaceX 单名 CDS:读库原始价,xform 成约定 spread(bp)。"tenor" 复用为公司名。
-// 非真曲线(公司无序),但复用 CurveBody 走 TenorHistoryPanel 的时间序列视图(每名一条线)。
+// 非真曲线(公司无序),但复用 CurveBody 给前端「AI CDS」tab 当时间序列看(每名一条线,见 web/pages/curveHistory)。
 // 票息按名不同(CoreWeave 500bp 档),故逐名给 xform。
 function buildAiCds(): CurveBody {
   return buildFromDb(

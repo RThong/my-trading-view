@@ -14,7 +14,16 @@ const FIT = { from: '2018-01-01' };
 
 // 只读看一份 ChartDoc(固定面板的 regime tab):渲染与图表编辑器同一套(useDocChart / Legend / 分位带),只是没有侧栏和编辑。
 // 眼睛按钮、拖分隔条只改本页这份副本,不回写内置 doc、也不存档(刷新即复原)。
-export function DocChart({ doc: builtin, interval }: { doc: ChartDoc; interval: Interval }) {
+type Props = {
+  doc: ChartDoc;
+  interval: Interval;
+  /** 调用方另给的警告(如基本面的 SEC 滞后 / 断档裁剪),与取数状态并列 */
+  notes?: string[];
+  /** 调用方另给的说明(中性,如「截至 … 申报」) */
+  caption?: string;
+};
+
+export function DocChart({ doc: builtin, interval, notes = [], caption }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState(builtin);
 
@@ -42,6 +51,7 @@ export function DocChart({ doc: builtin, interval }: { doc: ChartDoc; interval: 
     error ? `取数失败:${error.message}` : undefined,
     missingNames.length ? `暂不可用: ${missingNames.join(', ')}` : undefined,
     staleNames.length ? `源暂时拉不到,沿用上次数据: ${staleNames.join(', ')}` : undefined,
+    ...notes,
   ].filter((s) => s !== undefined);
 
   return (
@@ -55,9 +65,12 @@ export function DocChart({ doc: builtin, interval }: { doc: ChartDoc; interval: 
         layout={layout}
         onHidden={(id, hidden) => setDoc((d) => setLayerHidden(d, id, hidden))}
       />
-      {status.length > 0 && (
-        <div className="pointer-events-none absolute right-16 top-1 z-10 rounded bg-neutral-950/80 px-2 py-0.5 text-xs text-amber-400">
-          {status.join(' · ')}
+      {(status.length > 0 || caption) && (
+        <div className="pointer-events-none absolute right-16 top-1 z-10 flex flex-col items-end gap-0.5 text-xs">
+          {caption && <span className="rounded bg-neutral-950/80 px-2 py-0.5 text-neutral-400">{caption}</span>}
+          {status.length > 0 && (
+            <span className="rounded bg-neutral-950/80 px-2 py-0.5 text-amber-400">{status.join(' · ')}</span>
+          )}
         </div>
       )}
     </div>

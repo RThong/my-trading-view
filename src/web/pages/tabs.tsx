@@ -2,12 +2,11 @@
 // 注意 tab id 与面板 source 是两回事(如收益曲线 / 期限走势可指向同一 source)。
 import type { ReactNode } from 'react';
 import { AssetChart } from '../views/asset/AssetChart';
-import { RegimeChart } from '../views/regime/RegimeChart';
+import { FundChart } from '../views/regime/FundChart';
 import { isFundDim, type RegimeDim } from '../views/regime/regimeChart.hooks';
-import { REGIME_DOCS, regimeView } from './regimeDims';
+import { fundamentalDoc, REGIME_DOCS } from './regimeDims';
 import { DocChart } from '../views/chartDoc/DocChart';
 import { YieldCurvePanel } from '../views/curve/YieldCurvePanel';
-import { TenorHistoryPanel, type SpreadDef } from '../views/curve/TenorHistoryPanel';
 import type { Interval } from '../hooks/interval';
 
 export type TabDef = { id: string; label: string; group?: string; render: (interval: Interval) => ReactNode };
@@ -26,10 +25,10 @@ export function regimeTab(id: string, label: string, dim: RegimeDim, group?: str
     id,
     label,
     group,
-    // 固定 dim 是内置 ChartDoc,与图表编辑器同一套渲染;按名单派生的基本面维度仍走旧 regime 图
+    // 固定 dim 是内置 ChartDoc;基本面按名单现算 doc、外加 SEC 提示。都与图表编辑器同一套渲染
     render: (interval) =>
       isFundDim(dim) ? (
-        <RegimeChart view={regimeView(dim)} interval={interval} />
+        <FundChart dim={dim} doc={fundamentalDoc(dim)} interval={interval} />
       ) : (
         <DocChart doc={REGIME_DOCS[dim]} interval={interval} />
       ),
@@ -41,22 +40,6 @@ export function curveTab(id: string, label: string, source: string): TabDef {
     id,
     label,
     render: () => <YieldCurvePanel source={source} />,
-  };
-}
-
-export function historyTab(
-  id: string,
-  label: string,
-  source: string,
-  /** 差值 pane,每条一格。省略 = 不画。 */
-  spreads?: SpreadDef[],
-  /** 现货参照标的。只给真的相关的那个 tab 配 —— 不是每格都该挂一条风险资产。 */
-  spot?: string,
-): TabDef {
-  return {
-    id,
-    label,
-    render: (interval) => <TenorHistoryPanel source={source} interval={interval} spreads={spreads} spot={spot} />,
   };
 }
 

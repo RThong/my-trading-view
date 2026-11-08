@@ -1,6 +1,7 @@
 // 「日本」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
 import type { Layer } from '../../views/chartDoc/chartDoc';
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
+import { curveHistoryDoc } from '../curveHistory';
 
 // 日银加息决定日竖线(「银行」四格共用)。取半透明浅灰:黄 / 橙 / 红 / 青 / 紫都被线占了;10Y 格的 2Y 对照线是实心蓝灰,形状也不同(线 vs 满高竖柱)。
 function bojHikeEvents(id: string): Layer {
@@ -560,4 +561,13 @@ export const JAPAN_DOCS = {
       },
     ],
   },
+  // JGB 没有差值格:10Y 是日本银行股的股价主变量,2Y 是利润层的验证腿(两者都在「银行」那格)
+  jgbHistory: curveHistoryDoc({
+    family: 'jgb',
+    shown: ['2Y', '10Y'],
+    desc: [
+      '定义:日本国债各期限收益率的时间走势。看 BOJ 政策与 YCC 松绑的传导。',
+      '银行业的利率传导(存款贝塔 / 存贷利差 / 8306)在「银行」那格。',
+    ].join('\n'),
+  }),
 } satisfies RegimeDocs;

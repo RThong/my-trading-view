@@ -83,7 +83,7 @@ export const CREDIT_TERM: { tenor: string; series: string }[] = [
 // ticker = ICE instrumentName 首段;name = 显示名(不依赖 ICE 里的 "Oracle Cop" 等错拼)。
 // 存库 series_id = ICE_CDS_{ticker}。顺序:焦点 Oracle 打头,其余按篮子排。
 // core = 前端默认展示的 7 家;缺任一即视为数据源异常(见 missingCoreCds)。
-// 注:前端默认勾选(tenorHistory.hooks 的 DEFAULT_TENORS.ai_cds)须与 core 名单一致。
+// 注:前端「AI CDS」tab 默认显示的就是这份 core 名单(pages/ai/docs 直接读它)。
 // coupon 缺省 = 100bp(投资级惯例);高收益名只挂 500bp 合约,需单独给。
 export const AI_CDS: { ticker: string; name: string; core?: boolean; coupon?: number }[] = [
   { ticker: 'ORCLE', name: 'Oracle', core: true },
