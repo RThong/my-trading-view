@@ -1,4 +1,7 @@
 import { useRef, useState } from 'react';
+import { SquarePen } from 'lucide-react';
+import { Button } from '../../components/ui/button';
+import { openInEditor } from './openInEditor';
 import type { Interval } from '../../hooks/interval';
 import { type ChartDoc, type Layer, setLayerHidden, setStretches } from './chartDoc';
 import { layerLabel } from './layerLabel';
@@ -70,6 +73,17 @@ export function DocChart({ doc: builtin, interval, notes = [], caption, fit = FI
         layout={layout}
         onHidden={(id, hidden) => setDoc((d) => setLayerHidden(d, id, hidden))}
       />
+      {/* 放在价格轴与时间轴交汇的右下角小方格里(lw-charts 那里不画东西),同编辑器收起侧栏的按钮。
+          带过去的是当前看到的这份(眼睛按钮的显隐、拖过的格高都在),改的是副本 */}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={() => openInEditor(doc)}
+        className="absolute right-1 bottom-0 z-10 text-neutral-500 hover:text-neutral-200"
+        title="在编辑器中打开(复制一份过去改,这里不受影响)"
+      >
+        <SquarePen />
+      </Button>
       {(status.length > 0 || caption) && (
         <div className="pointer-events-none absolute right-16 top-1 z-10 flex flex-col items-end gap-0.5 text-xs">
           {caption && <span className="rounded bg-neutral-950/80 px-2 py-0.5 text-neutral-400">{caption}</span>}
