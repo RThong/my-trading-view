@@ -3,6 +3,7 @@ import { Header } from './components/Header';
 import { TabBar } from './components/TabBar';
 import { PERSPECTIVES } from './perspectives';
 import { usePerspectiveNavigation } from './hooks/usePerspectiveNavigation';
+import { useOpenInEditor } from './views/chartDoc/openInEditor';
 import type { Interval } from './hooks/interval';
 
 // 外壳:Header + 竖 tab(视角)+ 横 tab + keep-alive 内容区。视角/tab 配置见 pages/<视角>/index(perspectives.tsx 组装),
@@ -10,6 +11,8 @@ import type { Interval } from './hooks/interval';
 export function App() {
   const [interval, setInterval] = useState<Interval>('1D');
   const { perspId, persp, activeTab, seen, selectPersp, selectTab } = usePerspectiveNavigation(PERSPECTIVES);
+  // 固定面板点了「在编辑器中打开」:跳到图表编辑页(图由编辑器自己接)
+  useOpenInEditor(() => selectPersp('editor'));
 
   return (
     <div className="flex h-screen flex-col">

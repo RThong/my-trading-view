@@ -1,6 +1,7 @@
 // 编辑状态:一份 ChartDoc + 一组编辑动作。动作全部走 chartDoc.ts 的纯函数(updater 形式,不依赖闭包里的旧 doc)。
 // 最后一次显示的图存在 localStorage,刷新 / 切页回来接着用。
 import { useEffect, useState } from 'react';
+import { EDITOR_STORAGE_KEY, pendingDoc, useOpenInEditor } from '../../../views/chartDoc/openInEditor';
 import { SERIES_COLORS } from '../../../chart/palette';
 import type { IndicatorId } from '../../../chart/indicatorDefs';
 import {
@@ -32,7 +33,8 @@ import {
   type ScaleChoice,
 } from '../../../views/chartDoc/chartDoc';
 
-const STORAGE_KEY = 'mtv:chartEditor:doc';
+// 存档键与「在编辑器中打开」共用(固定面板把图写进这里,编辑器挂载时读到)
+const STORAGE_KEY = EDITOR_STORAGE_KEY;
 
 /**
  * 存档原文 → 图:没有 / 坏 JSON / 校验不过(比如格式改过版)一律当空图,绝不抛(localStorage 内容不可信)。
@@ -47,6 +49,9 @@ export function parseSaved(raw: string | null): ChartDoc {
 }
 
 function loadSaved(): ChartDoc {
+  // 固定面板刚点了「在编辑器中打开」、编辑器这才第一次挂载:先拿那份(存档可能没写进去)
+  const handed = pendingDoc();
+  if (handed) return handed;
   try {
     return parseSaved(localStorage.getItem(STORAGE_KEY));
   } catch {
@@ -56,6 +61,8 @@ function loadSaved(): ChartDoc {
 
 export function useChartDoc() {
   const [doc, setDoc] = useState<ChartDoc>(loadSaved);
+  // 固定面板点了「在编辑器中打开」:已挂载的编辑器直接换成那张图(没挂载的,挂载时从存档读到)
+  useOpenInEditor(setDoc);
 
   // 文档每变一次就落盘(文档只经编辑动作或校验过的导入改变,存下来的一定是能显示的图)
   useEffect(() => {
