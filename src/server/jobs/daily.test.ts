@@ -200,11 +200,14 @@ describe('staleFreshnessProbes', () => {
   const put = (db: Database, underlying: string, obsDate: string) =>
     insertPriceEod(db, [{ underlying, obsDate, open: null, high: null, low: null, close: 1, source: 'test' }]);
   const putVx1 = (db: Database, obsDate: string) => insertMarketSeries(db, [{ seriesId: 'VX1', obsDate, value: 20 }]);
+  const putPc = (db: Database, obsDate: string) =>
+    insertMarketSeries(db, [{ seriesId: 'CBOE_PC_EQUITY', obsDate, value: 0.6 }]);
   const allPrice = () => [...priceLegUnderlyings(), 'VIX'];
   const upTo = (date: string) => {
     const db = freshDb();
     for (const u of allPrice()) put(db, u, date);
     putVx1(db, date);
+    putPc(db, date);
     return db;
   };
 
@@ -218,17 +221,19 @@ describe('staleFreshnessProbes', () => {
     const db = upTo('2026-10-16');
     for (const u of allPrice().filter((u) => u !== 'IBIT')) put(db, u, '2026-10-19');
     putVx1(db, '2026-10-19');
+    putPc(db, '2026-10-19');
     expect(staleFreshnessProbes(db, '2026-10-19')).toEqual(['IBIT']);
 
     const vxLate = upTo('2026-10-19');
     expect(staleFreshnessProbes(vxLate, '2026-10-20')).toContain('VX1');
     for (const u of allPrice()) put(vxLate, u, '2026-10-20');
+    putPc(vxLate, '2026-10-20');
     expect(staleFreshnessProbes(vxLate, '2026-10-20')).toEqual(['VX1']); // ETF/VIX 到了不代表 VX 到了
   });
 
   test('全部滞后 / 空库 → 全列', () => {
-    expect(staleFreshnessProbes(upTo('2026-10-19'), '2026-10-20')).toEqual([...allPrice(), 'VX1']);
-    expect(staleFreshnessProbes(freshDb(), '2026-10-19')).toEqual([...allPrice(), 'VX1']);
+    expect(staleFreshnessProbes(upTo('2026-10-19'), '2026-10-20')).toEqual([...allPrice(), 'VX1', 'CBOE_PC_EQUITY']);
+    expect(staleFreshnessProbes(freshDb(), '2026-10-19')).toEqual([...allPrice(), 'VX1', 'CBOE_PC_EQUITY']);
   });
 });
 
@@ -247,6 +252,7 @@ describe('按组的成功即止守卫', () => {
     expect(groupsForStaleProbes(['SPY', 'VIX'])).toEqual(['vrp_inputs']);
     expect(groupsForStaleProbes(['VX1'])).toEqual(['vx_term_structure']);
     expect(groupsForStaleProbes(['QQQ', 'VX1'])).toEqual(['vrp_inputs', 'vx_term_structure']);
+    expect(groupsForStaleProbes(['CBOE_PC_EQUITY'])).toEqual(['put_call']);
   });
 
   test('runPendingGroups:失败的组下一轮单独重跑,成功的组不再跑;全绿后整轮跳过', async () => {

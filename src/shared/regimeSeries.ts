@@ -47,6 +47,11 @@ export const REGIME_SERIES = [
   'ismSvc',
   'ismMfgPrices',
   'ismSvcPrices',
+  // Cboe 认沽认购比(认沽量 ÷ 认购量,Cboe 自家交易所口径):个股看散户 / 投机侧,指数看机构对冲侧,两条劈叉本身是信号。
+  // 日频,daily 的 put_call 分组写库。见 fetchers/cboePutCall 与 jobs/putCallSnapshot
+  'pcEquity',
+  'pcIndex',
+  'pcTotal',
 
   // ── 库里读 + 派生(readDbBacked)
   'qqq',
@@ -58,6 +63,13 @@ export const REGIME_SERIES = [
   'btcSupplyDensityRaw',
   'vxTermSpread',
   'move',
+  // 认沽认购比的均线(5 / 20 / 63 个交易日 ≈ 3 个月):日度噪音大,读趋势看均线
+  'pcEquityMa5',
+  'pcEquityMa20',
+  'pcEquityMa63',
+  'pcIndexMa5',
+  'pcIndexMa20',
+  'pcIndexMa63',
 
   // ── 现拉 + 派生(主 handler)
   // ACM 期限溢价(纽约联储,月频)。不在 `direct` 映射里,是主 handler 单独现拉 + catch → null,
