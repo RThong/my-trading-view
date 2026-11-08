@@ -1,18 +1,11 @@
-// regime 视图的数据层:/api/regime 取数(固定面板的 ChartDoc 与基本面共用)+ 基本面 pane 配置的类型 + spec 构造。
-// 固定维度是 ChartDoc(pages/<视角>/docs.ts,views/chartDoc/DocChart 画);这里的 PaneSpec / buildRegimeSpecs 只剩基本面维度用。
-// 图表引擎(usePaneChart/usePaneLayout/useCrosshairLegend)与展示壳(PaneChartView)全复用期权侧。
+// regime 视图的数据层:/api/regime 取数(固定面板与基本面的 ChartDoc 共用)+ dim 类型 + 基本面的 SEC 提示。
+// 固定维度的配置在 pages/<视角>/docs.ts,基本面按名单现算(pages/ai/fundamentals),都由 views/chartDoc/DocChart 画。
 import useSWR from 'swr';
 import { useServerRefresh } from '../../hooks/useServerRefresh';
-import { aggregate, aggregateBars, type LinePoint, type Bar } from '../../chart/core';
-import { percentileRank } from '../../../shared/calc/stats';
-import type { SeriesKey } from '../../../shared/regimeSeries';
-import type { Interval } from '../../hooks/interval';
-import type { PaneDef, LineSpec, HistoSpec, HistoPoint, Spec } from '../../chart/paneChart.types';
+import type { Bar } from '../../chart/core';
 import type { ChartDoc } from '../chartDoc/chartDoc';
 import { isAggregateMember, type FundTrim, type SecFiled, type SecLag } from '../../../shared/aiChain';
 import { getJson, SWR_OPTS } from '../../lib/http';
-import { SIGNED_DOWN, SIGNED_UP } from '../../chart/palette';
-import { percentileMarks } from '../../chart/percentileMarks';
 
 export type RegimePoint = { date: string; value: number };
 export type RegimeData = {
@@ -68,112 +61,25 @@ export type RegimeDim =
   | 'btc'
   | 'btcOnchain'
   | 'compute'
-  // 基本面按启用名单派生:一家一个 dim(三格),外加一条买方合计。见 dimPanes / companyPanes。
+  // 曲线期限走势(每个期限一条线 + 差值格,见 pages/curveHistory)
+  | 'ustHistory'
+  | 'oisHistory'
+  | 'realHistory'
+  | 'beiHistory'
+  | 'jgbHistory'
+  | 'aiCds'
+  // 基本面按启用名单派生:一家一个 dim(6~8 格,按数据源与分部披露),外加一个买方合计。见 pages/ai/fundamentals 的 fundDoc。
   | `fundamentals:${string}`;
 /** 固定维度(配置写死那些,各是一份 ChartDoc);基本面维度是按名单派生的,不进这张表。 */
 export type FixedDim = Exclude<RegimeDim, `fundamentals:${string}`>;
-/** 基本面维度:按名单现算 PaneSpec,仍走旧 regime 图(RegimeChart)。 */
+/** 基本面维度:按公司名单现算 ChartDoc(见 pages/ai/fundamentals 的 fundDoc)。 */
 export type FundDim = Extract<RegimeDim, `fundamentals:${string}`>;
 export function isFundDim(dim: RegimeDim): dim is FundDim {
   return dim.startsWith('fundamentals:');
 }
-// 每个 pane 自带完整定义:单一 key 既是 pane 身份,也是 data.series[key]/data.ohlc[key] 的数据键。
-// 只剩基本面维度用(按名单现算,见 pages/ai/fundamentals);固定维度是 ChartDoc,由 views/chartDoc/DocChart 画。
-export type PaneSpec = {
-  /** 既是 pane 身份,也是 data.series[key] 的数据键 —— 收窄成后端对外名的全集,拼错即编译错误。 */
-  key: SeriesKey;
-  label: string; // 工具条 chip 名
-  title: string; // 图例 / 命名
-  color?: string; // 线色 / 图例色;符号柱与部分蜡烛不需要(留空则图例用默认色)
-  desc?: string; // hover ⓘ 说明(谦虚版读法)
-  render?: // 图形,默认 line
-  // baseline:会穿零的序列画 0 基线(如 YoY)。step:低频序列画阶梯,见 LineSpec.step
-    | { kind: 'line'; baseline?: number; step?: boolean }
-    | { kind: 'signed' } // 符号柱状图(正绿负红,0 基线),不套分位/徽标
-    | { kind: 'candle' }; // 蜡烛(用 data.ohlc[key]),不套分位/背景带;价格轴线性/对数按数据自判
-  percentile?: { riskTail?: 'low' | 'high'; since?: string }; // 有=画 P5/P95+徽标;riskTail 决定背景带红/绿方向;since 限定分位窗口
-};
-/** 一个 regime 图要的全部配置:dim(存储键 / SEC 提示按它认公司)与它的 panes 绑在一起传,不会配错对。 */
-export type RegimeView = { dim: FundDim; panes: PaneSpec[] };
 /** 一个视角贡献的那几个 dim 的 ChartDoc(pages/<视角>/docs.ts 用 satisfies 对齐,汇总在 pages/regimeDims)。 */
 export type RegimeDocs = Partial<Record<FixedDim, ChartDoc>>;
 
-/** 从 panes[] 派生 PaneChartView 需要的平行 map(pane 定义 / 命名 / 配色 / 说明)。 */
-export function derivePaneMeta(panes: PaneSpec[]) {
-  return {
-    paneDefs: panes.map((p) => ({ key: p.key, label: p.label, series: [p.key] })) as PaneDef[],
-    seriesName: Object.fromEntries(panes.map((p) => [p.key, p.title])),
-    colors: Object.fromEntries(panes.flatMap((p) => (p.color ? [[p.key, p.color]] : []))),
-    desc: Object.fromEntries(panes.flatMap((p) => (p.desc ? [[p.key, p.desc]] : []))),
-  };
-}
-function toLine(rows: RegimePoint[]): LinePoint[] {
-  return rows.map((r) => ({ time: r.date, value: r.value }));
-}
-/** 一序列一 pane:pane 下标 = panes 索引;缺失的序列(unavailable)不建 spec,该 pane 留空。
- *  percentile 的 pane:按原始日频值算 P5/P95 作参考线(与显示 interval 无关)。 */
-export function buildRegimeSpecs(data: RegimeData, panes: PaneSpec[], interval: Interval): Spec[] {
-  return panes.flatMap((p, pane): Spec[] => {
-    const key = p.key;
-    if (data.unavailable.includes(key)) return []; // unavailable 权威:不建 spec
-    const render = p.render ?? { kind: 'line' as const };
-
-    // 蜡烛:用 ohlc(按 interval 聚合 OHLC),涨绿跌红(addSeries 内置)。不套分位/背景带。
-    if (render.kind === 'candle') {
-      const bars = data.ohlc?.[key];
-      if (!bars?.length) return [];
-      return [{ key, pane, kind: 'candle', title: p.title, data: aggregateBars(bars, interval) }];
-    }
-
-    const rows = data.series[key];
-    if (!rows) return [];
-    const line = aggregate(toLine(rows), interval);
-
-    // 符号柱状图:正绿负红、0 基线,不套分位带/徽标。
-    if (render.kind === 'signed') {
-      const bars: HistoPoint[] = line.map((pt) => ({
-        time: pt.time,
-        value: pt.value,
-        color: pt.value >= 0 ? SIGNED_UP : SIGNED_DOWN,
-      }));
-      return [{ key, pane, kind: 'histogram', title: p.title, data: bars, baseline: 0 }];
-    }
-
-    const lineSpec: LineSpec = {
-      key,
-      pane,
-      kind: 'line',
-      color: p.color ?? '#a3a3a3',
-      title: p.title,
-      data: line,
-      ...(render.baseline !== undefined ? { baseline: render.baseline } : {}),
-      ...(render.step ? { step: true } : {}),
-    };
-    if (!p.percentile) return [lineSpec];
-
-    // 分位:P5/P95 参考线用原始日频算(与显示 interval 无关);极端期画满高背景带。
-    // since 给了则只用该子窗口算阈值(线仍画全部 rows);阈值再铺回整条线。
-    const since = p.percentile.since;
-    const vals = (since ? rows.filter((r) => r.date >= since) : rows).map((r) => r.value);
-    const marks = percentileMarks(
-      vals,
-      rows.map((r) => ({ time: r.date, value: r.value })),
-      { riskTail: p.percentile.riskTail },
-    );
-    if (marks) lineSpec.refLines = marks.lines;
-    // 背景带 = 风险/机会信号,需已知风险端;无 riskTail 只留 P5/P95 线,不染背景。
-    if (!marks?.band) return [lineSpec];
-    const bgSpec: HistoSpec = {
-      key: `${key}-bg`,
-      pane,
-      kind: 'histogram',
-      title: '',
-      data: marks.band,
-      priceScaleId: `bg-${key}`,
-    };
-    return [bgSpec, lineSpec]; // bg 先建 → 画在线的下层
-  });
-}
 /**
  * 「公司已申报、SEC 还没提供那一期」的滞后提示(基本面维度专用)。
  *
@@ -214,34 +120,15 @@ export function secFiledNote(data: RegimeData, dim: RegimeDim): string | undefin
  * 缺口的成因在源侧(companyfacts 那几期压根没有 capex 行,补 tag 链没用),所以
  * **只在这里说,不在 job 里报警** —— 那会是一盏永远修不掉的常驻黄灯。
  */
-export function secTrimNote(data: RegimeData, panes: PaneSpec[]): string | undefined {
+export function secTrimNote(data: RegimeData, doc: ChartDoc): string | undefined {
   if (!data.secTrim?.length) return undefined;
 
-  const keys = new Set(panes.map((p) => p.key));
-  const mine = data.secTrim.filter((t) => keys.has(t.key));
+  const layers = doc.panes.flatMap((p) => p.layers);
+  const mine = data.secTrim.filter((t) => layers.some((l) => l.series === t.key));
   if (!mine.length) return undefined;
 
-  const label = (key: string) => panes.find((p) => p.key === key)?.label ?? key;
+  const label = (key: string) => layers.find((l) => l.series === key)?.title ?? key;
   const one = (t: FundTrim) => `${label(t.key)} 少 ${t.dropped} 点(断在 ${t.gapFrom} → ${t.gapTo})`;
 
   return `⚠️ 已裁断档:${mine.map(one).join(';')}`;
-}
-/** 各序列最新值在自身历史里的百分位(徽标用,如 { cor1m: 'P3' })。仅 percentile 的 pane 产出。 */
-export function regimePercentiles(data: RegimeData, panes: PaneSpec[]): Record<string, string> {
-  return Object.fromEntries(
-    panes.flatMap((p) => {
-      if (!p.percentile) return []; // 无分位 pane(含 signed / candle)无徽标
-      if (data.unavailable.includes(p.key)) return [];
-      const rows = data.series[p.key];
-      if (!rows?.length) return [];
-      // 徽标 = 最新值在分位窗口内的排名(since 给了就只对子窗口排,与 buildRegimeSpecs 阈值同源)。
-      const since = p.percentile.since;
-      const base = since ? rows.filter((r) => r.date >= since) : rows;
-      const rank = percentileRank(
-        base.map((r) => r.value),
-        rows[rows.length - 1].value,
-      );
-      return Number.isNaN(rank) ? [] : [[p.key, `P${rank}`]];
-    }),
-  );
 }

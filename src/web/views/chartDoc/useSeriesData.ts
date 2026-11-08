@@ -22,7 +22,7 @@ import { latestIso } from '../../../shared/calc/isoDate';
 
 const RETRY_SWR_OPTS = { ...SWR_OPTS, revalidateIfStale: true };
 /**
- * 只留周一~周五(同 tenorHistory.hooks 的 weekdayOnly):
+ * 只留周一~周五:
  * BTC 这类 7×24 序列与股票 / 利率同轴时,周末点会给时间轴凭空多出约 900 根空位。
  */
 export function weekdayOnly(points: LinePoint[]): LinePoint[] {

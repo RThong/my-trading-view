@@ -1,10 +1,9 @@
-// regime 视角的总表:各视角的 ChartDoc 汇总成 REGIME_DOCS(DocChart 画),外加按名单派生的基本面维度(PaneSpec,RegimeChart 画)。
-// 放在 pages 层:视图(views/regime)只收 panes,不认识具体有哪些视角。
-import { sourcesOf } from '../../shared/aiChain';
+// regime 视角的总表:各视角的 ChartDoc 汇总成 REGIME_DOCS,外加按名单现算的基本面维度(fundamentalDoc)。都由 DocChart 画。
+// 放在 pages 层:视图(views/chartDoc、views/regime)只收 ChartDoc,不认识具体有哪些视角。
 import type { ChartDoc } from '../views/chartDoc/chartDoc';
-import type { FixedDim, FundDim, PaneSpec, RegimeView } from '../views/regime/regimeChart.hooks';
+import type { FixedDim, FundDim } from '../views/regime/regimeChart.hooks';
 import { AI_DOCS } from './ai/docs';
-import { buyerAggregatePane, buyerQuarterlyPane, SOURCE_PANES } from './ai/fundamentals';
+import { fundDoc } from './ai/fundamentals';
 import { BTC_DOCS } from './btc/docs';
 import { CREDIT_DOCS } from './credit/docs';
 import { CONCENTRATION } from './featured/concentration';
@@ -33,33 +32,16 @@ export const REGIME_DOCS: Record<FixedDim, ChartDoc> = {
   concentration: CONCENTRATION,
 };
 
-function buildPanes(dim: FundDim): PaneSpec[] {
-  const who = dim.slice('fundamentals:'.length);
-  if (who === 'buyer') return [buyerAggregatePane, buyerQuarterlyPane];
+// 按 dim 缓存:同一 dim 永远拿到同一份 doc(DocChart 以它为初值;按名单现算,不缓存的话每次都是新对象)。
+// 没打开的 tab 也不会提前算。
+const FUND_DOCS = new Map<FundDim, ChartDoc>();
 
-  // 一家可能走多个源(TSM:季度四格来自 sec6k、月营收两格来自 twse)—— 各源的格子按 sources
-  // 顺序拼起来。同一个 key 只留一次:sec 与 sec6k 共用 companyPanes,同时声明两者时会重。
-  const seen = new Set<string>();
-  return sourcesOf(who)
-    .flatMap((s) => SOURCE_PANES[s](who))
-    .filter((p) => !seen.has(p.key) && seen.add(p.key));
-}
-
-// 按 dim 缓存:同一 dim 永远拿到同一个对象。RegimeChart 要求 panes 引用稳定(基本面维度按名单现算,
-// 不缓存的话每次都是新数组),缓存放在这里,调用方在 render 里直接调也安全;没打开的 tab 也不会提前算。
-const VIEWS = new Map<FundDim, RegimeView>();
-
-/** 基本面 dim → 这张 regime 图的配置(dim + panes)。固定 dim 是 ChartDoc,见 REGIME_DOCS。 */
-export function regimeView(dim: FundDim): RegimeView {
-  const hit = VIEWS.get(dim);
+/** 基本面 dim → 它的 ChartDoc(按公司名单与数据源现算,见 ai/fundamentals 的 fundDoc)。 */
+export function fundamentalDoc(dim: FundDim): ChartDoc {
+  const hit = FUND_DOCS.get(dim);
   if (hit) return hit;
 
-  const view = { dim, panes: buildPanes(dim) };
-  VIEWS.set(dim, view);
-  return view;
-}
-
-/** dim → panes(同 regimeView,只取格子)。 */
-export function dimPanes(dim: FundDim): PaneSpec[] {
-  return regimeView(dim).panes;
+  const doc = fundDoc(dim.slice('fundamentals:'.length));
+  FUND_DOCS.set(dim, doc);
+  return doc;
 }

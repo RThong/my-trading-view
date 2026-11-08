@@ -1,4 +1,4 @@
-import { curveTab, historyTab, regimeTab, type Perspective } from '../tabs';
+import { curveTab, regimeTab, type Perspective } from '../tabs';
 
 export const JAPAN: Perspective = {
   id: 'japan',
@@ -7,7 +7,7 @@ export const JAPAN: Perspective = {
     regimeTab('jpy', '日元', 'jpy'),
     curveTab('jgb_curve', '收益曲线', 'jgb'),
     // 只看各期限水平:利差 pane 与 8306 蜡烛挪去了「银行」那格(银行业传导在那边读)。
-    historyTab('jgb_history', '期限走势', 'jgb'),
+    regimeTab('jgb_history', '期限走势', 'jgbHistory'),
     // 日本银行股:10Y 主变量 + 8306,下面是利润层的验证项(利差 / 存款贝塔)。挨着曲线两格放,方便对读期限。
     regimeTab('jp_banks', '银行', 'jpBanks'),
     // 通胀两条(CGPI 先行 + 新核心核心):「银行」利差里靠预期的那一截能不能兑现,看日银会不会继续加。

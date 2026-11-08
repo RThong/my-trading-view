@@ -1,5 +1,7 @@
 // 「AI」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
+import { curveHistoryDoc } from '../curveHistory';
+import { AI_CDS } from '../../../shared/rateCurveDefs';
 
 // compute dim 四条 GPU 指数共用的署名(License 要求),四格各写一遍会改一处漏一处。
 const CGI_ATTRIBUTION = '数据:Computable(getcomputable.com),公开 REST 无需鉴权,CC BY-NC 4.0。';
@@ -111,4 +113,19 @@ export const AI_DOCS = {
       },
     ],
   },
+  // 默认显示 core 的 7 家(与服务端 AI_CDS 的 core 同一份名单:core 缺失会让每日 job 告警);
+  // Broadcom / Dell / Intel 较次要,CoreWeave(~1000bp)/ SpaceX(~200bp)量级会把其余几家压扁,在图例里按需点开
+  aiCds: curveHistoryDoc({
+    family: 'cds',
+    shown: AI_CDS.filter((c) => c.core).map((c) => c.name),
+    desc: [
+      '定义:AI 资本开支巨头 + 甲骨文 + 新云 CoreWeave + SpaceX 的 5Y 单名 CDS 利差(bp)时间走势。',
+      '数据:ICE Clear Credit 免费 EOD 结算价,由合约价按标准 CDS 定价(回收率 40%、违约强度恒定)反解成约定 spread,约 ±10~15bp(CoreWeave 为 500bp 票息档)。',
+      '利差越高 = 市场定价的违约风险越大;甲骨文因 AI 举债显著高于同类,是 AI 信用风险风向标。',
+      'CoreWeave(默认隐藏,~1000bp 量级会压扁其余几家)= 租算力给巨头、自己举债买卡的新云,信贷型脆弱的前线;2026-10-15 起才有数据。',
+      'SpaceX(默认隐藏,~200bp 量级)= FT 报道 AI 对冲盘集中买 CDS 的七家之一;2026-10-20 起才有数据。',
+      '纵轴从 0 起(对齐常见 CDS 图):高度比例 = 真实幅度,不被自动缩放放大。',
+    ].join('\n'),
+    zeroBase: true,
+  }),
 } satisfies RegimeDocs;

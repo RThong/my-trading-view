@@ -130,15 +130,15 @@ src/
     │                        multi-pane infra (paneChart.hooks/types + PaneChartView), core (types / aggregate / dates),
     │                        indicators (EMA / Bollinger / MACD / RSI) · zigzag · palette · trendlines · bandFill · analysis
     ├── views/               business views reused across perspectives
-    │   ├── regime/          RegimeChart + data hook; REGIME_DOCS (ChartDoc per tab) assembled from pages/*/docs
+    │   ├── regime/          /api/regime data hook + FundChart (SEC notes); REGIME_DOCS (ChartDoc per tab) from pages/*/docs
     │   ├── asset/           AssetChart + hooks (25Δ + optional VRP)
-    │   ├── curve/           yield-curve + tenor-history (YieldCurve* / TenorHistory* / yieldCurve+rateSpread hooks)
+    │   ├── curve/           yield-curve snapshot panel (YieldCurve* + yieldCurve hooks); tenor history is a ChartDoc (pages/curveHistory)
     │   └── chartDoc/        ChartDoc format + series registry (shared by the editor and fixed panels)
-    └── pages/               one dir per perspective (= route): index (its tabs) + dims (its regime panes)
+    └── pages/               one dir per perspective (= route): index (its tabs) + docs (its ChartDocs)
         │                    + components only that perspective uses
-        ├── tabs.tsx         tab factories (asset/regime/curve/history) + TabDef / Perspective types
+        ├── tabs.tsx         tab factories (asset/regime/curve) + TabDef / Perspective types
         ├── rates/           … + PolicyPathPanel
-        ├── ai/              … + IndustryChainPanel + fundamentals (per-company panes)
+        ├── ai/              … + IndustryChainPanel + fundamentals (per-company ChartDoc)
         ├── featured/        … + AttackDefensePanel (NOBL/QQQ ZigZag) + concentration ChartDoc
         ├── editor/          chart editor (free-form composer)
         └── options · credit · liquidity · sentiment · macro · oil · btc · japan · inflation · valuation

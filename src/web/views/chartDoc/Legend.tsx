@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { InfoTip } from '../../components/InfoTip';
 import { drawnKind } from './registry';
@@ -54,85 +55,110 @@ type Props = {
 
 // 每格左上角一块:该格各图层的名称 + 十字线当日(无十字线时为最新)的值。不挡鼠标。
 // 换算过的线读原始值(换算值只是为了叠图);平移过的线附上这个点的原始日期,免得把挪过的日子当真。
-// 显隐按钮同 TradingView:悬停这一行才出现;隐藏了就常亮,线没了也找得到地方点回来。
-// 只有行本身接鼠标(要靠 hover 显出按钮),块的其余部分照旧不挡十字线。
+// 显隐按钮同 TradingView:悬停这一行才出现。隐藏的线收进下面一块紧凑小字(名字 + 读数,点一下显示):
+// 曲线走势那类一格挂十几二十条期限的,一条一行会比图还高。只有行本身接鼠标,块的其余部分照旧不挡十字线。
 export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Props) {
+  const row = { doc, interval, data, hoverTime, onHidden };
   return (
     <>
-      {doc.panes.map((pane, i) => (
-        <div
-          key={pane.id}
-          className="pointer-events-none absolute z-10 flex flex-col gap-0.5 rounded bg-neutral-950/70 px-1.5 py-1 text-xs"
-          style={{ top: (layout.tops[i] ?? 0) + 4, left: layout.left + 8 }}
-        >
-          {/* 格子这一层:第 1 格放十字线日期;格子有读法说明就挂 ⓘ —— 说明属于格子(ChartDoc 的 pane.desc),不挂在某条序列名后面 */}
-          {(i === 0 || pane.desc) && (
-            <span className="flex items-center">
-              {i === 0 && <span className="text-neutral-500">{hoverTime ?? '最新'}</span>}
-              {/* 只让 ⓘ 接鼠标:日期文字照旧不挡十字线 / 拖拽 */}
-              {pane.desc && (
-                <span className="pointer-events-auto">
-                  <InfoTip text={pane.desc} />
-                </span>
-              )}
-            </span>
-          )}
-          {pane.layers.map((l) => {
-            const pts = data[l.id]?.display;
-            const pt = asOfPoint(pts, hoverTime);
-            const shift = l.shift ?? 0;
-            // 写了 title 的(固定面板的格子)名字里已带单位,不再追加
-            const unit = l.title === undefined ? layerUnit(l) : undefined;
-            const rank = pctlRank(l, pts, pt?.value);
-            // 蜡烛给开高低收;涨跌比的是前一个点(周 / 月线就是上一期),涨绿跌红,同旧固定面板与 TradingView
-            const bar = drawnKind(l) === 'candle' ? asOfBar(data[l.id]?.bars, hoverTime) : undefined;
-            const change = pt && pts && !isMarkLayer(l) ? changeStats(pt.value, pts[pts.indexOf(pt) - 1]?.value) : null;
-            const tone = change && change.delta !== 0 ? (change.delta > 0 ? SIGNED_UP : SIGNED_DOWN) : undefined;
-            const num = (v: number) => <span style={{ color: tone }}>{fmtValue(v)}</span>;
-            return (
-              <span
-                key={l.id}
-                className={`group pointer-events-auto flex items-center gap-1.5 whitespace-nowrap ${l.hidden ? 'opacity-50' : ''}`}
-              >
-                {drawnKind(l) === 'candle' ? (
-                  <CandleSwatch className="h-2.5 w-3" />
-                ) : (
-                  <span className="h-0.5 w-3 rounded" style={{ background: l.color }} />
-                )}
-                <span className="text-neutral-400">{layerLabel(doc, l)}</span>
-                {/* 标记图层(竖线、背景色带)的值无意义,只给名字 */}
-                {!isMarkLayer(l) &&
-                  (bar ? (
-                    <span className="tabular-nums text-neutral-400">
-                      O {num(bar.open)} H {num(bar.high)} L {num(bar.low)} C {num(bar.close)}
-                    </span>
-                  ) : (
-                    <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>
-                  ))}
-                {unit && !isMarkLayer(l) && <span className="text-neutral-600">{unit}</span>}
-                {change && (
-                  <span className="tabular-nums" style={{ color: tone }}>
-                    {fmtChange(change)}
-                  </span>
-                )}
-                {rank !== undefined && <span className="tabular-nums text-neutral-500">P{rank}</span>}
-                {shift !== 0 && pt && interval === '1D' && (
-                  <span className="text-neutral-600">原 {shiftBusinessDays(pt.time, -shift)}</span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => onHidden(l.id, !l.hidden)}
-                  title={l.hidden ? '显示' : '隐藏'}
-                  // 用透明度藏而不是 invisible:invisible 的按钮 Tab 不到
-                  className={`text-neutral-400 hover:text-neutral-100 ${l.hidden ? '' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'}`}
-                >
-                  {l.hidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                </button>
+      {doc.panes.map((pane, i) => {
+        const shown = pane.layers.filter((l) => !l.hidden);
+        const hidden = pane.layers.filter((l) => l.hidden);
+        // 读法说明属于格子(ChartDoc 的 pane.desc),挂在第一条显示中的线名后面,不另占一行;全隐藏时挂在隐藏块前
+        const info = pane.desc && <InfoTip text={pane.desc} className="-ml-0.5 h-3 w-3 text-[8px]" />;
+        return (
+          <div
+            key={pane.id}
+            className="pointer-events-none absolute z-10 flex max-w-xl flex-col gap-0.5 rounded bg-neutral-950/70 px-1.5 py-1 text-xs"
+            style={{ top: (layout.tops[i] ?? 0) + 4, left: layout.left + 8 }}
+          >
+            {/* 第 1 格顶上放十字线日期 */}
+            {i === 0 && <span className="text-neutral-500">{hoverTime ?? '最新'}</span>}
+            {shown.map((l, j) => (
+              <LayerRow key={l.id} layer={l} info={j === 0 ? info : undefined} {...row} />
+            ))}
+            {hidden.length > 0 && (
+              <span className="pointer-events-auto flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+                {shown.length === 0 && info}
+                <EyeOff className="size-3 text-neutral-600" />
+                {hidden.map((l) => (
+                  <button
+                    key={l.id}
+                    type="button"
+                    onClick={() => onHidden(l.id, false)}
+                    title="显示"
+                    className="whitespace-nowrap text-neutral-500 hover:text-neutral-200"
+                  >
+                    {layerLabel(doc, l)}
+                    {!isMarkLayer(l) && (
+                      <span className="ml-1 tabular-nums">
+                        {fmtValue(asOfPoint(data[l.id]?.display, hoverTime)?.value)}
+                      </span>
+                    )}
+                  </button>
+                ))}
               </span>
-            );
-          })}
-        </div>
-      ))}
+            )}
+          </div>
+        );
+      })}
     </>
+  );
+}
+
+type RowProps = Omit<Props, 'layout'> & { layer: Layer; info: ReactNode };
+
+/** 显示中的一条线:名称、读数(蜡烛给开高低收)、涨跌、分位排名、平移原日期、显隐按钮 */
+function LayerRow({ doc, interval, data, hoverTime, onHidden, layer: l, info }: RowProps) {
+  const pts = data[l.id]?.display;
+  const pt = asOfPoint(pts, hoverTime);
+  const shift = l.shift ?? 0;
+  // 写了 title 的(固定面板的格子)名字里已带单位,不再追加
+  const unit = l.title === undefined ? layerUnit(l) : undefined;
+  const rank = pctlRank(l, pts, pt?.value);
+  // 蜡烛给开高低收;涨跌比的是前一个点(周 / 月线就是上一期),涨绿跌红,同旧固定面板与 TradingView
+  const bar = drawnKind(l) === 'candle' ? asOfBar(data[l.id]?.bars, hoverTime) : undefined;
+  const change = pt && pts && !isMarkLayer(l) ? changeStats(pt.value, pts[pts.indexOf(pt) - 1]?.value) : null;
+  const tone = change && change.delta !== 0 ? (change.delta > 0 ? SIGNED_UP : SIGNED_DOWN) : undefined;
+  const num = (v: number) => <span style={{ color: tone }}>{fmtValue(v)}</span>;
+
+  return (
+    <span className="group pointer-events-auto flex items-center gap-1.5 whitespace-nowrap">
+      {drawnKind(l) === 'candle' ? (
+        <CandleSwatch className="h-2.5 w-3" />
+      ) : (
+        <span className="h-0.5 w-3 rounded" style={{ background: l.color }} />
+      )}
+      <span className="text-neutral-400">{layerLabel(doc, l)}</span>
+      {info}
+      {/* 标记图层(竖线、背景色带)的值无意义,只给名字 */}
+      {!isMarkLayer(l) &&
+        (bar ? (
+          <span className="tabular-nums text-neutral-400">
+            O {num(bar.open)} H {num(bar.high)} L {num(bar.low)} C {num(bar.close)}
+          </span>
+        ) : (
+          <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>
+        ))}
+      {unit && !isMarkLayer(l) && <span className="text-neutral-600">{unit}</span>}
+      {change && (
+        <span className="tabular-nums" style={{ color: tone }}>
+          {fmtChange(change)}
+        </span>
+      )}
+      {rank !== undefined && <span className="tabular-nums text-neutral-500">P{rank}</span>}
+      {shift !== 0 && pt && interval === '1D' && (
+        <span className="text-neutral-600">原 {shiftBusinessDays(pt.time, -shift)}</span>
+      )}
+      {/* 用透明度藏而不是 invisible:invisible 的按钮 Tab 不到 */}
+      <button
+        type="button"
+        onClick={() => onHidden(l.id, true)}
+        title="隐藏"
+        className="text-neutral-400 opacity-0 hover:text-neutral-100 group-hover:opacity-100 focus-visible:opacity-100"
+      >
+        <Eye className="size-3.5" />
+      </button>
+    </span>
   );
 }

@@ -65,7 +65,7 @@ export type SeriesDef = {
   freq: SeriesFreq;
   unit?: string;
   source: SeriesSource;
-  /** 7×24 资产(含周末日线):取数时只留周一~周五,同 tenorHistory 的做法(见 useSeriesData)。 */
+  /** 7×24 资产(含周末日线):取数时只留周一~周五,整张图都是 7×24 时才保留(见 useSeriesData、layerPoints 的 allSevenDay)。 */
   weekends?: true;
   /** 搜索用的别名 */
   aliases?: string[];

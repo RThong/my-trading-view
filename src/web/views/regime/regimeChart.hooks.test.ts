@@ -1,123 +1,20 @@
 import { test, expect } from 'bun:test';
-import {
-  buildRegimeSpecs,
-  derivePaneMeta,
-  regimePercentiles,
-  secFiledNote,
-  secLagNote,
-  secTrimNote,
-  type PaneSpec,
-  type RegimeData,
-} from './regimeChart.hooks';
-import { dimPanes, regimeView } from '../../pages/regimeDims';
+import { secFiledNote, secLagNote, secTrimNote, type FundDim, type RegimeData } from './regimeChart.hooks';
+import { fundamentalDoc } from '../../pages/regimeDims';
+import { parseChartDoc } from '../chartDoc/chartDoc';
+import { seriesDef } from '../chartDoc/registry';
 import { ACTIVE_TICKERS, fundKey, kindsOf, SEC_BUYER_FCF_KEY, SEC_BUYER_FCFQ_KEY } from '../../../shared/aiChain';
 import { REGIME_SERIES } from '../../../shared/regimeSeries';
 
-// 旧 regime 图(RegimeChart)只剩基本面维度用:画法用例用内联的格子,不依赖任何真实 tab 的配置
-// (固定 tab 是 ChartDoc,配置层面的约束见 docs.test,画法见 views/chartDoc 的测试)。
-const PANES: PaneSpec[] = [
-  { key: 'netLiquidity', label: '净流动性', title: '净流动性', color: '#22c55e' },
-  { key: 'reserves', label: '准备金', title: '准备金', color: '#3b82f6' },
-  { key: 'repoUsage', label: '回购用量', title: '回购用量', color: '#ec4899' },
-  { key: 'repoStress', label: '回购压力', title: '回购压力', render: { kind: 'line', baseline: 0 } },
-];
-const data: RegimeData = {
-  series: {
-    netLiquidity: [
-      { date: '2020-01-01', value: 5 },
-      { date: '2020-01-02', value: 6 },
-    ],
-    // reserves 无数据、repoUsage 缺失(模拟 unavailable)
-    repoStress: [{ date: '2020-01-01', value: -0.01 }],
-  },
-  unavailable: ['repoUsage'],
-};
-
-test('pane 下标按 panes 顺序,缺失序列被跳过', () => {
-  const specs = buildRegimeSpecs(data, PANES, '1D');
-  expect(specs.map((s) => s.key)).toEqual(['netLiquidity', 'repoStress']);
-  // pane 下标 = 原 panes 索引(reserves、repoUsage 被跳过后 repoStress 仍是 3)
-  expect(specs.map((s) => s.pane)).toEqual([0, 3]);
-  expect((specs[1] as { baseline?: number }).baseline).toBe(0);
-  expect((specs[0] as { baseline?: number }).baseline).toBeUndefined();
-});
-
-test('全部缺失 → 空 specs', () => {
-  expect(buildRegimeSpecs({ series: {}, unavailable: [] }, PANES, '1D')).toEqual([]);
-});
-
-test('分位带 + 极端期背景带按 riskTail 语义上色;无 riskTail 只留 P5/P95 线;since 只限阈值窗口', () => {
-  const fng = Array.from({ length: 11 }, (_, i) => ({
-    date: `2021-01-${String(i + 1).padStart(2, '0')}`,
-    value: i * 10,
+// 基本面 dim 的格子(一格一条线):取出测试关心的几项
+function dimPanes(dim: FundDim) {
+  return fundamentalDoc(dim).panes.map((p) => ({
+    key: p.layers[0].series,
+    title: p.layers[0].title,
+    render: p.layers[0].render,
+    desc: p.desc,
   }));
-  const high: PaneSpec = { key: 'fng', label: 'F&G', title: 'F&G', percentile: { riskTail: 'high' } };
-  const specs = buildRegimeSpecs({ series: { fng }, unavailable: [] }, [high], '1D');
-
-  // [背景直方图, 线] 两条,背景先建 → 画在下层
-  expect(specs.map((s) => s.key)).toEqual(['fng-bg', 'fng']);
-  expect((specs[1] as { refLines?: unknown }).refLines).toEqual([
-    { price: 5, title: 'P5' },
-    { price: 95, title: 'P95' },
-  ]);
-  const bg = specs[0] as { data: Array<{ value: number; color: string }>; priceScaleId?: string };
-  expect(bg.priceScaleId).toBe('bg-fng');
-  expect(bg.data[0]).toMatchObject({ value: 1, color: 'rgba(34,197,94,0.45)' }); // 低端 = 机会 = 绿
-  expect(bg.data[10]).toMatchObject({ value: 1, color: 'rgba(239,68,68,0.45)' }); // 高端 = 风险 = 红
-
-  const plain = buildRegimeSpecs({ series: { fng }, unavailable: [] }, [{ ...high, percentile: {} }], '1D');
-  expect(plain.map((s) => s.key)).toEqual(['fng']);
-
-  // since:阈值只用 01-06 起的 6 个点(50 … 100),线仍画全部 11 个点
-  const since = buildRegimeSpecs(
-    { series: { fng }, unavailable: [] },
-    [{ ...high, percentile: { riskTail: 'high', since: '2021-01-06' } }],
-    '1D',
-  );
-  const line = since.find((s) => s.key === 'fng') as { data: unknown[]; refLines?: Array<{ price: number }> };
-  expect(line.data).toHaveLength(11);
-  expect(line.refLines?.[0].price).toBe(52.5);
-  expect(regimePercentiles({ series: { fng }, unavailable: [] }, [high])).toEqual({ fng: 'P95' });
-});
-
-test('蜡烛用 ohlc 出 spec;符号柱正绿负红、0 基线,不套分位徽标', () => {
-  const ohlc = {
-    usd: [
-      { time: '2021-01-04', open: 89, high: 90, low: 88, close: 89.5 },
-      { time: '2021-01-05', open: 89.5, high: 91, low: 89, close: 90.8 },
-    ],
-  };
-  const candle: PaneSpec = { key: 'usd', label: 'DXY', title: 'DXY', render: { kind: 'candle' } };
-  const specs = buildRegimeSpecs({ series: { usd: [] }, unavailable: [], ohlc }, [candle], '1D');
-  expect(specs.map((s) => (s as { kind: string }).kind)).toEqual(['candle']);
-
-  const series = {
-    cftcJpy: [
-      { date: '2021-01-01', value: 2 },
-      { date: '2021-01-02', value: -1.5 },
-    ],
-  };
-  const signed: PaneSpec = { key: 'cftcJpy', label: '净持仓', title: '净持仓', render: { kind: 'signed' } };
-  const [h] = buildRegimeSpecs({ series, unavailable: [] }, [signed], '1D') as Array<{
-    kind: string;
-    baseline?: number;
-    data: Array<{ color: string }>;
-  }>;
-  expect(h.kind).toBe('histogram');
-  expect(h.baseline).toBe(0);
-  expect(h.data.map((d) => d.color)).toEqual(['#22c55e', '#ef4444']);
-  expect(regimePercentiles({ series, unavailable: [] }, [signed]).cftcJpy).toBeUndefined();
-});
-
-test('derivePaneMeta:每格一条线,名字 / 颜色 / 说明按 key 取', () => {
-  const meta = derivePaneMeta([{ ...PANES[0], desc: '说明' }, PANES[3]]);
-  expect(meta.paneDefs).toEqual([
-    { key: 'netLiquidity', label: '净流动性', series: ['netLiquidity'] },
-    { key: 'repoStress', label: '回购压力', series: ['repoStress'] },
-  ]);
-  expect(meta.colors).toEqual({ netLiquidity: '#22c55e' });
-  expect(meta.desc).toEqual({ netLiquidity: '说明' });
-});
+}
 
 const LAG = { ticker: 'META', remoteFiled: '2026-07-30', localFiled: '2026-04-30', latestPeriodEnd: '2026-03-31' };
 function withLag(secLag: (typeof LAG)[]): RegimeData {
@@ -139,7 +36,7 @@ test('secLagNote:买方合计格受任一买方滞后影响;卖方滞后不影�
   expect(secLagNote(withLag([{ ...LAG, ticker: 'MU' }]), 'fundamentals:buyer')).toBeUndefined();
 });
 
-// 面板的格子按 source 分派(见 SOURCE_PANES)。这条锁住「加了非 SEC 源的公司,
+// 面板的格子按 source 分派(见 ai/fundamentals 的 SOURCE_PANES)。这条锁住「加了非 SEC 源的公司,
 // 不会被套上 SEC 那四格」—— 套错了会画出四条永远空的线,而空线不报错。
 test('dimPanes:TSM 八格 = sec6k 六格 + twse 两格,gm 不重复', () => {
   const twse = dimPanes('fundamentals:TSM');
@@ -179,9 +76,9 @@ test('dimPanes:capex/云收入只出现在报了分部的三家,同源的 MSFT/M
     return panes[0]!;
   };
 
-  expect(cloudPane('GOOGL').label).toBe('capex/Google Cloud');
-  expect(cloudPane('AMZN').label).toBe('capex/AWS');
-  expect(cloudPane('ORCL').label).toBe('capex/OCI IaaS');
+  expect(cloudPane('GOOGL').title).toContain('/ Google Cloud 收入');
+  expect(cloudPane('AMZN').title).toContain('/ AWS 收入');
+  expect(cloudPane('ORCL').title).toContain('/ OCI IaaS 收入');
 
   // 比率的判据线是 1.0(当季 capex 恰好等于当季云收入),不是 0。
   expect(cloudPane('AMZN').render).toEqual({ kind: 'line', baseline: 1 });
@@ -194,7 +91,7 @@ test('dimPanes:capex/云收入只出现在报了分部的三家,同源的 MSFT/M
 });
 
 test('dimPanes:TSM 的金额格用新台币,别家用美元', () => {
-  const money = (dim: string, key: string) => dimPanes(dim as never).find((p) => p.key === key)!;
+  const money = (dim: FundDim, key: string) => dimPanes(dim).find((p) => p.key === key)!;
 
   // 币种混淆是这一格最容易踩的坑:TSM 的数比别家大一个数量级纯粹因为汇率。
   expect(money('fundamentals:TSM', 'fund:TSM:fcf').title).toContain('百万新台币');
@@ -257,18 +154,20 @@ test('secTrimNote:只报本 tab 的格子,并说清断在哪', () => {
     ],
   };
 
-  const note = secTrimNote(data, dimPanes('fundamentals:NVDA'));
+  const note = secTrimNote(data, fundamentalDoc('fundamentals:NVDA'));
   expect(note).toContain('少 5 点');
   expect(note).toContain('2021-01-31 → 2023-10-29');
   expect(note).not.toContain('33'); // 别家的不混进来
 });
 
 test('secTrimNote:没裁过就不出提示', () => {
-  expect(secTrimNote({ series: {}, unavailable: [] }, dimPanes('fundamentals:NVDA'))).toBeUndefined();
-  expect(secTrimNote({ series: {}, unavailable: [], secTrim: [] }, dimPanes('fundamentals:NVDA'))).toBeUndefined();
+  expect(secTrimNote({ series: {}, unavailable: [] }, fundamentalDoc('fundamentals:NVDA'))).toBeUndefined();
+  expect(
+    secTrimNote({ series: {}, unavailable: [], secTrim: [] }, fundamentalDoc('fundamentals:NVDA')),
+  ).toBeUndefined();
 });
 
-// 类型已经挡住「pane key 拼错」了(PaneSpec.key 收窄成 SeriesKey),这两条守的是**另一半**:
+// 这两条守的是枚举与后端产出的一致:
 // 枚举本身与后端实际产出漂移。类型只保证两端用同一份名单,不保证名单还对得上代码。
 test('REGIME_SERIES:无重复、无 fund: 前缀(动态键不进枚举)', () => {
   expect(new Set(REGIME_SERIES).size).toBe(REGIME_SERIES.length);
@@ -298,8 +197,19 @@ test('secFiledNote:单家 tab 标最新一期与申报日;没数据、合计与�
   expect(secFiledNote(data, 'liquidity')).toBeUndefined();
 });
 
-// RegimeChart 要求配置引用稳定:基本面维度的 panes 按名单现算,靠 regimeView 的缓存兜住
-test('regimeView:同一 dim 每次拿到同一个对象', () => {
-  expect(regimeView('fundamentals:NVDA')).toBe(regimeView('fundamentals:NVDA'));
-  expect(regimeView('fundamentals:NVDA').panes).toBe(dimPanes('fundamentals:NVDA'));
+// DocChart 以 doc 为初值:基本面 doc 按名单现算,同一 dim 必须拿到同一个对象(靠 fundamentalDoc 的缓存兜住)
+test('fundamentalDoc:同一 dim 每次拿到同一个对象', () => {
+  expect(fundamentalDoc('fundamentals:NVDA')).toBe(fundamentalDoc('fundamentals:NVDA'));
 });
+
+// 动态生成的 doc 不在 REGIME_DOCS 里,docs.test 的 JSON 往返 / 注册表检查覆盖不到,这里逐家补上
+test.each([...ACTIVE_TICKERS, 'buyer'])(
+  'fundamentals:%s 的 doc:JSON 往返无损、序列都在注册表、图层 id 不重复',
+  (who) => {
+    const doc = fundamentalDoc(`fundamentals:${who}`);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+    const layers = doc.panes.flatMap((p) => p.layers);
+    expect(layers.filter((l) => !seriesDef(l.series)).map((l) => l.series)).toEqual([]);
+    expect(new Set(layers.map((l) => l.id)).size).toBe(layers.length);
+  },
+);

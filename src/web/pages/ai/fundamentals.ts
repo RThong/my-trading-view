@@ -1,4 +1,5 @@
-// AI 产业链(基本面)各格的构造:按公司名单与数据源现算 pane(dim = fundamentals:<公司|buyer>)。
+// AI 产业链(基本面)各格的构造:按公司名单与数据源现算 ChartDoc 的格子(dim = fundamentals:<公司|buyer>),
+// 每格一条线;拼成整份 doc 见 fundDoc。与固定面板同一套渲染(views/chartDoc/DocChart)。
 import {
   KIND_RENDER,
   SEC_BUYER_FCF_KEY,
@@ -7,6 +8,7 @@ import {
   knownGap,
   segmentFactsOf,
   segmentKindOf,
+  sourcesOf,
   fundKey,
   sideOf,
   currencyOf,
@@ -14,7 +16,7 @@ import {
   type ChainSource,
   type FundKind,
 } from '../../../shared/aiChain';
-import type { PaneSpec } from '../../views/regime/regimeChart.hooks';
+import type { ChartDoc, Layer, Pane } from '../../views/chartDoc/chartDoc';
 
 // SEC 基本面各格共用:季频数据的读法约束。写在每格开头,防止被当日频指标使。
 const SEC_CAVEAT =
@@ -264,42 +266,54 @@ const PANE_CONCEPTS: Record<FundKind, string[]> = {
  * 裁不裁断档、这里据它决定画法 —— 两处分别写一张表就会 desync,要么白裁要么留一条假斜率。
  * 这里只补 KIND_RENDER 表达不了的那点视觉细节:哪条折线要零基线。
  */
-const BASELINE: Partial<Record<FundKind, PaneSpec['render']>> = {
+const BASELINE: Partial<Record<FundKind, Layer['render']>> = {
   fcf: { kind: 'line', baseline: 0 }, // TTM 滚动量 → 折线,但零轴是判据 → 加零基线
   // 比率的判据线是 1.0(当季 capex 恰好等于当季云收入),不是 0 —— 零轴对它没有含义。
   capexCloud: { kind: 'line', baseline: 1 },
 };
 
 /** 柱 ⇒ 符号柱(正绿负红、零基线);折线 ⇒ 默认折线,除非上表指定了基线。 */
-function renderOf(kind: FundKind): PaneSpec['render'] | undefined {
+function renderOf(kind: FundKind): Layer['render'] {
   return BASELINE[kind] ?? (KIND_RENDER[kind] === 'bar' ? { kind: 'signed' } : undefined);
 }
 
+/** 一格一条线。格子与图层的 id 先留空,拼成整份 doc 时按顺序编号(见 numbered) */
 function paneOf(
   ticker: string,
   kind: FundKind,
-  label: string,
   title: string,
-  // signed(符号柱)不需要 color —— 正绿负红由 signed 分支决定,图例留空用默认色,与 vxTermSpread 一致。
+  // signed(符号柱)不需要 color —— 正绿负红由画法决定,颜色不起作用
   color: string | undefined,
   lines: Array<string | undefined>,
-): PaneSpec {
+): Pane {
   const gaps = PANE_CONCEPTS[kind].flatMap((c) => {
     const why = knownGap(ticker, c);
     return why ? [`⚠️ **这格是空的,而且不是 bug**:${ticker} 的 ${c} 拿不到 —— ${why}`] : [];
   });
+  const render = renderOf(kind);
 
   return {
-    key: fundKey(ticker, kind),
-    label,
-    title,
-    color,
-    ...(renderOf(kind) ? { render: renderOf(kind) } : {}),
-    // 不配 percentile:样本仅十余期,分位是噪声。
+    id: '',
+    stretch: 1,
+    scales: [{ id: 'right', side: 'right' }],
+    layers: [
+      {
+        id: '',
+        series: fundKey(ticker, kind),
+        scale: 'right',
+        color: color ?? NEUTRAL,
+        title,
+        ...(render && { render }),
+        // 不配 percentile:样本仅十余期,分位是噪声。
+      },
+    ],
     // 只丢 undefined —— '' 是段落分隔符,InfoTip 用 whitespace-pre-wrap 渲染,filter(Boolean) 会把它一起吃掉。
     desc: [...(gaps.length ? [...gaps, ''] : []), ...lines].filter((l) => l !== undefined).join('\n'),
   };
 }
+
+// 符号柱的图层颜色(画法正绿负红,不起作用)
+const NEUTRAL = '#a3a3a3';
 
 /** TWSE 三格共用:源的性质与币种。各格自己的端点与频率写在各自定义那一行。 */
 const TWSE_CAVEAT =
@@ -342,11 +356,11 @@ const TWSE_REV_READ = [
  * (曾经这里还有一格 TWSE 季度毛利率,随「退掉 TWSE 季度综合损益表」一起去掉了 ——
  *  那是 6-K 的子集、无现金流、历史只能靠攒;TSM 的毛利率现在走 sec6k。)
  */
-function twseCompanyPanes(ticker: string): PaneSpec[] {
+function twseCompanyPanes(ticker: string): Pane[] {
   return [
     // 两格都用符号柱:离散期间量,柱子不连、空档一眼可见(见 TWSE_SNAPSHOT_NOTE)。
     // 同比那格正绿负红本身就是判据方向;月营收恒正,柱色统一绿。
-    paneOf(ticker, 'revYoy', '月营收同比', `${ticker} 月营收同比(%)`, undefined, [
+    paneOf(ticker, 'revYoy', `${ticker} 月营收同比(%)`, undefined, [
       `定义:${ticker} 当月营收对去年同月的增减(%)。**取源自己算的值**,不是我们除出来的 ——` +
         '源在同一条记录里给了这个字段,而我们攒的历史可能还缺去年那个月。' +
         TWSE_CAVEAT,
@@ -357,7 +371,7 @@ function twseCompanyPanes(ticker: string): PaneSpec[] {
       '',
       TWSE_SNAPSHOT_NOTE,
     ]),
-    paneOf(ticker, 'revM', '月营收', `${ticker} 月营收(百万新台币)`, '#eab308', [
+    paneOf(ticker, 'revM', `${ticker} 月营收(百万新台币)`, '#eab308', [
       `定义:${ticker} 单月合并营收。` + TWSE_CAVEAT,
       '',
       TWSE_MONTHLY_SPEED,
@@ -418,7 +432,7 @@ const SEC6K_NOTES: Record<string, string> = {
     '与 TSM 相反,取错列不会报错只会静默拿到去年的数)。',
 };
 
-function companyPanes(ticker: string): PaneSpec[] {
+function companyPanes(ticker: string): Pane[] {
   const seller = sideOf(ticker) === 'seller';
   const note = COMPANY_NOTES[ticker];
   const unit = MONEY_UNIT[currencyOf(ticker)];
@@ -430,7 +444,7 @@ function companyPanes(ticker: string): PaneSpec[] {
       : '';
 
   return [
-    paneOf(ticker, 'gm', '毛利率', `${ticker} TTM 毛利率(%)`, '#eab308', [
+    paneOf(ticker, 'gm', `${ticker} TTM 毛利率(%)`, '#eab308', [
       `定义:${ticker} TTM 毛利率 =(营收 − 营业成本)/ 营收。` + SEC_CAVEAT + srcNote,
       '',
       seller ? SELLER_GM : BUYER_GM,
@@ -438,7 +452,7 @@ function companyPanes(ticker: string): PaneSpec[] {
       SEC_TRIM_NOTE,
       ...(note ? ['', note] : []),
     ]),
-    paneOf(ticker, 'fcf', 'FCF', `${ticker} TTM 自由现金流(${unit})`, '#22c55e', [
+    paneOf(ticker, 'fcf', `${ticker} TTM 自由现金流(${unit})`, '#22c55e', [
       `定义:${ticker} TTM 自由现金流 = 经营现金流 − 资本开支。` + SEC_CAVEAT + srcNote,
       '',
       seller ? SELLER_FCF : BUYER_FCF_READ,
@@ -446,7 +460,7 @@ function companyPanes(ticker: string): PaneSpec[] {
       ...(seller ? [] : [SEC_LEASE_CAVEAT, '']),
       SEC_TRIM_NOTE,
     ]),
-    paneOf(ticker, 'fcfq', '单季 FCF', `${ticker} 单季自由现金流(${unit})`, undefined, [
+    paneOf(ticker, 'fcfq', `${ticker} 单季自由现金流(${unit})`, undefined, [
       `定义:${ticker} **单季**自由现金流 = 该季经营现金流 − 该季资本开支(不是 TTM)。` + SEC_CAVEAT + srcNote,
       '',
       SEC_QUARTERLY_READ,
@@ -454,19 +468,19 @@ function companyPanes(ticker: string): PaneSpec[] {
       ...(seller ? [] : [SEC_LEASE_CAVEAT, '']),
       SEC_BAR_GAP_NOTE, // 这格是柱状 → 不裁,别拼 SEC_TRIM_NOTE
     ]),
-    paneOf(ticker, 'rev', '营收', `${ticker} TTM 营收(${unit})`, '#a78bfa', [
+    paneOf(ticker, 'rev', `${ticker} TTM 营收(${unit})`, '#a78bfa', [
       `定义:${ticker} TTM 营收(最近四个季度之和)。` + SEC_CAVEAT + srcNote,
       '',
       REV_READ,
       '',
       SEC_TRIM_NOTE,
     ]),
-    paneOf(ticker, 'revGrowth', '营收同比', `${ticker} 单季营收同比(%)`, undefined, [
+    paneOf(ticker, 'revGrowth', `${ticker} 单季营收同比(%)`, undefined, [
       `定义:${ticker} ` + REV_GROWTH_READ + SEC_CAVEAT + srcNote,
       '',
       SEC_BAR_GAP_NOTE, // 柱状 → 不裁
     ]),
-    paneOf(ticker, 'capex', 'capex', `${ticker} TTM 资本开支(${unit})`, '#60a5fa', [
+    paneOf(ticker, 'capex', `${ticker} TTM 资本开支(${unit})`, '#60a5fa', [
       `定义:${ticker} TTM 资本开支(购置固定资产付现)。` + SEC_CAVEAT + srcNote,
       '',
       seller
@@ -479,38 +493,40 @@ function companyPanes(ticker: string): PaneSpec[] {
     // 分部格只给真披露了分部收入的那家(见 shared/aiChain 的 SEGMENT_FACTS)。
     // 不用 sideOf/hasSource 判:披露不披露是**这一家的事**,与它属于哪一侧、走哪个源无关。
     ...segmentFactsOf(ticker).map((seg) =>
-      paneOf(
-        ticker,
-        segmentKindOf(seg.concept),
-        `capex/${seg.label}`,
-        `${ticker} 单季 capex / ${seg.label} 收入(倍)`,
-        '#2dd4bf',
-        [
-          `定义:该季资本开支 ÷ 该季 ${seg.label} 分部收入。两条腿**都是单季**,不是 TTM;无量纲。` + SEC_CAVEAT + srcNote,
-          '',
-          '读法:1.0 是参考线(当季 capex 恰好等于当季云收入)。这一格问的不是「赚不赚钱」,' +
-            '而是**建设强度相对唯一能直接卖算力的那块收入有多大**。看斜率不看单点:' +
-            '一路抬升 = capex 的增速持续跑赢云收入的增速,即产能在赌未来的需求而不是在跟当期的需求。',
-          '',
-          `⚠️ 分子分母**不同口径,不是一门生意的投入产出比**:分子是${ticker} 全公司 capex(还建了搜索/` +
-            'YouTube/自研模型训练的算力),分母只有云这一个分部。所以它天然偏高,绝对值不能与别家的' +
-            '「capex/云收入」横比,只能自己和自己比时间序列。',
-          '',
-          '⚠️ 分部口径由公司自己划,重划过就不可比(Alphabet 历史上调整过分部构成)。' +
-            '线上出现无法用业务解释的台阶时,先去核那一期的分部附注,别当成信号读。',
-          '',
-          SEC_TRIM_NOTE,
-        ],
-      ),
+      paneOf(ticker, segmentKindOf(seg.concept), `${ticker} 单季 capex / ${seg.label} 收入(倍)`, '#2dd4bf', [
+        `定义:该季资本开支 ÷ 该季 ${seg.label} 分部收入。两条腿**都是单季**,不是 TTM;无量纲。` + SEC_CAVEAT + srcNote,
+        '',
+        '读法:1.0 是参考线(当季 capex 恰好等于当季云收入)。这一格问的不是「赚不赚钱」,' +
+          '而是**建设强度相对唯一能直接卖算力的那块收入有多大**。看斜率不看单点:' +
+          '一路抬升 = capex 的增速持续跑赢云收入的增速,即产能在赌未来的需求而不是在跟当期的需求。',
+        '',
+        `⚠️ 分子分母**不同口径,不是一门生意的投入产出比**:分子是${ticker} 全公司 capex(还建了搜索/` +
+          'YouTube/自研模型训练的算力),分母只有云这一个分部。所以它天然偏高,绝对值不能与别家的' +
+          '「capex/云收入」横比,只能自己和自己比时间序列。',
+        '',
+        '⚠️ 分部口径由公司自己划,重划过就不可比(Alphabet 历史上调整过分部构成)。' +
+          '线上出现无法用业务解释的台阶时,先去核那一期的分部附注,别当成信号读。',
+        '',
+        SEC_TRIM_NOTE,
+      ]),
     ),
   ];
 }
 
-export const buyerQuarterlyPane: PaneSpec = {
-  key: SEC_BUYER_FCFQ_KEY,
-  label: '买方合计(单季)',
-  title: 'AI 链买方合计 **单季** 自由现金流(百万美元)',
-  render: { kind: 'signed' }, // 符号柱:正绿负红、零基线;颜色由 signed 分支给,不配 color
+const buyerQuarterlyPane: Pane = {
+  id: '',
+  stretch: 1,
+  scales: [{ id: 'right', side: 'right' }],
+  layers: [
+    {
+      id: '',
+      series: SEC_BUYER_FCFQ_KEY,
+      scale: 'right',
+      color: NEUTRAL,
+      title: 'AI 链买方合计 单季自由现金流(百万美元)',
+      render: { kind: 'signed' }, // 符号柱:正绿负红、零基线
+    },
+  ],
   desc: [
     '定义:买方各家**单季** FCF 之和(不是 TTM),按日历季度对齐。' + SEC_CAVEAT,
     '',
@@ -524,12 +540,20 @@ export const buyerQuarterlyPane: PaneSpec = {
   ].join('\n'),
 };
 
-export const buyerAggregatePane: PaneSpec = {
-  key: SEC_BUYER_FCF_KEY,
-  label: '买方合计 FCF',
-  title: 'AI 链买方合计 TTM 自由现金流(百万美元)',
-  color: '#22c55e',
-  render: { kind: 'line', baseline: 0 },
+const buyerAggregatePane: Pane = {
+  id: '',
+  stretch: 1,
+  scales: [{ id: 'right', side: 'right' }],
+  layers: [
+    {
+      id: '',
+      series: SEC_BUYER_FCF_KEY,
+      scale: 'right',
+      color: '#22c55e',
+      title: 'AI 链买方合计 TTM 自由现金流(百万美元)',
+      render: { kind: 'line', baseline: 0 },
+    },
+  ],
   desc: [
     '定义:**买方**(花钱建算力那一侧)已启用各家 TTM 自由现金流之和。' + SEC_CAVEAT,
     '',
@@ -548,7 +572,7 @@ export const buyerAggregatePane: PaneSpec = {
  * source → 那家有哪几格。查表而非分支:加源时漏加一档是编译错误(Record 要求键齐),
  * 不是静默给它套上 SEC 那四格(那会画出四条永远空的线)。与 shared/aiChain 的 SOURCE_KINDS 配对。
  */
-export const SOURCE_PANES: Record<ChainSource, (ticker: string) => PaneSpec[]> = {
+const SOURCE_PANES: Record<ChainSource, (ticker: string) => Pane[]> = {
   sec: companyPanes,
   // dart 的原始行落进同一张表、派生同一套 SEC_* 序列 → 格子构造也是同一个,只在说明里多一段口径差异。
   dart: companyPanes,
@@ -557,3 +581,31 @@ export const SOURCE_PANES: Record<ChainSource, (ticker: string) => PaneSpec[]> =
   sec6k: companyPanes,
   twse: twseCompanyPanes,
 };
+
+/** 格子按顺序编号成整份 doc(p1 / l1 起,一格一层) */
+function numbered(panes: Pane[]): ChartDoc {
+  return {
+    v: 1,
+    panes: panes.map((p, i) => ({
+      ...p,
+      id: `p${i + 1}`,
+      layers: p.layers.map((l) => ({ ...l, id: `l${i + 1}` })),
+    })),
+  };
+}
+
+/**
+ * 基本面 dim 的 ChartDoc:who = 公司代码,或 'buyer'(买方合计两格)。
+ * 一家可能走多个源(TSM:季度四格来自 sec6k、月营收两格来自 twse)—— 各源的格子按 sources
+ * 顺序拼起来。同一条序列只留一次:sec 与 sec6k 共用 companyPanes,同时声明两者时会重。
+ */
+export function fundDoc(who: string): ChartDoc {
+  if (who === 'buyer') return numbered([buyerAggregatePane, buyerQuarterlyPane]);
+
+  const seen = new Set<string>();
+  return numbered(
+    sourcesOf(who)
+      .flatMap((src) => SOURCE_PANES[src](who))
+      .filter((p) => !seen.has(p.layers[0].series) && seen.add(p.layers[0].series)),
+  );
+}

@@ -62,6 +62,40 @@ describe('固定面板的 ChartDoc', () => {
     expect(spot(a)?.layers[0].percentile).toBeUndefined();
   });
 
+  // 曲线期限走势(pages/curveHistory 生成):默认显示与旧面板一致、差值腿与 0 基线、对照格与零轴。
+  // 这些都是生成器参数,写错了图照样画得出来、只是画错 —— 逐页钉住
+  test.each([
+    [
+      'ustHistory',
+      ['1Y', '10Y', '30Y'],
+      [
+        ['dgs10', 'ust1y'],
+        ['ust30y', 'dgs10'],
+      ],
+    ],
+    ['oisHistory', ['1M', '3M', '6M', '12M', '2Y', '10Y'], [['ois:12M', 'ois:3M']]],
+    ['realHistory', ['5Y', '10Y', '30Y'], [['real30y', 'real10y']]],
+    ['beiHistory', ['5Y', '10Y', '30Y'], [['bei10y', 'bei5y']]],
+    ['jgbHistory', ['2Y', '10Y'], []],
+    ['aiCds', ['Oracle', 'Microsoft', 'Alphabet', 'Amazon', 'Apple', 'Nvidia', 'Meta'], []],
+  ] as const)('%s:默认显示的期限、差值格的两条腿与 0 基线', (dim, shown, spreads) => {
+    const [tenors, ...rest] = REGIME_DOCS[dim].panes;
+    expect(tenors.layers.filter((l) => !l.hidden).map((l) => l.title)).toEqual([...shown]);
+    // 差值:长腿 − 短腿,同一天对齐(不 fill,见 curveHistory 的注释),0 基线
+    const spreadLayers = rest.flatMap((p) => p.layers).filter((l) => l.calc);
+    expect(spreadLayers.map((l) => [l.series, l.calc?.series])).toEqual(spreads.map((x) => [...x]));
+    expect(spreadLayers.every((l) => l.calc?.op === '-' && !l.calc.fill)).toBe(true);
+    expect(spreadLayers.every((l) => l.render?.kind === 'line' && l.render.baseline === 0)).toBe(true);
+  });
+
+  test('期限走势:美债那页挂 BTC 蜡烛(对数轴);AI CDS 纵轴含 0,利率各页不钉 0', () => {
+    const spot = REGIME_DOCS.ustHistory.panes.at(-1)!;
+    expect(spot.layers[0]).toMatchObject({ series: 'btc', render: { kind: 'candle' } });
+    expect(spot.scales[0].log).toBe(true);
+    expect(REGIME_DOCS.aiCds.panes[0].scales[0].expandVisibleTo).toEqual([0, 0]);
+    expect(REGIME_DOCS.ustHistory.panes[0].scales[0].expandVisibleTo).toBeUndefined();
+  });
+
   // REGIME_DOCS 由各视角的 docs 展开拼成:同一 key 出现在两个文件里,后者会静默盖掉前者(类型查不出来)。
   // 这里扫全部 pages/*/docs.ts,既查重名,也查有没有哪个文件漏拼进 REGIME_DOCS(集中度单独一个文件,另算)。
   test('各视角 docs 的 key 不重名,且全部拼进 REGIME_DOCS', async () => {

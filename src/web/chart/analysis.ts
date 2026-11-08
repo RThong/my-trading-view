@@ -25,7 +25,7 @@ function shiftDay(day: number, n: number): number {
 
 /**
  * 按交易日(周一~周五,不管节假日)平移 n 天,n > 0 往后。周末日期先顺延到周一再平移 ——
- * 按自然日平移会落到周末,时间轴上凭空多出周末空位(见 tenorHistory 的 weekdayOnly 说明)。
+ * 按自然日平移会落到周末,时间轴上凭空多出周末空位(见 views/chartDoc/useSeriesData 的 weekdayOnly)。
  */
 export function shiftBusinessDays(date: string, n: number): string {
   return fromDayNum(shiftDay(toDayNum(date), n));

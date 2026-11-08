@@ -70,7 +70,7 @@ export const CONCENTRATION: ChartDoc = {
           color: '#a78bfa',
           title: '等权回撤 − 加权回撤 (pp)',
           // 穿 0 是常态(2022 大盘股杀估值时到 −6)→ 0 基线;4 = 付鹏图标的「临界值」。
-          // 不套分位:临界值是有绝对含义的阈值,P5/P95 会和它抢参考线(refLines 优先,见 buildRegimeSpecs)。
+          // 不套分位:临界值是有绝对含义的阈值,P5/P95 会和它抢参考线(refLines 优先,见 chart/percentileMarks)。
           render: { kind: 'line', baseline: 0 },
           refLines: [{ price: 4, title: '临界 4', color: '#ef4444' }],
         },
