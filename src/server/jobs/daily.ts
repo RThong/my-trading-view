@@ -23,7 +23,11 @@ import { updateErisSnapshot } from './erisSnapshot';
 import { updateIceCds } from './iceCdsSnapshot';
 import { updateMoveIndex, type MoveUpdateResult } from './moveSnapshot';
 import { updateIsm, type IsmResult } from './ismSnapshot';
+import { updatePutCall, PUT_CALL_SERIES, type PutCallResult } from './putCallSnapshot';
 import type { SupplyDensityResult } from './supplyDensitySnapshot';
+
+// 认沽认购比的新鲜度探针:三条同一页同一时刻写,看个股那条就够
+const PUT_CALL_PROBE = PUT_CALL_SERIES.equity;
 
 type RunDailyJobOpts = {
   db: Database;
@@ -47,6 +51,8 @@ type RunDailyJobOpts = {
   moveUpdater?: (db: Database) => Promise<MoveUpdateResult>;
   /** ISM 制造业 / 服务业 PMI 更新器(注入式;CLI 传 updateIsm,测试省略以免联网)。 */
   ismUpdater?: (db: Database) => Promise<IsmResult>;
+  /** Cboe 认沽认购比(个股 / 指数 / 全部)更新器(注入式;CLI 传 updatePutCall,测试省略以免联网)。 */
+  putCallUpdater?: (db: Database) => Promise<PutCallResult>;
   /** Computable GPU Index(H100/H200/B200/B300 算力租赁价)更新器(注入式;cryptoDaily 传 updateComputableGpu,测试省略以免联网)。 */
   computableGpuUpdater?: (db: Database) => Promise<{ total: number; missing: string[]; errors: string[] }>;
   /** BTC ±5% 已实现供应密度(BRK supply_density 序列)更新器(注入式;cryptoDaily 传 updateSupplyDensity,测试省略以免联网)。 */
@@ -185,6 +191,17 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     });
   }
 
+  // put_call 分组:Cboe 认沽认购比。最近 30 天里库里缺的天都补,漏的天下一轮自然补上。
+  // 源还没发布(没数据)不算失败;当天后续触发点要不要再跑交给新鲜度探针(见 staleFreshnessProbes)。
+  // 停更 / 断档(落后或中间缺超过 5 个工作日)= 直接 failed(红灯),同 ISM:不会自愈,黄灯太容易被忽略
+  if (opts.putCallUpdater) {
+    await withJobRun(opts.db, 'put_call', async () => {
+      const { written, fetched, failed, stale } = await opts.putCallUpdater!(opts.db);
+      if (stale.length) return { status: 'failed', error: [...stale, ...failed].join('; '), recordsWritten: written };
+      return threeState(written, fetched.length, failed);
+    });
+  }
+
   // btc_price 分组:BTC 现货日 bar(Bitstamp 主源 / Yahoo 降级;成功/失败两态)。
   if (opts.btcPriceUpdater) {
     await withJobRun(opts.db, 'btc_price', async () => {
@@ -227,22 +244,26 @@ export function pendingGroups(groups: string[], succeededToday: string[], force:
  * 2026-10-20 实测:美东 20:08 跑,Yahoo 长历史日线与 CBOE 都还没有 10-19 那根,两组照样报 success
  * → 当天其余触发点全被跳过,面板停在上周五。
  * 探针 = ETF 现货 + VIX(都是 vrp_inputs 写进 price_eod)+ VX1(vx_term_structure 写进 market_series,
- * 它是另一条 CBOE 链路,ETF/VIX 到了不代表 VX 期货结算到了)。
- * 节假日 lastClosedTradingDate 不认交易所假日 → 恒判滞后 → 这两组当天每个触发点多跑一遍(几十秒,接受)。
+ * 它是另一条 CBOE 链路,ETF/VIX 到了不代表 VX 期货结算到了)+ Cboe 认沽认购比(put_call,日统计页晚于收盘才发)。
+ * 节假日 lastClosedTradingDate 不认交易所假日 → 恒判滞后 → 这三组当天每个触发点多跑一遍(几十秒,接受)。
  * VX 期货结算偶尔比 VIX 晚一天:那天同理多跑几遍,直到 VX1 到位。
  */
 export function staleFreshnessProbes(db: Database, lastClosed = lastClosedTradingDate()): string[] {
   const latest: [string, string | null][] = [
     ...[...priceLegUnderlyings(), 'VIX'].map((u): [string, string | null] => [u, getLatestPriceDate(db, u)]),
     ['VX1', getLatestMarketDate(db, 'VX1')],
+    [PUT_CALL_PROBE, getLatestMarketDate(db, PUT_CALL_PROBE)],
   ];
 
   return latest.filter(([, d]) => (d ?? '') < lastClosed).map(([name]) => name);
 }
 
-/** 滞后探针 → 写它的那一组(见 staleFreshnessProbes):VX1 归 vx_term_structure,其余归 vrp_inputs。 */
+// 不是 price_eod 的探针 → 写它的那一组;其余(ETF / VIX)归 vrp_inputs
+const PROBE_GROUP: Record<string, string> = { VX1: 'vx_term_structure', [PUT_CALL_PROBE]: 'put_call' };
+
+/** 滞后探针 → 写它的那一组(见 staleFreshnessProbes)。 */
 export function groupsForStaleProbes(stale: string[]): string[] {
-  return [...new Set(stale.map((p) => (p === 'VX1' ? 'vx_term_structure' : 'vrp_inputs')))];
+  return [...new Set(stale.map((p) => PROBE_GROUP[p] ?? 'vrp_inputs'))];
 }
 
 /** daily / cryptoDaily 两个 CLI 共用:挑出今天还没成功的组(加上 force)跑一轮,全绿就跳过。返回本轮跑的组。 */
@@ -266,6 +287,7 @@ const DAILY_GROUPS: GroupTable = {
   ice_cds: () => ({ iceCdsUpdater: updateIceCds }),
   move: () => ({ moveUpdater: updateMoveIndex }),
   ism: () => ({ ismUpdater: updateIsm }),
+  put_call: () => ({ putCallUpdater: updatePutCall }),
 };
 
 // CLI 入口

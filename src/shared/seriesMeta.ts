@@ -147,6 +147,15 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   // ── 情绪·持仓
   fng: daily('情绪·持仓', 'CNN Fear & Greed', undefined, ['恐慌', '贪婪']),
   rxmSpx: daily('情绪·持仓', 'RXM/SPX 风险逆转相对表现'),
+  pcEquity: daily('情绪·持仓', 'Cboe 个股认沽认购比', undefined, ['put/call', 'pcr', 'cpce', '散户']),
+  pcIndex: daily('情绪·持仓', 'Cboe 指数认沽认购比', undefined, ['put/call', 'pcr', 'cpci', '对冲']),
+  pcTotal: daily('情绪·持仓', 'Cboe 全部认沽认购比', undefined, ['put/call', 'pcr']),
+  pcEquityMa5: daily('情绪·持仓', 'Cboe 个股认沽认购比 5 日均线', undefined, ['put/call', 'pcr']),
+  pcEquityMa20: daily('情绪·持仓', 'Cboe 个股认沽认购比 20 日均线', undefined, ['put/call', 'pcr']),
+  pcEquityMa63: daily('情绪·持仓', 'Cboe 个股认沽认购比 3 个月均线', undefined, ['put/call', 'pcr']),
+  pcIndexMa5: daily('情绪·持仓', 'Cboe 指数认沽认购比 5 日均线', undefined, ['put/call', 'pcr']),
+  pcIndexMa20: daily('情绪·持仓', 'Cboe 指数认沽认购比 20 日均线', undefined, ['put/call', 'pcr']),
+  pcIndexMa63: daily('情绪·持仓', 'Cboe 指数认沽认购比 3 个月均线', undefined, ['put/call', 'pcr']),
   cftcJpy: { label: 'CFTC 日元净持仓', category: '情绪·持仓', freq: '周', unit: '张', aliases: ['cot', '日元'] },
   vixCotAm: {
     label: 'CFTC VIX 净持仓 · Asset Manager',
@@ -291,6 +300,13 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   usjp2y: 'calc', // 美债 2Y − 日债 2Y(注册表的曲线腿;两国假日错开时沿用旧值,calc 带 fill)
   // ── server:calc 表达不了
   netLiquidity: 'server', // WALCL − TGA − RRP,只取周三
+  // 认沽认购比均线(编辑器的指标只有 EMA;以后有变换图层的简单均线再改 calc)
+  pcEquityMa5: 'server',
+  pcEquityMa20: 'server',
+  pcEquityMa63: 'server',
+  pcIndexMa5: 'server',
+  pcIndexMa20: 'server',
+  pcIndexMa63: 'server',
   reserves: 'server', // 源是百万美元,÷1000 换成十亿美元(乘常数)
   dieselCrack: 'server', // ULSD × 42 − WTI
   rbobCrack: 'server', // RBOB × 42 − WTI

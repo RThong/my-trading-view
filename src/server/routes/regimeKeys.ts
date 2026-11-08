@@ -28,6 +28,20 @@ export const JOB_WRITTEN_SERIES = [
   ['ismSvc', 'ISM_SVC_PMI'],
   ['ismMfgPrices', 'ISM_MFG_PRICES'],
   ['ismSvcPrices', 'ISM_SVC_PRICES'],
+  // Cboe 认沽认购比(日频,daily 的 put_call 分组写库)。同 ISM,不进「缺着也缓存」的豁免
+  ['pcEquity', 'CBOE_PC_EQUITY'],
+  ['pcIndex', 'CBOE_PC_INDEX'],
+  ['pcTotal', 'CBOE_PC_TOTAL'],
+] as const;
+
+/** 认沽认购比均线:对外名 → 哪条原始序列、几个交易日(63 ≈ 3 个月)。readDbBacked 现算 */
+export const PUT_CALL_MAS = [
+  ['pcEquityMa5', 'CBOE_PC_EQUITY', 5],
+  ['pcEquityMa20', 'CBOE_PC_EQUITY', 20],
+  ['pcEquityMa63', 'CBOE_PC_EQUITY', 63],
+  ['pcIndexMa5', 'CBOE_PC_INDEX', 5],
+  ['pcIndexMa20', 'CBOE_PC_INDEX', 20],
+  ['pcIndexMa63', 'CBOE_PC_INDEX', 63],
 ] as const;
 
 /** OIS 隐含累计加息次数:对外名 → 以哪个期限结尾的那一段远期(见 shared/calc/policyPath)。 */
@@ -49,4 +63,5 @@ export const DB_BACKED_KEYS: ReadonlySet<string> = new Set<string>([
   'vxTermSpread',
   'move',
   ...OIS_HIKE_HORIZONS.map(([out]) => out),
+  ...PUT_CALL_MAS.map(([out]) => out),
 ]);

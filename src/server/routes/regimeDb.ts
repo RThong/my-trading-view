@@ -25,7 +25,7 @@ import {
   type FundTrim,
   type SecLag,
 } from '../../shared/aiChain';
-import { type OhlcBar, JOB_WRITTEN_SERIES, OIS_HIKE_HORIZONS } from './regimeKeys';
+import { type OhlcBar, JOB_WRITTEN_SERIES, OIS_HIKE_HORIZONS, PUT_CALL_MAS } from './regimeKeys';
 
 // /api/regime 里读库的那部分:daily job 写进 market_series / price_eod 的序列、SEC 基本面、Eris OIS 派生的加息次数。
 // 现拉外部源在路由文件的 fetchFresh 里;这里只碰本地 SQLite。
@@ -113,6 +113,11 @@ export function readDbBacked(
   const densityRaw = getMarketSeries(db, 'BTC_SUPPLY_DENSITY');
   put('btcSupplyDensity', rollingMean(densityRaw, 7));
   put('btcSupplyDensityRaw', densityRaw);
+
+  // 认沽认购比均线:日度噪音大(单日能从 0.59 跳到 0.89),读趋势看均线
+  PUT_CALL_MAS.forEach(([out, sym, n]) => {
+    put(out, rollingMean(getMarketSeries(db, sym), n));
+  });
 
   // 期限结构价差走 nearMinusFar(近端 − 远端,正 = backwardation)。具名 near/far 是刻意的:
   // 方向写反不会报错、只会让人读反图,而位置参数的调换单测抓不住(见 analytics/termStructure)。
