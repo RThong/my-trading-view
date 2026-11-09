@@ -7,6 +7,7 @@ import type {
   Time,
 } from 'lightweight-charts';
 import type { CanvasRenderingTarget2D } from 'fancy-canvas';
+import { SIGNED_DOWN, SIGNED_UP } from './palette';
 import { pointToSegmentDistance } from './trendlines';
 
 const DAY_MS = 86_400_000;
@@ -251,17 +252,61 @@ export type PaneDrawingState = {
   cursor?: string;
   /** 绘图工具下「点下去落在哪」的预览(已过磁吸等插件):光标跟着吸附点跳,看得出吸没吸上 */
   preview?: { x: number; y: number };
+  /** 测量尺(临时,不存进文档):起点 → 终点的像素 + 框下两行字;涨绿跌红 */
+  measure?: { x1: number; y1: number; x2: number; y2: number; up: boolean; label: [string, string] };
 };
 
 const PREVIEW_R = 4;
 // 通道填色的不透明度:淡到不挡住里面的 K 线
 const FILL_ALPHA = 0.08;
+const MEASURE_ALPHA = 0.15;
+const LABEL_FONT = '12px system-ui, -apple-system, sans-serif';
+const LABEL_PAD = 6;
+const LABEL_LINE = 16;
+
+/** 测量框:淡色区域 + 横竖两条中线(看得出量的是哪两点)+ 框下(跌时框上)的实底标签 */
+function drawMeasure(ctx: CanvasRenderingContext2D, m: NonNullable<PaneDrawingState['measure']>) {
+  const color = m.up ? SIGNED_UP : SIGNED_DOWN;
+  const [left, right] = [Math.min(m.x1, m.x2), Math.max(m.x1, m.x2)];
+  const [top, bottom] = [Math.min(m.y1, m.y2), Math.max(m.y1, m.y2)];
+  const [cx, cy] = [(left + right) / 2, (top + bottom) / 2];
+
+  ctx.globalAlpha = MEASURE_ALPHA;
+  ctx.fillStyle = color;
+  ctx.fillRect(left, top, right - left, bottom - top);
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx, m.y1);
+  ctx.lineTo(cx, m.y2);
+  ctx.moveTo(m.x1, cy);
+  ctx.lineTo(m.x2, cy);
+  ctx.stroke();
+
+  ctx.font = LABEL_FONT;
+
+  const width = Math.max(...m.label.map((t) => ctx.measureText(t).width)) + LABEL_PAD * 2;
+  const height = LABEL_LINE * m.label.length + LABEL_PAD;
+  const boxTop = m.up ? bottom + LABEL_PAD : top - LABEL_PAD - height;
+
+  ctx.fillStyle = color;
+  ctx.fillRect(cx - width / 2, boxTop, width, height);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  m.label.forEach((t, i) => {
+    ctx.fillText(t, cx, boxTop + LABEL_PAD / 2 + 2 + i * LABEL_LINE);
+  });
+}
 
 class DrawingsRenderer implements IPrimitivePaneRenderer {
   constructor(private readonly state: PaneDrawingState) {}
 
   draw(target: CanvasRenderingTarget2D): void {
-    const { shapes, selected, preview } = this.state;
+    const { shapes, selected, preview, measure } = this.state;
     // biome-ignore lint/correctness/useHookAtTopLevel: useMediaCoordinateSpace 是 canvas 方法,不是 React hook
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       shapes.forEach((s) => {
@@ -311,6 +356,8 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
           ctx.fill();
         });
       });
+
+      if (measure) drawMeasure(ctx, measure);
 
       // 落点预览:空心圈,不挡下面的 K 线
       if (preview) {
