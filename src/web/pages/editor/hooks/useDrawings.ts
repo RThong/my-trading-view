@@ -28,10 +28,11 @@ import { fmtDate } from '../../../chart/core';
 import type { LayerData } from '../../../views/chartDoc/layerPoints';
 import type { LayerSeries } from '../../../views/chartDoc/useDocChart';
 import type { BarValues } from '../../../chart/magnet';
+import { measureLabel, measureStats } from '../../../chart/measure';
 import type { PointCtx } from '../drawingPlugins/types';
 import { paneAt, paneCoords } from './paneHit';
 
-export type DrawingTool = 'cursor' | 'trend' | 'ray' | 'channel' | 'hline' | 'hray' | 'vline';
+export type DrawingTool = 'cursor' | 'trend' | 'ray' | 'channel' | 'hline' | 'hray' | 'vline' | 'measure';
 
 type TwoPoint = Extract<Drawing, { kind: 'trend' | 'ray' }>;
 /** 两点画的线(趋势线、射线):画法、拖端点、吸附后重合判断都一样,只是渲染时射线往外延伸 */
@@ -291,6 +292,8 @@ type PreviewState = {
   draft: Draft | null;
   doc: ChartDoc;
   selectedLine: string | null;
+  /** 测量尺还在:量到一半时终点自己就画着;已定住时下一下只会收起它、不会起新的,都不画落点圈 */
+  measuring: boolean;
 };
 
 /**
@@ -306,7 +309,7 @@ function previewFor(
   m: Pointer,
 ): { pane: number; x: number; y: number } | null {
   const { tool, gesture: g } = st;
-  if (tool === 'cursor' || g?.kind === 'drag') return null;
+  if (tool === 'cursor' || g?.kind === 'drag' || st.measuring) return null;
 
   // 画第二点:锁在第一点那一格、那条线(光标出了格照样跟);否则看光标落在哪一格的绘图区
   const creating = g?.kind === 'create' ? g : null;
@@ -324,6 +327,32 @@ function previewFor(
 
   // 竖线只用日期:圈画在吸附后的那一天、光标的高度
   return px ? { pane, x: px.x, y: tool === 'vline' ? at.y : px.y } : null;
+}
+
+/** 测量尺(临时,不存进文档):起点所在那一格、那条线 + 起终点;fixed = 第二下已定住(再点任意处或 Esc 收起) */
+type Measure = {
+  pane: number;
+  layerId: string;
+  a: DrawingPoint;
+  b: DrawingPoint;
+  fixed: boolean;
+  /** 起点按下处 + 那次按键是否还按着:按住拖、松手即定住(同画趋势线) */
+  x0: number;
+  y0: number;
+  pressed: boolean;
+};
+
+/** 测量框在这一格的像素 + 两行读数(根数按图上的逻辑下标算,周 / 月线就是周 / 月数) */
+function measureShape(ctx: Ctx, m: Measure): NonNullable<PaneDrawingState['measure']> | null {
+  const s = ctx.seriesOf(m.layerId);
+  const pa = s && toPx(ctx, s, m.a);
+  const pb = s && toPx(ctx, s, m.b);
+  const la = ctx.axis.toLogical(m.a.time);
+  const lb = ctx.axis.toLogical(m.b.time);
+  if (!pa || !pb || la === null || lb === null) return null;
+
+  const stats = measureStats(m.a, m.b, lb - la);
+  return { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, up: stats.delta >= 0, label: measureLabel(stats) };
 }
 
 /** 两点完全重合:鼠标隔得够远,但磁吸把两下吸到同一根的同一个值上,画出来是零长度、看不见的线 */
@@ -382,6 +411,7 @@ export function useDrawings(
   const hiddenRef = useRef(hidden);
   const draftRef = useRef<Draft | null>(null);
   const gestureRef = useRef<Gesture | null>(null);
+  const measureRef = useRef<Measure | null>(null);
   // 鼠标最后在哪(落点预览按它现算);鼠标离开页面 / 窗口失焦就清掉
   const pointerRef = useRef<Pointer | null>(null);
   const axisRef = useRef<TimeAxis>(timeAxis([]));
@@ -389,14 +419,31 @@ export function useDrawings(
   const transformRef = useRef(transformPoint);
   const primsRef = useRef(new Map<IPaneApi<Time>, DrawingsPrimitive>());
 
-  // 状态同步进 ref,并请求重画
+  // 下面两个只在文档换了时跑,要拿旧文档(docRef)比对,所以都放在「状态同步」之前(effect 按声明顺序执行)。
+
+  // 画 / 拖到一半时所属图层被别处换掉(导入 JSON、在编辑器中打开、侧栏改了它):草稿是按旧图层取的值,作废
   useEffect(() => {
-    // 画 / 拖到一半时所属图层被别处换掉(导入 JSON、在编辑器中打开、侧栏改了它):草稿是按旧图层取的值,作废
     const g = gestureRef.current;
     if (g && findLayer(docRef.current, g.layerId)?.layer !== findLayer(doc, g.layerId)?.layer) {
       gestureRef.current = null;
       draftRef.current = null;
     }
+  }, [doc]);
+
+  // 测量尺同理:所挂的线被换掉 / 删了、所在的格挪了位(删了上面的格),框会画错格、挂错线,
+  // 线不在了还会看不见却截下下一次点击和 Esc —— 收起(随后的状态同步会重画)
+  useEffect(() => {
+    const m = measureRef.current;
+    if (!m) return;
+
+    const owner = findLayer(doc, m.layerId);
+    const stale =
+      !owner || owner.layer !== findLayer(docRef.current, m.layerId)?.layer || doc.panes.indexOf(owner.pane) !== m.pane;
+    if (stale) measureRef.current = null;
+  }, [doc]);
+
+  // 状态同步进 ref,并请求重画
+  useEffect(() => {
     docRef.current = doc;
     toolRef.current = tool;
     selectedRef.current = live;
@@ -448,15 +495,19 @@ export function useDrawings(
                     draft: draftRef.current,
                     doc: docRef.current,
                     selectedLine: selectedLineRef.current,
+                    measuring: !!measureRef.current,
                   },
                   m,
                 )
               : null;
+          const ms = measureRef.current;
+          const mv = ctx && ms && ms.pane === api.paneIndex() ? measureShape(ctx, ms) : null;
           return {
             shapes,
             selected: selectedRef.current,
             ...(toolRef.current !== 'cursor' && { cursor: 'crosshair' }),
             ...(pv && pv.pane === api.paneIndex() && !hiddenRef.current && { preview: { x: pv.x, y: pv.y } }),
+            ...(mv && { measure: mv }),
           };
         });
         api.attachPrimitive(prim);
@@ -495,6 +546,12 @@ export function useDrawings(
       draftRef.current = { drawing: d, layerId: g.layerId };
       redrawAll(prims);
     };
+    /** 收起测量尺;从测量工具量的回到光标(同 TradingView:量完一次就退出) */
+    const clearMeasure = () => {
+      measureRef.current = null;
+      if (toolRef.current === 'measure') setTool('cursor');
+      redrawAll(prims);
+    };
     const cancelGesture = () => {
       gestureRef.current = null;
       draftRef.current = null;
@@ -516,6 +573,39 @@ export function useDrawings(
         // 随后的 mousedown 被 preventDefault,焦点不会自己离开输入框:还留在搜索框里的话 Delete / Esc 会被当成打字
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       };
+
+      // 测量尺:已定住 → 这一下收起;量到一半 → 这一下定住(落在起点那一格的坐标系里)
+      const m = measureRef.current;
+      if (m) {
+        take();
+        if (m.fixed) return clearMeasure();
+        const at = paneCoords(el, chart, m.pane, e);
+        const s = ctx.seriesOf(m.layerId);
+        const b = at && s && toPoint(ctx, s, at.x, at.y, { anchor: m.a, shift: e.shiftKey });
+        measureRef.current = { ...m, b: b ?? m.b, fixed: true, pressed: false };
+        redrawAll(prims);
+        return;
+      }
+      // 起一把测量尺:测量工具,或光标工具下按住 Shift 点(同 TradingView)
+      if (toolRef.current === 'measure' || (toolRef.current === 'cursor' && e.shiftKey)) {
+        const layerId = pickOwner(doc, hit.index, selectedLineRef.current);
+        const s = layerId && ctx.seriesOf(layerId);
+        const a = s && toPoint(ctx, s, hit.x, hit.y, { anchor: null, shift: false });
+        if (!layerId || !a) return;
+        take();
+        measureRef.current = {
+          pane: hit.index,
+          layerId,
+          a,
+          b: a,
+          fixed: false,
+          x0: e.clientX,
+          y0: e.clientY,
+          pressed: true,
+        };
+        redrawAll(prims);
+        return;
+      }
 
       // 第二下(通道还有第三下定宽):落在第一点那一格的坐标系里(点到别的格也按那一格算)
       if (g?.kind === 'create') {
@@ -621,6 +711,8 @@ export function useDrawings(
 
     const onMove = (e: PointerEvent) => {
       trackPointer(e);
+      const m = measureRef.current;
+      if (m && !m.fixed) return followMeasure(m, e);
       const g = gestureRef.current;
       const chart = chartRef.current;
       const ctx = ctxNow();
@@ -645,7 +737,29 @@ export function useDrawings(
       redrawAll(prims);
     };
 
+    /** 测量尺终点跟着光标(起点那一格的坐标系、过插件,磁吸能把终点吸到价位上) */
+    const followMeasure = (m: Measure, e: PointerEvent) => {
+      const chart = chartRef.current;
+      const ctx = ctxNow();
+      const s = ctx?.seriesOf(m.layerId);
+      const at = chart && paneCoords(el, chart, m.pane, e);
+      const b = ctx && s && at && toPoint(ctx, s, at.x, at.y, { anchor: m.a, shift: e.shiftKey });
+      if (!b) return;
+
+      measureRef.current = { ...m, b };
+      redrawAll(prims);
+    };
+
     const onUp = (e: PointerEvent) => {
+      // 测量尺按住拖了一段再松手 = 定住;只是点了一下 = 等第二下
+      const m = measureRef.current;
+      if (m && !m.fixed && m.pressed) {
+        const movedFar = Math.hypot(e.clientX - m.x0, e.clientY - m.y0) > CLICK_PX;
+        measureRef.current = { ...m, pressed: false, fixed: movedFar };
+        redrawAll(prims);
+        return;
+      }
+
       const g = gestureRef.current;
       const d = draftRef.current;
       // 按住拖 = 松手即定下第二点(两点线画完;通道进入定宽,再点一下);只是点了一下 = 等第二下
@@ -676,8 +790,9 @@ export function useDrawings(
       if (notOurs(e.target)) return;
       const id = selectedRef.current;
       if (e.key === 'Escape') {
-        // 先取消画到一半 / 拖到一半的(拖动丢掉草稿、线回原处),再退出绘图工具,最后取消选中画线
-        if (gestureRef.current) cancelGesture();
+        // 先收起测量尺,再取消画到一半 / 拖到一半的(拖动丢掉草稿、线回原处),再退出绘图工具,最后取消选中画线
+        if (measureRef.current) clearMeasure();
+        else if (gestureRef.current) cancelGesture();
         else if (toolRef.current !== 'cursor') setTool('cursor');
         else if (id) setSelected(null);
         else return;
@@ -717,9 +832,11 @@ export function useDrawings(
   const chooseTool = (t: DrawingTool) => {
     gestureRef.current = null;
     draftRef.current = null;
+    measureRef.current = null;
     // 再点一次同一个工具时状态没变、不会重渲染,预览线得自己擦掉
     redrawAll(primsRef.current);
-    if (t !== 'cursor') setHidden(false);
+    // 测量不画线、也不受「全部隐藏」影响,别顺手把隐藏的画线翻出来
+    if (t !== 'cursor' && t !== 'measure') setHidden(false);
     setTool(t);
   };
 

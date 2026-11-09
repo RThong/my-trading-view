@@ -9,6 +9,7 @@ import {
   MousePointer2,
   SeparatorVertical,
   MoveUpRight,
+  Ruler,
   Equal,
   ArrowRightFromLine,
   Slash,
@@ -33,6 +34,11 @@ const TOOL: Record<DrawingTool, { icon: LucideIcon; name: string; hint: string }
     icon: MoveUpRight,
     name: '射线',
     hint: `射线:点两下(起点、方向),从起点穿过第二点一直延伸。${OWNER_HINT}`,
+  },
+  measure: {
+    icon: Ruler,
+    name: '测量',
+    hint: '测量:点一下定起点,再点一下定住,看这段涨跌多少、隔几根几天;再点一下或 Esc 收起。光标下按住 Shift 点图也能直接量',
   },
   channel: {
     icon: Equal,
@@ -220,6 +226,35 @@ function ToolGroup({
   );
 }
 
+/** 不成组的单个工具按钮(光标、测量) */
+function ToolButton({
+  t,
+  tool,
+  onTool,
+  disabled,
+}: {
+  t: DrawingTool;
+  tool: DrawingTool;
+  onTool: (t: DrawingTool) => void;
+  disabled: boolean;
+}) {
+  const { icon: Icon, hint } = TOOL[t];
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      title={hint}
+      aria-pressed={tool === t}
+      disabled={disabled}
+      onClick={() => onTool(t)}
+      className={tool === t ? ACTIVE : IDLE}
+    >
+      <Icon />
+    </Button>
+  );
+}
+
 /** 锚点插件(磁吸等)的开关:点按钮开 / 关,小三角里选模式(选了顺带打开)。按插件声明渲染,不认识具体插件 */
 function PluginButton({
   plugin,
@@ -292,7 +327,6 @@ export function DrawingToolbar({
   plugins: PluginControls;
 }) {
   const [last, setLast] = useState(loadLast);
-  const { icon: CursorIcon, hint: cursorHint } = TOOL.cursor;
 
   const pickInGroup = (groupId: string, t: DrawingTool) => {
     const next = { ...last, [groupId]: t };
@@ -303,17 +337,7 @@ export function DrawingToolbar({
 
   return (
     <div className="flex w-10 shrink-0 flex-col items-center gap-1 border-r border-neutral-800 pr-1">
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        title={cursorHint}
-        aria-pressed={tool === 'cursor'}
-        disabled={disabled}
-        onClick={() => onTool('cursor')}
-        className={tool === 'cursor' ? ACTIVE : IDLE}
-      >
-        <CursorIcon />
-      </Button>
+      <ToolButton t="cursor" tool={tool} onTool={onTool} disabled={disabled} />
       {GROUPS.map((g) => (
         <ToolGroup
           key={g.id}
@@ -324,6 +348,7 @@ export function DrawingToolbar({
           disabled={disabled}
         />
       ))}
+      <ToolButton t="measure" tool={tool} onTool={onTool} disabled={disabled} />
       <div className="my-1 h-px w-5 bg-neutral-800" />
       {POINT_PLUGINS.map((pl) => (
         <PluginButton key={pl.id} plugin={pl} controls={plugins} disabled={disabled} />
