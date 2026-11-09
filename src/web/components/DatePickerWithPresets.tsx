@@ -52,7 +52,7 @@ export function DatePickerWithPresets({ value, presets, min, max, snap, onChange
               variant="ghost"
               size="xs"
               onClick={() => pick(p.date)}
-              className={`justify-start ${p.date === value ? 'bg-muted text-white hover:bg-muted' : ''}`}
+              className={`justify-start ${p.date === value ? 'bg-muted text-neutral-50 hover:bg-muted' : ''}`}
             >
               {p.label}
             </Button>

@@ -32,6 +32,7 @@ import {
 } from '../../chart/core';
 import { BACKGROUND_ALPHA, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, withAlpha } from '../../chart/palette';
 import type { Interval } from '../../hooks/interval';
+import { chartThemeOptions, getTheme, useTheme } from '../../hooks/theme';
 import { isMarkLayer, liveScaleIds, markColor, type ChartDoc, type Layer, type Pane } from './chartDoc';
 import { drawnKind } from './registry';
 import {
@@ -232,12 +233,13 @@ export function useDocChart(
     const chart = createChart(el, {
       ...CHART_OPTIONS,
       crosshair: { mode: 0 }, // Normal:十字线跟鼠标走,不吸附到某条线
-      layout: { ...CHART_OPTIONS.layout, panes: { separatorColor: '#262626', enableResize: true } },
+      layout: { panes: { enableResize: true } },
       // 默认最窄 0.5px/根:2018 起的日线约 2200 根,常见屏宽下放不下,「对准共同时段」会落到 2019 年中
       // lockVisibleTimeRangeOnResize:图宽一变(收起侧栏、拉窗口)保持可视日期范围,而不是默认的保持右端和每根宽度、
       // 把左边那截切掉 —— 「叠加对比」按的就是可视区间,收起时框好的区间展开后不能悄悄变窄
       timeScale: { ...CHART_OPTIONS.timeScale, minBarSpacing: 0.1, lockVisibleTimeRangeOnResize: true },
     });
+    chart.applyOptions(chartThemeOptions(getTheme()));
     chartRef.current = chart;
     const series = seriesRef.current;
     const fed = fedRef.current;
@@ -249,6 +251,12 @@ export function useDocChart(
       fed.clear();
     };
   }, [containerRef]);
+
+  // 切明暗主题:只换画布颜色,不重建图
+  const theme = useTheme();
+  useEffect(() => {
+    chartRef.current?.applyOptions(chartThemeOptions(theme));
+  }, [theme]);
 
   // 结构对账:文档 → series 集合(数据由下一个 effect 管)
   useEffect(() => {
@@ -480,7 +488,7 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, Fed>,
   // 左轴只能整图开关:只要有一格挂左轴就打开,没用左轴的格会留一条空的左轴。
   // 试过逐格 pane.priceScale('left').applyOptions({ visible }):轴宽会被算成 0、刻度画不出来(lw-charts 5.2 实测)。
   const anyLeft = doc.panes.some((p) => p.scales.some((s) => s.side === 'left'));
-  chart.applyOptions({ leftPriceScale: { visible: anyLeft, borderColor: CHART_OPTIONS.rightPriceScale.borderColor } });
+  chart.applyOptions({ leftPriceScale: { visible: anyLeft } });
 
   const panes = chart.panes();
   doc.panes.forEach((pane, i) => {

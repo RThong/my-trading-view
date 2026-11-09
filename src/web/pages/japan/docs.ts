@@ -3,15 +3,15 @@ import type { Layer } from '../../views/chartDoc/chartDoc';
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 import { curveHistoryDoc } from '../curveHistory';
 
-// 日银加息决定日竖线(「银行」四格共用)。取半透明浅灰:黄 / 橙 / 红 / 青 / 紫都被线占了;10Y 格的 2Y 对照线是实心蓝灰,形状也不同(线 vs 满高竖柱)。
+// 日银加息决定日竖线(「银行」四格共用)。取半透明中灰(深 / 浅两种底色上都看得见,纯浅灰在暖白底上会消失):黄 / 橙 / 红 / 青 / 紫都被线占了;10Y 格的 2Y 对照线是实心蓝灰,形状也不同(线 vs 满高竖柱)。
 function bojHikeEvents(id: string): Layer {
   return {
     id,
     series: 'bojHikeDates',
     scale: 'right',
-    color: '#e5e5e5',
+    color: '#a3a3a3',
     title: '日银加息决定日',
-    render: { kind: 'events', opacity: 0.35 },
+    render: { kind: 'events', opacity: 0.45 },
   };
 }
 const BOJ_HIKE_NOTE =

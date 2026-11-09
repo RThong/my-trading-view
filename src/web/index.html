@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>My Trading View</title>
+    <!-- 首屏前先设主题,免得浅色用户每次刷新先闪一下深色(键名同 hooks/theme.ts) -->
+    <script>
+      try {
+        if (localStorage.getItem('mtv:theme') === 'light') document.documentElement.dataset.theme = 'light';
+      } catch {}
+    </script>
   </head>
   <body class="bg-neutral-950 text-neutral-100">
     <div id="root"></div>

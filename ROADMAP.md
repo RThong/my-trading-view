@@ -300,6 +300,7 @@ TradingView
   - 已具备：叠加结果可序列化（图层的 `shift`、`fit` 存了基准段与 alpha / beta / r，渲染时不重算）；`chart/analysis.ts` 是纯函数，只引一个类型，搬到服务端即可跑。
   - 前置：① `chartDoc.ts` / `chart/analysis.ts` / `registry.ts` 搬到 `src/shared/`，服务端补一份按 id 取数（同 L1-1）；② URL 带 ChartDoc（L2-2）；③ 服务端出 PNG（Playwright 打开链接截图）；④ 包 MCP。③ + ④ 约 1 天。
   - 为何这次 MCP 值得：之前判 MCP 冗余（moomoo 自建 MCP 建过又删）是因为 Claude Code 有 Bash；这里的使用方是没有 Bash 的外部客户端。只在 Claude Code 内用的话，①②③ 加 curl 就够，不必包 MCP。
+- L2-7（P2）浅色主题下的数据线配色。明暗切换 2026-11-09 已做（暖白底，`hooks/theme.ts`），但画布上的序列色（ChartDoc 里写死的 color、`chart/palette.ts` 类别色、EMA 等指标色）只对深色底 `#0a0a0a` 校验过，亮黄 / 亮绿 / 青（`#fde047` `#facc15` `#a3e635` `#fbbf24` `#22d3ee` `#e9c444`，约 16 处，在利率 / 日本 / 通胀页与指标里）在暖白底上对比度 < 1.7:1，线很淡。做法：在渲染层按主题给序列色加一层映射（浅色时把过亮的色压暗），ChartDoc 里存的颜色不改；改完对暖白底跑一遍 dataviz 的 palette 校验。约 2 小时。
 - 边界：非时间轴的图不进 ChartDoc，包括 `YieldCurvePanel`（横轴是期限）、期权微笑和期限结构、`PolicyPathPanel`、各种表格。等真出现第二种横轴的需求再扩展。
 
 ### L3 规则：阈值、分位、状态机、指标

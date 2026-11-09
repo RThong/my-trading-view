@@ -104,8 +104,8 @@ export function hitShapes(shapes: Shape[], x: number, y: number): Hit | null {
   );
 }
 
+// 选中不换色(同 TradingView;以前换成的亮黄在暖白底上几乎看不见):靠加粗 + 手柄表示选中
 const COLOR = '#eab308';
-const COLOR_SELECTED = '#fde047';
 
 /** 这一格此刻要画的:各条画线的像素、选中的那条、绘图模式下的光标 */
 export type PaneDrawingState = { shapes: Shape[]; selected: string | null; cursor?: string };
@@ -120,7 +120,7 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
       shapes.forEach((s) => {
         const on = s.id === selected;
         ctx.lineWidth = on ? 2 : 1.5;
-        ctx.strokeStyle = on ? COLOR_SELECTED : COLOR;
+        ctx.strokeStyle = COLOR;
         ctx.beginPath();
         if (s.kind === 'trend') {
           ctx.moveTo(s.x1, s.y1);
@@ -133,18 +133,24 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
           ctx.lineTo(s.x, mediaSize.height);
         }
         ctx.stroke();
-        // 选中的趋势线两端出手柄(可拖)
-        if (on && s.kind === 'trend') {
-          ctx.fillStyle = COLOR_SELECTED;
-          [
-            [s.x1, s.y1],
-            [s.x2, s.y2],
-          ].forEach(([hx, hy]) => {
-            ctx.beginPath();
-            ctx.arc(hx, hy, HANDLE_R, 0, Math.PI * 2);
-            ctx.fill();
-          });
-        }
+        if (!on) return;
+
+        // 选中出手柄:趋势线两端(可拖端点);水平 / 竖线在中点(拖它 = 拖线身,只为看得出选中了)
+        const handles =
+          s.kind === 'trend'
+            ? [
+                [s.x1, s.y1],
+                [s.x2, s.y2],
+              ]
+            : s.kind === 'hline'
+              ? [[mediaSize.width / 2, s.y]]
+              : [[s.x, mediaSize.height / 2]];
+        ctx.fillStyle = COLOR;
+        handles.forEach(([hx, hy]) => {
+          ctx.beginPath();
+          ctx.arc(hx, hy, HANDLE_R, 0, Math.PI * 2);
+          ctx.fill();
+        });
       });
     });
   }

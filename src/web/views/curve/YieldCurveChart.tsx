@@ -76,15 +76,15 @@ export function YieldCurveChart({ tenors, curves }: { tenors: string[]; curves: 
         {/* y 网格 + 刻度 */}
         {gridVals.map((v) => (
           <g key={v}>
-            <line x1={PAD_L} x2={W - PAD_R} y1={yOf(v)} y2={yOf(v)} stroke="#262626" strokeWidth={1} />
-            <text x={PAD_L - 6} y={yOf(v) + 3} textAnchor="end" fontSize={11} fill="#737373">
+            <line x1={PAD_L} x2={W - PAD_R} y1={yOf(v)} y2={yOf(v)} className="stroke-neutral-800" strokeWidth={1} />
+            <text x={PAD_L - 6} y={yOf(v) + 3} textAnchor="end" fontSize={11} className="fill-neutral-500">
               {v.toFixed(2)}%
             </text>
           </g>
         ))}
         {/* x 期限标签 */}
         {tenors.map((t, i) => (
-          <text key={t} x={xOf(i, n)} y={H - 10} textAnchor="middle" fontSize={11} fill="#737373">
+          <text key={t} x={xOf(i, n)} y={H - 10} textAnchor="middle" fontSize={11} className="fill-neutral-500">
             {t}
           </text>
         ))}
@@ -95,7 +95,7 @@ export function YieldCurveChart({ tenors, curves }: { tenors: string[]; curves: 
             x2={xOf(hover, n)}
             y1={PAD_T}
             y2={PAD_T + PLOT_H}
-            stroke="#525252"
+            className="stroke-neutral-600"
             strokeWidth={1}
             strokeDasharray="3 3"
           />

@@ -60,7 +60,8 @@ export function parseLines(raw: string | null): TrendLine[] {
 }
 
 const COLOR = '#eab308';
-const COLOR_SELECTED = '#fde047';
+// 选中不换色(同 TradingView;亮黄在暖白底上几乎看不见):靠加粗 + 手柄表示选中
+const COLOR_SELECTED = COLOR;
 
 // 已投影到像素的线段;端点任一不在可视区(投影 null)则整条不画,置 null。
 type Seg = { x1: number; y1: number; x2: number; y2: number } | null;

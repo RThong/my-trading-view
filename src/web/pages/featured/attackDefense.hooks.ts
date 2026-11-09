@@ -1,4 +1,5 @@
 // 攻防指标数据层:NOBL/QQQ 比值 + ZigZag 攻防 regime 分区(慢/事后确认)+ 均线滞回快线 + specs 构造。纯逻辑,便于单测。
+import type { Theme } from '../../hooks/theme';
 import useSWR from 'swr';
 import { zigzagRegimes, type Regime } from '../../chart/zigzag';
 import type { Spec } from '../../chart/paneChart.types';
@@ -58,7 +59,8 @@ const STRIP: Record<Regime, string> = {
   offense: 'rgba(239,68,68,0.9)',
   neutral: 'rgba(0,0,0,0)',
 };
-export const RATIO_COLOR = '#d4d4d8'; // 中性亮线,压在红绿背景上清楚
+// 中性线,压在红绿背景上清楚:深色底用亮灰,暖白底上亮灰看不见,换深灰
+export const RATIO_COLOR: Record<Theme, string> = { dark: '#d4d4d8', light: '#57534e' };
 export const MA_COLOR = '#f59e0b';
 
 /** 攻防数据层:拉 QQQ + NOBL,算 NOBL/QQQ 比值 + ZigZag 攻防 regime 分区 + 快线。 */
@@ -85,6 +87,7 @@ export function buildAttackDefenseSpecs(
   ratio: Point[],
   zones: ReturnType<typeof zigzagRegimes>,
   fast: ReturnType<typeof fastRegime>,
+  ratioColor: string,
 ): Spec[] {
   return [
     {
@@ -133,7 +136,7 @@ export function buildAttackDefenseSpecs(
       key: 'ad',
       pane: 1,
       kind: 'line',
-      color: RATIO_COLOR,
+      color: ratioColor,
       title: 'NOBL/QQQ',
       data: ratio.map((p) => ({ time: p.date, value: p.value })),
     },

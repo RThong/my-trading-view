@@ -66,14 +66,14 @@ function ForwardChart({
     <svg viewBox={`0 0 ${W} ${H}`} className="h-full w-full">
       {grid.map((v) => (
         <g key={v}>
-          <line x1={PAD_L} x2={W - PAD_R} y1={yOf(v)} y2={yOf(v)} stroke="#262626" />
-          <text x={PAD_L - 6} y={yOf(v) + 3} textAnchor="end" fontSize={11} fill="#737373">
+          <line x1={PAD_L} x2={W - PAD_R} y1={yOf(v)} y2={yOf(v)} className="stroke-neutral-800" />
+          <text x={PAD_L - 6} y={yOf(v) + 3} textAnchor="end" fontSize={11} className="fill-neutral-500">
             {v.toFixed(2)}%
           </text>
         </g>
       ))}
       {years.map((y) => (
-        <text key={y} x={xOf(`${y}-01-01`)} y={H - 8} textAnchor="middle" fontSize={11} fill="#737373">
+        <text key={y} x={xOf(`${y}-01-01`)} y={H - 8} textAnchor="middle" fontSize={11} className="fill-neutral-500">
           {y}
         </text>
       ))}
