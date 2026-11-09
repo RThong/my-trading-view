@@ -67,13 +67,30 @@ export function timeAxis(times: string[]): TimeAxis {
   return { toLogical, toTime };
 }
 
+type TwoPoints = { id: string; x1: number; y1: number; x2: number; y2: number };
+
 /** 一条画线换算到当前这一格的像素(media 坐标,绘图区左上角为原点) */
 export type Shape =
-  | { id: string; kind: 'trend'; x1: number; y1: number; x2: number; y2: number }
+  | (TwoPoints & { kind: 'trend' })
+  | (TwoPoints & { kind: 'ray' })
   | { id: string; kind: 'hline'; y: number }
+  | { id: string; kind: 'hray'; x: number; y: number }
   | { id: string; kind: 'vline'; x: number };
 
-/** 命中:哪条、抓的是哪儿(趋势线两端 a / b,其余一律线身) */
+// 射线画到这么远:比任何屏幕都大,超出画布的部分 canvas 自己裁掉,不用算和边框的交点
+const RAY_FAR = 100_000;
+
+/** 射线的远端:从 (x1,y1) 出发、沿穿过 (x2,y2) 的方向延伸;两点重合没有方向 → 就停在 (x2,y2) */
+export function rayEnd(x1: number, y1: number, x2: number, y2: number): { x: number; y: number } {
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  if (len === 0) return { x: x2, y: y2 };
+
+  // 再加上起点离原点的距离:起点在画布外很远时(早年画的射线放大后滚到最新),远端仍保证越过画布
+  const far = RAY_FAR + Math.hypot(x1, y1);
+  return { x: x1 + ((x2 - x1) / len) * far, y: y1 + ((y2 - y1) / len) * far };
+}
+
+/** 命中:哪条、抓的是哪儿(两点线的两端 a / b,水平射线的起点 a,其余一律线身) */
 export type Hit = { id: string; part: 'a' | 'b' | 'body'; dist: number };
 
 // 离线多近算点中;端点手柄比线身优先(同一处既是端点又在线上时,拖端点)
@@ -86,11 +103,17 @@ function hitOne(s: Shape, x: number, y: number): Hit | null {
     return Math.abs(y - s.y) <= HIT_PX ? { id: s.id, part: 'body', dist: Math.abs(y - s.y) } : null;
   if (s.kind === 'vline')
     return Math.abs(x - s.x) <= HIT_PX ? { id: s.id, part: 'body', dist: Math.abs(x - s.x) } : null;
+  if (s.kind === 'hray') {
+    if (Math.hypot(x - s.x, y - s.y) <= HANDLE_PX) return { id: s.id, part: 'a', dist: 0 };
+    const d = Math.abs(y - s.y);
+    return d <= HIT_PX && x >= s.x ? { id: s.id, part: 'body', dist: d } : null;
+  }
 
   const da = Math.hypot(x - s.x1, y - s.y1);
   const db = Math.hypot(x - s.x2, y - s.y2);
   if (Math.min(da, db) <= HANDLE_PX) return { id: s.id, part: da <= db ? 'a' : 'b', dist: 0 };
-  const d = pointToSegmentDistance(x, y, s.x1, s.y1, s.x2, s.y2);
+  const end = s.kind === 'ray' ? rayEnd(s.x1, s.y1, s.x2, s.y2) : { x: s.x2, y: s.y2 };
+  const d = pointToSegmentDistance(x, y, s.x1, s.y1, end.x, end.y);
   return d <= HIT_PX ? { id: s.id, part: 'body', dist: d } : null;
 }
 
@@ -106,6 +129,36 @@ export function hitShapes(shapes: Shape[], x: number, y: number): Hit | null {
 
 // 选中不换色(同 TradingView;以前换成的亮黄在暖白底上几乎看不见):靠加粗 + 手柄表示选中
 const COLOR = '#eab308';
+
+type ShapeOf<K extends Shape['kind']> = Extract<Shape, { kind: K }>;
+type Pt = [number, number];
+type Size = { width: number; height: number };
+
+/** 一种画线在这一格里怎么画:一段线(from → to)+ 选中时手柄的位置 */
+type Geom = { from: Pt; to: Pt; handles: Pt[] };
+
+function twoPointGeom(s: TwoPoints, to: Pt): Geom {
+  return {
+    from: [s.x1, s.y1],
+    to,
+    handles: [
+      [s.x1, s.y1],
+      [s.x2, s.y2],
+    ],
+  };
+}
+
+// 两点线两端、水平射线起点的手柄可拖;水平 / 竖线的手柄在中点,拖它 = 拖线身,只为看得出选中了
+const GEOM: { [K in Shape['kind']]: (s: ShapeOf<K>, size: Size) => Geom } = {
+  trend: (s) => twoPointGeom(s, [s.x2, s.y2]),
+  ray: (s) => {
+    const end = rayEnd(s.x1, s.y1, s.x2, s.y2);
+    return twoPointGeom(s, [end.x, end.y]);
+  },
+  hray: (s, size) => ({ from: [s.x, s.y], to: [size.width, s.y], handles: [[s.x, s.y]] }),
+  hline: (s, size) => ({ from: [0, s.y], to: [size.width, s.y], handles: [[size.width / 2, s.y]] }),
+  vline: (s, size) => ({ from: [s.x, 0], to: [s.x, size.height], handles: [[s.x, size.height / 2]] }),
+};
 
 /** 这一格此刻要画的:各条画线的像素、选中的那条、绘图模式下的光标 */
 export type PaneDrawingState = {
@@ -129,32 +182,16 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
         const on = s.id === selected;
         ctx.lineWidth = on ? 2 : 1.5;
         ctx.strokeStyle = COLOR;
+        // 按 kind 取对应那一行;联合类型下 TS 认不出 s 和 GEOM[s.kind] 是同一种,只能断言
+        const g = GEOM[s.kind](s as never, mediaSize);
         ctx.beginPath();
-        if (s.kind === 'trend') {
-          ctx.moveTo(s.x1, s.y1);
-          ctx.lineTo(s.x2, s.y2);
-        } else if (s.kind === 'hline') {
-          ctx.moveTo(0, s.y);
-          ctx.lineTo(mediaSize.width, s.y);
-        } else {
-          ctx.moveTo(s.x, 0);
-          ctx.lineTo(s.x, mediaSize.height);
-        }
+        ctx.moveTo(...g.from);
+        ctx.lineTo(...g.to);
         ctx.stroke();
         if (!on) return;
 
-        // 选中出手柄:趋势线两端(可拖端点);水平 / 竖线在中点(拖它 = 拖线身,只为看得出选中了)
-        const handles =
-          s.kind === 'trend'
-            ? [
-                [s.x1, s.y1],
-                [s.x2, s.y2],
-              ]
-            : s.kind === 'hline'
-              ? [[mediaSize.width / 2, s.y]]
-              : [[s.x, mediaSize.height / 2]];
         ctx.fillStyle = COLOR;
-        handles.forEach(([hx, hy]) => {
+        g.handles.forEach(([hx, hy]) => {
           ctx.beginPath();
           ctx.arc(hx, hy, HANDLE_R, 0, Math.PI * 2);
           ctx.fill();

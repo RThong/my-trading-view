@@ -718,6 +718,23 @@ describe('画线', () => {
     expect(bad({ id: 'd9', kind: 'vline', time: '2026-01-05', paneOnly: false })).toBeNull();
     expect(bad({ id: 'd9', kind: 'hline', value: 3 })).not.toBeNull();
   });
+
+  test('射线 / 水平射线:往返保留,缺点或坏点拒收', () => {
+    const ray = { ...trend, id: 'd2', kind: 'ray' as const };
+    const hray = { id: 'd3', kind: 'hray' as const, a: { time: '2026-03-02', value: 21.5 } };
+    const doc = addDrawing(addDrawing(base, vix, ray), vix, hray);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+    expect(allDrawings(doc).map((e) => e.drawing)).toEqual([ray, hray]);
+
+    const bad = (d: unknown) => {
+      const raw = JSON.parse(JSON.stringify(doc));
+      raw.panes[0].layers[0].drawings = [d];
+      return parseChartDoc(raw);
+    };
+    expect(bad({ id: 'd9', kind: 'ray', a: ray.a })).toBeNull();
+    expect(bad({ id: 'd9', kind: 'hray', value: 3 })).toBeNull();
+    expect(bad({ ...hray, a: { time: '2026-13-01', value: 1 } })).toBeNull();
+  });
 });
 
 describe('画线与标记图层', () => {

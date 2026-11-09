@@ -29,7 +29,13 @@ import type { BarValues } from '../../../chart/magnet';
 import type { PointCtx } from '../drawingPlugins/types';
 import { paneAt, paneCoords } from './paneHit';
 
-export type DrawingTool = 'cursor' | 'trend' | 'hline' | 'vline';
+export type DrawingTool = 'cursor' | 'trend' | 'ray' | 'hline' | 'hray' | 'vline';
+
+type TwoPoint = Extract<Drawing, { kind: 'trend' | 'ray' }>;
+/** 两点画的线(趋势线、射线):画法、拖端点、吸附后重合判断都一样,只是渲染时射线往外延伸 */
+function isTwoPoint(d: Drawing | undefined): d is TwoPoint {
+  return d?.kind === 'trend' || d?.kind === 'ray';
+}
 
 /** 锚点变换(扩展点):鼠标落点换算出的锚点交给它再处理一遍(磁吸等插件);不认识具体插件 */
 export type TransformPoint = (p: DrawingPoint, ctx: PointCtx) => DrawingPoint;
@@ -154,9 +160,13 @@ function paneShapes(ctx: Ctx, entries: Entry[], i: number): Shape[] {
       const y = s.priceToCoordinate(d.value);
       return y === null ? [] : [{ id: d.id, kind: 'hline', y }];
     }
+    if (d.kind === 'hray') {
+      const a = toPx(ctx, s, d.a);
+      return a ? [{ id: d.id, kind: 'hray', x: a.x, y: a.y }] : [];
+    }
     const a = toPx(ctx, s, d.a);
     const b = toPx(ctx, s, d.b);
-    return a && b ? [{ id: d.id, kind: 'trend', x1: a.x, y1: a.y, x2: b.x, y2: b.y }] : [];
+    return a && b ? [{ id: d.id, kind: d.kind, x1: a.x, y1: a.y, x2: b.x, y2: b.y }] : [];
   });
 }
 
@@ -205,6 +215,12 @@ function dragged(
     const y = s.priceToCoordinate(d.value);
     const p = y === null || !at ? null : toPoint(ctx, s, at.x, y + dy, { anchor: null, shift, dragging: true });
     return p ? { ...d, value: p.value } : null;
+  }
+  // 水平射线只有一个点:拖起点、拖线身都是整条挪,照拖端点处理(过插件)
+  if (d.kind === 'hray') {
+    const px = toPx(ctx, s, d.a);
+    const p = px && toPoint(ctx, s, px.x + dx, px.y + dy, { anchor: null, shift, dragging: true });
+    return p ? { ...d, a: p } : null;
   }
 
   const shifted = (p: DrawingPoint, anchor: DrawingPoint | null) => {
@@ -258,7 +274,7 @@ function previewFor(
   if (!at || !s) return null;
 
   const draft = st.draft?.drawing;
-  const anchor = creating && draft?.kind === 'trend' ? draft.a : null;
+  const anchor = creating && isTwoPoint(draft) ? draft.a : null;
   const p = toPoint(ctx, s, at.x, at.y, { anchor, shift: m.shift, onlyTime: tool === 'vline' });
   const px = p && toPx(ctx, s, p);
 
@@ -269,6 +285,14 @@ function previewFor(
 /** 两点完全重合:鼠标隔得够远,但磁吸把两下吸到同一根的同一个值上,画出来是零长度、看不见的线 */
 function samePoint(a: DrawingPoint, b: DrawingPoint): boolean {
   return a.time === b.time && a.value === b.value;
+}
+
+/**
+ * 两点线画不出方向:两点重合(磁吸把两下吸到同一根同一个值上),或射线两点同一天(放大后两下点在同一根里、关着磁吸) ——
+ * 后者的射线会竖着贯穿整张图,要竖线有竖线工具。这类两下当作「太近」,不画、第一点留着
+ */
+function noDirection(d: TwoPoint): boolean {
+  return samePoint(d.a, d.b) || (d.kind === 'ray' && d.a.time === d.b.time);
 }
 
 function redrawAll(prims: Map<IPaneApi<Time>, DrawingsPrimitive>) {
@@ -444,11 +468,11 @@ export function useDrawings(
         const at = paneCoords(el, chart, g.pane, e);
         const s = ctx.seriesOf(g.layerId);
         const d = draftRef.current?.drawing;
-        const a = d?.kind === 'trend' ? d.a : null;
+        const a = isTwoPoint(d) ? d.a : null;
         const b = at && s && toPoint(ctx, s, at.x, at.y, { anchor: a, shift: e.shiftKey });
-        if (!s || !b || d?.kind !== 'trend') return cancelGesture();
-        // 两下点得太近(快速点两下 / 点在同一处),或吸附后两点重合:不画,第一点留着等下一下
-        if (tooShort(g, e) || samePoint(d.a, b)) return;
+        if (!s || !b || !isTwoPoint(d)) return cancelGesture();
+        // 两下点得太近(快速点两下 / 点在同一处),或画不出方向(见 noDirection):不画,第一点留着等下一下
+        if (tooShort(g, e) || noDirection({ ...d, b })) return;
         cancelGesture();
         finish({ ...d, b }, g.layerId);
         return;
@@ -464,6 +488,7 @@ export function useDrawings(
         const id = nextId(doc, 'd');
         if (tool === 'hline') finish({ id, kind: 'hline', value: p.value }, layerId);
         else if (tool === 'vline') finish({ id, kind: 'vline', time: p.time }, layerId);
+        else if (tool === 'hray') finish({ id, kind: 'hray', a: p }, layerId);
         else {
           gestureRef.current = {
             kind: 'create',
@@ -474,7 +499,7 @@ export function useDrawings(
             moved: false,
             pressed: true,
           };
-          draftRef.current = { drawing: { id, kind: 'trend', a: p, b: p }, layerId };
+          draftRef.current = { drawing: { id, kind: tool, a: p, b: p }, layerId };
           redrawAll(prims);
         }
         return;
@@ -548,9 +573,9 @@ export function useDrawings(
       const at = paneCoords(el, chart, g.pane, e);
       if (g.kind === 'create') {
         const d = draftRef.current;
-        const a = d?.drawing.kind === 'trend' ? d.drawing.a : null;
+        const a = isTwoPoint(d?.drawing) ? d.drawing.a : null;
         const b = at && toPoint(ctx, s, at.x, at.y, { anchor: a, shift: e.shiftKey });
-        if (b && d?.drawing.kind === 'trend') draftRef.current = { ...d, drawing: { ...d.drawing, b } };
+        if (b && d && isTwoPoint(d.drawing)) draftRef.current = { ...d, drawing: { ...d.drawing, b } };
       } else {
         const next = dragged(ctx, s, g, e.clientX - g.x0, e.clientY - g.y0, at, e.shiftKey);
         if (next) draftRef.current = { drawing: next, layerId: g.layerId };
@@ -565,18 +590,20 @@ export function useDrawings(
       if (g?.kind === 'create') {
         g.pressed = false;
         if (!g.moved) return;
-        // 拖回了起点附近 / 吸附后两点重合:同点两下,不画,第一点留着
-        if (tooShort(g, e) || (d?.drawing.kind === 'trend' && samePoint(d.drawing.a, d.drawing.b))) {
+        // 拖回了起点附近 / 画不出方向:同点两下,不画,第一点留着
+        if (tooShort(g, e) || (isTwoPoint(d?.drawing) && noDirection(d.drawing))) {
           g.moved = false;
           return;
         }
         cancelGesture();
-        if (d?.drawing.kind === 'trend') finish(d.drawing, g.layerId);
+        if (d && isTwoPoint(d.drawing)) finish(d.drawing, g.layerId);
         return;
       }
       if (g?.kind !== 'drag') return;
       cancelGesture();
-      if (g.moved && d) actionsRef.current.updateDrawing(d.drawing);
+      // 拖端点拖成画不出方向的(同新画时的规则,见 noDirection):放弃这次拖动,线回原处
+      if (g.moved && d && !(isTwoPoint(d.drawing) && noDirection(d.drawing)))
+        actionsRef.current.updateDrawing(d.drawing);
     };
 
     // 在 window 的捕获阶段听:画线这边用掉了这次按键就截下,useLineDrag 的 Esc 不再顺带清掉选中的线
