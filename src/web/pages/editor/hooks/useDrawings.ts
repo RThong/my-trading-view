@@ -25,9 +25,15 @@ import {
 import { fmtDate } from '../../../chart/core';
 import type { LayerData } from '../../../views/chartDoc/layerPoints';
 import type { LayerSeries } from '../../../views/chartDoc/useDocChart';
+import type { BarValues } from '../../../chart/magnet';
+import type { PointCtx } from '../drawingPlugins/types';
 import { paneAt, paneCoords } from './paneHit';
 
 export type DrawingTool = 'cursor' | 'trend' | 'hline' | 'vline';
+
+/** 锚点变换(扩展点):鼠标落点换算出的锚点交给它再处理一遍(磁吸等插件);不认识具体插件 */
+export type TransformPoint = (p: DrawingPoint, ctx: PointCtx) => DrawingPoint;
+const IDENTITY: TransformPoint = (p) => p;
 
 export type DrawingActions = {
   addDrawing: (layerId: string, drawing: Drawing) => void;
@@ -71,13 +77,14 @@ type Ctx = {
   toX: (logical: number) => number;
   toLogical: (x: number) => number;
   seriesOf: (layerId: string) => ISeriesApi<SeriesType> | undefined;
+  transform: TransformPoint;
 };
 
 /**
  * 当前视图的换算。lw-charts 的 logicalToCoordinate 只认整数下标(带小数直接返回 0),
  * 而锚点落在两根之间、空白区时下标是小数 —— 按第 0、1 根的横坐标线性换算(横轴本来就是等距的)
  */
-function makeCtx(chart: IChartApi, series: LayerSeries, axis: TimeAxis): Ctx | null {
+function makeCtx(chart: IChartApi, series: LayerSeries, axis: TimeAxis, transform = IDENTITY): Ctx | null {
   const ts = chart.timeScale();
   const x0 = ts.logicalToCoordinate(0 as Logical);
   const x1 = ts.logicalToCoordinate(1 as Logical);
@@ -87,7 +94,7 @@ function makeCtx(chart: IChartApi, series: LayerSeries, axis: TimeAxis): Ctx | n
   // 指标图层在图上是几条子线(id#plot),换算纵坐标用第一条
   const seriesOf = (layerId: string) =>
     series.get(layerId) ?? [...series].find(([k]) => k.startsWith(`${layerId}#`))?.[1];
-  return { axis, toX: (l) => x0 + l * bar, toLogical: (x) => (x - x0) / bar, seriesOf };
+  return { axis, toX: (l) => x0 + l * bar, toLogical: (x) => (x - x0) / bar, seriesOf, transform };
 }
 
 function toPx(ctx: Ctx, s: ISeriesApi<SeriesType>, p: DrawingPoint) {
@@ -96,10 +103,34 @@ function toPx(ctx: Ctx, s: ISeriesApi<SeriesType>, p: DrawingPoint) {
   return l === null || y === null ? null : { x: ctx.toX(l), y };
 }
 
-function toPoint(ctx: Ctx, s: ISeriesApi<SeriesType>, x: number, y: number): DrawingPoint | null {
+/** 鼠标像素 → 锚点(不过插件):日期取整到天,数值按所属图层的轴 */
+function rawPoint(ctx: Ctx, s: ISeriesApi<SeriesType>, x: number, y: number): DrawingPoint | null {
   const time = ctx.axis.toTime(ctx.toLogical(x));
   const value = s.coordinateToPrice(y);
   return time === null || value === null ? null : { time, value };
+}
+
+/** 光标所在那一根的数据:线 = 一个值,蜡烛 = 开高低收;没数据(空白区、缺值)= null */
+function barAt(ctx: Ctx, s: ISeriesApi<SeriesType>, x: number): BarValues | null {
+  const item: object | null = s.dataByIndex(Math.round(ctx.toLogical(x)));
+  if (!item || !('time' in item)) return null;
+
+  const nums = (keys: string[]) =>
+    keys.map((k) => (item as Record<string, unknown>)[k]).filter((v): v is number => typeof v === 'number');
+  const values = 'close' in item ? nums(['open', 'high', 'low', 'close']) : nums(['value']);
+
+  return values.length ? { time: fmtDate(item.time), values } : null;
+}
+
+type PointExtra = { anchor: DrawingPoint | null; shift: boolean; onlyTime?: boolean };
+
+/** 鼠标像素 → 锚点,再过锚点变换(插件)。画线工具「鼠标落在哪」一律走这里,不自己换算(见设计文档 §5.3) */
+function toPoint(ctx: Ctx, s: ISeriesApi<SeriesType>, x: number, y: number, extra: PointExtra): DrawingPoint | null {
+  const raw = rawPoint(ctx, s, x, y);
+  return (
+    raw &&
+    ctx.transform(raw, { x, y, bar: barAt(ctx, s, x), toY: (v) => s.priceToCoordinate(v), onlyTime: false, ...extra })
+  );
 }
 
 /** 第 i 格此刻要画的像素:趋势线 / 水平线只画在所属图层那一格;竖线延伸的每格都画,只画本格的(paneOnly)只在那一格 */
@@ -139,31 +170,53 @@ function pickOwner(doc: ChartDoc, paneIndex: number, selectedLine: string | null
   return (layers.find((l) => l.id === selectedLine) ?? layers[0])?.id;
 }
 
-/** 拖动中的那条:端点拖到鼠标处,线身整条按像素位移平移(日期轴非等距,先在像素上挪再换回日期) */
-function dragged(ctx: Ctx, s: ISeriesApi<SeriesType>, g: Gesture & { kind: 'drag' }, dx: number, dy: number) {
-  const move = (p: DrawingPoint) => {
-    const px = toPx(ctx, s, p);
-    return px ? toPoint(ctx, s, px.x + dx, px.y + dy) : null;
-  };
+/**
+ * 拖动中的那条:端点拖到鼠标处,线身整条按像素位移平移(日期轴非等距,先在像素上挪再换回日期)。
+ * 拖端点、拖水平 / 竖线过锚点变换(磁吸照常吸);拖趋势线整条不过:两端各吸各的会把线拧歪
+ */
+function dragged(
+  ctx: Ctx,
+  s: ISeriesApi<SeriesType>,
+  g: Gesture & { kind: 'drag' },
+  dx: number,
+  dy: number,
+  at: { x: number; y: number } | undefined,
+  shift: boolean,
+) {
   const d = g.orig;
   if (d.kind === 'vline') {
     const l = ctx.axis.toLogical(d.time);
-    const time = l === null ? null : ctx.axis.toTime(ctx.toLogical(ctx.toX(l) + dx));
-    return time === null ? null : { ...d, time };
+    // 只用日期:点中的格不一定是所属图层那一格,at.y 跟所属格的纵坐标对不上,磁吸也不该看高度
+    const p =
+      l === null || !at ? null : toPoint(ctx, s, ctx.toX(l) + dx, at.y, { anchor: null, shift, onlyTime: true });
+    return p ? { ...d, time: p.time } : null;
   }
   if (d.kind === 'hline') {
     const y = s.priceToCoordinate(d.value);
-    const value = y === null ? null : s.coordinateToPrice(y + dy);
-    return value === null ? null : { ...d, value };
+    const p = y === null || !at ? null : toPoint(ctx, s, at.x, y + dy, { anchor: null, shift });
+    return p ? { ...d, value: p.value } : null;
   }
-  const a = g.part === 'b' ? d.a : move(d.a);
-  const b = g.part === 'a' ? d.b : move(d.b);
+
+  const shifted = (p: DrawingPoint, anchor: DrawingPoint | null) => {
+    const px = toPx(ctx, s, p);
+    if (!px) return null;
+    return g.part === 'body'
+      ? rawPoint(ctx, s, px.x + dx, px.y + dy)
+      : toPoint(ctx, s, px.x + dx, px.y + dy, { anchor, shift });
+  };
+  const a = g.part === 'b' ? d.a : shifted(d.a, g.part === 'a' ? d.b : null);
+  const b = g.part === 'a' ? d.b : shifted(d.b, g.part === 'b' ? d.a : null);
   return a && b ? { ...d, a, b } : null;
 }
 
 /** 第二点离第一下按下处太近。按鼠标原始位置比,不按换算后的锚点:日期取整到天,放大时相邻两个像素会被拉开成一整天 */
 function tooShort(g: { x0: number; y0: number }, e: { clientX: number; clientY: number }): boolean {
   return Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < MIN_TREND_PX;
+}
+
+/** 两点完全重合:鼠标隔得够远,但磁吸把两下吸到同一根的同一个值上,画出来是零长度、看不见的线 */
+function samePoint(a: DrawingPoint, b: DrawingPoint): boolean {
+  return a.time === b.time && a.value === b.value;
 }
 
 function redrawAll(prims: Map<IPaneApi<Time>, DrawingsPrimitive>) {
@@ -190,6 +243,7 @@ export function useDrawings(
   doc: ChartDoc,
   data: Record<string, LayerData>,
   actions: DrawingActions,
+  transformPoint: TransformPoint,
 ) {
   const [tool, setTool] = useState<DrawingTool>('cursor');
   const [selected, setSelected] = useState<string | null>(null);
@@ -210,6 +264,7 @@ export function useDrawings(
   const gestureRef = useRef<Gesture | null>(null);
   const axisRef = useRef<TimeAxis>(timeAxis([]));
   const actionsRef = useRef(actions);
+  const transformRef = useRef(transformPoint);
   const primsRef = useRef(new Map<IPaneApi<Time>, DrawingsPrimitive>());
 
   // 状态同步进 ref,并请求重画
@@ -225,6 +280,7 @@ export function useDrawings(
     selectedRef.current = live;
     hiddenRef.current = hidden;
     actionsRef.current = actions;
+    transformRef.current = transformPoint;
     redrawAll(primsRef.current);
   });
 
@@ -278,7 +334,7 @@ export function useDrawings(
 
     const ctxNow = () => {
       const chart = chartRef.current;
-      return chart ? makeCtx(chart, seriesRef.current, axisRef.current) : null;
+      return chart ? makeCtx(chart, seriesRef.current, axisRef.current, transformRef.current) : null;
     };
     // id 在提交这一刻按最新文档取(趋势线第一下到第二下之间文档可能变了)
     const finish = (drawing: Drawing, layerId: string) => {
@@ -314,11 +370,12 @@ export function useDrawings(
         take();
         const at = paneCoords(el, chart, g.pane, e);
         const s = ctx.seriesOf(g.layerId);
-        const b = at && s && toPoint(ctx, s, at.x, at.y);
         const d = draftRef.current?.drawing;
+        const a = d?.kind === 'trend' ? d.a : null;
+        const b = at && s && toPoint(ctx, s, at.x, at.y, { anchor: a, shift: e.shiftKey });
         if (!s || !b || d?.kind !== 'trend') return cancelGesture();
-        // 两下点得太近(快速点两下 / 点在同一处):不画,第一点留着等下一下
-        if (tooShort(g, e)) return;
+        // 两下点得太近(快速点两下 / 点在同一处),或吸附后两点重合:不画,第一点留着等下一下
+        if (tooShort(g, e) || samePoint(d.a, b)) return;
         cancelGesture();
         finish({ ...d, b }, g.layerId);
         return;
@@ -328,7 +385,7 @@ export function useDrawings(
       if (tool !== 'cursor') {
         const layerId = pickOwner(doc, hit.index, selectedLineRef.current);
         const s = layerId && ctx.seriesOf(layerId);
-        const p = s && toPoint(ctx, s, hit.x, hit.y);
+        const p = s && toPoint(ctx, s, hit.x, hit.y, { anchor: null, shift: e.shiftKey, onlyTime: tool === 'vline' });
         if (!layerId || !p) return;
         take();
         const id = nextId(doc, 'd');
@@ -403,13 +460,14 @@ export function useDrawings(
       if (far && e.buttons & 1 && (g.kind === 'drag' || g.pressed)) g.moved = true;
       if (!g.moved && g.kind === 'drag') return;
 
+      const at = paneCoords(el, chart, g.pane, e);
       if (g.kind === 'create') {
-        const at = paneCoords(el, chart, g.pane, e);
-        const b = at && toPoint(ctx, s, at.x, at.y);
         const d = draftRef.current;
+        const a = d?.drawing.kind === 'trend' ? d.drawing.a : null;
+        const b = at && toPoint(ctx, s, at.x, at.y, { anchor: a, shift: e.shiftKey });
         if (b && d?.drawing.kind === 'trend') draftRef.current = { ...d, drawing: { ...d.drawing, b } };
       } else {
-        const next = dragged(ctx, s, g, e.clientX - g.x0, e.clientY - g.y0);
+        const next = dragged(ctx, s, g, e.clientX - g.x0, e.clientY - g.y0, at, e.shiftKey);
         if (next) draftRef.current = { drawing: next, layerId: g.layerId };
       }
       redrawAll(prims);
@@ -422,8 +480,8 @@ export function useDrawings(
       if (g?.kind === 'create') {
         g.pressed = false;
         if (!g.moved) return;
-        // 拖回了起点附近:同点两下,不画,第一点留着
-        if (tooShort(g, e)) {
+        // 拖回了起点附近 / 吸附后两点重合:同点两下,不画,第一点留着
+        if (tooShort(g, e) || (d?.drawing.kind === 'trend' && samePoint(d.drawing.a, d.drawing.b))) {
           g.moved = false;
           return;
         }
