@@ -108,13 +108,21 @@ export function hitShapes(shapes: Shape[], x: number, y: number): Hit | null {
 const COLOR = '#eab308';
 
 /** 这一格此刻要画的:各条画线的像素、选中的那条、绘图模式下的光标 */
-export type PaneDrawingState = { shapes: Shape[]; selected: string | null; cursor?: string };
+export type PaneDrawingState = {
+  shapes: Shape[];
+  selected: string | null;
+  cursor?: string;
+  /** 绘图工具下「点下去落在哪」的预览(已过磁吸等插件):光标跟着吸附点跳,看得出吸没吸上 */
+  preview?: { x: number; y: number };
+};
+
+const PREVIEW_R = 4;
 
 class DrawingsRenderer implements IPrimitivePaneRenderer {
   constructor(private readonly state: PaneDrawingState) {}
 
   draw(target: CanvasRenderingTarget2D): void {
-    const { shapes, selected } = this.state;
+    const { shapes, selected, preview } = this.state;
     // biome-ignore lint/correctness/useHookAtTopLevel: useMediaCoordinateSpace 是 canvas 方法,不是 React hook
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       shapes.forEach((s) => {
@@ -152,6 +160,15 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
           ctx.fill();
         });
       });
+
+      // 落点预览:空心圈,不挡下面的 K 线
+      if (preview) {
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = COLOR;
+        ctx.beginPath();
+        ctx.arc(preview.x, preview.y, PREVIEW_R, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     });
   }
 }
