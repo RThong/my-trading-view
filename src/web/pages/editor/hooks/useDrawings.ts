@@ -507,6 +507,8 @@ export function useDrawings(
             selected: selectedRef.current,
             ...(toolRef.current !== 'cursor' && { cursor: 'crosshair' }),
             ...(pv && pv.pane === api.paneIndex() && !hiddenRef.current && { preview: { x: pv.x, y: pv.y } }),
+            // 量到一半:终点已过磁吸,圈画在终点上,同画趋势线第二点时一样看得出吸没吸上
+            ...(mv && !ms?.fixed && { preview: { x: mv.x2, y: mv.y2 } }),
             ...(mv && { measure: mv }),
           };
         });
