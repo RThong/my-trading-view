@@ -9,7 +9,9 @@ export const magnet: PointPlugin = {
   icon: Magnet,
   modes: [
     { id: 'weak', name: '弱磁吸', hint: '光标靠近时才吸到这一天的值(线 = 收盘,蜡烛 = 开高低收)' },
-    { id: 'strong', name: '强磁吸', hint: '总是吸到这一天离光标最近的值' },
+    { id: 'strong', name: '强磁吸', hint: '画线时总是吸到这一天离光标最近的值;拖已有的线时同弱磁吸' },
   ],
-  apply: (p, c, mode) => (c.onlyTime ? snapTime(p, c.bar) : snapToBar(p, c.y, c.bar, c.toY, mode === 'strong')),
+  // 拖已有的线时强磁吸也按弱磁吸算:强吸只停在这一根的开高低收上、不跟手,手一抖光标换到隔壁那根还会往反方向跳(负责人 2026-11-09 定)
+  apply: (p, c, mode) =>
+    c.onlyTime ? snapTime(p, c.bar) : snapToBar(p, c.y, c.bar, c.toY, mode === 'strong' && !c.dragging),
 };
