@@ -601,9 +601,10 @@ export function useDrawings(
       }
       if (g?.kind !== 'drag') return;
       cancelGesture();
-      // 拖端点拖成画不出方向的(同新画时的规则,见 noDirection):放弃这次拖动,线回原处
-      if (g.moved && d && !(isTwoPoint(d.drawing) && noDirection(d.drawing)))
-        actionsRef.current.updateDrawing(d.drawing);
+      // 拖端点拖成画不出方向的(同新画时的规则,见 noDirection):放弃这次拖动,线回原处。
+      // 只判拖端点:整条平移不改方向;规则之前画的 / 导入的同一天射线若平移也判,会每次弹回、像拖不动
+      const broken = g.part !== 'body' && isTwoPoint(d?.drawing) && noDirection(d.drawing);
+      if (g.moved && d && !broken) actionsRef.current.updateDrawing(d.drawing);
     };
 
     // 在 window 的捕获阶段听:画线这边用掉了这次按键就截下,useLineDrag 的 Esc 不再顺带清掉选中的线
