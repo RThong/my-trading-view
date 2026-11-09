@@ -1,25 +1,246 @@
-// 画线的界面:图左边一条竖向工具栏(同 TradingView 左栏,第一批只有三种线)+ 选中一条画线后图上方的小浮条。
+// 画线的界面:图左边一条竖向工具栏(同 TradingView 左栏:单按钮 + 工具组)+ 选中一条画线后图上方的小浮条。
 // 状态与交互见 hooks/useDrawings。
-import { Eye, EyeOff, type LucideIcon, Minus, MousePointer2, SeparatorVertical, Slash, Trash2 } from 'lucide-react';
+import {
+  ChevronRight,
+  Eye,
+  EyeOff,
+  type LucideIcon,
+  Minus,
+  MousePointer2,
+  SeparatorVertical,
+  Slash,
+  Trash2,
+} from 'lucide-react';
+import { type ReactNode, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { Checkbox } from '../../../components/ui/checkbox';
+import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
 import { cn } from '../../../lib/utils';
 import { allDrawings, type ChartDoc, type Drawing } from '../../../views/chartDoc/chartDoc';
 import { layerLabel } from '../../../views/chartDoc/layerLabel';
+import { type PluginControls, POINT_PLUGINS } from '../drawingPlugins';
+import type { PointPlugin } from '../drawingPlugins/types';
 import type { DrawingTool } from '../hooks/useDrawings';
 
 const OWNER_HINT = '画在这一格里选中的那条线上(先点一下线),没选中就画在这一格第一条线上';
-const TOOLS: { id: DrawingTool; icon: LucideIcon; title: string }[] = [
-  { id: 'cursor', icon: MousePointer2, title: '光标:点画线选中,拖端点 / 线身调整,Delete 删除(Esc)' },
-  { id: 'trend', icon: Slash, title: `趋势线:点两下,或按住拖。${OWNER_HINT}` },
-  { id: 'hline', icon: Minus, title: `水平线:点一下。${OWNER_HINT}` },
-  { id: 'vline', icon: SeparatorVertical, title: `竖线:点一下,默认贯穿所有格。${OWNER_HINT}` },
-];
+const TOOL: Record<DrawingTool, { icon: LucideIcon; name: string; hint: string }> = {
+  cursor: { icon: MousePointer2, name: '光标', hint: '光标:点画线选中,拖端点 / 线身调整,Delete 删除(Esc)' },
+  trend: { icon: Slash, name: '趋势线', hint: `趋势线:点两下,或按住拖。${OWNER_HINT}` },
+  hline: { icon: Minus, name: '水平线', hint: `水平线:点一下。${OWNER_HINT}` },
+  vline: { icon: SeparatorVertical, name: '竖线', hint: `竖线:点一下,默认贯穿所有格。${OWNER_HINT}` },
+};
 const KIND_NAME: Record<Drawing['kind'], string> = { trend: '趋势线', hline: '水平线', vline: '竖线' };
+
+/** 工具组(同 TradingView 左栏的一格):按钮显示这组上次用的工具,点它直接用;点右缘小三角弹出整组 */
+type ToolGroupDef = { id: string; name: string; sections: { title: string; tools: DrawingTool[] }[] };
+const GROUPS: ToolGroupDef[] = [
+  { id: 'lines', name: '线条', sections: [{ title: '线', tools: ['trend', 'hline', 'vline'] }] },
+];
+
+// 各组上次用的工具,跨刷新记住(只是偏好,读写失败就用组里第一个)
+const LAST_KEY = 'mtv:drawingToolbar:last';
+
+function loadLast(): Record<string, DrawingTool> {
+  try {
+    const v = JSON.parse(localStorage.getItem(LAST_KEY) ?? '{}');
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLast(last: Record<string, DrawingTool>) {
+  try {
+    localStorage.setItem(LAST_KEY, JSON.stringify(last));
+  } catch {
+    /* 隐私模式存不上:本次会话照常 */
+  }
+}
 
 // 选中态:亮底亮字(button 的 ghost 只有悬停态)
 const ACTIVE = 'bg-neutral-800 text-neutral-100';
 const IDLE = 'text-neutral-500 hover:text-neutral-200';
+
+/**
+ * 按钮右缘的小三角 + 右侧弹出的子菜单(同 TradingView:悬停整格时小三角滑入,点它才弹出;打开期间保持高亮并翻转)。
+ * 工具组和插件按钮共用。children 拿到 close,选完一项自己关
+ */
+function Flyout({
+  label,
+  disabled,
+  children,
+}: {
+  label: string;
+  disabled: boolean;
+  children: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        disabled={disabled}
+        aria-label={label}
+        title={label}
+        className={cn(
+          'absolute inset-y-0 right-0 flex w-2.5 items-center justify-center rounded-sm text-neutral-500',
+          'translate-x-0.5 opacity-0 transition hover:bg-neutral-800 hover:text-neutral-200',
+          'group-hover/tool:translate-x-0 group-hover/tool:opacity-100 focus-visible:opacity-100',
+          'data-popup-open:translate-x-0 data-popup-open:bg-neutral-800 data-popup-open:opacity-100 disabled:hidden',
+        )}
+      >
+        <ChevronRight size={10} className={cn('transition-transform', open && 'rotate-180')} />
+      </PopoverTrigger>
+      <PopoverContent side="right" align="start" sideOffset={6} className="w-44 gap-0 p-1 text-xs">
+        {children(() => setOpen(false))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function MenuSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div>
+      <div className="px-2 pt-1.5 pb-1 text-[11px] text-neutral-500">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function MenuItem({
+  icon: Icon,
+  name,
+  hint,
+  active,
+  onClick,
+}: {
+  icon?: LucideIcon;
+  name: string;
+  hint: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={hint}
+      onClick={onClick}
+      className={cn(
+        'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-neutral-300 hover:bg-neutral-800',
+        active && 'bg-neutral-800 text-neutral-100',
+      )}
+    >
+      {Icon && <Icon size={14} />}
+      {name}
+    </button>
+  );
+}
+
+function ToolGroup({
+  group,
+  tool,
+  last,
+  onPick,
+  disabled,
+}: {
+  group: ToolGroupDef;
+  tool: DrawingTool;
+  last: DrawingTool | undefined;
+  onPick: (t: DrawingTool) => void;
+  disabled: boolean;
+}) {
+  const tools = group.sections.flatMap((s) => s.tools);
+  // 正在用这组的工具就显示它;否则显示上次用的(存档里的值不在组里就当没有)
+  const remembered = last && tools.includes(last) ? last : tools[0];
+  const shown = tools.includes(tool) ? tool : remembered;
+  const { icon: Icon, hint } = TOOL[shown];
+
+  return (
+    // group/tool:悬停整格时小三角滑入(同 TradingView,平时藏着不占眼)
+    <div className="group/tool relative flex w-full justify-center">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        title={hint}
+        aria-pressed={tools.includes(tool)}
+        disabled={disabled}
+        onClick={() => onPick(shown)}
+        className={tools.includes(tool) ? ACTIVE : IDLE}
+      >
+        <Icon />
+      </Button>
+      <Flyout label={group.name} disabled={disabled}>
+        {(close) =>
+          group.sections.map((sec) => (
+            <MenuSection key={sec.title} title={sec.title}>
+              {sec.tools.map((t) => (
+                <MenuItem
+                  key={t}
+                  {...TOOL[t]}
+                  active={t === tool}
+                  onClick={() => {
+                    onPick(t);
+                    close();
+                  }}
+                />
+              ))}
+            </MenuSection>
+          ))
+        }
+      </Flyout>
+    </div>
+  );
+}
+
+/** 锚点插件(磁吸等)的开关:点按钮开 / 关,小三角里选模式(选了顺带打开)。按插件声明渲染,不认识具体插件 */
+function PluginButton({
+  plugin,
+  controls,
+  disabled,
+}: {
+  plugin: PointPlugin;
+  controls: PluginControls;
+  disabled: boolean;
+}) {
+  const on = controls.isOn(plugin);
+  const mode = controls.modeOf(plugin);
+  const modeName = plugin.modes.find((m) => m.id === mode)?.name ?? plugin.name;
+  const Icon = plugin.icon;
+
+  return (
+    <div className="group/tool relative flex w-full justify-center">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        title={on ? `${modeName}(开,点一下关)` : `${plugin.name}(关,点一下开:${modeName})`}
+        aria-pressed={on}
+        disabled={disabled}
+        onClick={() => controls.toggle(plugin)}
+        className={on ? ACTIVE : IDLE}
+      >
+        <Icon />
+      </Button>
+      {plugin.modes.length > 1 && (
+        <Flyout label={plugin.name} disabled={disabled}>
+          {(close) =>
+            plugin.modes.map((m) => (
+              <MenuItem
+                key={m.id}
+                name={m.name}
+                hint={m.hint}
+                active={on && m.id === mode}
+                onClick={() => {
+                  controls.setMode(plugin, m.id);
+                  close();
+                }}
+              />
+            ))
+          }
+        </Flyout>
+      )}
+    </div>
+  );
+}
 
 export function DrawingToolbar({
   tool,
@@ -29,6 +250,7 @@ export function DrawingToolbar({
   count,
   onClear,
   disabled,
+  plugins,
 }: {
   tool: DrawingTool;
   onTool: (t: DrawingTool) => void;
@@ -39,24 +261,45 @@ export function DrawingToolbar({
   onClear: () => void;
   /** 空图:没有线可挂,整排禁用 */
   disabled: boolean;
+  plugins: PluginControls;
 }) {
+  const [last, setLast] = useState(loadLast);
+  const { icon: CursorIcon, hint: cursorHint } = TOOL.cursor;
+
+  const pickInGroup = (groupId: string, t: DrawingTool) => {
+    const next = { ...last, [groupId]: t };
+    setLast(next);
+    saveLast(next);
+    onTool(t);
+  };
+
   return (
-    <div className="flex w-8 shrink-0 flex-col items-center gap-1 border-r border-neutral-800 pr-1">
-      {TOOLS.map(({ id, icon: Icon, title }) => (
-        <Button
-          key={id}
-          variant="ghost"
-          size="icon-sm"
-          title={title}
-          aria-pressed={tool === id}
+    <div className="flex w-10 shrink-0 flex-col items-center gap-1 border-r border-neutral-800 pr-1">
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        title={cursorHint}
+        aria-pressed={tool === 'cursor'}
+        disabled={disabled}
+        onClick={() => onTool('cursor')}
+        className={tool === 'cursor' ? ACTIVE : IDLE}
+      >
+        <CursorIcon />
+      </Button>
+      {GROUPS.map((g) => (
+        <ToolGroup
+          key={g.id}
+          group={g}
+          tool={tool}
+          last={last[g.id]}
+          onPick={(t) => pickInGroup(g.id, t)}
           disabled={disabled}
-          onClick={() => onTool(id)}
-          className={tool === id ? ACTIVE : IDLE}
-        >
-          <Icon />
-        </Button>
+        />
       ))}
       <div className="my-1 h-px w-5 bg-neutral-800" />
+      {POINT_PLUGINS.map((pl) => (
+        <PluginButton key={pl.id} plugin={pl} controls={plugins} disabled={disabled} />
+      ))}
       <Button
         variant="ghost"
         size="icon-sm"

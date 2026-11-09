@@ -19,6 +19,7 @@ import { useBaseBand } from './hooks/useBaseBand';
 import { usePercentileBand } from '../../views/chartDoc/usePercentileBand';
 import { useFitSync } from './hooks/useFitSync';
 import { useDrawings } from './hooks/useDrawings';
+import { runPlugins, usePluginSettings } from './drawingPlugins';
 import { useLineDrag } from './hooks/useLineDrag';
 import { useSidebar } from './hooks/useSidebar';
 import { useVisibleRange } from './hooks/useVisibleRange';
@@ -47,7 +48,10 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
   const { hoverTime, layout } = useCrosshairLegend(containerRef, chartRef, doc);
   const visibleRange = useVisibleRange(chartRef);
   const selectedLineRef = useLineDrag(containerRef, chartRef, seriesRef, doc);
-  const drawing = useDrawings(containerRef, chartRef, seriesRef, selectedLineRef, doc, data, actions);
+  const plugins = usePluginSettings();
+  const drawing = useDrawings(containerRef, chartRef, seriesRef, selectedLineRef, doc, data, actions, (p, c) =>
+    runPlugins(p, c, plugins.settings),
+  );
   useFitSync(chartRef, seriesRef, doc);
   useBaseBand(chartRef, doc, data);
   usePercentileBand(chartRef, doc, data);
@@ -71,6 +75,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
         count={allDrawings(doc).length}
         onClear={actions.clearDrawings}
         disabled={empty}
+        plugins={plugins}
       />
       <div className="relative min-w-0 flex-1">
         <div ref={containerRef} className="absolute inset-0" />

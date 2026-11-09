@@ -145,8 +145,96 @@ lightweight-charts 的映射：`right` / `left` 用内置轴，`overlay` 用自�
   绘图 / 拖画线时在容器的捕获阶段截下按键，lw-charts 的平移和「选线拖轴」（`useLineDrag`）都收不到。
 - 负责人定的细节：两点离得太近（< 4px，按鼠标原始位置算）不画趋势线、第一点留着；画线这边用掉的 Esc 不再清掉选中的序列线；双击落在画线上或处于绘图工具时不触发「双击纵轴复位」。
 - **已知限制**（负责人定，第一批接受）：「先点选再画」只认 `useLineDrag` 能点选的普通折线 —— 叠加对比里的 B 腿、蜡烛、指标、柱子都选不中，画在那一格的线挂到这一格第一条可挂的线上（叠加那一格就是 A，用 A 的单位）。以后要挂 B：浮条里加「挂在」下拉改挂，改挂时按屏幕位置换算成新线的单位。
-- 第一批不做：颜色 / 线型、射线、矩形、文字、测量、磁吸、按周期显示。
+- 第一批不做：颜色 / 线型、射线、矩形、文字、测量、磁吸、按周期显示（后续范围见 5.2）。
 - 评审遗留（第 5 轮通过时记下，没修，都是少见、不丢数据的边角）：① 绘图工具下点在挂不上线的格（只有竖线 / 色带、或线全隐藏、或首条线还没数据）不截按键，按住拖会平移；② 没选中线时取「第一条看得见的线」不看它有没有数据，还在加载 / 暂无数据时这一格画不上；③ 趋势线点完第一下后侧栏删 / 挪了上方某格，第二点按旧格下标算纵坐标；④ `useDrawings` 里不带依赖的同步 effect 兼管「文档换了就作废手势」，可拆成独立 effect。
+
+### 5.1 工具栏分组（2026-11-09，交互已做，子菜单内容逐步加）
+
+照 TradingView 左栏：单按钮 + 工具组。**工具组**的按钮显示这组上次用过的工具（点它直接用）；悬停整格时右缘滑入小三角，**点**小三角（不是悬停）在右侧弹出子菜单，子菜单按小节列工具；选中后切工具、关弹层、组按钮换成该工具图标；打开期间小三角保持高亮并翻转。各组上次用的工具存 localStorage（`mtv:drawingToolbar:last`）。实现在 `pages/editor/components/DrawingToolbar.tsx` 的 `GROUPS`：加工具 = 往某组的小节里加 id，加组 = 往 `GROUPS` 加一项。
+
+计划的布局（括号里是「可选」级，做到才出现）：
+
+```
+[↖]   光标（单按钮）
+[╱▸]  线条组   线：趋势线 · 射线 · 水平线 · 水平射线 · 竖线（· 信息线）
+               通道：平行通道（· 回归通道）
+[T▸]  标注组   文字 · 标注气泡 · 路标（· 便签）（· 矩形）
+[⟷]   测量：日期 + 价格区间（单按钮，组里只有一样不做下拉）
+──────
+[🧲]  磁吸（开关）  [🔒] 锁定（开关，可选）  [👁] 隐藏全部  [🗑] 删除全部
+```
+
+取舍：通道并进线条组（同 TradingView，单独成组只有一两样）；路标是「带文字的竖线」，用时想的是写注释，归标注组；矩形只有一样、用途是「框出来说明」，也归标注组。
+
+### 5.2 要做的工具（负责人 2026-11-09 定）
+
+| 级别 | 工具 | 用途 |
+|---|---|---|
+| 重要 | 样式：颜色 / 线宽 / 线型（所有画线共用） | 线多了靠颜色区分；通道、参考线常用虚线 |
+| 重要 | 文字（可加框） | 图上放一段说明 |
+| 重要 | 平行通道 | 趋势线 + 一条平行线围成通道 |
+| 重要 | 日期 + 价格区间（含临时测量尺） | 拉一个框看这段涨跌幅、用了几天 |
+| 重要 | 射线 | 从一点穿过第二点往右无限延伸：支撑 / 阻力延伸到未来 |
+| 重要 | 水平射线 | 从某天起往右的水平线 |
+| 重要 | 标注气泡（Callout） | 带尖角指向某一点的文字 |
+| 重要 | 路标（Signpost） | 立在某天上方、带文字的牌子 = 带文字的事件竖线 |
+| 重要 | 磁吸 | 端点吸到附近收盘价，日线上画得准 |
+| 可选 | 信息线 | 趋势线自带涨跌 / 天数信息框（区间测量已能量出） |
+| 可选 | 回归通道 | 自动算回归中线 ± 标准差带 |
+| 可选 | 矩形 | 框一段时期 + 价格区间（背景色带图层已能标时期） |
+| 可选 | 便签（Note） | 悬停才弹出的长说明 |
+| 可选 | 锁定 | 防误拖（有撤销后风险更低） |
+
+做的顺序（负责人 2026-11-09 定）：磁吸 → 射线 + 水平射线 → 平行通道 → 文字 → 路标 / 标注气泡 → 日期 + 价格区间 → 样式（颜色 / 线宽 / 线型）。磁吸最先：它是横切所有工具的增强，先做好，之后每个新工具开 / 关磁吸各测一次即可；样式放最后，新工具先用默认黄色实线。撤销 / 重做随时可插入。
+
+### 5.3 扩展点（横向增强做成插件，无侵入接入）
+
+横向增强（影响所有画线工具的功能）做成插件：核心为每一**类**增强留一个扩展点，只改一次；之后加 / 删 / 开关同类插件不再碰核心，画线工具与 `useDrawings` 不认识具体插件。一个扩展点只接得住一类；新的一类第一次出现时再建对应扩展点（别预建，接口多半猜错）。
+
+| 扩展点 | 管什么 | 状态 | 插件接口 | 已有插件 |
+|---|---|---|---|---|
+| 锚点变换 | 鼠标落点 → 锚点存成什么 | ✅ 2026-11-09 | `PointPlugin.apply(锚点, PointCtx, 模式) → 锚点`，纯函数，不碰文档、不画东西 | 磁吸（弱 / 强） |
+| 绘制 | 额外画点东西（如吸附时的提示小圆点） | 未建 | — | — |
+| 完成 | 画完一条之后做什么（如连续绘图） | 未建 | — | — |
+| 拦截 | 能不能选 / 拖（如锁定画线） | 未建 | — | — |
+
+锚点变换的实现：
+- 插件在 `pages/editor/drawingPlugins/`：一个插件一个文件（自带名称、图标、模式列表、`apply`），`index.ts` 的 `POINT_PLUGINS` 是唯一登记处，**数组顺序即执行顺序**（先吸附再锁角度 ≠ 反过来，新插件放第几位要想清楚）；`runPlugins` 依次过开着的插件，全关 = 原样返回。纯计算放 `chart/`（磁吸是 `chart/magnet.ts`）。
+- 核心只有两处认插件：`useDrawings` 收一个 `transformPoint`（不认识具体插件），工具栏按 `POINT_PLUGINS` 渲染开关按钮（点按钮开 / 关，小三角里选模式）。开关与模式按插件 id 存 localStorage（`mtv:drawingPlugins`）。
+- **约定：画线工具「鼠标落在哪」一律经 `useDrawings` 的 `toPoint` 取锚点，不自己换算**，插件才管得到。唯一例外是拖趋势线整条（线身平移）走不过插件的 `rawPoint`：两端各吸各的会把线拧歪。
+- `PointCtx` 一次带全（光标像素、光标所在那一根的值、数值 → 纵坐标、另一端点、Shift、「只用日期」标记），锁角度、吸整数价位这类以后的锚点插件不用再改核心。
+- 磁吸口径：吸到光标所在那一根的值（线 = 收盘一个值，蜡烛 = 开高低收），吸上时日期也对齐到那一根；弱磁吸半径 12px（TradingView 未公开，取手感值），强磁吸总是吸。竖线只用日期（`onlyTime`）：开着磁吸就把日期对齐到那一根，不看高度（拖跨格竖线时点中的格和所属格纵坐标对不上，看高度会随机）。趋势线吸附后两点重合（放大 + 强磁吸点在同一根里）按「太近」处理，不画零长度线。
+
+### 5.4 TradingView 左栏实况（2026-11-09 打开 tradingview.com 图表页逐个展开读出，供以后对照）
+
+| 组 | 子分类与工具 | 用途 | 我们 |
+|---|---|---|---|
+| Cursors | Cross / Dot / Arrow | 鼠标外观 | 有箭头，够用 |
+| | Demonstration | 拖出渐隐轨迹，录屏讲图用 | 不做 |
+| | Magic | 未查到说明 | — |
+| | Eraser | 点哪条删哪条 | 不做（选中后 Delete） |
+| | Values tooltip on long press | 长按弹数值，触屏用 | 不做 |
+| Trend tools | LINES：Trendline ⌥T · Ray · Info line · Extended line · Trend angle · Horizontal line ⌥H · Horizontal ray ⌥J · Vertical line ⌥V · Crossline ⌥C | 单根线；Info line 自带涨跌信息框，Trend angle 显示角度，Crossline = 横竖十字 | 见 5.2 |
+| | CHANNELS：Parallel channel · Regression trend · Flat top/bottom · Disjoint channel | 平行通道 / 回归通道 / 一边水平的三角 / 不平行的楔形 | 见 5.2 |
+| | PITCHFORKS：Pitchfork 及 Schiff / Modified Schiff / Inside | 三点画 Andrews 中线加两边 | 不做 |
+| Gann and Fibonacci | FIBONACCI 11 种（回撤 ⌥F、扩展、通道、时间区、扇、圆、螺旋、弧、楔、Pitchfan 等）· GANN 4 种（箱、方格、扇） | 按固定比例 / 角度切价格与时间，短线找反转位 | 不做 |
+| Patterns | CHART PATTERNS 6 种（XABCD、Cypher、头肩、ABCD、三角、Three drives）· ELLIOTT WAVES 5 种 · CYCLES（周期线、时间周期、正弦线） | 给形态贴标签、波浪计数、假设固定周期 | 不做 |
+| Forecasting and measurement | FORECASTING：Long / Short position · Position forecast · Bars pattern · Ghost feed · Sector | 模拟交易盈亏比 / 预测线 / 复制一段 K 线当投影 / 手画假想 K 线 / Sector 未查到说明 | 不做 |
+| | VOLUME-BASED：Anchored VWAP · Fixed range / Anchored volume profile | 锚定成交量加权均价、区间成交量分布 | 不做（宏观序列无成交量） |
+| | MEASURERS：Price range · Date range · Date and price range | 量价差 / 天数 / 两者 | 见 5.2 |
+| Geometric shapes | BRUSHES：Brush · Highlighter · ARROWS：4 种 · SHAPES：Rectangle ⌥⇧R · 旋转矩形 · Path · Circle · Ellipse · Polyline · Triangle · Arc · Curve · Double curve | 自由手绘与几何图形 | 只考虑矩形（可选），其余交给图片二次编辑 |
+| Annotation tools | TEXT AND NOTES：Text · Note · Price note · Pin · Table · Callout · Comment · Price label · Signpost · Flag mark | 文字 / 悬停便签 / 指向价位的便签 / 图钉 / 表格 / 气泡 / 对话框 / 价格标签 / 路标 / 小旗 | 见 5.2 |
+| | CONTENT：Image · Post · Idea | 插图片；Post、Idea 是社区发帖 | 不做 |
+| Icons | 表情、贴纸、图标 | 装饰 | 不做 |
+| 底栏 | Measure | 临时测量尺，松手消失 | 并进区间测量 |
+| | Zoom in | 框选放大 | 不做（滚轮能缩放） |
+| | Magnets：Weak / Strong magnet · Snap to indicators | 端点吸到最近的开高低收（弱 / 强吸附距离）或指标线 | 见 5.2 |
+| | Keep drawing | 画完不退回光标，连续画 | 不做 |
+| | Lock：Lock drawings / indicators / all | 防误拖 | 可选 |
+| | Hide：drawings / indicators / positions and orders / all | 分类隐藏 | 已有「隐藏全部画线」 |
+| | Remove：N drawings / N indicators / both · Always remove locked drawings | 分类删除 | 已有「删除全部画线」 |
+
+TradingView 分组按钮的样式细节（读它的 CSS 得到）：组宽 52px，小三角 11px 宽叠在主按钮右缘，平时 `opacity: 0`，悬停整组时滑入；打开后保持显示、加悬停底色、箭头转 180°。我们的按比例缩小（组 36px、小三角 10px）。
 
 ## 仍未做
 
