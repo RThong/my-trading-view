@@ -182,11 +182,13 @@
   只属于某个视角的 tab 定义 / regime 配置(`docs.ts`,每个 tab 一份 ChartDoc,与图表编辑器同一格式)/ 组件放 `web/pages/<视角>/`。业务代码禁循环由 Biome 插件
   `biome-plugins/no-loop.grit` 按目录执行(范围见 `biome.jsonc`):计算逻辑夹在业务文件里就拆进计算目录,别加 `biome-ignore`。
 - **UI 组件库:shadcn/ui**(base-nova 风格,底层 Base UI `@base-ui/react`),组件源码在 `src/web/components/ui/`(拷进来归自己,可改),
-  类名合并 `cn` 在 `src/web/lib/utils.ts`(clsx + tailwind-merge),颜色变量在 `styles.css` 的 `@theme inline`(只映射到 neutral 深色,
-  没有明暗两套)。加组件:`bunx shadcn@latest add <名字>` 后**检查 styles.css 是否被塞进 `:root` 变量 / `body` 全局样式**,有就删掉(唯一有意保留的是 `:root { color-scheme: dark }`,原生控件靠它取深色)、
+  类名合并 `cn` 在 `src/web/lib/utils.ts`(clsx + tailwind-merge),颜色变量在 `styles.css` 的 `@theme inline`(映射到 neutral 色阶)。
+  **明暗主题**(顶栏切换,`hooks/theme.ts`):浅色 = `:root[data-theme="light"]` 把 neutral 色阶整条翻成暖白、几档强调色换深色号,
+  所以写界面**只用 `neutral-*` 表达明暗层级,别写 `white` / `black`**(不会翻);画布(lightweight-charts)读不到 CSS 变量,
+  颜色走 `chartThemeOptions`,新建图的地方要并上它并在主题变化时 `applyOptions`。加组件:`bunx shadcn@latest add <名字>` 后**检查 styles.css 是否被塞进 `:root` 变量 / `body` 全局样式**,有就删掉(有意保留的只有 `:root { color-scheme: dark }`(原生控件靠它取深色)和 `:root[data-theme="light"]` 浅色色阶块)、
   缺的变量照现有写法补进 `@theme`;组件里的图标占位换 lucide。⚠️ CLI 实测会:把 `cn` 写成 `from "cn"` 并装 npm 上同名的无关包
   (改回 `@web/lib/utils`、`bun remove cn`)、漏装 `class-variance-authority`、多装 `date-fns`(react-day-picker 自带)。
-  ⚠️ 组件里的 `dark:` 分支要**拍平成基础类**:全站恒深色,而 `dark:x` 与调用方传的同属性类 tailwind-merge 判不出冲突、
+  ⚠️ 组件里的 `dark:` 分支要**拍平成基础类**:`dark:` 变体恒定生效(浅色靠翻色阶,不靠 `dark:`),而 `dark:x` 与调用方传的同属性类 tailwind-merge 判不出冲突、
   CSS 里 `dark:` 排后面总是赢,调用方的激活色就盖不掉(见 `ui/button.tsx` 顶部)。`md:text-sm` 这类响应式变体同理(会盖掉调用方的 `text-xs`),也拍平。
   ⚠️ 模板按新版 Base UI 写,对不上已装的 1.9:①`data-vertical:` / `group-data-horizontal/…` 匹配不上(1.9 只输出 `data-orientation`),
   要改写成 `data-[orientation=…]:`;②tabs / toggle-group 的 `orientation` 只写进 `data-orientation`、没传给 Base UI(竖排键盘导航和 aria 都错)。

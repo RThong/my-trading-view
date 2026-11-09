@@ -1,4 +1,7 @@
+import { Moon, Sun } from 'lucide-react';
+import { setTheme, useTheme } from '../hooks/theme';
 import { StatusLight } from './StatusLight';
+import { Button } from './ui/button';
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 import type { Interval } from '../hooks/interval';
 
@@ -10,6 +13,8 @@ type HeaderProps = {
 };
 
 export function Header({ interval, onIntervalChange }: HeaderProps) {
+  const theme = useTheme();
+
   return (
     <header className="flex items-center gap-4 border-b border-neutral-800 px-6 py-3">
       <StatusLight />
@@ -26,12 +31,21 @@ export function Header({ interval, onIntervalChange }: HeaderProps) {
           <ToggleGroupItem
             key={i}
             value={i}
-            className="h-auto min-w-0 rounded px-3 py-1 font-normal text-neutral-400 hover:bg-neutral-800 hover:text-white aria-pressed:bg-neutral-700 aria-pressed:text-white aria-pressed:hover:bg-neutral-700"
+            className="h-auto min-w-0 rounded px-3 py-1 font-normal text-neutral-400 hover:bg-neutral-800 hover:text-neutral-50 aria-pressed:bg-neutral-700 aria-pressed:text-neutral-50 aria-pressed:hover:bg-neutral-700"
           >
             {i}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        title={theme === 'dark' ? '切到浅色' : '切到深色'}
+        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        className="text-neutral-400 hover:text-neutral-50"
+      >
+        {theme === 'dark' ? <Sun /> : <Moon />}
+      </Button>
     </header>
   );
 }

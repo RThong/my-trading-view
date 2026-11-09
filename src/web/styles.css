@@ -1,14 +1,43 @@
 @import "tailwindcss";
 
-/* 全站只有深色:dark: 变体恒定生效(默认跟系统 prefers-color-scheme 走,切浅色时组件会掉回浅色样式)。
+/* dark: 变体恒定生效(默认跟系统 prefers-color-scheme 走,系统是浅色时组件会掉回 shadcn 的浅色样式);
+ * 本站的浅色主题不靠 dark:,靠下面 data-theme="light" 翻 neutral 色阶。
  * 兜底用:components/ui 里的 dark: 仍要拍平成基础类 —— dark: 类与调用方传的同属性类 tailwind-merge 判不出冲突,
  * CSS 里 dark: 排在后面,调用方就盖不掉(见 ui/button.tsx 顶部)。 */
 @custom-variant dark (&:is(*));
 
-/* 原生控件(select 的选项列表、日历年月下拉、滚动条)与 Canvas / CanvasText 系统色跟着取深色。
+/* 原生控件(select 的选项列表、日历年月下拉、滚动条)与 Canvas / CanvasText 系统色跟着主题取深色(浅色主题里改 light)。
  * 不设的话 shadcn NativeSelect 的选项是白底黑字(Windows / Linux 的 Chrome、Firefox 上尤其明显) */
 :root {
   color-scheme: dark;
+}
+
+/* 浅色(暖白护眼,负责人 2026-11-09 定;TradingView 浅色是纯白,这里有意偏暖):把 neutral 色阶整条翻转成暖色,
+ * 全站 bg-neutral-950 / text-neutral-200 这类类名不用改就跟着翻。所以写界面时只用 neutral 表达明暗层级,
+ * 别写 white / black(不会翻)。切换见 hooks/theme.ts,画布颜色另在那里配。 */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-neutral-950: #faf7f0;
+  --color-neutral-900: #f3eee3;
+  --color-neutral-800: #e6dfd0;
+  --color-neutral-700: #d3cab8;
+  --color-neutral-600: #b3a994;
+  --color-neutral-500: #8a8173;
+  --color-neutral-400: #6e665a;
+  --color-neutral-300: #4f493f;
+  --color-neutral-200: #2b2620;
+  --color-neutral-100: #1f1b16;
+  --color-neutral-50: #14110d;
+  /* 强调色:深色底上用的是浅色号(300~500),暖白底上发虚,换成同色相的深色号(Tailwind 600~800) */
+  --color-amber-200: #92400e;
+  --color-amber-300: #92400e;
+  --color-amber-400: #b45309;
+  --color-amber-500: #b45309;
+  --color-yellow-300: #a16207;
+  --color-yellow-400: #a16207;
+  --color-red-400: #dc2626;
+  --color-green-400: #16a34a;
+  --color-sky-300: #0369a1;
 }
 
 /* 触摸板左右滑到头时,Chrome 默认会当成「后退 / 前进」翻页(图表左右拖着拖着整页就退了)。none = 这页不做滑动导航;
@@ -20,7 +49,7 @@ body {
 
 /*
  * shadcn/ui 组件用到的颜色变量(src/web/components/ui/ 下的组件引用 bg-popover / text-muted-foreground 这类类名)。
- * 全站只有深色:直接映射到现有 neutral 色系,不加 :root 明暗两套、也不改 body 的全局样式,旧页面外观不受影响。
+ * 直接映射到 neutral 色系:浅色主题翻 neutral 色阶时这些跟着翻,不另配明暗两套。
  * 只列组件实际用到的;以后加新组件引用了别的变量,在这里补。
  */
 @theme inline {

@@ -23,8 +23,8 @@ function chunkByGroup(tabs: Tab[]): Array<{ group?: string; items: Tab[] }> {
 // 激活 / 悬停样式。shadcn tabs 默认是灰底胶囊,这里改回原来的「激活 neutral-700 底」样式。
 // 激活阴影写在 group-data-[variant=default]/tabs-list:data-active: 变体下,要用同一个变体前缀才盖得掉
 const TRIGGER =
-  'h-auto flex-none rounded border-0 px-3 py-1.5 text-sm font-normal text-neutral-400 hover:bg-neutral-800 hover:text-white ' +
-  'data-active:bg-neutral-700 data-active:text-white data-active:hover:bg-neutral-700 ' +
+  'h-auto flex-none rounded border-0 px-3 py-1.5 text-sm font-normal text-neutral-400 hover:bg-neutral-800 hover:text-neutral-50 ' +
+  'data-active:bg-neutral-700 data-active:text-neutral-50 data-active:hover:bg-neutral-700 ' +
   'group-data-[variant=default]/tabs-list:data-active:shadow-none group-data-[orientation=vertical]/tabs:justify-center';
 
 export function TabBar({ tabs, active, onChange, vertical }: Props) {

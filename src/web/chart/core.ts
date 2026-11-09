@@ -1,4 +1,4 @@
-// 期权/VRP 面板共用的图表辅助:暗色主题选项 + 按 interval 的周期聚合。
+// 期权/VRP 面板共用的图表辅助:图表通用选项 + 按 interval 的周期聚合。
 import { type AutoscaleInfoProvider, type ISeriesApi, LineStyle, type SeriesType } from 'lightweight-charts';
 import { sortBy } from 'remeda';
 import type { Interval } from '../hooks/interval';
@@ -24,11 +24,9 @@ export function fmtDate(time: unknown): string {
   return new Date((time as number) * 1000).toISOString().slice(0, 10);
 }
 
+// 颜色不在这里:随明暗主题换,建图时并上 hooks/theme 的 chartThemeOptions,切换时再 applyOptions
 export const CHART_OPTIONS = {
-  layout: { background: { color: '#0a0a0a' }, textColor: '#a1a1aa' },
-  grid: { vertLines: { color: '#1f1f1f' }, horzLines: { color: '#1f1f1f' } },
-  rightPriceScale: { borderColor: '#262626' },
-  timeScale: { borderColor: '#262626', timeVisible: false },
+  timeScale: { timeVisible: false },
   // 鼠标悬停时浮动的时间标签(crosshair)统一成 YYYY-MM-DD,覆盖默认中文 locale。
   localization: { timeFormatter: fmtDate },
   autoSize: true,

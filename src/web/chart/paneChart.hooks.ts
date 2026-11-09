@@ -10,6 +10,7 @@ import {
   type IChartApi,
   type AutoscaleInfo,
 } from 'lightweight-charts';
+import { chartThemeOptions, getTheme, useTheme } from '../hooks/theme';
 import { useStable } from '../hooks/useStable';
 import { CHART_OPTIONS, REF_LINE, boxAutoscaleProvider, changeStats, needsLogScale } from './core';
 import type { PaneDef, Spec, LegendCell, AnySeries } from './paneChart.types';
@@ -151,6 +152,7 @@ export function usePaneChart(
   useEffect(() => {
     if (!containerRef.current) return;
     const chart = createChart(containerRef.current, CHART_OPTIONS);
+    chart.applyOptions(chartThemeOptions(getTheme()));
     chartRef.current = chart;
     const seriesMap = seriesRef.current; // 同一 Map(useRef 只建一次),捕获供 cleanup 用
     const fillMap = fillRef.current;
@@ -166,6 +168,12 @@ export function usePaneChart(
       spanRef.current = ''; // 重建后的新图要重新 fit
     };
   }, [containerRef, paneCount]);
+
+  // 切明暗主题:只换画布颜色,不重建图
+  const theme = useTheme();
+  useEffect(() => {
+    chartRef.current?.applyOptions(chartThemeOptions(theme));
+  }, [theme]);
 
   // 数据/聚合变化时同步 series:缺的删、没有的建、有的 setData。
   useEffect(() => {
