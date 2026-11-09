@@ -8,6 +8,8 @@ import {
   Minus,
   MousePointer2,
   SeparatorVertical,
+  MoveUpRight,
+  ArrowRightFromLine,
   Slash,
   Trash2,
 } from 'lucide-react';
@@ -26,15 +28,27 @@ const OWNER_HINT = '画在这一格里选中的那条线上(先点一下线),没
 const TOOL: Record<DrawingTool, { icon: LucideIcon; name: string; hint: string }> = {
   cursor: { icon: MousePointer2, name: '光标', hint: '光标:点画线选中,拖端点 / 线身调整,Delete 删除(Esc)' },
   trend: { icon: Slash, name: '趋势线', hint: `趋势线:点两下,或按住拖。${OWNER_HINT}` },
+  ray: {
+    icon: MoveUpRight,
+    name: '射线',
+    hint: `射线:点两下(起点、方向),从起点穿过第二点一直延伸。${OWNER_HINT}`,
+  },
+  hray: { icon: ArrowRightFromLine, name: '水平射线', hint: `水平射线:点一下,从这一点往右延伸。${OWNER_HINT}` },
   hline: { icon: Minus, name: '水平线', hint: `水平线:点一下。${OWNER_HINT}` },
   vline: { icon: SeparatorVertical, name: '竖线', hint: `竖线:点一下,默认贯穿所有格。${OWNER_HINT}` },
 };
-const KIND_NAME: Record<Drawing['kind'], string> = { trend: '趋势线', hline: '水平线', vline: '竖线' };
+const KIND_NAME: Record<Drawing['kind'], string> = {
+  trend: '趋势线',
+  ray: '射线',
+  hline: '水平线',
+  hray: '水平射线',
+  vline: '竖线',
+};
 
 /** 工具组(同 TradingView 左栏的一格):按钮显示这组上次用的工具,点它直接用;点右缘小三角弹出整组 */
 type ToolGroupDef = { id: string; name: string; sections: { title: string; tools: DrawingTool[] }[] };
 const GROUPS: ToolGroupDef[] = [
-  { id: 'lines', name: '线条', sections: [{ title: '线', tools: ['trend', 'hline', 'vline'] }] },
+  { id: 'lines', name: '线条', sections: [{ title: '线', tools: ['trend', 'ray', 'hline', 'hray', 'vline'] }] },
 ];
 
 // 各组上次用的工具,跨刷新记住(只是偏好,读写失败就用组里第一个)

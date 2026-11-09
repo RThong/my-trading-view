@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { hitShapes, timeAxis } from './drawings';
+import { hitShapes, rayEnd, timeAxis } from './drawings';
 
 describe('timeAxis', () => {
   // 周线:每周一根(7 天一根)
@@ -45,5 +45,34 @@ describe('hitShapes', () => {
   test('水平线按 y、竖线按 x,取最近的那条', () => {
     expect(hitShapes(shapes, 500, 203)).toMatchObject({ id: 'h', part: 'body' });
     expect(hitShapes(shapes, 302, 190)).toMatchObject({ id: 'v' });
+  });
+});
+
+describe('射线 / 水平射线', () => {
+  test('rayEnd:沿起点→第二点的方向延伸到很远;第二点在左边就往左;两点重合停在原地', () => {
+    const right = rayEnd(0, 0, 3, 4);
+    expect(right.x / right.y).toBeCloseTo(3 / 4);
+    expect(right.x).toBeGreaterThan(10_000);
+
+    expect(rayEnd(100, 100, 50, 100).x).toBeLessThan(-10_000);
+    expect(rayEnd(5, 5, 5, 5)).toEqual({ x: 5, y: 5 });
+  });
+
+  test('rayEnd:起点在画布外很远(早年画的射线放大后滚到最新),远端仍越过画布', () => {
+    expect(rayEnd(-500_000, 100, -499_990, 100).x).toBeGreaterThan(10_000);
+  });
+
+  test('射线过了第二点仍点得中;起点反方向点不中', () => {
+    const shapes = [{ id: 'r', kind: 'ray' as const, x1: 0, y1: 0, x2: 100, y2: 0 }];
+    expect(hitShapes(shapes, 400, 3)).toMatchObject({ id: 'r', part: 'body' });
+    expect(hitShapes(shapes, 99, 1)).toMatchObject({ id: 'r', part: 'b' });
+    expect(hitShapes(shapes, -50, 0)).toBeNull();
+  });
+
+  test('水平射线:起点是手柄,往右的线身点得中,起点左边点不中', () => {
+    const shapes = [{ id: 'hr', kind: 'hray' as const, x: 100, y: 50 }];
+    expect(hitShapes(shapes, 102, 51)).toMatchObject({ id: 'hr', part: 'a' });
+    expect(hitShapes(shapes, 600, 54)).toMatchObject({ id: 'hr', part: 'body' });
+    expect(hitShapes(shapes, 40, 50)).toBeNull();
   });
 });
