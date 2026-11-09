@@ -3,7 +3,16 @@ import { Magnet } from 'lucide-react';
 import { modeOf, runPlugins } from './index';
 import type { PointCtx, PointPlugin } from './types';
 
-const ctx: PointCtx = { x: 0, y: 0, bar: null, toY: () => null, anchor: null, shift: false, onlyTime: false };
+const ctx: PointCtx = {
+  x: 0,
+  y: 0,
+  bar: null,
+  toY: () => null,
+  anchor: null,
+  shift: false,
+  onlyTime: false,
+  dragging: false,
+};
 const p = { time: '2026-03-13', value: 100 };
 // 两个只改数值的假插件,看得出执行顺序
 function plugin(id: string, f: (v: number) => number): PointPlugin {

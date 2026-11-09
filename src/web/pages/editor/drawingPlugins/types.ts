@@ -19,6 +19,8 @@ export type PointCtx = {
   shift: boolean;
   /** 这条线只用日期(竖线):纵向高度对它没意义,吸附类插件只对齐日期、不看光标离值多近 */
   onlyTime: boolean;
+  /** 在拖一条已有的线(拖端点 / 整条水平线 / 竖线);新画的线为 false */
+  dragging: boolean;
 };
 
 export type PointPlugin = {

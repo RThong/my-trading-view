@@ -122,14 +122,22 @@ function barAt(ctx: Ctx, s: ISeriesApi<SeriesType>, x: number): BarValues | null
   return values.length ? { time: fmtDate(item.time), values } : null;
 }
 
-type PointExtra = { anchor: DrawingPoint | null; shift: boolean; onlyTime?: boolean };
+type PointExtra = { anchor: DrawingPoint | null; shift: boolean; onlyTime?: boolean; dragging?: boolean };
 
 /** 鼠标像素 → 锚点,再过锚点变换(插件)。画线工具「鼠标落在哪」一律走这里,不自己换算(见设计文档 §5.3) */
 function toPoint(ctx: Ctx, s: ISeriesApi<SeriesType>, x: number, y: number, extra: PointExtra): DrawingPoint | null {
   const raw = rawPoint(ctx, s, x, y);
   return (
     raw &&
-    ctx.transform(raw, { x, y, bar: barAt(ctx, s, x), toY: (v) => s.priceToCoordinate(v), onlyTime: false, ...extra })
+    ctx.transform(raw, {
+      x,
+      y,
+      bar: barAt(ctx, s, x),
+      toY: (v) => s.priceToCoordinate(v),
+      onlyTime: false,
+      dragging: false,
+      ...extra,
+    })
   );
 }
 
@@ -188,12 +196,14 @@ function dragged(
     const l = ctx.axis.toLogical(d.time);
     // 只用日期:点中的格不一定是所属图层那一格,at.y 跟所属格的纵坐标对不上,磁吸也不该看高度
     const p =
-      l === null || !at ? null : toPoint(ctx, s, ctx.toX(l) + dx, at.y, { anchor: null, shift, onlyTime: true });
+      l === null || !at
+        ? null
+        : toPoint(ctx, s, ctx.toX(l) + dx, at.y, { anchor: null, shift, onlyTime: true, dragging: true });
     return p ? { ...d, time: p.time } : null;
   }
   if (d.kind === 'hline') {
     const y = s.priceToCoordinate(d.value);
-    const p = y === null || !at ? null : toPoint(ctx, s, at.x, y + dy, { anchor: null, shift });
+    const p = y === null || !at ? null : toPoint(ctx, s, at.x, y + dy, { anchor: null, shift, dragging: true });
     return p ? { ...d, value: p.value } : null;
   }
 
@@ -202,7 +212,7 @@ function dragged(
     if (!px) return null;
     return g.part === 'body'
       ? rawPoint(ctx, s, px.x + dx, px.y + dy)
-      : toPoint(ctx, s, px.x + dx, px.y + dy, { anchor, shift });
+      : toPoint(ctx, s, px.x + dx, px.y + dy, { anchor, shift, dragging: true });
   };
   const a = g.part === 'b' ? d.a : shifted(d.a, g.part === 'a' ? d.b : null);
   const b = g.part === 'a' ? d.b : shifted(d.b, g.part === 'b' ? d.a : null);
