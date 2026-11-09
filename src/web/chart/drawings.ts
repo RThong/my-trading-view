@@ -75,7 +75,21 @@ export type Shape =
   | (TwoPoints & { kind: 'ray' })
   | { id: string; kind: 'hline'; y: number }
   | { id: string; kind: 'hray'; x: number; y: number }
+  | (TwoPoints & { kind: 'channel'; x3: number; y3: number })
   | { id: string; kind: 'vline'; x: number };
+
+/**
+ * 平行通道的平行线相对底边的纵向偏移(像素):第三点 (x3,y3) 到底边在同一横坐标处的竖直距离。
+ * 在屏幕上平行,所以对数 / 倒轴下也是两条平行直线。底边竖直(两点同一天)没有斜率 → 0
+ */
+export function channelOffset(s: { x1: number; y1: number; x2: number; y2: number; x3: number; y3: number }): number {
+  return s.x2 === s.x1 ? 0 : s.y3 - lineYAt(s, s.x3);
+}
+
+/** 过 (x1,y1)(x2,y2) 的直线在横坐标 x 处的纵坐标;竖直线(两点同横坐标)返回 y1 */
+export function lineYAt(s: { x1: number; y1: number; x2: number; y2: number }, x: number): number {
+  return s.x2 === s.x1 ? s.y1 : s.y1 + ((s.y2 - s.y1) * (x - s.x1)) / (s.x2 - s.x1);
+}
 
 // 射线画到这么远:比任何屏幕都大,超出画布的部分 canvas 自己裁掉,不用算和边框的交点
 const RAY_FAR = 100_000;
@@ -90,8 +104,8 @@ export function rayEnd(x1: number, y1: number, x2: number, y2: number): { x: num
   return { x: x1 + ((x2 - x1) / len) * far, y: y1 + ((y2 - y1) / len) * far };
 }
 
-/** 命中:哪条、抓的是哪儿(两点线的两端 a / b,水平射线的起点 a,其余一律线身) */
-export type Hit = { id: string; part: 'a' | 'b' | 'body'; dist: number };
+/** 命中:哪条、抓的是哪儿(两点线的两端 a / b,水平射线的起点 a,通道平行线上的宽度手柄 c,其余一律线身) */
+export type Hit = { id: string; part: 'a' | 'b' | 'c' | 'body'; dist: number };
 
 // 离线多近算点中;端点手柄比线身优先(同一处既是端点又在线上时,拖端点)
 const HIT_PX = 6;
@@ -112,9 +126,28 @@ function hitOne(s: Shape, x: number, y: number): Hit | null {
   const da = Math.hypot(x - s.x1, y - s.y1);
   const db = Math.hypot(x - s.x2, y - s.y2);
   if (Math.min(da, db) <= HANDLE_PX) return { id: s.id, part: da <= db ? 'a' : 'b', dist: 0 };
+  if (s.kind === 'channel') return hitChannel(s, x, y);
   const end = s.kind === 'ray' ? rayEnd(s.x1, s.y1, s.x2, s.y2) : { x: s.x2, y: s.y2 };
   const d = pointToSegmentDistance(x, y, s.x1, s.y1, end.x, end.y);
   return d <= HIT_PX ? { id: s.id, part: 'body', dist: d } : null;
+}
+
+/** 通道:宽度手柄(平行线中点)> 两条边附近 > 通道里面(点中填色也算选中,同 TradingView;排在贴边命中之后) */
+function hitChannel(s: ShapeOf<'channel'>, x: number, y: number): Hit | null {
+  const off = channelOffset(s);
+  const [mx, my] = [(s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2 + off];
+  if (Math.hypot(x - mx, y - my) <= HANDLE_PX) return { id: s.id, part: 'c', dist: 0 };
+
+  const d = Math.min(
+    pointToSegmentDistance(x, y, s.x1, s.y1, s.x2, s.y2),
+    pointToSegmentDistance(x, y, s.x1, s.y1 + off, s.x2, s.y2 + off),
+  );
+  if (d <= HIT_PX) return { id: s.id, part: 'body', dist: d };
+
+  const inX = x >= Math.min(s.x1, s.x2) && x <= Math.max(s.x1, s.x2);
+  const base = lineYAt(s, x);
+  const inY = y >= Math.min(base, base + off) && y <= Math.max(base, base + off);
+  return inX && inY ? { id: s.id, part: 'body', dist: HIT_PX } : null;
 }
 
 /** 鼠标下最近的那条;都不够近 → null */
@@ -134,13 +167,12 @@ type ShapeOf<K extends Shape['kind']> = Extract<Shape, { kind: K }>;
 type Pt = [number, number];
 type Size = { width: number; height: number };
 
-/** 一种画线在这一格里怎么画:一段线(from → to)+ 选中时手柄的位置 */
-type Geom = { from: Pt; to: Pt; handles: Pt[] };
+/** 一种画线在这一格里怎么画:几段实线 + 可选的虚线(通道中线)/ 填色区域 + 选中时手柄的位置 */
+type Geom = { lines: [Pt, Pt][]; dashed?: [Pt, Pt][]; fill?: Pt[]; handles: Pt[] };
 
 function twoPointGeom(s: TwoPoints, to: Pt): Geom {
   return {
-    from: [s.x1, s.y1],
-    to,
+    lines: [[[s.x1, s.y1], to]],
     handles: [
       [s.x1, s.y1],
       [s.x2, s.y2],
@@ -148,16 +180,68 @@ function twoPointGeom(s: TwoPoints, to: Pt): Geom {
   };
 }
 
-// 两点线两端、水平射线起点的手柄可拖;水平 / 竖线的手柄在中点,拖它 = 拖线身,只为看得出选中了
+function channelGeom(s: ShapeOf<'channel'>): Geom {
+  const off = channelOffset(s);
+  const [a, b]: Pt[] = [
+    [s.x1, s.y1],
+    [s.x2, s.y2],
+  ];
+  const [a2, b2]: Pt[] = [
+    [s.x1, s.y1 + off],
+    [s.x2, s.y2 + off],
+  ];
+
+  return {
+    lines: [
+      [a, b],
+      [a2, b2],
+    ],
+    dashed: [
+      [
+        [s.x1, s.y1 + off / 2],
+        [s.x2, s.y2 + off / 2],
+      ],
+    ],
+    fill: [a, b, b2, a2],
+    handles: [a, b, [(s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2 + off]],
+  };
+}
+
+// 两点线两端、水平射线起点、通道平行线中点(拖它改宽度)的手柄可拖;水平 / 竖线的手柄在中点,拖它 = 拖线身,只为看得出选中了
 const GEOM: { [K in Shape['kind']]: (s: ShapeOf<K>, size: Size) => Geom } = {
   trend: (s) => twoPointGeom(s, [s.x2, s.y2]),
   ray: (s) => {
     const end = rayEnd(s.x1, s.y1, s.x2, s.y2);
     return twoPointGeom(s, [end.x, end.y]);
   },
-  hray: (s, size) => ({ from: [s.x, s.y], to: [size.width, s.y], handles: [[s.x, s.y]] }),
-  hline: (s, size) => ({ from: [0, s.y], to: [size.width, s.y], handles: [[size.width / 2, s.y]] }),
-  vline: (s, size) => ({ from: [s.x, 0], to: [s.x, size.height], handles: [[s.x, size.height / 2]] }),
+  channel: channelGeom,
+  hray: (s, size) => ({
+    lines: [
+      [
+        [s.x, s.y],
+        [size.width, s.y],
+      ],
+    ],
+    handles: [[s.x, s.y]],
+  }),
+  hline: (s, size) => ({
+    lines: [
+      [
+        [0, s.y],
+        [size.width, s.y],
+      ],
+    ],
+    handles: [[size.width / 2, s.y]],
+  }),
+  vline: (s, size) => ({
+    lines: [
+      [
+        [s.x, 0],
+        [s.x, size.height],
+      ],
+    ],
+    handles: [[s.x, size.height / 2]],
+  }),
 };
 
 /** 这一格此刻要画的:各条画线的像素、选中的那条、绘图模式下的光标 */
@@ -170,6 +254,8 @@ export type PaneDrawingState = {
 };
 
 const PREVIEW_R = 4;
+// 通道填色的不透明度:淡到不挡住里面的 K 线
+const FILL_ALPHA = 0.08;
 
 class DrawingsRenderer implements IPrimitivePaneRenderer {
   constructor(private readonly state: PaneDrawingState) {}
@@ -184,10 +270,38 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
         ctx.strokeStyle = COLOR;
         // 按 kind 取对应那一行;联合类型下 TS 认不出 s 和 GEOM[s.kind] 是同一种,只能断言
         const g = GEOM[s.kind](s as never, mediaSize);
+        if (g.fill) {
+          ctx.globalAlpha = FILL_ALPHA;
+          ctx.fillStyle = COLOR;
+          ctx.beginPath();
+          const [first, ...rest] = g.fill;
+          ctx.moveTo(...first);
+          rest.forEach((pt) => {
+            ctx.lineTo(...pt);
+          });
+          ctx.closePath();
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+
         ctx.beginPath();
-        ctx.moveTo(...g.from);
-        ctx.lineTo(...g.to);
+        g.lines.forEach(([from, to]) => {
+          ctx.moveTo(...from);
+          ctx.lineTo(...to);
+        });
         ctx.stroke();
+
+        if (g.dashed) {
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          g.dashed.forEach(([from, to]) => {
+            ctx.moveTo(...from);
+            ctx.lineTo(...to);
+          });
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
         if (!on) return;
 
         ctx.fillStyle = COLOR;

@@ -735,6 +735,16 @@ describe('画线', () => {
     expect(bad({ id: 'd9', kind: 'hray', value: 3 })).toBeNull();
     expect(bad({ ...hray, a: { time: '2026-13-01', value: 1 } })).toBeNull();
   });
+
+  test('平行通道:三个点往返保留,缺 c 拒收', () => {
+    const channel = { ...trend, id: 'd4', kind: 'channel' as const, c: { time: '2026-02-10', value: 25 } };
+    const doc = addDrawing(base, vix, channel);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+
+    const raw = JSON.parse(JSON.stringify(doc));
+    raw.panes[0].layers[0].drawings = [{ ...trend, id: 'd9', kind: 'channel' }];
+    expect(parseChartDoc(raw)).toBeNull();
+  });
 });
 
 describe('画线与标记图层', () => {

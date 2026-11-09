@@ -9,6 +9,7 @@ import {
   MousePointer2,
   SeparatorVertical,
   MoveUpRight,
+  Equal,
   ArrowRightFromLine,
   Slash,
   Trash2,
@@ -33,6 +34,11 @@ const TOOL: Record<DrawingTool, { icon: LucideIcon; name: string; hint: string }
     name: '射线',
     hint: `射线:点两下(起点、方向),从起点穿过第二点一直延伸。${OWNER_HINT}`,
   },
+  channel: {
+    icon: Equal,
+    name: '平行通道',
+    hint: `平行通道:点两下画底边,再点一下定宽度(平行线穿过这一点)。${OWNER_HINT}`,
+  },
   hray: { icon: ArrowRightFromLine, name: '水平射线', hint: `水平射线:点一下,从这一点往右延伸。${OWNER_HINT}` },
   hline: { icon: Minus, name: '水平线', hint: `水平线:点一下。${OWNER_HINT}` },
   vline: { icon: SeparatorVertical, name: '竖线', hint: `竖线:点一下,默认贯穿所有格。${OWNER_HINT}` },
@@ -43,12 +49,20 @@ const KIND_NAME: Record<Drawing['kind'], string> = {
   hline: '水平线',
   hray: '水平射线',
   vline: '竖线',
+  channel: '平行通道',
 };
 
 /** 工具组(同 TradingView 左栏的一格):按钮显示这组上次用的工具,点它直接用;点右缘小三角弹出整组 */
 type ToolGroupDef = { id: string; name: string; sections: { title: string; tools: DrawingTool[] }[] };
 const GROUPS: ToolGroupDef[] = [
-  { id: 'lines', name: '线条', sections: [{ title: '线', tools: ['trend', 'ray', 'hline', 'hray', 'vline'] }] },
+  {
+    id: 'lines',
+    name: '线条',
+    sections: [
+      { title: '线', tools: ['trend', 'ray', 'hline', 'hray', 'vline'] },
+      { title: '通道', tools: ['channel'] },
+    ],
+  },
 ];
 
 // 各组上次用的工具,跨刷新记住(只是偏好,读写失败就用组里第一个)

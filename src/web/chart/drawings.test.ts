@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { hitShapes, rayEnd, timeAxis } from './drawings';
+import { channelOffset, hitShapes, rayEnd, timeAxis } from './drawings';
 
 describe('timeAxis', () => {
   // 周线:每周一根(7 天一根)
@@ -74,5 +74,24 @@ describe('射线 / 水平射线', () => {
     expect(hitShapes(shapes, 102, 51)).toMatchObject({ id: 'hr', part: 'a' });
     expect(hitShapes(shapes, 600, 54)).toMatchObject({ id: 'hr', part: 'body' });
     expect(hitShapes(shapes, 40, 50)).toBeNull();
+  });
+});
+
+describe('平行通道', () => {
+  // 底边 (0,100)→(200,0),第三点 (100,90):底边在 x=100 处 y=50,平行线往下偏 40
+  const ch = { id: 'c', kind: 'channel' as const, x1: 0, y1: 100, x2: 200, y2: 0, x3: 100, y3: 90 };
+
+  test('channelOffset:第三点到底边同一横坐标处的竖直距离;底边竖直时为 0', () => {
+    expect(channelOffset(ch)).toBe(40);
+    expect(channelOffset({ ...ch, x2: 0 })).toBe(0);
+  });
+
+  test('命中:端点 a / b、平行线中点的宽度手柄 c、两条边、通道里面都点得中;外面点不中', () => {
+    expect(hitShapes([ch], 1, 99)).toMatchObject({ part: 'a' });
+    expect(hitShapes([ch], 100, 91)).toMatchObject({ part: 'c' });
+    expect(hitShapes([ch], 150, 66)).toMatchObject({ part: 'body' });
+    expect(hitShapes([ch], 50, 95)).toMatchObject({ part: 'body' });
+    expect(hitShapes([ch], 50, 130)).toBeNull();
+    expect(hitShapes([ch], 250, 20)).toBeNull();
   });
 });

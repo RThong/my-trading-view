@@ -4,8 +4,10 @@
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import type { IChartApi, IPaneApi, ISeriesApi, Logical, SeriesType, Time } from 'lightweight-charts';
 import {
+  channelOffset,
   DrawingsPrimitive,
   hitShapes,
+  lineYAt,
   timeAxis,
   type Hit,
   type PaneDrawingState,
@@ -29,12 +31,25 @@ import type { BarValues } from '../../../chart/magnet';
 import type { PointCtx } from '../drawingPlugins/types';
 import { paneAt, paneCoords } from './paneHit';
 
-export type DrawingTool = 'cursor' | 'trend' | 'ray' | 'hline' | 'hray' | 'vline';
+export type DrawingTool = 'cursor' | 'trend' | 'ray' | 'channel' | 'hline' | 'hray' | 'vline';
 
 type TwoPoint = Extract<Drawing, { kind: 'trend' | 'ray' }>;
 /** 两点画的线(趋势线、射线):画法、拖端点、吸附后重合判断都一样,只是渲染时射线往外延伸 */
 function isTwoPoint(d: Drawing | undefined): d is TwoPoint {
   return d?.kind === 'trend' || d?.kind === 'ray';
+}
+
+/** 按住 / 点两下画出 a→b 的线:两点线 + 平行通道(通道第二下之后还要一下定宽度,见 Gesture 的 stage) */
+type Creatable = TwoPoint | Extract<Drawing, { kind: 'channel' }>;
+function hasAB(d: Drawing | undefined): d is Creatable {
+  return isTwoPoint(d) || d?.kind === 'channel';
+}
+
+/** 画到一半的线跟着光标:定第二点阶段改 b(通道的 c 先跟着 b,平行线和底边重合);通道定宽阶段改 c */
+function followCursor(d: Creatable, p: DrawingPoint, stage: 'b' | 'c'): Creatable {
+  if (d.kind !== 'channel') return { ...d, b: p };
+
+  return stage === 'c' ? { ...d, c: p } : { ...d, b: p, c: p };
 }
 
 /** 锚点变换(扩展点):鼠标落点换算出的锚点交给它再处理一遍(磁吸等插件);不认识具体插件 */
@@ -65,6 +80,8 @@ type Gesture =
       moved: boolean;
       /** 放下第一点的那次按键还没松开:只有这次按键拖动才算「按住拖画线」,之后在轴上 / 侧栏按住拖都不算 */
       pressed: boolean;
+      /** 在定哪个点:b = 第二点;c = 通道的宽度(第二点定完、再点一下) */
+      stage: 'b' | 'c';
     }
   | {
       kind: 'drag';
@@ -166,7 +183,12 @@ function paneShapes(ctx: Ctx, entries: Entry[], i: number): Shape[] {
     }
     const a = toPx(ctx, s, d.a);
     const b = toPx(ctx, s, d.b);
-    return a && b ? [{ id: d.id, kind: d.kind, x1: a.x, y1: a.y, x2: b.x, y2: b.y }] : [];
+    if (!a || !b) return [];
+    if (d.kind === 'channel') {
+      const c = toPx(ctx, s, d.c);
+      return c ? [{ id: d.id, kind: 'channel', x1: a.x, y1: a.y, x2: b.x, y2: b.y, x3: c.x, y3: c.y }] : [];
+    }
+    return [{ id: d.id, kind: d.kind, x1: a.x, y1: a.y, x2: b.x, y2: b.y }];
   });
 }
 
@@ -230,9 +252,31 @@ function dragged(
       ? rawPoint(ctx, s, px.x + dx, px.y + dy)
       : toPoint(ctx, s, px.x + dx, px.y + dy, { anchor, shift, dragging: true });
   };
-  const a = g.part === 'b' ? d.a : shifted(d.a, g.part === 'a' ? d.b : null);
-  const b = g.part === 'a' ? d.b : shifted(d.b, g.part === 'b' ? d.a : null);
-  return a && b ? { ...d, a, b } : null;
+  // 通道拖宽度手柄:平行线改为穿过光标(按光标那一根过插件;手柄画在平行线中点,第三点却可能在线上任何地方,
+  // 按第三点 + 位移取点的话磁吸会吸到别处那根 K 线)
+  if (d.kind === 'channel' && g.part === 'c') {
+    const c = at && toPoint(ctx, s, at.x, at.y, { anchor: null, shift, dragging: true });
+    return c ? { ...d, c } : null;
+  }
+
+  // 拖哪个点只动哪个点(另一端当锚点);拖线身全部点一起平移
+  const moves = (part: 'a' | 'b') => g.part === 'body' || g.part === part;
+  const a = moves('a') ? shifted(d.a, g.part === 'a' ? d.b : null) : d.a;
+  const b = moves('b') ? shifted(d.b, g.part === 'b' ? d.a : null) : d.b;
+  if (!a || !b) return null;
+  if (d.kind !== 'channel') return { ...d, a, b };
+  if (g.part === 'body') {
+    const c = shifted(d.c, null);
+    return c ? { ...d, a, b, c } : null;
+  }
+
+  // 拖底边一端:第三点那一处的像素宽度保持不变(同 TradingView 拖角时宽度不变);
+  // 第三点不动的话,平行线会绕着这个看不见的点转,宽度时窄时宽
+  const [pa, pb, oa, ob, pc] = [a, b, d.a, d.b, d.c].map((p) => toPx(ctx, s, p));
+  if (!pa || !pb || !oa || !ob || !pc) return null;
+  const width = channelOffset({ x1: oa.x, y1: oa.y, x2: ob.x, y2: ob.y, x3: pc.x, y3: pc.y });
+  const value = s.coordinateToPrice(lineYAt({ x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y }, pc.x) + width);
+  return value === null ? null : { ...d, a, b, c: { time: d.c.time, value } };
 }
 
 /** 第二点离第一下按下处太近。按鼠标原始位置比,不按换算后的锚点:日期取整到天,放大时相邻两个像素会被拉开成一整天 */
@@ -274,7 +318,7 @@ function previewFor(
   if (!at || !s) return null;
 
   const draft = st.draft?.drawing;
-  const anchor = creating && isTwoPoint(draft) ? draft.a : null;
+  const anchor = creating && hasAB(draft) && creating.stage === 'b' ? draft.a : null;
   const p = toPoint(ctx, s, at.x, at.y, { anchor, shift: m.shift, onlyTime: tool === 'vline' });
   const px = p && toPx(ctx, s, p);
 
@@ -288,11 +332,11 @@ function samePoint(a: DrawingPoint, b: DrawingPoint): boolean {
 }
 
 /**
- * 两点线画不出方向:两点重合(磁吸把两下吸到同一根同一个值上),或射线两点同一天(放大后两下点在同一根里、关着磁吸) ——
- * 后者的射线会竖着贯穿整张图,要竖线有竖线工具。这类两下当作「太近」,不画、第一点留着
+ * 两点线 / 通道底边画不出方向:两点重合(磁吸把两下吸到同一根同一个值上),或射线 / 通道两点同一天(放大后两下点在同一根里、
+ * 关着磁吸) —— 射线会竖着贯穿整张图、通道底边竖着就没有「平行」可言。这类两下当作「太近」,不画、第一点留着
  */
-function noDirection(d: TwoPoint): boolean {
-  return samePoint(d.a, d.b) || (d.kind === 'ray' && d.a.time === d.b.time);
+function noDirection(d: Creatable): boolean {
+  return samePoint(d.a, d.b) || (d.kind !== 'trend' && d.a.time === d.b.time);
 }
 
 function redrawAll(prims: Map<IPaneApi<Time>, DrawingsPrimitive>) {
@@ -440,6 +484,17 @@ export function useDrawings(
       setSelected(id);
       setTool('cursor');
     };
+    /** 通道底边定完:进入定宽阶段,平行线跟着光标,再点一下画成 */
+    const toWidthStage = (g: Gesture & { kind: 'create' }, d: Creatable, e: PointerEvent) => {
+      g.stage = 'c';
+      // 第三下离第二下太近不算(习惯性在第二点上双击,紧跟的那下会画出宽度 0 的通道)
+      g.x0 = e.clientX;
+      g.y0 = e.clientY;
+      g.moved = false;
+      g.pressed = false;
+      draftRef.current = { drawing: d, layerId: g.layerId };
+      redrawAll(prims);
+    };
     const cancelGesture = () => {
       gestureRef.current = null;
       draftRef.current = null;
@@ -462,19 +517,23 @@ export function useDrawings(
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       };
 
-      // 趋势线第二下:落在第一点那一格的坐标系里(点到别的格也按那一格算)
+      // 第二下(通道还有第三下定宽):落在第一点那一格的坐标系里(点到别的格也按那一格算)
       if (g?.kind === 'create') {
         take();
         const at = paneCoords(el, chart, g.pane, e);
         const s = ctx.seriesOf(g.layerId);
         const d = draftRef.current?.drawing;
-        const a = isTwoPoint(d) ? d.a : null;
-        const b = at && s && toPoint(ctx, s, at.x, at.y, { anchor: a, shift: e.shiftKey });
-        if (!s || !b || !isTwoPoint(d)) return cancelGesture();
-        // 两下点得太近(快速点两下 / 点在同一处),或画不出方向(见 noDirection):不画,第一点留着等下一下
-        if (tooShort(g, e) || noDirection({ ...d, b })) return;
+        const anchor = hasAB(d) && g.stage === 'b' ? d.a : null;
+        const p = at && s && toPoint(ctx, s, at.x, at.y, { anchor, shift: e.shiftKey });
+        if (!s || !p || !hasAB(d)) return cancelGesture();
+        const next = followCursor(d, p, g.stage);
+        if (g.stage === 'b') {
+          // 两下点得太近(快速点两下 / 点在同一处),或画不出方向(见 noDirection):不画,第一点留着等下一下
+          if (tooShort(g, e) || noDirection(next)) return;
+          if (next.kind === 'channel') return toWidthStage(g, next, e);
+        } else if (tooShort(g, e)) return;
         cancelGesture();
-        finish({ ...d, b }, g.layerId);
+        finish(next, g.layerId);
         return;
       }
 
@@ -498,8 +557,11 @@ export function useDrawings(
             y0: e.clientY,
             moved: false,
             pressed: true,
+            stage: 'b',
           };
-          draftRef.current = { drawing: { id, kind: tool, a: p, b: p }, layerId };
+          const drawing: Creatable =
+            tool === 'channel' ? { id, kind: tool, a: p, b: p, c: p } : { id, kind: tool, a: p, b: p };
+          draftRef.current = { drawing, layerId };
           redrawAll(prims);
         }
         return;
@@ -573,9 +635,9 @@ export function useDrawings(
       const at = paneCoords(el, chart, g.pane, e);
       if (g.kind === 'create') {
         const d = draftRef.current;
-        const a = isTwoPoint(d?.drawing) ? d.drawing.a : null;
-        const b = at && toPoint(ctx, s, at.x, at.y, { anchor: a, shift: e.shiftKey });
-        if (b && d && isTwoPoint(d.drawing)) draftRef.current = { ...d, drawing: { ...d.drawing, b } };
+        const anchor = hasAB(d?.drawing) && g.stage === 'b' ? d.drawing.a : null;
+        const p = at && toPoint(ctx, s, at.x, at.y, { anchor, shift: e.shiftKey });
+        if (p && d && hasAB(d.drawing)) draftRef.current = { ...d, drawing: followCursor(d.drawing, p, g.stage) };
       } else {
         const next = dragged(ctx, s, g, e.clientX - g.x0, e.clientY - g.y0, at, e.shiftKey);
         if (next) draftRef.current = { drawing: next, layerId: g.layerId };
@@ -586,24 +648,25 @@ export function useDrawings(
     const onUp = (e: PointerEvent) => {
       const g = gestureRef.current;
       const d = draftRef.current;
-      // 趋势线:按住拖 = 松手即画完;只是点了一下 = 等第二下
+      // 按住拖 = 松手即定下第二点(两点线画完;通道进入定宽,再点一下);只是点了一下 = 等第二下
       if (g?.kind === 'create') {
         g.pressed = false;
-        if (!g.moved) return;
+        if (!g.moved || g.stage !== 'b') return;
         // 拖回了起点附近 / 画不出方向:同点两下,不画,第一点留着
-        if (tooShort(g, e) || (isTwoPoint(d?.drawing) && noDirection(d.drawing))) {
+        if (tooShort(g, e) || (hasAB(d?.drawing) && noDirection(d.drawing))) {
           g.moved = false;
           return;
         }
+        if (d?.drawing.kind === 'channel') return toWidthStage(g, d.drawing, e);
         cancelGesture();
-        if (d && isTwoPoint(d.drawing)) finish(d.drawing, g.layerId);
+        if (d && hasAB(d.drawing)) finish(d.drawing, g.layerId);
         return;
       }
       if (g?.kind !== 'drag') return;
       cancelGesture();
       // 拖端点拖成画不出方向的(同新画时的规则,见 noDirection):放弃这次拖动,线回原处。
       // 只判拖端点:整条平移不改方向;规则之前画的 / 导入的同一天射线若平移也判,会每次弹回、像拖不动
-      const broken = g.part !== 'body' && isTwoPoint(d?.drawing) && noDirection(d.drawing);
+      const broken = (g.part === 'a' || g.part === 'b') && hasAB(d?.drawing) && noDirection(d.drawing);
       if (g.moved && d && !broken) actionsRef.current.updateDrawing(d.drawing);
     };
 
