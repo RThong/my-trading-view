@@ -224,6 +224,48 @@ function tooShort(g: { x0: number; y0: number }, e: { clientX: number; clientY: 
   return Math.hypot(e.clientX - g.x0, e.clientY - g.y0) < MIN_TREND_PX;
 }
 
+type Pointer = { clientX: number; clientY: number; shift: boolean };
+type PreviewState = {
+  tool: DrawingTool;
+  gesture: Gesture | null;
+  draft: Draft | null;
+  doc: ChartDoc;
+  selectedLine: string | null;
+};
+
+/**
+ * 落点预览:按「点下去会怎么取锚点」现算(同一格、同一条挂靠线、同样过插件),画成空心圈。
+ * 每次重画按最后的鼠标位置现算、不存像素:光标不动而滚轮缩放 / 平移、取消手势、增删格后,圈都跟着当前视图。
+ * 画趋势线第二点时锁在第一点那一格(同 onDown 的第二下)
+ */
+function previewFor(
+  el: HTMLElement,
+  chart: IChartApi,
+  ctx: Ctx,
+  st: PreviewState,
+  m: Pointer,
+): { pane: number; x: number; y: number } | null {
+  const { tool, gesture: g } = st;
+  if (tool === 'cursor' || g?.kind === 'drag') return null;
+
+  // 画第二点:锁在第一点那一格、那条线(光标出了格照样跟);否则看光标落在哪一格的绘图区
+  const creating = g?.kind === 'create' ? g : null;
+  const pane = creating ? creating.pane : paneAt(el, chart, m)?.index;
+  if (pane === undefined) return null;
+  const at = paneCoords(el, chart, pane, m);
+  const layerId = creating ? creating.layerId : pickOwner(st.doc, pane, st.selectedLine);
+  const s = layerId && ctx.seriesOf(layerId);
+  if (!at || !s) return null;
+
+  const draft = st.draft?.drawing;
+  const anchor = creating && draft?.kind === 'trend' ? draft.a : null;
+  const p = toPoint(ctx, s, at.x, at.y, { anchor, shift: m.shift, onlyTime: tool === 'vline' });
+  const px = p && toPx(ctx, s, p);
+
+  // 竖线只用日期:圈画在吸附后的那一天、光标的高度
+  return px ? { pane, x: px.x, y: tool === 'vline' ? at.y : px.y } : null;
+}
+
 /** 两点完全重合:鼠标隔得够远,但磁吸把两下吸到同一根的同一个值上,画出来是零长度、看不见的线 */
 function samePoint(a: DrawingPoint, b: DrawingPoint): boolean {
   return a.time === b.time && a.value === b.value;
@@ -272,6 +314,8 @@ export function useDrawings(
   const hiddenRef = useRef(hidden);
   const draftRef = useRef<Draft | null>(null);
   const gestureRef = useRef<Gesture | null>(null);
+  // 鼠标最后在哪(落点预览按它现算);鼠标离开页面 / 窗口失焦就清掉
+  const pointerRef = useRef<Pointer | null>(null);
   const axisRef = useRef<TimeAxis>(timeAxis([]));
   const actionsRef = useRef(actions);
   const transformRef = useRef(transformPoint);
@@ -317,22 +361,41 @@ export function useDrawings(
       .filter((api) => !prims.has(api))
       .forEach((api) => {
         const prim = new DrawingsPrimitive((): PaneDrawingState => {
-          const ctx = makeCtx(chart, seriesRef.current, axisRef.current);
+          const ctx = makeCtx(chart, seriesRef.current, axisRef.current, transformRef.current);
           const shapes =
             ctx && !hiddenRef.current
               ? paneShapes(ctx, liveEntries(docRef.current, draftRef.current), api.paneIndex())
               : [];
+          const el = containerRef.current;
+          const m = pointerRef.current;
+          const pv =
+            ctx && el && m
+              ? previewFor(
+                  el,
+                  chart,
+                  ctx,
+                  {
+                    tool: toolRef.current,
+                    gesture: gestureRef.current,
+                    draft: draftRef.current,
+                    doc: docRef.current,
+                    selectedLine: selectedLineRef.current,
+                  },
+                  m,
+                )
+              : null;
           return {
             shapes,
             selected: selectedRef.current,
             ...(toolRef.current !== 'cursor' && { cursor: 'crosshair' }),
+            ...(pv && pv.pane === api.paneIndex() && !hiddenRef.current && { preview: { x: pv.x, y: pv.y } }),
           };
         });
         api.attachPrimitive(prim);
         prims.set(api, prim);
       });
     redrawAll(prims);
-  }, [chartRef, seriesRef, doc]);
+  }, [chartRef, seriesRef, containerRef, selectedLineRef, doc]);
 
   // 指针 / 键盘。在容器的捕获阶段处理:画线 / 抓住画线时截下按键,lw-charts 的平移和选线拖轴(useLineDrag)都收不到
   useEffect(() => {
@@ -458,7 +521,19 @@ export function useDrawings(
         e.stopPropagation();
     };
 
+    // 记下鼠标位置;绘图工具下请求重画(预览圈在图元里按它现算)
+    const trackPointer = (e: PointerEvent) => {
+      pointerRef.current = { clientX: e.clientX, clientY: e.clientY, shift: e.shiftKey };
+      if (toolRef.current !== 'cursor') redrawAll(prims);
+    };
+    // 鼠标出了页面 / 切走窗口:那之后收不到 pointermove,不清掉圈会停在最后的位置
+    const forgetPointer = () => {
+      pointerRef.current = null;
+      redrawAll(prims);
+    };
+
     const onMove = (e: PointerEvent) => {
+      trackPointer(e);
       const g = gestureRef.current;
       const chart = chartRef.current;
       const ctx = ctxNow();
@@ -532,6 +607,8 @@ export function useDrawings(
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
     window.addEventListener('keydown', onKey, true);
+    document.documentElement.addEventListener('pointerleave', forgetPointer);
+    window.addEventListener('blur', forgetPointer);
 
     return () => {
       el.removeEventListener('pointerdown', onDown, true);
@@ -540,6 +617,8 @@ export function useDrawings(
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('keydown', onKey, true);
+      document.documentElement.removeEventListener('pointerleave', forgetPointer);
+      window.removeEventListener('blur', forgetPointer);
     };
   }, [containerRef, chartRef, seriesRef, selectedLineRef]);
 
