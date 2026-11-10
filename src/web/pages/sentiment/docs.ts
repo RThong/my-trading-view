@@ -386,6 +386,50 @@ export const SENTIMENT_DOCS = {
           '⚠️ 累计表现比,水平受历史路径影响 —— 看「相对自身历史的低位」,不看绝对数。',
         ].join('\n'),
       },
+      {
+        id: 'p7',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l7',
+            series: 'pcEquity',
+            scale: 'right',
+            color: '#f472b6',
+            title: '个股 P/C',
+            percentile: { riskTail: 'low' }, // 低=没人买保护=自满=风险(逆向,冲高常是恐慌底)
+          },
+        ],
+        desc: [
+          '定义:Cboe 个股期权认沽量 ÷ 认购量(≈ CPCE,Cboe 自家交易所口径,不是全美 OPRA)。偏散户 / 投机盘。',
+          '低 = 抢 call、不买保护,自满(风险端,红);冲高 = 恐慌买 put,逆向看常近短期底。',
+          '⚠️ 日值噪声大(日变动 ≈ 整段起伏),单日尖峰别当信号,看几天的簇。',
+          '',
+          '⚠️ 0DTE / 单票 call 投机潮会把比值结构性压低,跨年比绝对水位要打折。',
+        ].join('\n'),
+      },
+      {
+        id: 'p8',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l8',
+            series: 'pcIndex',
+            scale: 'right',
+            color: '#38bdf8',
+            title: '指数 P/C',
+            percentile: {}, // 机构对冲盘,方向不单一,只给 P5/P95 参考
+          },
+        ],
+        desc: [
+          '定义:Cboe 指数期权认沽量 ÷ 认购量(≈ CPCI)。以 SPX 等机构对冲为主,常年 > 1。',
+          '与个股那格不是同一种人:这里高 = 机构在买保护(对冲需求),不能直接当恐慌读。',
+          '有用的是背离:个股 P/C 极低(散户追涨)+ 指数 P/C 抬升(机构加保护)= 两种钱方向分歧。',
+          '',
+          '⚠️ 方向不单一,只给 P5/P95 参考不设风险端。',
+        ].join('\n'),
+      },
     ],
   },
 } satisfies RegimeDocs;
