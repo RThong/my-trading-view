@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { channelOffset, hitShapes, rayEnd, timeAxis } from './drawings';
+import { channelOffset, hitShapes, rayEnd, textSize, timeAxis } from './drawings';
 
 describe('timeAxis', () => {
   // 周线:每周一根(7 天一根)
@@ -93,5 +93,21 @@ describe('平行通道', () => {
     expect(hitShapes([ch], 50, 95)).toMatchObject({ part: 'body' });
     expect(hitShapes([ch], 50, 130)).toBeNull();
     expect(hitShapes([ch], 250, 20)).toBeNull();
+  });
+});
+
+describe('文字', () => {
+  test('textSize:多行按最宽那行 + 两侧留白,高度按行数(单测没 DOM,按字符估宽)', () => {
+    const one = textSize(['FOMC']);
+    const two = textSize(['FOMC', '加息 25bp']);
+    expect(two.w).toBeGreaterThan(one.w);
+    expect(two.h).toBeGreaterThan(one.h);
+  });
+
+  test('命中:左上角是手柄,整块范围内算线身,范围外点不中', () => {
+    const t = { id: 't', kind: 'text' as const, x: 100, y: 100, lines: ['FOMC'], box: false, w: 60, h: 24 };
+    expect(hitShapes([t], 101, 101)).toMatchObject({ part: 'a' });
+    expect(hitShapes([t], 140, 115)).toMatchObject({ part: 'body' });
+    expect(hitShapes([t], 170, 115)).toBeNull();
   });
 });

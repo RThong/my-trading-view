@@ -736,6 +736,26 @@ describe('画线', () => {
     expect(bad({ ...hray, a: { time: '2026-13-01', value: 1 } })).toBeNull();
   });
 
+  test('文字:往返保留(含多行、加框),空文字 / box 非 true 拒收', () => {
+    const text = {
+      id: 'd5',
+      kind: 'text' as const,
+      a: { time: '2026-02-10', value: 25 },
+      text: 'FOMC\n加息 25bp',
+      box: true as const,
+    };
+    const doc = addDrawing(base, vix, text);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+
+    const bad = (d: unknown) => {
+      const raw = JSON.parse(JSON.stringify(doc));
+      raw.panes[0].layers[0].drawings = [d];
+      return parseChartDoc(raw);
+    };
+    expect(bad({ ...text, text: '   ' })).toBeNull();
+    expect(bad({ ...text, box: false })).toBeNull();
+  });
+
   test('平行通道:三个点往返保留,缺 c 拒收', () => {
     const channel = { ...trend, id: 'd4', kind: 'channel' as const, c: { time: '2026-02-10', value: 25 } };
     const doc = addDrawing(base, vix, channel);

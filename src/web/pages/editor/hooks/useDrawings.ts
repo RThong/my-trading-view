@@ -7,6 +7,7 @@ import {
   channelOffset,
   DrawingsPrimitive,
   hitShapes,
+  textSize,
   lineYAt,
   timeAxis,
   type Hit,
@@ -29,10 +30,26 @@ import type { LayerData } from '../../../views/chartDoc/layerPoints';
 import type { LayerSeries } from '../../../views/chartDoc/useDocChart';
 import type { BarValues } from '../../../chart/magnet';
 import { measureLabel, measureStats } from '../../../chart/measure';
+import { CHART_CHROME, getTheme } from '../../../hooks/theme';
 import type { PointCtx } from '../drawingPlugins/types';
 import { paneAt, paneCoords } from './paneHit';
 
-export type DrawingTool = 'cursor' | 'trend' | 'ray' | 'channel' | 'hline' | 'hray' | 'vline' | 'measure';
+export type DrawingTool = 'cursor' | 'trend' | 'ray' | 'channel' | 'hline' | 'hray' | 'vline' | 'measure' | 'text';
+
+/**
+ * 正在图上就地编辑的文字:新放的(还没存进文档,id 缺)或改已有的那条。
+ * x / y = 编辑框左上角(= 锚点)相对图表容器的像素位置,打开时算一次(编辑中平移 / 缩放图表会先结束编辑)
+ */
+export type TextEditing = {
+  id?: string;
+  layerId: string;
+  a: DrawingPoint;
+  text: string;
+  box: boolean;
+  x: number;
+  y: number;
+};
+type TextDraft = Omit<TextEditing, 'x' | 'y'>;
 
 type TwoPoint = Extract<Drawing, { kind: 'trend' | 'ray' }>;
 /** 两点画的线(趋势线、射线):画法、拖端点、吸附后重合判断都一样,只是渲染时射线往外延伸 */
@@ -182,6 +199,11 @@ function paneShapes(ctx: Ctx, entries: Entry[], i: number): Shape[] {
       const a = toPx(ctx, s, d.a);
       return a ? [{ id: d.id, kind: 'hray', x: a.x, y: a.y }] : [];
     }
+    if (d.kind === 'text') {
+      const a = toPx(ctx, s, d.a);
+      const lines = d.text.split('\n');
+      return a ? [{ id: d.id, kind: 'text', x: a.x, y: a.y, lines, box: !!d.box, ...textSize(lines) }] : [];
+    }
     const a = toPx(ctx, s, d.a);
     const b = toPx(ctx, s, d.b);
     if (!a || !b) return [];
@@ -239,8 +261,8 @@ function dragged(
     const p = y === null || !at ? null : toPoint(ctx, s, at.x, y + dy, { anchor: null, shift, dragging: true });
     return p ? { ...d, value: p.value } : null;
   }
-  // 水平射线只有一个点:拖起点、拖线身都是整条挪,照拖端点处理(过插件)
-  if (d.kind === 'hray') {
+  // 水平射线 / 文字只有一个点:拖起点、拖线身都是整条挪,照拖端点处理(过插件)
+  if (d.kind === 'hray' || d.kind === 'text') {
     const px = toPx(ctx, s, d.a);
     const p = px && toPoint(ctx, s, px.x + dx, px.y + dy, { anchor: null, shift, dragging: true });
     return p ? { ...d, a: p } : null;
@@ -377,6 +399,27 @@ function redrawAll(prims: Map<IPaneApi<Time>, DrawingsPrimitive>) {
 // 输入框里打字、弹层(侧栏的设置浮层、下拉菜单)里按键都不归画线管:弹层自己在 document 冒泡阶段听 Esc 关闭
 const POPUP = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
+/** 已有的那条文字(拿来就地改);不是文字或已不在文档里就是 null */
+function existingText(doc: ChartDoc, id: string): TextDraft | null {
+  const entry = allDrawings(doc).find((e) => e.drawing.id === id);
+  const d = entry?.drawing;
+
+  return entry && d?.kind === 'text' ? { id, layerId: entry.layer.id, a: d.a, text: d.text, box: !!d.box } : null;
+}
+
+/** 编辑框放到锚点的屏幕位置(相对图表容器;横坐标要加上左轴宽,纵坐标加上所在格的顶边);换算不出就是 null */
+function placeEditor(el: HTMLElement, chart: IChartApi, ctx: Ctx, doc: ChartDoc, t: TextDraft): TextEditing | null {
+  const s = ctx.seriesOf(t.layerId);
+  const owner = findLayer(doc, t.layerId);
+  const px = s && toPx(ctx, s, t.a);
+  const paneTop = owner
+    ? chart.panes()[doc.panes.indexOf(owner.pane)]?.getHTMLElement()?.getBoundingClientRect().top
+    : undefined;
+  if (!px || paneTop === undefined) return null;
+
+  return { ...t, x: px.x + chart.priceScale('left').width(), y: px.y + paneTop - el.getBoundingClientRect().top };
+}
+
 function notOurs(t: EventTarget | null): boolean {
   return (
     t instanceof HTMLElement &&
@@ -397,6 +440,7 @@ export function useDrawings(
   const [tool, setTool] = useState<DrawingTool>('cursor');
   const [selected, setSelected] = useState<string | null>(null);
   const [hidden, setHidden] = useState(false);
+  const [editing, setEditing] = useState<TextEditing | null>(null);
   // 选中的那条被删了(删图层、撤掉画线、导入别的图)就不算选中:nextId 可能把同一个 id 发给新画的线;
   // 所属图层被隐藏了也不算:看不见的线别留着浮条、被 Delete 删掉
   const live =
@@ -410,6 +454,8 @@ export function useDrawings(
   const selectedRef = useRef(live);
   const hiddenRef = useRef(hidden);
   const draftRef = useRef<Draft | null>(null);
+  // 正在就地编辑的那条不画在画布上(编辑框盖在原处显示它)
+  const editingIdRef = useRef<string | undefined>(undefined);
   const gestureRef = useRef<Gesture | null>(null);
   const measureRef = useRef<Measure | null>(null);
   // 鼠标最后在哪(落点预览按它现算);鼠标离开页面 / 窗口失焦就清掉
@@ -448,6 +494,7 @@ export function useDrawings(
     toolRef.current = tool;
     selectedRef.current = live;
     hiddenRef.current = hidden;
+    editingIdRef.current = editing?.id;
     actionsRef.current = actions;
     transformRef.current = transformPoint;
     redrawAll(primsRef.current);
@@ -479,7 +526,11 @@ export function useDrawings(
           const ctx = makeCtx(chart, seriesRef.current, axisRef.current, transformRef.current);
           const shapes =
             ctx && !hiddenRef.current
-              ? paneShapes(ctx, liveEntries(docRef.current, draftRef.current), api.paneIndex())
+              ? paneShapes(
+                  ctx,
+                  liveEntries(docRef.current, draftRef.current).filter((e) => e.drawing.id !== editingIdRef.current),
+                  api.paneIndex(),
+                )
               : [];
           const el = containerRef.current;
           const m = pointerRef.current;
@@ -508,6 +559,7 @@ export function useDrawings(
             ...(toolRef.current !== 'cursor' && { cursor: 'crosshair' }),
             ...(pv && pv.pane === api.paneIndex() && !hiddenRef.current && { preview: { x: pv.x, y: pv.y } }),
             ...(mv && { measure: mv }),
+            ink: { text: CHART_CHROME[getTheme()].ink, bg: CHART_CHROME[getTheme()].bg },
           };
         });
         api.attachPrimitive(prim);
@@ -638,7 +690,11 @@ export function useDrawings(
         if (tool === 'hline') finish({ id, kind: 'hline', value: p.value }, layerId);
         else if (tool === 'vline') finish({ id, kind: 'vline', time: p.time }, layerId);
         else if (tool === 'hray') finish({ id, kind: 'hray', a: p }, layerId);
-        else {
+        // 文字:就地打开编辑框、回到光标(同 TradingView),写完才存进文档(见 commitText)
+        else if (tool === 'text') {
+          setTool('cursor');
+          setEditing(placeEditor(el, chart, ctx, doc, { layerId, a: p, text: '', box: false }));
+        } else {
           gestureRef.current = {
             kind: 'create',
             layerId,
@@ -692,10 +748,14 @@ export function useDrawings(
       const chart = chartRef.current;
       const ctx = ctxNow();
       const hit = chart ? paneAt(el, chart, e) : undefined;
-      if (!ctx || !hit) return;
+      if (!chart || !ctx || !hit) return;
       const entries = hiddenRef.current ? [] : liveEntries(docRef.current, null);
-      if (toolRef.current !== 'cursor' || hitShapes(paneShapes(ctx, entries, hit.index), hit.x, hit.y))
-        e.stopPropagation();
+      const h = hitShapes(paneShapes(ctx, entries, hit.index), hit.x, hit.y);
+      if (toolRef.current !== 'cursor' || h) e.stopPropagation();
+
+      // 双击文字 = 就地改它(监听里读 docRef:闭包里的 doc 是挂监听那次的旧文档)
+      const t = toolRef.current === 'cursor' && h ? existingText(docRef.current, h.id) : null;
+      if (t) setEditing(placeEditor(el, chart, ctx, docRef.current, t));
     };
 
     // 记下鼠标位置;绘图工具下请求重画(预览圈在图元里按它现算)
@@ -849,5 +909,46 @@ export function useDrawings(
     setHidden(!hidden);
   };
 
-  return { tool, chooseTool, selected: live, setSelected, hidden, toggleHidden };
+  /** 浮条「编辑」:就地改这条文字(同双击) */
+  const editText = (id: string) => {
+    const chart = chartRef.current;
+    const el = containerRef.current;
+    const ctx = chart && makeCtx(chart, seriesRef.current, axisRef.current, transformRef.current);
+    const t = existingText(doc, id);
+    if (el && chart && ctx && t) setEditing(placeEditor(el, chart, ctx, doc, t));
+  };
+
+  /**
+   * 写完(Esc / 点到别处):新放的存进文档,改的覆盖原文,都选中它(同 TradingView)。
+   * 空白:新放的不存,已有的改成空白就删掉(TradingView 的空文字取消选中时自动消失)
+   */
+  const commitText = (text: string) => {
+    const ed = editing;
+    setEditing(null);
+    if (!ed) return;
+    // 改已有的:编辑中整份文档被换掉(画线 id 是 d1、d2 这种,新图里很可能有同 id 的另一条),别改到别的线上
+    if (ed.id && existingText(doc, ed.id)?.layerId !== ed.layerId) return;
+    if (text.trim() === '') {
+      if (ed.id) actions.removeDrawing(ed.id);
+      return;
+    }
+
+    const drawing = { kind: 'text' as const, a: ed.a, text, ...(ed.box && { box: true as const }) };
+    const id = ed.id ?? nextId(doc, 'd');
+    if (ed.id) actions.updateDrawing({ id, ...drawing });
+    else actions.addDrawing(ed.layerId, { id, ...drawing });
+    setSelected(id);
+  };
+
+  return {
+    tool,
+    chooseTool,
+    selected: live,
+    setSelected,
+    hidden,
+    toggleHidden,
+    editing,
+    editText,
+    commitText,
+  };
 }

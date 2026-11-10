@@ -77,6 +77,8 @@ export type Shape =
   | { id: string; kind: 'hline'; y: number }
   | { id: string; kind: 'hray'; x: number; y: number }
   | (TwoPoints & { kind: 'channel'; x3: number; y3: number })
+  /** 文字:左上角 (x,y),w / h = 整块(含加框的留白)的像素大小,命中和画框都用它 */
+  | { id: string; kind: 'text'; x: number; y: number; lines: string[]; box: boolean; w: number; h: number }
   | { id: string; kind: 'vline'; x: number };
 
 /**
@@ -113,7 +115,34 @@ const HIT_PX = 6;
 const HANDLE_PX = 8;
 const HANDLE_R = 4;
 
+// 文字的字体与排版(画、量尺寸、编辑器的就地编辑框用同一套,命中范围和编辑时的位置才对得上)
+export const TEXT_FONT = '13px system-ui, -apple-system, sans-serif';
+export const TEXT_LINE = 18;
+export const TEXT_PAD = 6;
+
+let measureCtx: CanvasRenderingContext2D | null | undefined;
+/** 一行字的宽度。用一块离屏画布量;没有 DOM 的环境(单测)按字符估:ASCII 半个字宽、其余一个字宽 */
+function lineWidth(line: string): number {
+  if (measureCtx === undefined)
+    measureCtx = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d');
+  if (!measureCtx) return [...line].reduce((w, ch) => w + (ch.charCodeAt(0) < 128 ? 7 : 13), 0);
+
+  measureCtx.font = TEXT_FONT;
+  return measureCtx.measureText(line).width;
+}
+
+/** 文字整块的大小(左右各留 TEXT_PAD,不论加不加框都按这个算,加框与否位置不跳) */
+export function textSize(lines: string[]): { w: number; h: number } {
+  return { w: Math.max(0, ...lines.map(lineWidth)) + TEXT_PAD * 2, h: lines.length * TEXT_LINE + TEXT_PAD };
+}
+
 function hitOne(s: Shape, x: number, y: number): Hit | null {
+  if (s.kind === 'text') {
+    if (Math.hypot(x - s.x, y - s.y) <= HANDLE_PX) return { id: s.id, part: 'a', dist: 0 };
+    return x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h
+      ? { id: s.id, part: 'body', dist: HIT_PX / 2 }
+      : null;
+  }
   if (s.kind === 'hline')
     return Math.abs(y - s.y) <= HIT_PX ? { id: s.id, part: 'body', dist: Math.abs(y - s.y) } : null;
   if (s.kind === 'vline')
@@ -209,7 +238,7 @@ function channelGeom(s: ShapeOf<'channel'>): Geom {
 }
 
 // 两点线两端、水平射线起点、通道平行线中点(拖它改宽度)的手柄可拖;水平 / 竖线的手柄在中点,拖它 = 拖线身,只为看得出选中了
-const GEOM: { [K in Shape['kind']]: (s: ShapeOf<K>, size: Size) => Geom } = {
+const GEOM: { [K in Exclude<Shape['kind'], 'text'>]: (s: ShapeOf<K>, size: Size) => Geom } = {
   trend: (s) => twoPointGeom(s, [s.x2, s.y2]),
   ray: (s) => {
     const end = rayEnd(s.x1, s.y1, s.x2, s.y2);
@@ -254,9 +283,14 @@ export type PaneDrawingState = {
   preview?: { x: number; y: number };
   /** 测量尺(临时,不存进文档):起点 → 终点的像素 + 框下两行字;涨绿跌红 */
   measure?: { x1: number; y1: number; x2: number; y2: number; up: boolean; label: [string, string] };
+  /** 文字用的主题色:正文色 + 加框时的底色(画布读不到 CSS 变量,由外面按明暗主题给) */
+  ink: { text: string; bg: string };
 };
 
 const PREVIEW_R = 4;
+// 加框文字的底色不透明度:衬得出字,又隐约看得到下面的 K 线
+const TEXT_BOX_ALPHA = 0.85;
+
 // 通道填色的不透明度:淡到不挡住里面的 K 线
 const FILL_ALPHA = 0.08;
 const MEASURE_ALPHA = 0.15;
@@ -302,15 +336,53 @@ function drawMeasure(ctx: CanvasRenderingContext2D, m: NonNullable<PaneDrawingSt
   });
 }
 
+/** 文字:加框时先铺底色、描黄边;选中时(未加框)画虚线外框;再逐行写字,左上角出手柄 */
+function drawText(ctx: CanvasRenderingContext2D, s: ShapeOf<'text'>, on: boolean, ink: PaneDrawingState['ink']) {
+  if (s.box) {
+    ctx.globalAlpha = TEXT_BOX_ALPHA;
+    ctx.fillStyle = ink.bg;
+    ctx.fillRect(s.x, s.y, s.w, s.h);
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = on ? 2 : 1;
+    ctx.strokeStyle = COLOR;
+    ctx.strokeRect(s.x, s.y, s.w, s.h);
+  } else if (on) {
+    ctx.setLineDash([3, 3]);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = COLOR;
+    ctx.strokeRect(s.x, s.y, s.w, s.h);
+    ctx.setLineDash([]);
+  }
+
+  ctx.font = TEXT_FONT;
+  ctx.fillStyle = ink.text;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  s.lines.forEach((line, i) => {
+    ctx.fillText(line, s.x + TEXT_PAD, s.y + TEXT_PAD / 2 + 2 + i * TEXT_LINE);
+  });
+
+  if (!on) return;
+  ctx.fillStyle = COLOR;
+  ctx.beginPath();
+  ctx.arc(s.x, s.y, HANDLE_R, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 class DrawingsRenderer implements IPrimitivePaneRenderer {
   constructor(private readonly state: PaneDrawingState) {}
 
   draw(target: CanvasRenderingTarget2D): void {
-    const { shapes, selected, preview, measure } = this.state;
+    const { shapes, selected, preview, measure, ink } = this.state;
     // biome-ignore lint/correctness/useHookAtTopLevel: useMediaCoordinateSpace 是 canvas 方法,不是 React hook
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       shapes.forEach((s) => {
         const on = s.id === selected;
+        if (s.kind === 'text') {
+          drawText(ctx, s, on, ink);
+          return;
+        }
+
         ctx.lineWidth = on ? 2 : 1.5;
         ctx.strokeStyle = COLOR;
         // 按 kind 取对应那一行;联合类型下 TS 认不出 s 和 GEOM[s.kind] 是同一种,只能断言

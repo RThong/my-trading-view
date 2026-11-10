@@ -79,6 +79,7 @@ export type DrawingPoint = { time: string; value: number };
  * 手画的线(同 TradingView 的绘图对象,属于这张图、挂在画它的那条图层上,纵坐标是那条序列的单位)。
  * 射线 = 从 a 出发、穿过 b、沿 a→b 方向无限延伸(b 在左边就往左);水平射线 = 从 a 往右的水平线。
  * 平行通道 = 底边 a→b + 一条穿过 c、和底边平行的线(在屏幕上平行,对数轴下也是两条平行直线)。
+ * 文字 = 左上角锚在 a 的一段文字(可多行),box = 加框。
  * 竖线默认延伸到所有格(同 TradingView 竖线的 Extend);paneOnly = 只画所属图层那一格
  */
 export type Drawing =
@@ -87,6 +88,7 @@ export type Drawing =
   | { id: string; kind: 'hline'; value: number }
   | { id: string; kind: 'hray'; a: DrawingPoint }
   | { id: string; kind: 'channel'; a: DrawingPoint; b: DrawingPoint; c: DrawingPoint }
+  | { id: string; kind: 'text'; a: DrawingPoint; text: string; box?: true }
   | { id: string; kind: 'vline'; time: string; paneOnly?: true };
 
 export type Layer = {
@@ -807,6 +809,8 @@ function isDrawing(x: unknown): x is Drawing {
   if (x.kind === 'hline') return isNum(x.value);
   if (x.kind === 'hray') return isPoint(x.a);
   if (x.kind === 'channel') return isPoint(x.a) && isPoint(x.b) && isPoint(x.c);
+  if (x.kind === 'text')
+    return isPoint(x.a) && isStr(x.text) && x.text.trim() !== '' && (x.box === undefined || x.box === true);
 
   return x.kind === 'vline' && isDate(x.time) && (x.paneOnly === undefined || x.paneOnly === true);
 }
@@ -844,6 +848,8 @@ function canonicalDrawing(d: Drawing): Drawing {
   if (d.kind === 'hline') return { id: d.id, kind: d.kind, value: d.value };
   if (d.kind === 'hray') return { id: d.id, kind: d.kind, a: pt(d.a) };
   if (d.kind === 'channel') return { id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b), c: pt(d.c) };
+  if (d.kind === 'text')
+    return { id: d.id, kind: d.kind, a: pt(d.a), text: d.text, ...(d.box && { box: true as const }) };
 
   return { id: d.id, kind: d.kind, time: d.time, ...(d.paneOnly && { paneOnly: true as const }) };
 }

@@ -6,6 +6,7 @@ import { Textarea } from '../../components/ui/textarea';
 import { AnalysisPanel, pairRequests, resolvePair } from './components/AnalysisPanel';
 import { allDrawings, type ChartDoc, EMPTY_DOC, parseChartDoc } from '../../views/chartDoc/chartDoc';
 import { DrawingBar, DrawingToolbar } from './components/DrawingToolbar';
+import { InlineTextEditor } from './components/InlineTextEditor';
 import { EmptyState } from './components/EmptyState';
 import { allSevenDay, layerRequest, useLayerData } from '../../views/chartDoc/layerPoints';
 import { LayerList } from './components/LayerList';
@@ -99,7 +100,9 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
             actions.removeDrawing(id);
             drawing.setSelected(null);
           }}
+          onEditText={drawing.editText}
         />
+        <InlineTextEditor editing={drawing.editing} onCommit={drawing.commitText} />
         {status.length > 0 && (
           <div className="pointer-events-none absolute right-16 top-1 z-10 rounded bg-neutral-950/80 px-2 py-0.5 text-xs text-amber-400">
             {status.join(' · ')}
