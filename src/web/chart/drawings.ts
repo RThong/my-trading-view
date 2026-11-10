@@ -373,7 +373,7 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
 
 /**
  * 挂在一个 lw 格上的图元。不自己存画线:每次重画都调 source 现算(平移 / 缩放 / 拖动草稿都即时跟上),
- * 状态变了由外面调 update() 请求重画
+ * 状态变了由外面调 update() 请求重画。格级图元总画在 K 线下面 —— 有意的,同 TradingView 默认(设计文档 §5「渲染」)
  */
 export class DrawingsPrimitive implements IPanePrimitive<Time> {
   private requestUpdate?: () => void;
@@ -381,7 +381,7 @@ export class DrawingsPrimitive implements IPanePrimitive<Time> {
   private readonly views: readonly IPanePrimitivePaneView[];
 
   constructor(private readonly source: () => PaneDrawingState) {
-    this.views = [{ zOrder: () => 'top', renderer: () => new DrawingsRenderer(this.source()) }];
+    this.views = [{ renderer: () => new DrawingsRenderer(this.source()) }];
   }
 
   attached({ requestUpdate }: PaneAttachedParameter<Time>): void {
