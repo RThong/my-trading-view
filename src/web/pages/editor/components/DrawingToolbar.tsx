@@ -77,7 +77,7 @@ const GROUPS: ToolGroupDef[] = [
       { title: '通道', tools: ['channel'] },
     ],
   },
-  // 标注组(同 TradingView 的 Annotation tools);路标、标注气泡以后进这一组
+  // 标注组(同 TradingView 的 Annotation tools);标注气泡以后进这一组(路标不做:被标注气泡覆盖)
   { id: 'annotate', name: '标注', sections: [{ title: '文字', tools: ['text'] }] },
 ];
 
