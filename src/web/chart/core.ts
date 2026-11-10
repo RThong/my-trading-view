@@ -30,6 +30,9 @@ export const CHART_OPTIONS = {
   // 鼠标悬停时浮动的时间标签(crosshair)统一成 YYYY-MM-DD,覆盖默认中文 locale。
   localization: { timeFormatter: fmtDate },
   autoSize: true,
+  // lw 默认把悬停的那条 series 挪到最上层画:鼠标碰到竖线 / 柱状图层,它就盖住 K 线。
+  // TradingView 悬停不改层级(2026-11-10 演示页读像素实测),层级只按图层顺序
+  hoveredSeriesOnTop: false,
 };
 
 /**

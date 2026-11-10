@@ -2,6 +2,8 @@
 
 > 范围、边界以 my-trading-view-60 的交接说明为准，这里只定三件事：JSON 状态结构、目录与文件划分、MVP 序列注册表。
 > 分支 `feat/chart-editor`。
+>
+> **需求对照用 TradingView 官方演示页**：<https://charting-library.tradingview-widget.com/>（与主站同一套引擎，免登录可画线；主站未登录画线弹注册墙，不要绕）。合成鼠标事件画不出线，用页面上的 `window.tvWidget.activeChart()` API（`createShape` / `getAllShapes` / `getPanes()` 等）；悬停能用合成 `pointermove`。层级之类的结论**读像素对照**（图在同源 iframe 里，`getImageData` 比对），不凭截图目测。
 
 ## 1. JSON 状态（`ChartDoc`）
 
