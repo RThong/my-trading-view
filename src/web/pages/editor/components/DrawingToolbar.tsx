@@ -83,6 +83,7 @@ const KIND_NAME: Record<Drawing['kind'], string> = {
 /** 工具组(同 TradingView 左栏的一格):按钮显示这组上次用的工具,点它直接用;点右缘小三角弹出整组 */
 type ToolGroupDef = { id: string; name: string; sections: { title: string; tools: DrawingTool[] }[] };
 const GROUPS: ToolGroupDef[] = [
+  // 线条组(信息线不做:能留在图上的只有涨跌 / 天数,测量尺随时能量,要长期标注用文字 / 气泡)
   {
     id: 'lines',
     name: '线条',
