@@ -4,15 +4,20 @@
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import type { IChartApi, IPaneApi, ISeriesApi, Logical, SeriesType, Time } from 'lightweight-charts';
 import {
+  boxOf,
   calloutSize,
   channelOffset,
   DrawingsPrimitive,
   hitShapes,
+  isRectHandle,
+  RECT_EDGES,
+  rectHandleAt,
   textSize,
   lineYAt,
   timeAxis,
   type Hit,
   type PaneDrawingState,
+  type RectHandle,
   type Shape,
   type TimeAxis,
 } from '../../../chart/drawings';
@@ -45,7 +50,8 @@ export type DrawingTool =
   | 'vline'
   | 'measure'
   | 'text'
-  | 'callout';
+  | 'callout'
+  | 'rect';
 
 /** 要就地写字的画线(文字 / 标注气泡):新放的(还没存进文档,id 缺)或改已有的那条 */
 type TextDraft = { id?: string; layerId: string; a: DrawingPoint; text: string } & (
@@ -66,11 +72,11 @@ function isTwoPoint(d: Drawing | undefined): d is TwoPoint {
 
 /**
  * 按住 / 点两下画出 a→b 的:两点线 + 平行通道(通道第二下之后还要一下定宽度,见 Gesture 的 stage)
- * + 标注气泡(a = 指针尖、b = 框中心,画成后就地写字)
+ * + 标注气泡(a = 指针尖、b = 框中心,画成后就地写字)+ 矩形(对角两点)
  */
-type Creatable = TwoPoint | Extract<Drawing, { kind: 'channel' | 'callout' }>;
+type Creatable = TwoPoint | Extract<Drawing, { kind: 'channel' | 'callout' | 'rect' }>;
 function hasAB(d: Drawing | undefined): d is Creatable {
-  return isTwoPoint(d) || d?.kind === 'channel' || d?.kind === 'callout';
+  return isTwoPoint(d) || d?.kind === 'channel' || d?.kind === 'callout' || d?.kind === 'rect';
 }
 
 /** 按住 / 点两下画的工具 → 第一下落点处的草稿(其余点先和第一点重合,之后跟着光标改,见 followCursor) */
@@ -79,6 +85,7 @@ const START: { [K in Creatable['kind']]: (id: string, p: DrawingPoint) => Extrac
   ray: (id, p) => ({ id, kind: 'ray', a: p, b: p }),
   channel: (id, p) => ({ id, kind: 'channel', a: p, b: p, c: p }),
   callout: (id, p) => ({ id, kind: 'callout', a: p, b: p, text: '' }),
+  rect: (id, p) => ({ id, kind: 'rect', a: p, b: p }),
 };
 
 /** 画到一半的线跟着光标:定第二点阶段改 b(通道的 c 先跟着 b,平行线和底边重合);通道定宽阶段改 c */
@@ -248,6 +255,7 @@ function paneShapes(ctx: Ctx, entries: Entry[], i: number): Shape[] {
       const lines = d.text.split('\n');
       return [{ id: d.id, kind: 'callout', x1: a.x, y1: a.y, x2: b.x, y2: b.y, lines, ...calloutSize(lines) }];
     }
+    if (d.kind === 'rect') return [{ id: d.id, kind: 'rect', x1: a.x, y1: a.y, x2: b.x, y2: b.y, extend: !!d.extend }];
     return [{ id: d.id, kind: d.kind, x1: a.x, y1: a.y, x2: b.x, y2: b.y }];
   });
 }
@@ -277,6 +285,40 @@ function liveEntries(doc: ChartDoc, draft: Draft | null): Entry[] {
 function pickOwner(doc: ChartDoc, paneIndex: number, selectedLine: string | null): string | undefined {
   const layers = doc.panes[paneIndex]?.layers.filter(canOwnDrawings) ?? [];
   return (layers.find((l) => l.id === selectedLine) ?? layers[0])?.id;
+}
+
+/**
+ * 拖矩形的一个手柄:角改两条邻边、边中点只改这一条(同 TradingView)。手柄原位置 + 位移过插件(磁吸把角吸到开高低收上),
+ * 拖到的边取那一点的日期 / 数值,没拖到的边原样沿用(不经像素来回换算,磁吸吸到的整齐价位不会多出浮点尾数)。
+ * 哪条算左 / 上边按屏幕像素认,对数 / 倒轴下也对;拖过对边就翻过去(两点不分左右上下)
+ */
+function draggedRectHandle(
+  ctx: Ctx,
+  s: ISeriesApi<SeriesType>,
+  d: Extract<Drawing, { kind: 'rect' }>,
+  h: RectHandle,
+  dx: number,
+  dy: number,
+  shift: boolean,
+) {
+  const pa = toPx(ctx, s, d.a);
+  const pb = toPx(ctx, s, d.b);
+  if (!pa || !pb) return null;
+
+  const [hx, hy] = rectHandleAt(boxOf(pa.x, pa.y, pb.x, pb.y), h);
+  const p = toPoint(ctx, s, hx + dx, hy + dy, { anchor: null, shift, dragging: true });
+  if (!p) return null;
+
+  // 四条边各取自哪一点:左右按横坐标、上下按纵坐标
+  const [left, right] = pa.x <= pb.x ? [d.a, d.b] : [d.b, d.a];
+  const [top, bottom] = pa.y <= pb.y ? [d.a, d.b] : [d.b, d.a];
+  const { x, y } = RECT_EDGES[h];
+  const l = x === 'l' ? p.time : left.time;
+  const r = x === 'r' ? p.time : right.time;
+  const t = y === 't' ? p.value : top.value;
+  const b = y === 'b' ? p.value : bottom.value;
+
+  return { ...d, a: { time: l, value: t }, b: { time: r, value: b } };
 }
 
 /**
@@ -313,6 +355,8 @@ function dragged(
     const p = px && toPoint(ctx, s, px.x + dx, px.y + dy, { anchor: null, shift, dragging: true });
     return p ? { ...d, a: p } : null;
   }
+
+  if (d.kind === 'rect' && isRectHandle(g.part)) return draggedRectHandle(ctx, s, d, g.part, dx, dy, shift);
 
   // 整条平移、拖气泡的框不过插件(框中心吸到价位上没有意义,见 followPoint)
   const raw = g.part === 'body' || (d.kind === 'callout' && g.part === 'b');
@@ -435,9 +479,12 @@ function samePoint(a: DrawingPoint, b: DrawingPoint): boolean {
 /**
  * 两点线 / 通道底边画不出方向:两点重合(磁吸把两下吸到同一根同一个值上),或射线 / 通道两点同一天(放大后两下点在同一根里、
  * 关着磁吸) —— 射线会竖着贯穿整张图、通道底边竖着就没有「平行」可言。这类两下当作「太近」,不画、第一点留着。
- * 气泡只怕重合(框盖住尖、指针没了);同一天 = 框在尖的正上 / 正下方,正常
+ * 气泡只怕重合(框盖住尖、指针没了);同一天 = 框在尖的正上 / 正下方,正常。
+ * 矩形两点同一天或同一个值:宽或高为零,压成一条线
  */
 function noDirection(d: Creatable): boolean {
+  if (d.kind === 'rect') return d.a.time === d.b.time || d.a.value === d.b.value;
+
   return samePoint(d.a, d.b) || ((d.kind === 'ray' || d.kind === 'channel') && d.a.time === d.b.time);
 }
 
@@ -911,7 +958,8 @@ export function useDrawings(
       cancelGesture();
       // 拖端点拖成画不出方向的(同新画时的规则,见 noDirection):放弃这次拖动,线回原处。
       // 只判拖端点:整条平移不改方向;规则之前画的 / 导入的同一天射线若平移也判,会每次弹回、像拖不动
-      const broken = (g.part === 'a' || g.part === 'b') && hasAB(d?.drawing) && noDirection(d.drawing);
+      const broken =
+        (g.part === 'a' || g.part === 'b' || isRectHandle(g.part)) && hasAB(d?.drawing) && noDirection(d.drawing);
       if (g.moved && d && !broken) actionsRef.current.updateDrawing(d.drawing);
     };
 

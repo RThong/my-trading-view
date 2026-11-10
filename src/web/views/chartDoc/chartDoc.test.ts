@@ -784,6 +784,27 @@ describe('画线', () => {
     expect(parse({ ...callout, box: true })).toEqual([callout]);
   });
 
+  test('矩形:对角两点往返保留(含向右延伸),缺 b / extend 非 true 的丢掉', () => {
+    const rect = {
+      id: 'd7',
+      kind: 'rect' as const,
+      a: { time: '2026-01-20', value: 30 },
+      b: { time: '2026-02-10', value: 25 },
+      extend: true as const,
+    };
+    const doc = addDrawing(base, vix, rect);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+
+    const count = (d: unknown) => {
+      const raw = JSON.parse(JSON.stringify(doc));
+      raw.panes[0].layers[0].drawings = [d];
+      const parsed = parseChartDoc(raw);
+      return parsed && allDrawings(parsed).length;
+    };
+    expect(count({ ...rect, b: undefined })).toBe(0);
+    expect(count({ ...rect, extend: false })).toBe(0);
+  });
+
   test('平行通道:三个点往返保留,缺 c 的丢掉', () => {
     const channel = { ...trend, id: 'd4', kind: 'channel' as const, c: { time: '2026-02-10', value: 25 } };
     const doc = addDrawing(base, vix, channel);

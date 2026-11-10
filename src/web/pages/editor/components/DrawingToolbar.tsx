@@ -11,6 +11,7 @@ import {
   SeparatorVertical,
   MoveUpRight,
   Pencil,
+  RectangleHorizontal,
   Type,
   Ruler,
   Equal,
@@ -48,6 +49,11 @@ const TOOL: Record<DrawingTool, { icon: LucideIcon; name: string; hint: string }
     name: '标注气泡',
     hint: `标注气泡:点一下定指针尖,再点一下放文字框,就地打字;拖框只挪框、拖尖改指向,双击再改字。${OWNER_HINT}`,
   },
+  rect: {
+    icon: RectangleHorizontal,
+    name: '矩形',
+    hint: `矩形:点两下(对角两点),或按住拖,框出一段时间 × 价格区间;下方浮条可勾「向右延伸」。${OWNER_HINT}`,
+  },
   measure: {
     icon: Ruler,
     name: '测量',
@@ -71,6 +77,7 @@ const KIND_NAME: Record<Drawing['kind'], string> = {
   channel: '平行通道',
   text: '文字',
   callout: '标注气泡',
+  rect: '矩形',
 };
 
 /** 工具组(同 TradingView 左栏的一格):按钮显示这组上次用的工具,点它直接用;点右缘小三角弹出整组 */
@@ -85,7 +92,14 @@ const GROUPS: ToolGroupDef[] = [
     ],
   },
   // 标注组(同 TradingView 的 Annotation tools;路标不做:被标注气泡覆盖)
-  { id: 'annotate', name: '标注', sections: [{ title: '文字', tools: ['text', 'callout'] }] },
+  {
+    id: 'annotate',
+    name: '标注',
+    sections: [
+      { title: '文字', tools: ['text', 'callout'] },
+      { title: '形状', tools: ['rect'] },
+    ],
+  },
 ];
 
 // 各组上次用的工具,跨刷新记住(只是偏好,读写失败就用组里第一个)
@@ -451,6 +465,18 @@ export function DrawingBar({
         >
           <Pencil />
         </Button>
+      )}
+      {d.kind === 'rect' && (
+        <label className="flex cursor-pointer items-center gap-1.5">
+          <Checkbox
+            checked={!!d.extend}
+            onCheckedChange={(on) => {
+              const { extend: _drop, ...rest } = d;
+              onUpdate(on ? { ...rest, extend: true } : rest);
+            }}
+          />
+          向右延伸
+        </label>
       )}
       {d.kind === 'vline' && (
         <label className="flex cursor-pointer items-center gap-1.5">
