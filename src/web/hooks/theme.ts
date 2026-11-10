@@ -31,10 +31,13 @@ export function useTheme(): Theme {
   return useSyncExternalStore(subscribe, getTheme);
 }
 
-/** 画布上的底色 / 文字 / 网格 / 边框(对应 styles.css 的 neutral 950 / 400 / 900 附近 / 800) */
-export const CHART_CHROME: Record<Theme, { bg: string; text: string; grid: string; border: string }> = {
-  dark: { bg: '#0a0a0a', text: '#a1a1aa', grid: '#1f1f1f', border: '#262626' },
-  light: { bg: '#faf7f0', text: '#6e665a', grid: '#ede7da', border: '#e1d9c8' },
+/**
+ * 画布上的底色 / 文字 / 网格 / 边框(对应 styles.css 的 neutral 950 / 400 / 900 附近 / 800);
+ * ink = 手写文字的正文色(对应 neutral 200 / 深色号,比轴上刻度的 text 更实,画线工具「文字」用)
+ */
+export const CHART_CHROME: Record<Theme, { bg: string; text: string; ink: string; grid: string; border: string }> = {
+  dark: { bg: '#0a0a0a', text: '#a1a1aa', ink: '#e5e5e5', grid: '#1f1f1f', border: '#262626' },
+  light: { bg: '#faf7f0', text: '#6e665a', ink: '#2b2620', grid: '#ede7da', border: '#e1d9c8' },
 };
 
 /** 给 chart.applyOptions 的那部分主题色(建图时也用它,切主题时再调一次) */

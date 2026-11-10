@@ -9,6 +9,8 @@ import {
   MousePointer2,
   SeparatorVertical,
   MoveUpRight,
+  Pencil,
+  Type,
   Ruler,
   Equal,
   ArrowRightFromLine,
@@ -35,6 +37,11 @@ const TOOL: Record<DrawingTool, { icon: LucideIcon; name: string; hint: string }
     name: '射线',
     hint: `射线:点两下(起点、方向),从起点穿过第二点一直延伸。${OWNER_HINT}`,
   },
+  text: {
+    icon: Type,
+    name: '文字',
+    hint: `文字:点一下就地打字,回车换行,Esc / 点别处写完;双击文字再改,加框在下方浮条。${OWNER_HINT}`,
+  },
   measure: {
     icon: Ruler,
     name: '测量',
@@ -56,6 +63,7 @@ const KIND_NAME: Record<Drawing['kind'], string> = {
   hray: '水平射线',
   vline: '竖线',
   channel: '平行通道',
+  text: '文字',
 };
 
 /** 工具组(同 TradingView 左栏的一格):按钮显示这组上次用的工具,点它直接用;点右缘小三角弹出整组 */
@@ -69,6 +77,8 @@ const GROUPS: ToolGroupDef[] = [
       { title: '通道', tools: ['channel'] },
     ],
   },
+  // 标注组(同 TradingView 的 Annotation tools);路标、标注气泡以后进这一组
+  { id: 'annotate', name: '标注', sections: [{ title: '文字', tools: ['text'] }] },
 ];
 
 // 各组上次用的工具,跨刷新记住(只是偏好,读写失败就用组里第一个)
@@ -388,11 +398,14 @@ export function DrawingBar({
   selected,
   onUpdate,
   onRemove,
+  onEditText,
 }: {
   doc: ChartDoc;
   selected: string | null;
   onUpdate: (d: Drawing) => void;
   onRemove: (id: string) => void;
+  /** 文字:打开对话框改字(同双击) */
+  onEditText: (id: string) => void;
 }) {
   const entry = selected ? allDrawings(doc).find((e) => e.drawing.id === selected) : undefined;
   if (!entry) return null;
@@ -409,6 +422,29 @@ export function DrawingBar({
         {KIND_NAME[d.kind]}
         <span className="text-neutral-500"> · 挂在 {layerLabel(doc, layer)}</span>
       </span>
+      {d.kind === 'text' && (
+        <>
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <Checkbox
+              checked={!!d.box}
+              onCheckedChange={(on) => {
+                const { box: _drop, ...rest } = d;
+                onUpdate(on ? { ...rest, box: true } : rest);
+              }}
+            />
+            加框
+          </label>
+          <Button
+            variant="ghost"
+            size="icon-2xs"
+            title="编辑文字(双击文字也行)"
+            onClick={() => onEditText(d.id)}
+            className="text-neutral-500 hover:text-neutral-200"
+          >
+            <Pencil />
+          </Button>
+        </>
+      )}
       {d.kind === 'vline' && (
         <label className="flex cursor-pointer items-center gap-1.5">
           <Checkbox
