@@ -952,13 +952,34 @@ function idsUnique(panes: Pane[]): boolean {
   );
 }
 
-/** 结构不对 / id 冲突返回 null;通过则过一遍 normalize(修补引用不一致这类可自愈的问题)。 */
+/**
+ * 认不出的画线只丢那一条,不连累整张图:别的版本(比如新加了画线种类的分支)存的图,在不认识那种画线的版本里打开,
+ * 整份校验不过会被当成空图,随后的自动保存再把空图写回去,原存档就没了(2026-11-10 切分支时撞上过)
+ */
+function dropBadDrawings(panes: unknown[]): unknown[] {
+  return panes.map((p) =>
+    isObj(p) && Array.isArray(p.layers)
+      ? {
+          ...p,
+          layers: p.layers.map((l) =>
+            isObj(l) && Array.isArray(l.drawings) ? { ...l, drawings: l.drawings.filter(isDrawing) } : l,
+          ),
+        }
+      : p,
+  );
+}
+
+/**
+ * 结构不对 / id 冲突返回 null(坏画线例外:只丢那一条,见 dropBadDrawings);
+ * 通过则过一遍 normalize(修补引用不一致这类可自愈的问题)。
+ */
 export function parseChartDoc(x: unknown): ChartDoc | null {
-  if (!isObj(x) || x.v !== 1 || !Array.isArray(x.panes) || !x.panes.every(isPane)) return null;
-  if (!idsUnique(x.panes)) return null;
+  if (!isObj(x) || x.v !== 1 || !Array.isArray(x.panes)) return null;
+  const raw = dropBadDrawings(x.panes);
+  if (!raw.every(isPane) || !idsUnique(raw)) return null;
 
   // 按字段白名单重建:载入的 JSON 里多出来的字段一律丢掉
-  const panes = x.panes.map((p) => ({
+  const panes = raw.map((p) => ({
     id: p.id,
     stretch: p.stretch,
     scales: p.scales.map(canonicalScale),

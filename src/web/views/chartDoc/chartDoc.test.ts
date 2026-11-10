@@ -706,20 +706,22 @@ describe('画线', () => {
     expect(addDrawing(setLayerHidden(base, vix, true), vix, trend)).toEqual(setLayerHidden(base, vix, true));
   });
 
-  test('校验:坏日期、画线 id 与图层重名一律拒收', () => {
+  test('校验:坏日期的画线丢掉那一条,画线 id 与图层重名整张拒收', () => {
     const doc = addDrawing(base, vix, trend);
     const bad = (d: unknown) => {
       const raw = JSON.parse(JSON.stringify(doc));
       raw.panes[0].layers[0].drawings = [d];
-      return parseChartDoc(raw);
+      const parsed = parseChartDoc(raw);
+      // 坏画线只丢那一条:图照常载入、这一条不在;整张图拒收时是 null
+      return parsed && allDrawings(parsed).length;
     };
-    expect(bad({ ...trend, a: { time: '2026-02-30', value: 1 } })).toBeNull();
+    expect(bad({ ...trend, a: { time: '2026-02-30', value: 1 } })).toBe(0);
     expect(bad({ ...trend, id: vix })).toBeNull();
-    expect(bad({ id: 'd9', kind: 'vline', time: '2026-01-05', paneOnly: false })).toBeNull();
-    expect(bad({ id: 'd9', kind: 'hline', value: 3 })).not.toBeNull();
+    expect(bad({ id: 'd9', kind: 'vline', time: '2026-01-05', paneOnly: false })).toBe(0);
+    expect(bad({ id: 'd9', kind: 'hline', value: 3 })).toBe(1);
   });
 
-  test('射线 / 水平射线:往返保留,缺点或坏点拒收', () => {
+  test('射线 / 水平射线:往返保留,缺点或坏点的丢掉', () => {
     const ray = { ...trend, id: 'd2', kind: 'ray' as const };
     const hray = { id: 'd3', kind: 'hray' as const, a: { time: '2026-03-02', value: 21.5 } };
     const doc = addDrawing(addDrawing(base, vix, ray), vix, hray);
@@ -729,14 +731,16 @@ describe('画线', () => {
     const bad = (d: unknown) => {
       const raw = JSON.parse(JSON.stringify(doc));
       raw.panes[0].layers[0].drawings = [d];
-      return parseChartDoc(raw);
+      const parsed = parseChartDoc(raw);
+      // 坏画线只丢那一条:图照常载入、这一条不在;整张图拒收时是 null
+      return parsed && allDrawings(parsed).length;
     };
-    expect(bad({ id: 'd9', kind: 'ray', a: ray.a })).toBeNull();
-    expect(bad({ id: 'd9', kind: 'hray', value: 3 })).toBeNull();
-    expect(bad({ ...hray, a: { time: '2026-13-01', value: 1 } })).toBeNull();
+    expect(bad({ id: 'd9', kind: 'ray', a: ray.a })).toBe(0);
+    expect(bad({ id: 'd9', kind: 'hray', value: 3 })).toBe(0);
+    expect(bad({ ...hray, a: { time: '2026-13-01', value: 1 } })).toBe(0);
   });
 
-  test('文字:往返保留(含多行、加框),空文字 / box 非 true 拒收', () => {
+  test('文字:往返保留(含多行、加框),空文字 / box 非 true 的丢掉', () => {
     const text = {
       id: 'd5',
       kind: 'text' as const,
@@ -750,20 +754,29 @@ describe('画线', () => {
     const bad = (d: unknown) => {
       const raw = JSON.parse(JSON.stringify(doc));
       raw.panes[0].layers[0].drawings = [d];
-      return parseChartDoc(raw);
+      const parsed = parseChartDoc(raw);
+      // 坏画线只丢那一条:图照常载入、这一条不在;整张图拒收时是 null
+      return parsed && allDrawings(parsed).length;
     };
-    expect(bad({ ...text, text: '   ' })).toBeNull();
-    expect(bad({ ...text, box: false })).toBeNull();
+    expect(bad({ ...text, text: '   ' })).toBe(0);
+    expect(bad({ ...text, box: false })).toBe(0);
   });
 
-  test('平行通道:三个点往返保留,缺 c 拒收', () => {
+  test('平行通道:三个点往返保留,缺 c 的丢掉', () => {
     const channel = { ...trend, id: 'd4', kind: 'channel' as const, c: { time: '2026-02-10', value: 25 } };
     const doc = addDrawing(base, vix, channel);
     expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
 
     const raw = JSON.parse(JSON.stringify(doc));
     raw.panes[0].layers[0].drawings = [{ ...trend, id: 'd9', kind: 'channel' }];
-    expect(parseChartDoc(raw)).toBeNull();
+    expect(parseChartDoc(raw)).toEqual(base);
+  });
+
+  test('认不出的画线种类(别的版本存的)只丢那一条,同图层的其它画线和整张图照常载入', () => {
+    const doc = addDrawing(base, vix, trend);
+    const raw = JSON.parse(JSON.stringify(doc));
+    raw.panes[0].layers[0].drawings.push({ id: 'd9', kind: 'signpost', a: trend.a, text: '未来的画线' });
+    expect(parseChartDoc(raw)).toEqual(doc);
   });
 });
 
