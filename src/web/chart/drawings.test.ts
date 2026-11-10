@@ -1,5 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { calloutPointer, channelOffset, hitShapes, rayEnd, textSize, timeAxis } from './drawings';
+import {
+  calloutPointer,
+  channelOffset,
+  hitCursor,
+  hitShapes,
+  RECT_EDGES,
+  rayEnd,
+  rectHandleAt,
+  resizeCursor,
+  textSize,
+  timeAxis,
+} from './drawings';
 
 describe('timeAxis', () => {
   // 周线:每周一根(7 天一根)
@@ -143,5 +154,75 @@ describe('标注气泡', () => {
     const low = calloutPointer({ x1: 200, y1: 100, x2: 100, y2: 100, h: 10 });
     expect(low?.[0][1]).toBe(104);
     expect(calloutPointer({ x1: 100, y1: 100, x2: 100, y2: 100, h: 24 })).toBeNull();
+  });
+});
+
+describe('矩形', () => {
+  // 对角 (300,200) / (100,100):框占 x 100~300、y 100~200
+  const r = { id: 'r', kind: 'rect' as const, x1: 300, y1: 200, x2: 100, y2: 100, extend: false };
+
+  test('命中:8 个手柄(四角 + 四边中点)优先;只有四条边附近算线身,框里、框外都点不中(同 TradingView)', () => {
+    expect(hitShapes([r], 101, 99)).toMatchObject({ part: 'nw' });
+    expect(hitShapes([r], 299, 201)).toMatchObject({ part: 'se' });
+    expect(hitShapes([r], 200, 101)).toMatchObject({ part: 'n' });
+    expect(hitShapes([r], 99, 150)).toMatchObject({ part: 'w' });
+    expect(hitShapes([r], 260, 103)).toMatchObject({ part: 'body', dist: 3 });
+    expect(hitShapes([r], 104, 130)).toMatchObject({ part: 'body', dist: 4 });
+    expect(hitShapes([r], 200, 150)).toBeNull();
+    expect(hitShapes([r], 200, 220)).toBeNull();
+    expect(hitShapes([r], 400, 150)).toBeNull();
+  });
+
+  test('向右延伸:上下边一直延伸到右边、没有右边线;手柄仍在原来的框上;价格带中间点不中', () => {
+    const ext = { ...r, extend: true };
+    expect(hitShapes([ext], 400, 102)).toMatchObject({ part: 'body' });
+    expect(hitShapes([ext], 300, 150)).toMatchObject({ part: 'e' });
+    expect(hitShapes([ext], 330, 150)).toBeNull();
+    expect(hitShapes([ext], 400, 150)).toBeNull();
+    expect(hitShapes([ext], 50, 150)).toBeNull();
+  });
+
+  test('rectHandleAt / RECT_EDGES:角取两条邻边,边中点只取一条、另一方向取中点', () => {
+    const box = { l: 100, r: 300, t: 100, b: 200 };
+    expect(rectHandleAt(box, 'ne')).toEqual([300, 100]);
+    expect(rectHandleAt(box, 's')).toEqual([200, 200]);
+    expect(RECT_EDGES.e).toEqual({ x: 'r' });
+  });
+});
+
+describe('悬停光标', () => {
+  test('resizeCursor:按方向取最近的双向箭头,正反同一个', () => {
+    expect(resizeCursor(10, 0)).toBe('ew-resize');
+    expect(resizeCursor(-10, 1)).toBe('ew-resize');
+    expect(resizeCursor(0, 10)).toBe('ns-resize');
+    expect(resizeCursor(10, 10)).toBe('nwse-resize');
+    expect(resizeCursor(-10, -10)).toBe('nwse-resize');
+    expect(resizeCursor(-10, 10)).toBe('nesw-resize');
+  });
+
+  test('hitCursor:线身移动;端点 / 角按对面那一点 → 这一点;通道宽度竖向;单点画线移动', () => {
+    const rect = { id: 'r', kind: 'rect' as const, x1: 300, y1: 200, x2: 100, y2: 100, extend: false };
+    expect(hitCursor(rect, 'body')).toBe('move');
+    expect(hitCursor(rect, 'nw')).toBe('nwse-resize');
+    expect(hitCursor(rect, 'sw')).toBe('nesw-resize');
+    expect(hitCursor(rect, 'n')).toBe('ns-resize');
+    expect(hitCursor(rect, 'e')).toBe('ew-resize');
+    const trend = { id: 't', kind: 'trend' as const, x1: 0, y1: 100, x2: 200, y2: 100 };
+    expect(hitCursor(trend, 'b')).toBe('ew-resize');
+    expect(hitCursor({ ...trend, kind: 'channel' as const, x3: 100, y3: 50 }, 'c')).toBe('ns-resize');
+    expect(hitCursor({ id: 'h', kind: 'hray' as const, x: 10, y: 10 }, 'a')).toBe('move');
+    const callout = {
+      id: 'c',
+      kind: 'callout' as const,
+      x1: 300,
+      y1: 300,
+      x2: 100,
+      y2: 100,
+      lines: ['x'],
+      w: 64,
+      h: 24,
+    };
+    expect(hitCursor(callout, 'b')).toBe('move');
+    expect(hitCursor(callout, 'a')).toBe('nwse-resize');
   });
 });

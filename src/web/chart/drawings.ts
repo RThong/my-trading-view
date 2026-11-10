@@ -79,6 +79,8 @@ export type Shape =
   | (TwoPoints & { kind: 'channel'; x3: number; y3: number })
   /** 文字:左上角 (x,y),w / h = 整块(含加框的留白)的像素大小,命中和画框都用它 */
   | { id: string; kind: 'text'; x: number; y: number; lines: string[]; box: boolean; w: number; h: number }
+  /** 矩形:(x1,y1)(x2,y2) 是对角两点;extend = 右边不封口,上下边画到画布右缘 */
+  | (TwoPoints & { kind: 'rect'; extend: boolean })
   /** 标注气泡:(x1,y1) = 指针尖,(x2,y2) = 文字框中心,w / h 见 calloutSize(框以中心向四周长) */
   | (TwoPoints & { kind: 'callout'; lines: string[]; w: number; h: number })
   | { id: string; kind: 'vline'; x: number };
@@ -109,8 +111,8 @@ export function rayEnd(x1: number, y1: number, x2: number, y2: number): { x: num
   return { x: x1 + ((x2 - x1) / len) * far, y: y1 + ((y2 - y1) / len) * far };
 }
 
-/** 命中:哪条、抓的是哪儿(两点线的两端 a / b,水平射线的起点 a,通道平行线上的宽度手柄 c,其余一律线身) */
-export type Hit = { id: string; part: 'a' | 'b' | 'c' | 'body'; dist: number };
+/** 命中:哪条、抓的是哪儿(两点线的两端 a / b,水平射线的起点 a,通道平行线上的宽度手柄 c,矩形的 8 个手柄,其余一律线身) */
+export type Hit = { id: string; part: 'a' | 'b' | 'c' | 'body' | RectHandle; dist: number };
 
 // 离线多近算点中;端点手柄比线身优先(同一处既是端点又在线上时,拖端点)
 const HIT_PX = 6;
@@ -201,6 +203,7 @@ function hitOne(s: Shape, x: number, y: number): Hit | null {
     const d = Math.abs(y - s.y);
     return d <= HIT_PX && x >= s.x ? { id: s.id, part: 'body', dist: d } : null;
   }
+  if (s.kind === 'rect') return hitRect(s, x, y);
 
   const da = Math.hypot(x - s.x1, y - s.y1);
   const db = Math.hypot(x - s.x2, y - s.y2);
@@ -229,6 +232,68 @@ function hitChannel(s: ShapeOf<'channel'>, x: number, y: number): Hit | null {
   return inX && inY ? { id: s.id, part: 'body', dist: HIT_PX } : null;
 }
 
+type RectBounds = { l: number; r: number; t: number; b: number };
+
+/** 两点围成的框的上下左右边(两点不分哪个在左上;编辑器拖矩形手柄也用它) */
+export function boxOf(x1: number, y1: number, x2: number, y2: number): RectBounds {
+  return { l: Math.min(x1, x2), r: Math.max(x1, x2), t: Math.min(y1, y2), b: Math.max(y1, y2) };
+}
+
+/** 矩形的上下左右边;向右延伸的右边在 right(画线用画布右缘,命中用无穷远);手柄按不延伸的框算(right 不用) */
+function rectBounds(s: ShapeOf<'rect'>, right?: number): RectBounds {
+  const box = boxOf(s.x1, s.y1, s.x2, s.y2);
+  return s.extend && right !== undefined ? { ...box, r: right } : box;
+}
+
+/** 矩形的 8 个手柄(四角 + 四边中点,按方位命名) */
+export type RectHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
+
+/** 每个手柄管哪几条边(同 TradingView:角改两条邻边,边中点只改这一条) */
+export const RECT_EDGES: Record<RectHandle, { x?: 'l' | 'r'; y?: 't' | 'b' }> = {
+  nw: { x: 'l', y: 't' },
+  n: { y: 't' },
+  ne: { x: 'r', y: 't' },
+  e: { x: 'r' },
+  se: { x: 'r', y: 'b' },
+  s: { y: 'b' },
+  sw: { x: 'l', y: 'b' },
+  w: { x: 'l' },
+};
+const RECT_HANDLES = Object.keys(RECT_EDGES) as RectHandle[];
+
+export function isRectHandle(part: string): part is RectHandle {
+  return Object.hasOwn(RECT_EDGES, part);
+}
+
+/** 手柄位置:管到的边取那条边,没管到的方向取中点 */
+export function rectHandleAt(box: RectBounds, h: RectHandle): Pt {
+  const { x, y } = RECT_EDGES[h];
+  return [x ? box[x] : (box.l + box.r) / 2, y ? box[y] : (box.t + box.b) / 2];
+}
+
+/**
+ * 矩形:8 个手柄 > 边上;框里点不中(同 TradingView,负责人 2026-11-10 实测:框里按住拖是平移图表,停到边上才拖框;
+ * 向右延伸的价格带也就不会挡住平移)。上下边在左右范围内、左右边在上下范围内才算,各放宽 HIT_PX
+ */
+function hitRect(s: ShapeOf<'rect'>, x: number, y: number): Hit | null {
+  const box = rectBounds(s);
+  const handle = RECT_HANDLES.find((h) => {
+    const [hx, hy] = rectHandleAt(box, h);
+    return Math.hypot(x - hx, y - hy) <= HANDLE_PX;
+  });
+  if (handle) return { id: s.id, part: handle, dist: 0 };
+
+  const { l, r, t, b } = rectBounds(s, Number.POSITIVE_INFINITY);
+  const alongX = x >= l - HIT_PX && x <= r + HIT_PX;
+  const alongY = y >= t - HIT_PX && y <= b + HIT_PX;
+
+  const d = Math.min(
+    alongX ? Math.min(Math.abs(y - t), Math.abs(y - b)) : Number.POSITIVE_INFINITY,
+    alongY ? Math.min(Math.abs(x - l), Math.abs(x - r)) : Number.POSITIVE_INFINITY,
+  );
+  return d <= HIT_PX ? { id: s.id, part: 'body', dist: d } : null;
+}
+
 /** 鼠标下最近的那条;都不够近 → null */
 export function hitShapes(shapes: Shape[], x: number, y: number): Hit | null {
   return (
@@ -247,7 +312,7 @@ type Pt = [number, number];
 type Size = { width: number; height: number };
 
 /** 一种画线在这一格里怎么画:几段实线 + 可选的虚线(通道中线)/ 填色区域 + 选中时手柄的位置 */
-type Geom = { lines: [Pt, Pt][]; dashed?: [Pt, Pt][]; fill?: Pt[]; handles: Pt[] };
+type Geom = { lines: [Pt, Pt][]; dashed?: [Pt, Pt][]; fill?: Pt[]; handles: Pt[]; squares?: Pt[] };
 
 function twoPointGeom(s: TwoPoints, to: Pt): Geom {
   return {
@@ -294,6 +359,46 @@ const GEOM: { [K in Exclude<Shape['kind'], 'text' | 'callout'>]: (s: ShapeOf<K>,
     return twoPointGeom(s, [end.x, end.y]);
   },
   channel: channelGeom,
+  // 8 个手柄按不延伸的框放(同 TradingView):四角画圆(横竖都改),四边中点画方块(只改一个方向)
+  rect: (s, size) => {
+    const box = rectBounds(s);
+    const at = (hs: RectHandle[]) => hs.map((h) => rectHandleAt(box, h));
+    const { l, r, t, b } = rectBounds(s, size.width);
+    const edges: [Pt, Pt][] = [
+      [
+        [l, t],
+        [r, t],
+      ],
+      [
+        [l, b],
+        [r, b],
+      ],
+      [
+        [l, t],
+        [l, b],
+      ],
+    ];
+    const rightEdge: [Pt, Pt][] = s.extend
+      ? []
+      : [
+          [
+            [r, t],
+            [r, b],
+          ],
+        ];
+
+    return {
+      lines: [...edges, ...rightEdge],
+      fill: [
+        [l, t],
+        [r, t],
+        [r, b],
+        [l, b],
+      ],
+      handles: at(['nw', 'ne', 'se', 'sw']),
+      squares: at(['n', 'e', 's', 'w']),
+    };
+  },
   hray: (s, size) => ({
     lines: [
       [
@@ -536,6 +641,12 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
           ctx.arc(hx, hy, HANDLE_R, 0, Math.PI * 2);
           ctx.fill();
         });
+        // 只管一个方向的手柄画圆角方块(同 TradingView:看形状就知道拖它只改一条边)
+        g.squares?.forEach(([hx, hy]) => {
+          ctx.beginPath();
+          ctx.roundRect(hx - HANDLE_R, hy - HANDLE_R, HANDLE_R * 2, HANDLE_R * 2, 1.5);
+          ctx.fill();
+        });
       });
 
       if (measure) drawMeasure(ctx, measure);
@@ -550,6 +661,38 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
       }
     });
   }
+}
+
+/** 方向 (dx,dy) 取最近的双向放缩箭头(屏幕纵轴朝下:往右下 = nwse);方向线不分正反,只看 0~180° */
+export function resizeCursor(dx: number, dy: number): string {
+  const signed = (Math.atan2(dy, dx) * 180) / Math.PI;
+  const deg = (signed + 180) % 180;
+
+  if (deg < 22.5 || deg >= 157.5) return 'ew-resize';
+  if (deg < 67.5) return 'nwse-resize';
+  if (deg < 112.5) return 'ns-resize';
+  return 'nesw-resize';
+}
+
+/** 矩形手柄的光标:角按斜向(左上 / 右下同一斜线),边中点按它管的方向 */
+function rectCursor(h: RectHandle): string {
+  const { x, y } = RECT_EDGES[h];
+  if (x && y) return (x === 'l') === (y === 't') ? 'nwse-resize' : 'nesw-resize';
+
+  return x ? 'ew-resize' : 'ns-resize';
+}
+
+/**
+ * 悬停在画线上的光标:线身是「移动」;矩形的 8 个手柄见 rectCursor;两点画线的端点 / 气泡的尖是放缩箭头,方向 = 对面那一点 → 这一点
+ * (负责人 2026-11-10 定:端点别用手);通道的宽度手柄只改宽度,竖向箭头;水平射线起点、文字左上角、气泡的框
+ * 拖它是整个挪,也是「移动」
+ */
+export function hitCursor(s: Shape, part: Hit['part']): string {
+  if (isRectHandle(part)) return rectCursor(part);
+  if (part === 'body' || !('x2' in s) || (s.kind === 'callout' && part === 'b')) return 'move';
+  if (part === 'c') return 'ns-resize';
+
+  return part === 'a' ? resizeCursor(s.x1 - s.x2, s.y1 - s.y2) : resizeCursor(s.x2 - s.x1, s.y2 - s.y1);
 }
 
 /**
@@ -581,18 +724,14 @@ export class DrawingsPrimitive implements IPanePrimitive<Time> {
     return this.views;
   }
 
-  // 只用来换光标(lw-charts 按它设格子的 cursor):绘图模式下整格十字,悬停在画线上是手 / 拖动
+  // 只用来换光标(lw-charts 按它设格子的 cursor):绘图模式下整格十字,悬停在画线上见 hitCursor
   hitTest(x: number, y: number) {
     const { shapes, cursor } = this.source();
     if (cursor) return { externalId: 'drawing-tool', zOrder: 'top' as const, cursorStyle: cursor };
     const hit = hitShapes(shapes, x, y);
-    return hit
-      ? {
-          externalId: hit.id,
-          zOrder: 'top' as const,
-          cursorStyle: hit.part === 'body' ? 'move' : 'grab',
-          distance: hit.dist,
-        }
+    const shape = hit && shapes.find((s) => s.id === hit.id);
+    return hit && shape
+      ? { externalId: hit.id, zOrder: 'top' as const, cursorStyle: hitCursor(shape, hit.part), distance: hit.dist }
       : null;
   }
 }

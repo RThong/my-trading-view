@@ -81,6 +81,7 @@ export type DrawingPoint = { time: string; value: number };
  * 平行通道 = 底边 a→b + 一条穿过 c、和底边平行的线(在屏幕上平行,对数轴下也是两条平行直线)。
  * 文字 = 左上角锚在 a 的一段文字(可多行),box = 加框。
  * 标注气泡 = 指针尖 a + 以 b 为中心的文字框(同 TradingView Callout 的两点顺序),指针根部在框中心、收窄到 a,露出框边的那截是指针。
+ * 矩形 = 对角两点 a、b 围成的框(时间段 × 价格区间);extend = 向右延伸到图的右缘(同 TradingView 矩形的 Extend right)。
  * 竖线默认延伸到所有格(同 TradingView 竖线的 Extend);paneOnly = 只画所属图层那一格
  */
 export type Drawing =
@@ -91,6 +92,7 @@ export type Drawing =
   | { id: string; kind: 'channel'; a: DrawingPoint; b: DrawingPoint; c: DrawingPoint }
   | { id: string; kind: 'text'; a: DrawingPoint; text: string; box?: true }
   | { id: string; kind: 'callout'; a: DrawingPoint; b: DrawingPoint; text: string }
+  | { id: string; kind: 'rect'; a: DrawingPoint; b: DrawingPoint; extend?: true }
   | { id: string; kind: 'vline'; time: string; paneOnly?: true };
 
 export type Layer = {
@@ -818,6 +820,7 @@ const DRAWING_FIELDS: Record<Drawing['kind'], (x: Record<string, unknown>) => bo
   channel: (x) => isPoint(x.a) && isPoint(x.b) && isPoint(x.c),
   text: (x) => isPoint(x.a) && isText(x.text) && (x.box === undefined || x.box === true),
   callout: (x) => isPoint(x.a) && isPoint(x.b) && isText(x.text),
+  rect: (x) => isPoint(x.a) && isPoint(x.b) && (x.extend === undefined || x.extend === true),
   vline: (x) => isDate(x.time) && (x.paneOnly === undefined || x.paneOnly === true),
 };
 
@@ -872,6 +875,7 @@ const CANONICAL_DRAWING: { [K in Drawing['kind']]: (d: Extract<Drawing, { kind: 
   channel: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b), c: pt(d.c) }),
   text: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), text: d.text, ...(d.box && { box: true as const }) }),
   callout: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b), text: d.text }),
+  rect: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b), ...(d.extend && { extend: true as const }) }),
   vline: (d) => ({ id: d.id, kind: d.kind, time: d.time, ...(d.paneOnly && { paneOnly: true as const }) }),
 };
 
