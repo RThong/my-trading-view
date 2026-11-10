@@ -1,9 +1,9 @@
-// 画线工具「文字」的就地编辑框(同 TradingView:点一下就在图上打字,不弹窗)。
-// 盖在锚点处的多行输入框,字体 / 行高 / 内边距与画布上画的文字同一套,看上去就是在图上打字;
+// 画线工具「文字」「标注气泡」的就地编辑框(同 TradingView:点一下就在图上打字,不弹窗)。
+// 盖在锚点处(气泡盖在框中心、向四周长)的多行输入框,字体 / 行高 / 内边距与画布上画的文字同一套,看上去就是在图上打字;
 // 宽高随内容(CSS field-sizing)。回车换行;Esc、点到框外、滚轮缩放图表都算写完,统一走失焦保存。
 // 用原生 textarea、不用 ui/Textarea:要和画布上的字逐像素对齐,组件库的边框 / 内边距 / 圆角都得去掉
 import { useEffect, useRef } from 'react';
-import { TEXT_FONT, TEXT_LINE, TEXT_PAD } from '../../../chart/drawings';
+import { CALLOUT_MIN_W, TEXT_FONT, TEXT_LINE, TEXT_PAD } from '../../../chart/drawings';
 import { cn } from '../../../lib/utils';
 import type { TextEditing } from '../hooks/useDrawings';
 
@@ -61,11 +61,17 @@ function OpenEditor({ editing, onCommit }: Props & { editing: TextEditing }) {
         font: TEXT_FONT,
         lineHeight: `${TEXT_LINE}px`,
         padding: `${TEXT_PAD / 2}px ${TEXT_PAD}px`,
+        minWidth: CALLOUT_MIN_W,
       }}
-      // 颜色同画布:neutral-200 / 950 就是 CHART_CHROME 的 ink / bg(浅色主题一起翻);黄框同选中的画线
+      // 颜色同画布:neutral-200 / 950 就是 CHART_CHROME 的 ink / bg(浅色主题一起翻);黄框同选中的画线。
+      // 气泡:以框中心定位(向四周长,同画布上的框),底色不透明,盖住画在框中心的指针根部
       className={cn(
-        'absolute z-20 min-w-16 resize-none overflow-hidden whitespace-pre text-neutral-200 outline-1 outline-yellow-500 [field-sizing:content] placeholder:text-neutral-500',
-        editing.box ? 'bg-neutral-950/85 outline-solid' : 'bg-transparent outline-dashed',
+        'absolute z-20 resize-none overflow-hidden whitespace-pre text-neutral-200 outline-1 outline-yellow-500 [field-sizing:content] placeholder:text-neutral-500',
+        editing.kind === 'callout'
+          ? '-translate-x-1/2 -translate-y-1/2 bg-neutral-950 outline-solid'
+          : editing.box
+            ? 'bg-neutral-950/85 outline-solid'
+            : 'bg-transparent outline-dashed',
       )}
     />
   );

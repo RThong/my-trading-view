@@ -80,6 +80,7 @@ export type DrawingPoint = { time: string; value: number };
  * 射线 = 从 a 出发、穿过 b、沿 a→b 方向无限延伸(b 在左边就往左);水平射线 = 从 a 往右的水平线。
  * 平行通道 = 底边 a→b + 一条穿过 c、和底边平行的线(在屏幕上平行,对数轴下也是两条平行直线)。
  * 文字 = 左上角锚在 a 的一段文字(可多行),box = 加框。
+ * 标注气泡 = 指针尖 a + 以 b 为中心的文字框(同 TradingView Callout 的两点顺序),指针根部在框中心、收窄到 a,露出框边的那截是指针。
  * 竖线默认延伸到所有格(同 TradingView 竖线的 Extend);paneOnly = 只画所属图层那一格
  */
 export type Drawing =
@@ -89,6 +90,7 @@ export type Drawing =
   | { id: string; kind: 'hray'; a: DrawingPoint }
   | { id: string; kind: 'channel'; a: DrawingPoint; b: DrawingPoint; c: DrawingPoint }
   | { id: string; kind: 'text'; a: DrawingPoint; text: string; box?: true }
+  | { id: string; kind: 'callout'; a: DrawingPoint; b: DrawingPoint; text: string }
   | { id: string; kind: 'vline'; time: string; paneOnly?: true };
 
 export type Layer = {
@@ -803,16 +805,31 @@ function isPoint(x: unknown): x is DrawingPoint {
   return isObj(x) && isDate(x.time) && isNum(x.value);
 }
 
-function isDrawing(x: unknown): x is Drawing {
-  if (!isObj(x) || !isStr(x.id)) return false;
-  if (x.kind === 'trend' || x.kind === 'ray') return isPoint(x.a) && isPoint(x.b);
-  if (x.kind === 'hline') return isNum(x.value);
-  if (x.kind === 'hray') return isPoint(x.a);
-  if (x.kind === 'channel') return isPoint(x.a) && isPoint(x.b) && isPoint(x.c);
-  if (x.kind === 'text')
-    return isPoint(x.a) && isStr(x.text) && x.text.trim() !== '' && (x.box === undefined || x.box === true);
+function isText(x: unknown): x is string {
+  return isStr(x) && x.trim() !== '';
+}
 
-  return x.kind === 'vline' && isDate(x.time) && (x.paneOnly === undefined || x.paneOnly === true);
+// 各种画线的字段校验,按 kind 查表:Record 要求每种都填,新加画线种类漏了这里编译就不过
+const DRAWING_FIELDS: Record<Drawing['kind'], (x: Record<string, unknown>) => boolean> = {
+  trend: (x) => isPoint(x.a) && isPoint(x.b),
+  ray: (x) => isPoint(x.a) && isPoint(x.b),
+  hline: (x) => isNum(x.value),
+  hray: (x) => isPoint(x.a),
+  channel: (x) => isPoint(x.a) && isPoint(x.b) && isPoint(x.c),
+  text: (x) => isPoint(x.a) && isText(x.text) && (x.box === undefined || x.box === true),
+  callout: (x) => isPoint(x.a) && isPoint(x.b) && isText(x.text),
+  vline: (x) => isDate(x.time) && (x.paneOnly === undefined || x.paneOnly === true),
+};
+
+function isDrawing(x: unknown): x is Drawing {
+  // hasOwn:认不出的 kind(别的版本的画线、'toString' 这类原型上的名字)一律不算
+  return (
+    isObj(x) &&
+    isStr(x.id) &&
+    isStr(x.kind) &&
+    Object.hasOwn(DRAWING_FIELDS, x.kind) &&
+    DRAWING_FIELDS[x.kind as Drawing['kind']](x)
+  );
 }
 
 function isLayer(x: unknown): x is Layer {
@@ -842,16 +859,25 @@ function isLayer(x: unknown): x is Layer {
   );
 }
 
-function canonicalDrawing(d: Drawing): Drawing {
-  const pt = (p: DrawingPoint) => ({ time: p.time, value: p.value });
-  if (d.kind === 'trend' || d.kind === 'ray') return { id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b) };
-  if (d.kind === 'hline') return { id: d.id, kind: d.kind, value: d.value };
-  if (d.kind === 'hray') return { id: d.id, kind: d.kind, a: pt(d.a) };
-  if (d.kind === 'channel') return { id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b), c: pt(d.c) };
-  if (d.kind === 'text')
-    return { id: d.id, kind: d.kind, a: pt(d.a), text: d.text, ...(d.box && { box: true as const }) };
+function pt(p: DrawingPoint): DrawingPoint {
+  return { time: p.time, value: p.value };
+}
 
-  return { id: d.id, kind: d.kind, time: d.time, ...(d.paneOnly && { paneOnly: true as const }) };
+// 各种画线按字段白名单重建,同 DRAWING_FIELDS 按 kind 查表、要求填全
+const CANONICAL_DRAWING: { [K in Drawing['kind']]: (d: Extract<Drawing, { kind: K }>) => Drawing } = {
+  trend: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b) }),
+  ray: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b) }),
+  hline: (d) => ({ id: d.id, kind: d.kind, value: d.value }),
+  hray: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a) }),
+  channel: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b), c: pt(d.c) }),
+  text: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), text: d.text, ...(d.box && { box: true as const }) }),
+  callout: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b), text: d.text }),
+  vline: (d) => ({ id: d.id, kind: d.kind, time: d.time, ...(d.paneOnly && { paneOnly: true as const }) }),
+};
+
+function canonicalDrawing(d: Drawing): Drawing {
+  // 按 kind 取对应那一项;联合类型下 TS 认不出 d 和 CANONICAL_DRAWING[d.kind] 是同一种,只能断言(同 drawings.ts 的 GEOM)
+  return CANONICAL_DRAWING[d.kind](d as never);
 }
 
 function canonicalRender(r: LayerRender): LayerRender {

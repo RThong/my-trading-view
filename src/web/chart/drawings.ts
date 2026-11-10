@@ -79,6 +79,8 @@ export type Shape =
   | (TwoPoints & { kind: 'channel'; x3: number; y3: number })
   /** 文字:左上角 (x,y),w / h = 整块(含加框的留白)的像素大小,命中和画框都用它 */
   | { id: string; kind: 'text'; x: number; y: number; lines: string[]; box: boolean; w: number; h: number }
+  /** 标注气泡:(x1,y1) = 指针尖,(x2,y2) = 文字框中心,w / h 见 calloutSize(框以中心向四周长) */
+  | (TwoPoints & { kind: 'callout'; lines: string[]; w: number; h: number })
   | { id: string; kind: 'vline'; x: number };
 
 /**
@@ -136,7 +138,54 @@ export function textSize(lines: string[]): { w: number; h: number } {
   return { w: Math.max(0, ...lines.map(lineWidth)) + TEXT_PAD * 2, h: lines.length * TEXT_LINE + TEXT_PAD };
 }
 
+// 气泡框 / 就地编辑框共用的最小宽度(InlineTextEditor 也读它):空着画的框正好被编辑框盖住
+export const CALLOUT_MIN_W = 64;
+
+/** 气泡框的大小:同文字,但不窄于编辑框(画到一半还没字时框也看得见) */
+export function calloutSize(lines: string[]): { w: number; h: number } {
+  const t = textSize(lines);
+  return { w: Math.max(t.w, CALLOUT_MIN_W), h: t.h };
+}
+
+// 气泡指针根部的半宽:根部埋在框中心,露出框的是从框边收窄到尖的一截
+const POINTER_HALF = 10;
+
+/** 气泡文字框的左上角 */
+function calloutBox(s: ShapeOf<'callout'>): { left: number; top: number } {
+  return { left: s.x2 - s.w / 2, top: s.y2 - s.h / 2 };
+}
+
+/**
+ * 气泡指针三角:根部在框中心、垂直于「中心 → 尖」各让出半宽,尖在 a。半宽不超过半个框高,根部总在框里。
+ * 尖和框中心重合没有方向 → null
+ */
+export function calloutPointer(s: Omit<TwoPoints, 'id'> & { h: number }): [Pt, Pt, Pt] | null {
+  const [dx, dy] = [s.x1 - s.x2, s.y1 - s.y2];
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return null;
+
+  const half = Math.min(POINTER_HALF, s.h / 2 - 1);
+  const [nx, ny] = [(-dy / len) * half, (dx / len) * half];
+  return [
+    [s.x2 + nx, s.y2 + ny],
+    [s.x2 - nx, s.y2 - ny],
+    [s.x1, s.y1],
+  ];
+}
+
+/** 气泡:尖的手柄(改指向)> 框里(只挪框,同 TradingView)> 指针附近(整个挪) */
+function hitCallout(s: ShapeOf<'callout'>, x: number, y: number): Hit | null {
+  if (Math.hypot(x - s.x1, y - s.y1) <= HANDLE_PX) return { id: s.id, part: 'a', dist: 0 };
+
+  const { left, top } = calloutBox(s);
+  if (x >= left && x <= left + s.w && y >= top && y <= top + s.h) return { id: s.id, part: 'b', dist: HIT_PX / 2 };
+
+  const d = pointToSegmentDistance(x, y, s.x2, s.y2, s.x1, s.y1);
+  return d <= HIT_PX ? { id: s.id, part: 'body', dist: d } : null;
+}
+
 function hitOne(s: Shape, x: number, y: number): Hit | null {
+  if (s.kind === 'callout') return hitCallout(s, x, y);
   if (s.kind === 'text') {
     if (Math.hypot(x - s.x, y - s.y) <= HANDLE_PX) return { id: s.id, part: 'a', dist: 0 };
     return x >= s.x && x <= s.x + s.w && y >= s.y && y <= s.y + s.h
@@ -238,7 +287,7 @@ function channelGeom(s: ShapeOf<'channel'>): Geom {
 }
 
 // 两点线两端、水平射线起点、通道平行线中点(拖它改宽度)的手柄可拖;水平 / 竖线的手柄在中点,拖它 = 拖线身,只为看得出选中了
-const GEOM: { [K in Exclude<Shape['kind'], 'text'>]: (s: ShapeOf<K>, size: Size) => Geom } = {
+const GEOM: { [K in Exclude<Shape['kind'], 'text' | 'callout'>]: (s: ShapeOf<K>, size: Size) => Geom } = {
   trend: (s) => twoPointGeom(s, [s.x2, s.y2]),
   ray: (s) => {
     const end = rayEnd(s.x1, s.y1, s.x2, s.y2);
@@ -369,6 +418,62 @@ function drawText(ctx: CanvasRenderingContext2D, s: ShapeOf<'text'>, on: boolean
   ctx.fill();
 }
 
+/**
+ * 标注气泡:框 + 指针铺底色、描黄边(指针的边只描框外那一截),框里逐行写字;选中时尖上出手柄。
+ * 就地编辑时这里照样画(文字为空),编辑框以同一中心盖在框上。
+ * 底色不透明:画线压在 K 线下面,透不透明都挡不住 K 线,不透明省得框和指针交叠处叠深
+ */
+function drawCallout(
+  ctx: CanvasRenderingContext2D,
+  s: ShapeOf<'callout'>,
+  on: boolean,
+  ink: PaneDrawingState['ink'],
+  size: Size,
+) {
+  const tri = calloutPointer(s);
+  const { left, top } = calloutBox(s);
+  const pointer = () => {
+    if (!tri) return;
+    ctx.beginPath();
+    ctx.moveTo(...tri[0]);
+    ctx.lineTo(...tri[2]);
+    ctx.lineTo(...tri[1]);
+  };
+
+  ctx.fillStyle = ink.bg;
+  ctx.strokeStyle = COLOR;
+  ctx.lineWidth = on ? 2 : 1;
+  pointer();
+  ctx.fill();
+  ctx.fillRect(left, top, s.w, s.h);
+
+  // 指针两条边只描框外的部分:裁掉框内(整块画布减去框,evenodd)
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, size.width, size.height);
+  ctx.rect(left, top, s.w, s.h);
+  ctx.clip('evenodd');
+  pointer();
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.strokeRect(left, top, s.w, s.h);
+
+  ctx.font = TEXT_FONT;
+  ctx.fillStyle = ink.text;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  s.lines.forEach((line, i) => {
+    ctx.fillText(line, left + TEXT_PAD, top + TEXT_PAD / 2 + 2 + i * TEXT_LINE);
+  });
+
+  if (!on) return;
+  ctx.fillStyle = COLOR;
+  ctx.beginPath();
+  ctx.arc(s.x1, s.y1, HANDLE_R, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 class DrawingsRenderer implements IPrimitivePaneRenderer {
   constructor(private readonly state: PaneDrawingState) {}
 
@@ -380,6 +485,10 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
         const on = s.id === selected;
         if (s.kind === 'text') {
           drawText(ctx, s, on, ink);
+          return;
+        }
+        if (s.kind === 'callout') {
+          drawCallout(ctx, s, on, ink, mediaSize);
           return;
         }
 

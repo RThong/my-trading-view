@@ -762,6 +762,28 @@ describe('画线', () => {
     expect(bad({ ...text, box: false })).toBe(0);
   });
 
+  test('标注气泡:尖 a、框 b、多行文字往返保留;空文字 / 缺 b 的丢掉,多余字段去掉', () => {
+    const callout = {
+      id: 'd6',
+      kind: 'callout' as const,
+      a: { time: '2026-02-10', value: 25 },
+      b: { time: '2026-01-20', value: 30 },
+      text: '这里见顶\n第二行',
+    };
+    const doc = addDrawing(base, vix, callout);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+
+    const parse = (d: unknown) => {
+      const raw = JSON.parse(JSON.stringify(doc));
+      raw.panes[0].layers[0].drawings = [d];
+      const parsed = parseChartDoc(raw);
+      return parsed && allDrawings(parsed).map((e) => e.drawing);
+    };
+    expect(parse({ ...callout, text: ' \n ' })).toEqual([]);
+    expect(parse({ ...callout, b: undefined })).toEqual([]);
+    expect(parse({ ...callout, box: true })).toEqual([callout]);
+  });
+
   test('平行通道:三个点往返保留,缺 c 的丢掉', () => {
     const channel = { ...trend, id: 'd4', kind: 'channel' as const, c: { time: '2026-02-10', value: 25 } };
     const doc = addDrawing(base, vix, channel);

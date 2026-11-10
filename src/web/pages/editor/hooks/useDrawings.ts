@@ -4,6 +4,7 @@
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import type { IChartApi, IPaneApi, ISeriesApi, Logical, SeriesType, Time } from 'lightweight-charts';
 import {
+  calloutSize,
   channelOffset,
   DrawingsPrimitive,
   hitShapes,
@@ -34,22 +35,28 @@ import { CHART_CHROME, getTheme } from '../../../hooks/theme';
 import type { PointCtx } from '../drawingPlugins/types';
 import { paneAt, paneCoords } from './paneHit';
 
-export type DrawingTool = 'cursor' | 'trend' | 'ray' | 'channel' | 'hline' | 'hray' | 'vline' | 'measure' | 'text';
+export type DrawingTool =
+  | 'cursor'
+  | 'trend'
+  | 'ray'
+  | 'channel'
+  | 'hline'
+  | 'hray'
+  | 'vline'
+  | 'measure'
+  | 'text'
+  | 'callout';
 
+/** 要就地写字的画线(文字 / 标注气泡):新放的(还没存进文档,id 缺)或改已有的那条 */
+type TextDraft = { id?: string; layerId: string; a: DrawingPoint; text: string } & (
+  | { kind: 'text'; box: boolean }
+  | { kind: 'callout'; b: DrawingPoint }
+);
 /**
- * 正在图上就地编辑的文字:新放的(还没存进文档,id 缺)或改已有的那条。
- * x / y = 编辑框左上角(= 锚点)相对图表容器的像素位置,打开时算一次(编辑中平移 / 缩放图表会先结束编辑)
+ * 正在图上就地编辑的那条。x / y = 编辑框相对图表容器的像素位置(文字是左上角 = 锚点,气泡是框中心 = b),
+ * 打开时算一次(编辑中平移 / 缩放图表会先结束编辑)
  */
-export type TextEditing = {
-  id?: string;
-  layerId: string;
-  a: DrawingPoint;
-  text: string;
-  box: boolean;
-  x: number;
-  y: number;
-};
-type TextDraft = Omit<TextEditing, 'x' | 'y'>;
+export type TextEditing = TextDraft & { x: number; y: number };
 
 type TwoPoint = Extract<Drawing, { kind: 'trend' | 'ray' }>;
 /** 两点画的线(趋势线、射线):画法、拖端点、吸附后重合判断都一样,只是渲染时射线往外延伸 */
@@ -57,11 +64,22 @@ function isTwoPoint(d: Drawing | undefined): d is TwoPoint {
   return d?.kind === 'trend' || d?.kind === 'ray';
 }
 
-/** 按住 / 点两下画出 a→b 的线:两点线 + 平行通道(通道第二下之后还要一下定宽度,见 Gesture 的 stage) */
-type Creatable = TwoPoint | Extract<Drawing, { kind: 'channel' }>;
+/**
+ * 按住 / 点两下画出 a→b 的:两点线 + 平行通道(通道第二下之后还要一下定宽度,见 Gesture 的 stage)
+ * + 标注气泡(a = 指针尖、b = 框中心,画成后就地写字)
+ */
+type Creatable = TwoPoint | Extract<Drawing, { kind: 'channel' | 'callout' }>;
 function hasAB(d: Drawing | undefined): d is Creatable {
-  return isTwoPoint(d) || d?.kind === 'channel';
+  return isTwoPoint(d) || d?.kind === 'channel' || d?.kind === 'callout';
 }
+
+/** 按住 / 点两下画的工具 → 第一下落点处的草稿(其余点先和第一点重合,之后跟着光标改,见 followCursor) */
+const START: { [K in Creatable['kind']]: (id: string, p: DrawingPoint) => Extract<Creatable, { kind: K }> } = {
+  trend: (id, p) => ({ id, kind: 'trend', a: p, b: p }),
+  ray: (id, p) => ({ id, kind: 'ray', a: p, b: p }),
+  channel: (id, p) => ({ id, kind: 'channel', a: p, b: p, c: p }),
+  callout: (id, p) => ({ id, kind: 'callout', a: p, b: p, text: '' }),
+};
 
 /** 画到一半的线跟着光标:定第二点阶段改 b(通道的 c 先跟着 b,平行线和底边重合);通道定宽阶段改 c */
 function followCursor(d: Creatable, p: DrawingPoint, stage: 'b' | 'c'): Creatable {
@@ -182,6 +200,21 @@ function toPoint(ctx: Ctx, s: ISeriesApi<SeriesType>, x: number, y: number, extr
   );
 }
 
+/**
+ * 画到一半时跟着光标的那一点。气泡的框不过插件:框中心吸到 K 线的价位上没有意义,开着磁吸框会一格格乱跳;
+ * 其余照常过插件(anchor = 已定的那一点,Shift 等按它约束)
+ */
+function followPoint(
+  ctx: Ctx,
+  s: ISeriesApi<SeriesType>,
+  d: Creatable,
+  at: { x: number; y: number },
+  anchor: DrawingPoint | null,
+  shift: boolean,
+): DrawingPoint | null {
+  return d.kind === 'callout' ? rawPoint(ctx, s, at.x, at.y) : toPoint(ctx, s, at.x, at.y, { anchor, shift });
+}
+
 /** 第 i 格此刻要画的像素:趋势线 / 水平线只画在所属图层那一格;竖线延伸的每格都画,只画本格的(paneOnly)只在那一格 */
 function paneShapes(ctx: Ctx, entries: Entry[], i: number): Shape[] {
   return entries.flatMap(({ drawing: d, layer, paneIndex }): Shape[] => {
@@ -211,8 +244,21 @@ function paneShapes(ctx: Ctx, entries: Entry[], i: number): Shape[] {
       const c = toPx(ctx, s, d.c);
       return c ? [{ id: d.id, kind: 'channel', x1: a.x, y1: a.y, x2: b.x, y2: b.y, x3: c.x, y3: c.y }] : [];
     }
+    if (d.kind === 'callout') {
+      const lines = d.text.split('\n');
+      return [{ id: d.id, kind: 'callout', x1: a.x, y1: a.y, x2: b.x, y2: b.y, lines, ...calloutSize(lines) }];
+    }
     return [{ id: d.id, kind: d.kind, x1: a.x, y1: a.y, x2: b.x, y2: b.y }];
   });
+}
+
+/** 正在就地编辑的气泡:按空文字画(框 + 指针),编辑框以同一中心盖在框上;只有指针露在外面 */
+function editingCallout(doc: ChartDoc, ed: TextEditing | null): Entry[] {
+  const owner = ed?.kind === 'callout' ? findLayer(doc, ed.layerId) : undefined;
+  if (ed?.kind !== 'callout' || !owner || owner.layer.hidden) return [];
+
+  const drawing: Drawing = { id: ed.id ?? '', kind: 'callout', a: ed.a, b: ed.b, text: '' };
+  return [{ drawing, layer: owner.layer, paneIndex: doc.panes.indexOf(owner.pane) }];
 }
 
 /** 要画的画线:所属图层隐藏的不画;拖动 / 画到一半的用草稿替换(新画的那条追加) */
@@ -268,10 +314,12 @@ function dragged(
     return p ? { ...d, a: p } : null;
   }
 
+  // 整条平移、拖气泡的框不过插件(框中心吸到价位上没有意义,见 followPoint)
+  const raw = g.part === 'body' || (d.kind === 'callout' && g.part === 'b');
   const shifted = (p: DrawingPoint, anchor: DrawingPoint | null) => {
     const px = toPx(ctx, s, p);
     if (!px) return null;
-    return g.part === 'body'
+    return raw
       ? rawPoint(ctx, s, px.x + dx, px.y + dy)
       : toPoint(ctx, s, px.x + dx, px.y + dy, { anchor, shift, dragging: true });
   };
@@ -335,6 +383,8 @@ function previewFor(
 
   // 画第二点:锁在第一点那一格、那条线(光标出了格照样跟);否则看光标落在哪一格的绘图区
   const creating = g?.kind === 'create' ? g : null;
+  // 气泡的框跟着光标走、不过插件(见 followPoint),框自己就是落点,不再画圈
+  if (creating && st.draft?.drawing.kind === 'callout') return null;
   const pane = creating ? creating.pane : paneAt(el, chart, m)?.index;
   if (pane === undefined) return null;
   const at = paneCoords(el, chart, pane, m);
@@ -384,10 +434,11 @@ function samePoint(a: DrawingPoint, b: DrawingPoint): boolean {
 
 /**
  * 两点线 / 通道底边画不出方向:两点重合(磁吸把两下吸到同一根同一个值上),或射线 / 通道两点同一天(放大后两下点在同一根里、
- * 关着磁吸) —— 射线会竖着贯穿整张图、通道底边竖着就没有「平行」可言。这类两下当作「太近」,不画、第一点留着
+ * 关着磁吸) —— 射线会竖着贯穿整张图、通道底边竖着就没有「平行」可言。这类两下当作「太近」,不画、第一点留着。
+ * 气泡只怕重合(框盖住尖、指针没了);同一天 = 框在尖的正上 / 正下方,正常
  */
 function noDirection(d: Creatable): boolean {
-  return samePoint(d.a, d.b) || (d.kind !== 'trend' && d.a.time === d.b.time);
+  return samePoint(d.a, d.b) || ((d.kind === 'ray' || d.kind === 'channel') && d.a.time === d.b.time);
 }
 
 function redrawAll(prims: Map<IPaneApi<Time>, DrawingsPrimitive>) {
@@ -399,19 +450,26 @@ function redrawAll(prims: Map<IPaneApi<Time>, DrawingsPrimitive>) {
 // 输入框里打字、弹层(侧栏的设置浮层、下拉菜单)里按键都不归画线管:弹层自己在 document 冒泡阶段听 Esc 关闭
 const POPUP = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
-/** 已有的那条文字(拿来就地改);不是文字或已不在文档里就是 null */
+/** 已有的那条文字 / 气泡(拿来就地改);别的画线或已不在文档里就是 null */
 function existingText(doc: ChartDoc, id: string): TextDraft | null {
   const entry = allDrawings(doc).find((e) => e.drawing.id === id);
   const d = entry?.drawing;
+  if (!entry || !d) return null;
 
-  return entry && d?.kind === 'text' ? { id, layerId: entry.layer.id, a: d.a, text: d.text, box: !!d.box } : null;
+  const base = { id, layerId: entry.layer.id };
+  if (d.kind === 'text') return { ...base, kind: 'text', a: d.a, text: d.text, box: !!d.box };
+  if (d.kind === 'callout') return { ...base, kind: 'callout', a: d.a, b: d.b, text: d.text };
+  return null;
 }
 
-/** 编辑框放到锚点的屏幕位置(相对图表容器;横坐标要加上左轴宽,纵坐标加上所在格的顶边);换算不出就是 null */
+/**
+ * 编辑框放到屏幕上(相对图表容器;横坐标要加上左轴宽,纵坐标加上所在格的顶边):文字放在锚点,气泡放在框中心;
+ * 换算不出就是 null
+ */
 function placeEditor(el: HTMLElement, chart: IChartApi, ctx: Ctx, doc: ChartDoc, t: TextDraft): TextEditing | null {
   const s = ctx.seriesOf(t.layerId);
   const owner = findLayer(doc, t.layerId);
-  const px = s && toPx(ctx, s, t.a);
+  const px = s && toPx(ctx, s, t.kind === 'callout' ? t.b : t.a);
   const paneTop = owner
     ? chart.panes()[doc.panes.indexOf(owner.pane)]?.getHTMLElement()?.getBoundingClientRect().top
     : undefined;
@@ -454,8 +512,8 @@ export function useDrawings(
   const selectedRef = useRef(live);
   const hiddenRef = useRef(hidden);
   const draftRef = useRef<Draft | null>(null);
-  // 正在就地编辑的那条不画在画布上(编辑框盖在原处显示它)
-  const editingIdRef = useRef<string | undefined>(undefined);
+  // 正在就地编辑的那条不画在画布上(编辑框盖在原处显示它;气泡按空文字画、编辑框盖在框上,见 editingCallout)
+  const editingRef = useRef<TextEditing | null>(null);
   const gestureRef = useRef<Gesture | null>(null);
   const measureRef = useRef<Measure | null>(null);
   // 鼠标最后在哪(落点预览按它现算);鼠标离开页面 / 窗口失焦就清掉
@@ -494,7 +552,7 @@ export function useDrawings(
     toolRef.current = tool;
     selectedRef.current = live;
     hiddenRef.current = hidden;
-    editingIdRef.current = editing?.id;
+    editingRef.current = editing;
     actionsRef.current = actions;
     transformRef.current = transformPoint;
     redrawAll(primsRef.current);
@@ -528,7 +586,12 @@ export function useDrawings(
             ctx && !hiddenRef.current
               ? paneShapes(
                   ctx,
-                  liveEntries(docRef.current, draftRef.current).filter((e) => e.drawing.id !== editingIdRef.current),
+                  [
+                    ...liveEntries(docRef.current, draftRef.current).filter(
+                      (e) => e.drawing.id !== editingRef.current?.id,
+                    ),
+                    ...editingCallout(docRef.current, editingRef.current),
+                  ],
                   api.paneIndex(),
                 )
               : [];
@@ -609,6 +672,17 @@ export function useDrawings(
       draftRef.current = null;
       redrawAll(prims);
     };
+    /** 两点定完:气泡先就地打字(回到光标,写完才存进文档,见 commitText),其余直接存 */
+    const complete = (d: Creatable, layerId: string) => {
+      cancelGesture();
+      if (d.kind !== 'callout') return finish(d, layerId);
+
+      const chart = chartRef.current;
+      const ctx = ctxNow();
+      setTool('cursor');
+      if (chart && ctx)
+        setEditing(placeEditor(el, chart, ctx, docRef.current, { kind: 'callout', layerId, a: d.a, b: d.b, text: '' }));
+    };
 
     const onDown = (e: PointerEvent) => {
       swallow = false;
@@ -666,7 +740,7 @@ export function useDrawings(
         const s = ctx.seriesOf(g.layerId);
         const d = draftRef.current?.drawing;
         const anchor = hasAB(d) && g.stage === 'b' ? d.a : null;
-        const p = at && s && toPoint(ctx, s, at.x, at.y, { anchor, shift: e.shiftKey });
+        const p = at && s && hasAB(d) && followPoint(ctx, s, d, at, anchor, e.shiftKey);
         if (!s || !p || !hasAB(d)) return cancelGesture();
         const next = followCursor(d, p, g.stage);
         if (g.stage === 'b') {
@@ -674,8 +748,7 @@ export function useDrawings(
           if (tooShort(g, e) || noDirection(next)) return;
           if (next.kind === 'channel') return toWidthStage(g, next, e);
         } else if (tooShort(g, e)) return;
-        cancelGesture();
-        finish(next, g.layerId);
+        complete(next, g.layerId);
         return;
       }
 
@@ -693,7 +766,7 @@ export function useDrawings(
         // 文字:就地打开编辑框、回到光标(同 TradingView),写完才存进文档(见 commitText)
         else if (tool === 'text') {
           setTool('cursor');
-          setEditing(placeEditor(el, chart, ctx, doc, { layerId, a: p, text: '', box: false }));
+          setEditing(placeEditor(el, chart, ctx, doc, { kind: 'text', layerId, a: p, text: '', box: false }));
         } else {
           gestureRef.current = {
             kind: 'create',
@@ -705,9 +778,7 @@ export function useDrawings(
             pressed: true,
             stage: 'b',
           };
-          const drawing: Creatable =
-            tool === 'channel' ? { id, kind: tool, a: p, b: p, c: p } : { id, kind: tool, a: p, b: p };
-          draftRef.current = { drawing, layerId };
+          draftRef.current = { drawing: START[tool](id, p), layerId };
           redrawAll(prims);
         }
         return;
@@ -788,7 +859,7 @@ export function useDrawings(
       if (g.kind === 'create') {
         const d = draftRef.current;
         const anchor = hasAB(d?.drawing) && g.stage === 'b' ? d.drawing.a : null;
-        const p = at && toPoint(ctx, s, at.x, at.y, { anchor, shift: e.shiftKey });
+        const p = at && d && hasAB(d.drawing) && followPoint(ctx, s, d.drawing, at, anchor, e.shiftKey);
         if (p && d && hasAB(d.drawing)) draftRef.current = { ...d, drawing: followCursor(d.drawing, p, g.stage) };
       } else {
         const next = dragged(ctx, s, g, e.clientX - g.x0, e.clientY - g.y0, at, e.shiftKey);
@@ -832,8 +903,8 @@ export function useDrawings(
           return;
         }
         if (d?.drawing.kind === 'channel') return toWidthStage(g, d.drawing, e);
-        cancelGesture();
-        if (d && hasAB(d.drawing)) finish(d.drawing, g.layerId);
+        if (d && hasAB(d.drawing)) complete(d.drawing, g.layerId);
+        else cancelGesture();
         return;
       }
       if (g?.kind !== 'drag') return;
@@ -909,7 +980,7 @@ export function useDrawings(
     setHidden(!hidden);
   };
 
-  /** 浮条「编辑」:就地改这条文字(同双击) */
+  /** 浮条「编辑」:就地改这条文字 / 气泡(同双击) */
   const editText = (id: string) => {
     const chart = chartRef.current;
     const el = containerRef.current;
@@ -927,13 +998,17 @@ export function useDrawings(
     setEditing(null);
     if (!ed) return;
     // 改已有的:编辑中整份文档被换掉(画线 id 是 d1、d2 这种,新图里很可能有同 id 的另一条),别改到别的线上
-    if (ed.id && existingText(doc, ed.id)?.layerId !== ed.layerId) return;
+    const now = ed.id ? existingText(doc, ed.id) : null;
+    if (ed.id && (now?.layerId !== ed.layerId || now?.kind !== ed.kind)) return;
     if (text.trim() === '') {
       if (ed.id) actions.removeDrawing(ed.id);
       return;
     }
 
-    const drawing = { kind: 'text' as const, a: ed.a, text, ...(ed.box && { box: true as const }) };
+    const drawing =
+      ed.kind === 'callout'
+        ? { kind: 'callout' as const, a: ed.a, b: ed.b, text }
+        : { kind: 'text' as const, a: ed.a, text, ...(ed.box && { box: true as const }) };
     const id = ed.id ?? nextId(doc, 'd');
     if (ed.id) actions.updateDrawing({ id, ...drawing });
     else actions.addDrawing(ed.layerId, { id, ...drawing });
