@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { channelOffset, hitShapes, rayEnd, textSize, timeAxis } from './drawings';
+import { calloutPointer, channelOffset, hitShapes, rayEnd, textSize, timeAxis } from './drawings';
 
 describe('timeAxis', () => {
   // 周线:每周一根(7 天一根)
@@ -109,5 +109,39 @@ describe('文字', () => {
     expect(hitShapes([t], 101, 101)).toMatchObject({ part: 'a' });
     expect(hitShapes([t], 140, 115)).toMatchObject({ part: 'body' });
     expect(hitShapes([t], 170, 115)).toBeNull();
+  });
+});
+
+describe('标注气泡', () => {
+  // 尖在 (300,300),框中心 (100,100)、宽 80 高 24 → 框占 x 60~140、y 88~112
+  const c = {
+    id: 'c',
+    kind: 'callout' as const,
+    x1: 300,
+    y1: 300,
+    x2: 100,
+    y2: 100,
+    lines: ['见顶'],
+    w: 80,
+    h: 24,
+  };
+
+  test('命中:尖是手柄 a;框里算 b(只挪框);指针附近算线身(整个挪);别处点不中', () => {
+    expect(hitShapes([c], 299, 301)).toMatchObject({ part: 'a' });
+    expect(hitShapes([c], 65, 90)).toMatchObject({ part: 'b' });
+    expect(hitShapes([c], 200, 202)).toMatchObject({ part: 'body' });
+    expect(hitShapes([c], 300, 100)).toBeNull();
+  });
+
+  test('calloutPointer:根部在框中心两侧、垂直于指向,尖在 a;半宽不超过半个框高;尖和中心重合 → null', () => {
+    const right = calloutPointer({ x1: 200, y1: 100, x2: 100, y2: 100, h: 24 });
+    expect(right).toEqual([
+      [100, 110],
+      [100, 90],
+      [200, 100],
+    ]);
+    const low = calloutPointer({ x1: 200, y1: 100, x2: 100, y2: 100, h: 10 });
+    expect(low?.[0][1]).toBe(104);
+    expect(calloutPointer({ x1: 100, y1: 100, x2: 100, y2: 100, h: 24 })).toBeNull();
   });
 });

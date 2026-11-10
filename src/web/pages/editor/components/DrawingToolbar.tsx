@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   type LucideIcon,
+  MessageSquare,
   Minus,
   MousePointer2,
   SeparatorVertical,
@@ -42,6 +43,11 @@ const TOOL: Record<DrawingTool, { icon: LucideIcon; name: string; hint: string }
     name: '文字',
     hint: `文字:点一下就地打字,回车换行,Esc / 点别处写完;双击文字再改,加框在下方浮条。${OWNER_HINT}`,
   },
+  callout: {
+    icon: MessageSquare,
+    name: '标注气泡',
+    hint: `标注气泡:点一下定指针尖,再点一下放文字框,就地打字;拖框只挪框、拖尖改指向,双击再改字。${OWNER_HINT}`,
+  },
   measure: {
     icon: Ruler,
     name: '测量',
@@ -64,6 +70,7 @@ const KIND_NAME: Record<Drawing['kind'], string> = {
   vline: '竖线',
   channel: '平行通道',
   text: '文字',
+  callout: '标注气泡',
 };
 
 /** 工具组(同 TradingView 左栏的一格):按钮显示这组上次用的工具,点它直接用;点右缘小三角弹出整组 */
@@ -77,8 +84,8 @@ const GROUPS: ToolGroupDef[] = [
       { title: '通道', tools: ['channel'] },
     ],
   },
-  // 标注组(同 TradingView 的 Annotation tools);标注气泡以后进这一组(路标不做:被标注气泡覆盖)
-  { id: 'annotate', name: '标注', sections: [{ title: '文字', tools: ['text'] }] },
+  // 标注组(同 TradingView 的 Annotation tools;路标不做:被标注气泡覆盖)
+  { id: 'annotate', name: '标注', sections: [{ title: '文字', tools: ['text', 'callout'] }] },
 ];
 
 // 各组上次用的工具,跨刷新记住(只是偏好,读写失败就用组里第一个)
@@ -404,7 +411,7 @@ export function DrawingBar({
   selected: string | null;
   onUpdate: (d: Drawing) => void;
   onRemove: (id: string) => void;
-  /** 文字:打开对话框改字(同双击) */
+  /** 文字 / 气泡:就地改字(同双击) */
   onEditText: (id: string) => void;
 }) {
   const entry = selected ? allDrawings(doc).find((e) => e.drawing.id === selected) : undefined;
@@ -423,27 +430,27 @@ export function DrawingBar({
         <span className="text-neutral-500"> · 挂在 {layerLabel(doc, layer)}</span>
       </span>
       {d.kind === 'text' && (
-        <>
-          <label className="flex cursor-pointer items-center gap-1.5">
-            <Checkbox
-              checked={!!d.box}
-              onCheckedChange={(on) => {
-                const { box: _drop, ...rest } = d;
-                onUpdate(on ? { ...rest, box: true } : rest);
-              }}
-            />
-            加框
-          </label>
-          <Button
-            variant="ghost"
-            size="icon-2xs"
-            title="编辑文字(双击文字也行)"
-            onClick={() => onEditText(d.id)}
-            className="text-neutral-500 hover:text-neutral-200"
-          >
-            <Pencil />
-          </Button>
-        </>
+        <label className="flex cursor-pointer items-center gap-1.5">
+          <Checkbox
+            checked={!!d.box}
+            onCheckedChange={(on) => {
+              const { box: _drop, ...rest } = d;
+              onUpdate(on ? { ...rest, box: true } : rest);
+            }}
+          />
+          加框
+        </label>
+      )}
+      {(d.kind === 'text' || d.kind === 'callout') && (
+        <Button
+          variant="ghost"
+          size="icon-2xs"
+          title="编辑文字(双击文字也行)"
+          onClick={() => onEditText(d.id)}
+          className="text-neutral-500 hover:text-neutral-200"
+        >
+          <Pencil />
+        </Button>
       )}
       {d.kind === 'vline' && (
         <label className="flex cursor-pointer items-center gap-1.5">
