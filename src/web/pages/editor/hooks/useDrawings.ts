@@ -406,7 +406,10 @@ type PreviewState = {
   draft: Draft | null;
   doc: ChartDoc;
   selectedLine: string | null;
-  /** 测量尺还在:量到一半时终点自己就画着;已定住时下一下只会收起它、不会起新的,都不画落点圈 */
+  /**
+   * 测量尺还在:不按鼠标另算落点圈 —— 量到一半时圈直接画在终点上(见图元 source 里 measure 那段);
+   * 已定住时下一下只会收起它、不会起新的,也不画
+   */
   measuring: boolean;
 };
 
