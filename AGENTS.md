@@ -168,6 +168,11 @@
   故**不读 `methodology_id`、不做图上标注**。重查方法见 `fetchers/computableGpu.ts` 顶部注释。
   ③`./reproduce`、collector 那套只对自建索引的人有用,我们是纯 API 消费方,仓库的 commit 大多与我们无关。
 - **图表**:用 BusinessDay(字符串日期)压掉周末空隙;跨标的共享 X 轴时先 `dropWeekends()`。
+- **lightweight-charts 图元的层级**:要画在 K 线之上(如画线的「置于顶层」),图元必须挂在 series 上(`series.attachPrimitive`)并让 paneView 的 `zOrder` 返回 `'top'`。
+  ⚠️ **挂在格子上(`pane.attachPrimitive`)的图元,5.2 根本不读 `zOrder`**:一律在主画布上、先于 series 画,永远被 K 线盖住 ——
+  类型文档却写着格级也支持 `'top'`(源码 `PanePrimitiveWrapper` 没实现 top / bottom 分层)。
+  挂靠的 series 要选这一格 `seriesOrder()` 最大的那条、层次一变就换挂:图元被命中时 lw 把挂靠的 series 当悬停源挪到最上层画(`hoveredSeriesOnTop` 默认开),挂在别的 series(如背景色带)上,悬停画线时它会整片盖住 K 线。
+  验层级时别用和 K 线同色的东西读像素(下跌标签与跌 K 线同为 `#ef4444`,读到红色分不出谁在上);要分画布读:`elementsFromPoint` 里第一块是顶层画布。
 
 ## 约定
 
