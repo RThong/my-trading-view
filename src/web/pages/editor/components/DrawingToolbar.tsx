@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  ChartSpline,
   type LucideIcon,
   MessageSquare,
   Minus,
@@ -64,6 +65,11 @@ const TOOL: Record<DrawingTool, { icon: LucideIcon; name: string; hint: string }
     name: '平行通道',
     hint: `平行通道:点两下画底边,再点一下定宽度(平行线穿过这一点)。${OWNER_HINT}`,
   },
+  regression: {
+    icon: ChartSpline,
+    name: '回归通道',
+    hint: `回归通道:点两下选起止日期,按这段数据自动算回归中线 ± 2 倍标准差,左下角标相关系数 r(越接近 ±1 趋势越直);终点定在已有 K 线上就冻结,下方浮条可勾「向右延伸」。${OWNER_HINT}`,
+  },
   hray: { icon: ArrowRightFromLine, name: '水平射线', hint: `水平射线:点一下,从这一点往右延伸。${OWNER_HINT}` },
   hline: { icon: Minus, name: '水平线', hint: `水平线:点一下。${OWNER_HINT}` },
   vline: { icon: SeparatorVertical, name: '竖线', hint: `竖线:点一下,默认贯穿所有格。${OWNER_HINT}` },
@@ -78,6 +84,7 @@ const KIND_NAME: Record<Drawing['kind'], string> = {
   text: '文字',
   callout: '标注气泡',
   rect: '矩形',
+  regression: '回归通道',
 };
 
 /** 工具组(同 TradingView 左栏的一格):按钮显示这组上次用的工具,点它直接用;点右缘小三角弹出整组 */
@@ -89,7 +96,7 @@ const GROUPS: ToolGroupDef[] = [
     name: '线条',
     sections: [
       { title: '线', tools: ['trend', 'ray', 'hline', 'hray', 'vline'] },
-      { title: '通道', tools: ['channel'] },
+      { title: '通道', tools: ['channel', 'regression'] },
     ],
   },
   // 标注组(同 TradingView 的 Annotation tools;路标不做:被标注气泡覆盖)
@@ -467,7 +474,7 @@ export function DrawingBar({
           <Pencil />
         </Button>
       )}
-      {d.kind === 'rect' && (
+      {(d.kind === 'rect' || d.kind === 'regression') && (
         <label className="flex cursor-pointer items-center gap-1.5">
           <Checkbox
             checked={!!d.extend}
