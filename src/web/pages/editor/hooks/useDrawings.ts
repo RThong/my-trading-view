@@ -17,6 +17,7 @@ import {
   timeAxis,
   type Hit,
   type PaneDrawingState,
+  type Pt,
   type RectHandle,
   type Shape,
   type TimeAxis,
@@ -36,6 +37,7 @@ import type { LayerData } from '../../../views/chartDoc/layerPoints';
 import type { LayerSeries } from '../../../views/chartDoc/useDocChart';
 import type { BarValues } from '../../../chart/magnet';
 import { measureLabel, measureStats } from '../../../chart/measure';
+import { linearRegression, regressionAt } from '../../../chart/regression';
 import { CHART_CHROME, getTheme } from '../../../hooks/theme';
 import type { PointCtx } from '../drawingPlugins/types';
 import { paneAt, paneCoords } from './paneHit';
@@ -51,7 +53,8 @@ export type DrawingTool =
   | 'measure'
   | 'text'
   | 'callout'
-  | 'rect';
+  | 'rect'
+  | 'regression';
 
 /** 要就地写字的画线(文字 / 标注气泡):新放的(还没存进文档,id 缺)或改已有的那条 */
 type TextDraft = { id?: string; layerId: string; a: DrawingPoint; text: string } & (
@@ -64,19 +67,17 @@ type TextDraft = { id?: string; layerId: string; a: DrawingPoint; text: string }
  */
 export type TextEditing = TextDraft & { x: number; y: number };
 
-type TwoPoint = Extract<Drawing, { kind: 'trend' | 'ray' }>;
 /** 两点画的线(趋势线、射线):画法、拖端点、吸附后重合判断都一样,只是渲染时射线往外延伸 */
-function isTwoPoint(d: Drawing | undefined): d is TwoPoint {
-  return d?.kind === 'trend' || d?.kind === 'ray';
-}
+type TwoPoint = Extract<Drawing, { kind: 'trend' | 'ray' }>;
 
 /**
  * 按住 / 点两下画出 a→b 的:两点线 + 平行通道(通道第二下之后还要一下定宽度,见 Gesture 的 stage)
- * + 标注气泡(a = 指针尖、b = 框中心,画成后就地写字)+ 矩形(对角两点)
+ * + 标注气泡(a = 指针尖、b = 框中心,画成后就地写字)+ 矩形(对角两点)+ 回归通道(只用两点的日期)
  */
-type Creatable = TwoPoint | Extract<Drawing, { kind: 'channel' | 'callout' | 'rect' }>;
+type Creatable = TwoPoint | Extract<Drawing, { kind: 'channel' | 'callout' | 'rect' | 'regression' }>;
+// 认 START 表:新的两点画法只要在 START 里加一项,这里自动认得
 function hasAB(d: Drawing | undefined): d is Creatable {
-  return isTwoPoint(d) || d?.kind === 'channel' || d?.kind === 'callout' || d?.kind === 'rect';
+  return d !== undefined && Object.hasOwn(START, d.kind);
 }
 
 /** 按住 / 点两下画的工具 → 第一下落点处的草稿(其余点先和第一点重合,之后跟着光标改,见 followCursor) */
@@ -86,6 +87,7 @@ const START: { [K in Creatable['kind']]: (id: string, p: DrawingPoint) => Extrac
   channel: (id, p) => ({ id, kind: 'channel', a: p, b: p, c: p }),
   callout: (id, p) => ({ id, kind: 'callout', a: p, b: p, text: '' }),
   rect: (id, p) => ({ id, kind: 'rect', a: p, b: p }),
+  regression: (id, p) => ({ id, kind: 'regression', a: p, b: p }),
 };
 
 /** 画到一半的线跟着光标:定第二点阶段改 b(通道的 c 先跟着 b,平行线和底边重合);通道定宽阶段改 c */
@@ -142,6 +144,8 @@ type Ctx = {
   axis: TimeAxis;
   toX: (logical: number) => number;
   toLogical: (x: number) => number;
+  /** 画布右缘的逻辑下标(回归通道向右延伸画到这里) */
+  right: number;
   seriesOf: (layerId: string) => ISeriesApi<SeriesType> | undefined;
   transform: TransformPoint;
 };
@@ -160,7 +164,14 @@ function makeCtx(chart: IChartApi, series: LayerSeries, axis: TimeAxis, transfor
   // 指标图层在图上是几条子线(id#plot),换算纵坐标用第一条
   const seriesOf = (layerId: string) =>
     series.get(layerId) ?? [...series].find(([k]) => k.startsWith(`${layerId}#`))?.[1];
-  return { axis, toX: (l) => x0 + l * bar, toLogical: (x) => (x - x0) / bar, seriesOf, transform };
+  return {
+    axis,
+    toX: (l) => x0 + l * bar,
+    toLogical: (x) => (x - x0) / bar,
+    right: (ts.width() - x0) / bar,
+    seriesOf,
+    transform,
+  };
 }
 
 function toPx(ctx: Ctx, s: ISeriesApi<SeriesType>, p: DrawingPoint) {
@@ -222,6 +233,71 @@ function followPoint(
   return d.kind === 'callout' ? rawPoint(ctx, s, at.x, at.y) : toPoint(ctx, s, at.x, at.y, { anchor, shift });
 }
 
+// 回归通道上下轨 = 中线 ± 这么多倍残差标准差(同 TradingView 默认;先不做可调)
+const REGRESSION_K = 2;
+
+/** series 一个数据点的值:蜡烛取收盘,线 / 柱取 value;空白点(只有时间)是 null */
+function itemValue(item: object): number | null {
+  const v = 'close' in item ? item.close : 'value' in item ? item.value : null;
+  return typeof v === 'number' ? v : null;
+}
+
+/**
+ * 回归通道要拟合的点:两个日期换成图上的逻辑下标,只按下标取区间内的那几根(dataByIndex),不扫整条序列 ——
+ * 图元每次重画、每次鼠标移动(lw 的 hitTest)都要算一遍,日线从 1990 年起有上万根。下标处这条序列没数据(空白点)就跳过
+ */
+function regressionPoints(
+  ctx: Ctx,
+  s: ISeriesApi<SeriesType>,
+  d: Extract<Drawing, { kind: 'regression' }>,
+): { x: number; y: number }[] {
+  const [la, lb] = [ctx.axis.toLogical(d.a.time), ctx.axis.toLogical(d.b.time)];
+  if (la === null || lb === null) return [];
+
+  const from = Math.ceil(Math.min(la, lb));
+  const to = Math.floor(Math.max(la, lb));
+  return Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => from + i).flatMap((x) => {
+    const item = s.dataByIndex(x);
+    const y = item ? itemValue(item) : null;
+    return y === null ? [] : [{ x, y }];
+  });
+}
+
+/**
+ * 回归通道区间里不足两个数据点(拟合不出直线):画出来是空的,看不见却占着一条画线、点不中,只能全部删除才去得掉。
+ * 同「太近」处理:新画不画、第一点留着;拖成这样弹回原处。算不出(没有换算 / 没挂上线)也算
+ */
+function tooFewPoints(ctx: Ctx | null, s: ISeriesApi<SeriesType> | undefined, d: Drawing): boolean {
+  return d.kind === 'regression' && (!ctx || !s || regressionPoints(ctx, s, d).length < 2);
+}
+
+/**
+ * 回归通道在这一格的像素:取所挂序列在两个日期之间(含两端)的数据点,对图上的逻辑下标做直线回归(同 TradingView 按根数,
+ * 不按日历天),中线 / 上下轨在每个数据点处换成像素;不足两个点画不出来。手柄按 a / b 各自落在中线的哪一端放,拖哪个改哪个日期。
+ * 向右延伸(同 TradingView Extend lines):拟合不变,从区间最后一点起逐根往右算到画布右缘 —— 逐根而不是连直线,对数轴下才弯得对
+ */
+function regressionShape(ctx: Ctx, s: ISeriesApi<SeriesType>, d: Extract<Drawing, { kind: 'regression' }>): Shape[] {
+  const pts = regressionPoints(ctx, s, d);
+  const g = linearRegression(pts);
+  if (!g) return [];
+
+  const px = (x: number, k: number): Pt[] => {
+    const y = s.priceToCoordinate(regressionAt(g, x) + k * g.sd);
+    // 下降趋势延伸到负值时对数轴换不出坐标
+    return y === null || !Number.isFinite(y) ? [] : [[ctx.toX(x), y]];
+  };
+  const end = pts[pts.length - 1].x;
+  const tail = d.extend ? Math.max(0, Math.ceil(ctx.right) - end) : 0;
+  const xs = [...pts.map((p) => p.x), ...Array.from({ length: tail }, (_, i) => end + 1 + i)];
+  const [mid, up, down] = [0, REGRESSION_K, -REGRESSION_K].map((k) => xs.flatMap((x) => px(x, k)));
+  const [first] = px(pts[0].x, 0);
+  const [last] = px(end, 0);
+  if (!first || !last) return [];
+
+  const [pa, pb] = d.a.time <= d.b.time ? [first, last] : [last, first];
+  return [{ id: d.id, kind: 'regression', x1: pa[0], y1: pa[1], x2: pb[0], y2: pb[1], mid, up, down, r: g.r }];
+}
+
 /** 第 i 格此刻要画的像素:趋势线 / 水平线只画在所属图层那一格;竖线延伸的每格都画,只画本格的(paneOnly)只在那一格 */
 function paneShapes(ctx: Ctx, entries: Entry[], i: number): Shape[] {
   return entries.flatMap(({ drawing: d, layer, paneIndex }): Shape[] => {
@@ -256,6 +332,7 @@ function paneShapes(ctx: Ctx, entries: Entry[], i: number): Shape[] {
       return [{ id: d.id, kind: 'callout', x1: a.x, y1: a.y, x2: b.x, y2: b.y, lines, ...calloutSize(lines) }];
     }
     if (d.kind === 'rect') return [{ id: d.id, kind: 'rect', x1: a.x, y1: a.y, x2: b.x, y2: b.y, extend: !!d.extend }];
+    if (d.kind === 'regression') return regressionShape(ctx, s, d);
     return [{ id: d.id, kind: d.kind, x1: a.x, y1: a.y, x2: b.x, y2: b.y }];
   });
 }
@@ -483,10 +560,11 @@ function samePoint(a: DrawingPoint, b: DrawingPoint): boolean {
  * 两点线 / 通道底边画不出方向:两点重合(磁吸把两下吸到同一根同一个值上),或射线 / 通道两点同一天(放大后两下点在同一根里、
  * 关着磁吸) —— 射线会竖着贯穿整张图、通道底边竖着就没有「平行」可言。这类两下当作「太近」,不画、第一点留着。
  * 气泡只怕重合(框盖住尖、指针没了);同一天 = 框在尖的正上 / 正下方,正常。
- * 矩形两点同一天或同一个值:宽或高为零,压成一条线
+ * 矩形两点同一天或同一个值:宽或高为零,压成一条线;回归通道两点同一天:只有一根,拟合不出直线
  */
 function noDirection(d: Creatable): boolean {
   if (d.kind === 'rect') return d.a.time === d.b.time || d.a.value === d.b.value;
+  if (d.kind === 'regression') return d.a.time === d.b.time;
 
   return samePoint(d.a, d.b) || ((d.kind === 'ray' || d.kind === 'channel') && d.a.time === d.b.time);
 }
@@ -724,6 +802,11 @@ export function useDrawings(
       draftRef.current = null;
       redrawAll(prims);
     };
+    /** 回归通道按当前视图现算够不够两个点(见 tooFewPoints);其它画线一律够 */
+    const unfit = (d: Drawing, layerId: string) => {
+      const ctx = ctxNow();
+      return tooFewPoints(ctx, ctx?.seriesOf(layerId), d);
+    };
     /** 两点定完:气泡先就地打字(回到光标,写完才存进文档,见 commitText),其余直接存 */
     const complete = (d: Creatable, layerId: string) => {
       cancelGesture();
@@ -797,7 +880,7 @@ export function useDrawings(
         const next = followCursor(d, p, g.stage);
         if (g.stage === 'b') {
           // 两下点得太近(快速点两下 / 点在同一处),或画不出方向(见 noDirection):不画,第一点留着等下一下
-          if (tooShort(g, e) || noDirection(next)) return;
+          if (tooShort(g, e) || noDirection(next) || tooFewPoints(ctx, s, next)) return;
           if (next.kind === 'channel') return toWidthStage(g, next, e);
         } else if (tooShort(g, e)) return;
         complete(next, g.layerId);
@@ -950,7 +1033,7 @@ export function useDrawings(
         g.pressed = false;
         if (!g.moved || g.stage !== 'b') return;
         // 拖回了起点附近 / 画不出方向:同点两下,不画,第一点留着
-        if (tooShort(g, e) || (hasAB(d?.drawing) && noDirection(d.drawing))) {
+        if (tooShort(g, e) || (hasAB(d?.drawing) && (noDirection(d.drawing) || unfit(d.drawing, g.layerId)))) {
           g.moved = false;
           return;
         }
@@ -962,9 +1045,11 @@ export function useDrawings(
       if (g?.kind !== 'drag') return;
       cancelGesture();
       // 拖端点拖成画不出方向的(同新画时的规则,见 noDirection):放弃这次拖动,线回原处。
-      // 只判拖端点:整条平移不改方向;规则之前画的 / 导入的同一天射线若平移也判,会每次弹回、像拖不动
+      // 只判拖端点:整条平移不改方向;规则之前画的 / 导入的同一天射线若平移也判,会每次弹回、像拖不动。
+      // 回归通道例外:整段平移到没数据的地方(右边空白区)也会变成看不见的空通道,拖哪儿都判
       const broken =
-        (g.part === 'a' || g.part === 'b' || isRectHandle(g.part)) && hasAB(d?.drawing) && noDirection(d.drawing);
+        ((g.part === 'a' || g.part === 'b' || isRectHandle(g.part)) && hasAB(d?.drawing) && noDirection(d.drawing)) ||
+        (!!d && unfit(d.drawing, g.layerId));
       if (g.moved && d && !broken) actionsRef.current.updateDrawing(d.drawing);
     };
 

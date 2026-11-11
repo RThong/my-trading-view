@@ -226,3 +226,36 @@ describe('悬停光标', () => {
     expect(hitCursor(callout, 'a')).toBe('nwse-resize');
   });
 });
+
+describe('回归通道', () => {
+  const reg = {
+    id: 'g',
+    kind: 'regression' as const,
+    x1: 100,
+    y1: 200,
+    x2: 300,
+    y2: 100,
+    mid: [
+      [100, 200],
+      [300, 100],
+    ] as [number, number][],
+    up: [
+      [100, 150],
+      [300, 50],
+    ] as [number, number][],
+    down: [
+      [100, 250],
+      [300, 150],
+    ] as [number, number][],
+    r: 0.8,
+  };
+
+  test('命中:中线两端是手柄;中线 / 上下轨附近算线身;两轨之间、外面点不中', () => {
+    expect(hitShapes([reg], 101, 201)).toMatchObject({ part: 'a' });
+    expect(hitShapes([reg], 299, 99)).toMatchObject({ part: 'b' });
+    expect(hitShapes([reg], 200, 152)).toMatchObject({ part: 'body' });
+    expect(hitShapes([reg], 200, 100)).toMatchObject({ part: 'body' });
+    expect(hitShapes([reg], 200, 125)).toBeNull();
+    expect(hitShapes([reg], 400, 100)).toBeNull();
+  });
+});

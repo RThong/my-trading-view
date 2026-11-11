@@ -81,6 +81,11 @@ export type Shape =
   | { id: string; kind: 'text'; x: number; y: number; lines: string[]; box: boolean; w: number; h: number }
   /** 矩形:(x1,y1)(x2,y2) 是对角两点;extend = 右边不封口,上下边画到画布右缘 */
   | (TwoPoints & { kind: 'rect'; extend: boolean })
+  /**
+   * 回归通道:(x1,y1)(x2,y2) = 中线两端(手柄);mid / up / down = 中线、上下轨在每个数据点处的像素(折线:对数 / 倒轴下
+   * 数值上的直线在屏幕上不一定直);r = 相关系数
+   */
+  | (TwoPoints & { kind: 'regression'; mid: Pt[]; up: Pt[]; down: Pt[]; r: number | null })
   /** 标注气泡:(x1,y1) = 指针尖,(x2,y2) = 文字框中心,w / h 见 calloutSize(框以中心向四周长) */
   | (TwoPoints & { kind: 'callout'; lines: string[]; w: number; h: number })
   | { id: string; kind: 'vline'; x: number };
@@ -209,8 +214,22 @@ function hitOne(s: Shape, x: number, y: number): Hit | null {
   const db = Math.hypot(x - s.x2, y - s.y2);
   if (Math.min(da, db) <= HANDLE_PX) return { id: s.id, part: da <= db ? 'a' : 'b', dist: 0 };
   if (s.kind === 'channel') return hitChannel(s, x, y);
+  if (s.kind === 'regression') return hitRegression(s, x, y);
   const end = s.kind === 'ray' ? rayEnd(s.x1, s.y1, s.x2, s.y2) : { x: s.x2, y: s.y2 };
   const d = pointToSegmentDistance(x, y, s.x1, s.y1, end.x, end.y);
+  return d <= HIT_PX ? { id: s.id, part: 'body', dist: d } : null;
+}
+
+/** 折线的相邻两点连成的各段 */
+function segments(pts: Pt[]): [Pt, Pt][] {
+  return pts.slice(1).map((p, i) => [pts[i], p]);
+}
+
+/** 回归通道:中线、上下轨三条折线附近算线身;两轨之间点不中(同矩形,框里按住拖是平移图表) */
+function hitRegression(s: ShapeOf<'regression'>, x: number, y: number): Hit | null {
+  const d = Math.min(
+    ...[s.mid, s.up, s.down].flatMap(segments).map(([p, q]) => pointToSegmentDistance(x, y, ...p, ...q)),
+  );
   return d <= HIT_PX ? { id: s.id, part: 'body', dist: d } : null;
 }
 
@@ -308,11 +327,19 @@ export function hitShapes(shapes: Shape[], x: number, y: number): Hit | null {
 const COLOR = '#eab308';
 
 type ShapeOf<K extends Shape['kind']> = Extract<Shape, { kind: K }>;
-type Pt = [number, number];
+export type Pt = [number, number];
 type Size = { width: number; height: number };
 
 /** 一种画线在这一格里怎么画:几段实线 + 可选的虚线(通道中线)/ 填色区域 + 选中时手柄的位置 */
-type Geom = { lines: [Pt, Pt][]; dashed?: [Pt, Pt][]; fill?: Pt[]; handles: Pt[]; squares?: Pt[] };
+type Geom = {
+  lines: [Pt, Pt][];
+  dashed?: [Pt, Pt][];
+  fill?: Pt[];
+  handles: Pt[];
+  squares?: Pt[];
+  /** 画线旁的一行小字(回归通道的相关系数),左上角在 at */
+  label?: { at: Pt; text: string };
+};
 
 function twoPointGeom(s: TwoPoints, to: Pt): Geom {
   return {
@@ -397,6 +424,20 @@ const GEOM: { [K in Exclude<Shape['kind'], 'text' | 'callout'>]: (s: ShapeOf<K>,
       ],
       handles: at(['nw', 'ne', 'se', 'sw']),
       squares: at(['n', 'e', 's', 'w']),
+    };
+  },
+  // 上下轨实线、中线虚线、两轨之间淡色填充(同通道);手柄在中线两端,拖它改起止日期;下轨起点下方标相关系数(同 TradingView)
+  regression: (s) => {
+    const [first] = s.down;
+    return {
+      lines: [...segments(s.up), ...segments(s.down)],
+      dashed: segments(s.mid),
+      fill: [...s.up, ...[...s.down].reverse()],
+      handles: [
+        [s.x1, s.y1],
+        [s.x2, s.y2],
+      ],
+      ...(s.r !== null && first && { label: { at: first, text: `r = ${s.r.toFixed(2)}` } }),
     };
   },
   hray: (s, size) => ({
@@ -631,6 +672,14 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
           });
           ctx.stroke();
           ctx.setLineDash([]);
+        }
+
+        if (g.label) {
+          ctx.font = LABEL_FONT;
+          ctx.fillStyle = COLOR;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          ctx.fillText(g.label.text, g.label.at[0], g.label.at[1] + LABEL_PAD);
         }
 
         if (!on) return;

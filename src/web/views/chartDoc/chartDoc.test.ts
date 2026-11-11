@@ -805,6 +805,27 @@ describe('画线', () => {
     expect(count({ ...rect, extend: false })).toBe(0);
   });
 
+  test('回归通道:两点往返保留(只用日期,数值原样留着),缺 b 的丢掉', () => {
+    const regression = {
+      id: 'd8',
+      kind: 'regression' as const,
+      a: { time: '2026-01-20', value: 30 },
+      b: { time: '2026-02-10', value: 25 },
+    };
+    const doc = addDrawing(base, vix, regression);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+
+    const raw = JSON.parse(JSON.stringify(doc));
+    raw.panes[0].layers[0].drawings = [{ ...regression, b: undefined }];
+    expect(parseChartDoc(raw)).toEqual(base);
+
+    // 向右延伸:true 往返保留,其它值整条丢掉(同矩形)
+    const extended = addDrawing(base, vix, { ...regression, extend: true });
+    expect(parseChartDoc(JSON.parse(JSON.stringify(extended)))).toEqual(extended);
+    raw.panes[0].layers[0].drawings = [{ ...regression, extend: false }];
+    expect(parseChartDoc(raw)).toEqual(base);
+  });
+
   test('平行通道:三个点往返保留,缺 c 的丢掉', () => {
     const channel = { ...trend, id: 'd4', kind: 'channel' as const, c: { time: '2026-02-10', value: 25 } };
     const doc = addDrawing(base, vix, channel);
