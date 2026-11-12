@@ -70,8 +70,8 @@ export function timeAxis(times: string[]): TimeAxis {
 
 type TwoPoints = { id: string; x1: number; y1: number; x2: number; y2: number };
 
-/** 一条画线换算到当前这一格的像素(media 坐标,绘图区左上角为原点) */
-export type Shape =
+/** 一条画线换算到当前这一格的像素(media 坐标,绘图区左上角为原点);color / dash 原样带过来(见 chartDoc 的 DrawingStyle) */
+export type Shape = { color?: string; dash?: LineDash } & (
   | (TwoPoints & { kind: 'trend' })
   | (TwoPoints & { kind: 'ray' })
   | { id: string; kind: 'hline'; y: number }
@@ -88,7 +88,8 @@ export type Shape =
   | (TwoPoints & { kind: 'regression'; mid: Pt[]; up: Pt[]; down: Pt[]; r: number | null })
   /** 标注气泡:(x1,y1) = 指针尖,(x2,y2) = 文字框中心,w / h 见 calloutSize(框以中心向四周长) */
   | (TwoPoints & { kind: 'callout'; lines: string[]; w: number; h: number })
-  | { id: string; kind: 'vline'; x: number };
+  | { id: string; kind: 'vline'; x: number }
+);
 
 /**
  * 平行通道的平行线相对底边的纵向偏移(像素):第三点 (x3,y3) 到底边在同一横坐标处的竖直距离。
@@ -323,8 +324,11 @@ export function hitShapes(shapes: Shape[], x: number, y: number): Hit | null {
   );
 }
 
-// 选中不换色(同 TradingView;以前换成的亮黄在暖白底上几乎看不见):靠加粗 + 手柄表示选中
-const COLOR = '#eab308';
+// 画线默认颜色(浮条里可改);选中不换色(同 TradingView;以前换成的亮黄在暖白底上几乎看不见):靠加粗 + 手柄表示选中
+export const DRAWING_COLOR = '#eab308';
+/** 线型的虚线节奏(canvas setLineDash 的线段 / 间隔像素);实线不存 */
+export const LINE_DASH: Record<'dashed' | 'dotted', number[]> = { dashed: [6, 4], dotted: [2, 3] };
+export type LineDash = keyof typeof LINE_DASH;
 
 type ShapeOf<K extends Shape['kind']> = Extract<Shape, { kind: K }>;
 export type Pt = [number, number];
@@ -531,26 +535,28 @@ function drawMeasure(ctx: CanvasRenderingContext2D, m: NonNullable<PaneDrawingSt
   });
 }
 
-/** 文字:加框时先铺底色、描黄边;选中时(未加框)画虚线外框;再逐行写字,左上角出手柄 */
+/** 文字:加框时先铺底色、描边(画线颜色,默认黄);选中时(未加框)画虚线外框;再逐行写字,左上角出手柄 */
 function drawText(ctx: CanvasRenderingContext2D, s: ShapeOf<'text'>, on: boolean, ink: PaneDrawingState['ink']) {
+  const color = s.color ?? DRAWING_COLOR;
+
   if (s.box) {
     ctx.globalAlpha = TEXT_BOX_ALPHA;
     ctx.fillStyle = ink.bg;
     ctx.fillRect(s.x, s.y, s.w, s.h);
     ctx.globalAlpha = 1;
     ctx.lineWidth = on ? 2 : 1;
-    ctx.strokeStyle = COLOR;
+    ctx.strokeStyle = color;
     ctx.strokeRect(s.x, s.y, s.w, s.h);
   } else if (on) {
     ctx.setLineDash([3, 3]);
     ctx.lineWidth = 1;
-    ctx.strokeStyle = COLOR;
+    ctx.strokeStyle = color;
     ctx.strokeRect(s.x, s.y, s.w, s.h);
     ctx.setLineDash([]);
   }
 
   ctx.font = TEXT_FONT;
-  ctx.fillStyle = ink.text;
+  ctx.fillStyle = s.color ?? ink.text;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   s.lines.forEach((line, i) => {
@@ -558,14 +564,14 @@ function drawText(ctx: CanvasRenderingContext2D, s: ShapeOf<'text'>, on: boolean
   });
 
   if (!on) return;
-  ctx.fillStyle = COLOR;
+  ctx.fillStyle = color;
   ctx.beginPath();
   ctx.arc(s.x, s.y, HANDLE_R, 0, Math.PI * 2);
   ctx.fill();
 }
 
 /**
- * 标注气泡:框 + 指针铺底色、描黄边(指针的边只描框外那一截),框里逐行写字;选中时尖上出手柄。
+ * 标注气泡:框 + 指针铺底色、描边(画线颜色,默认黄;指针的边只描框外那一截),框里逐行写字;选中时尖上出手柄。
  * 就地编辑时这里照样画(文字为空),编辑框以同一中心盖在框上。
  * 底色不透明:画线压在 K 线下面,透不透明都挡不住 K 线,不透明省得框和指针交叠处叠深
  */
@@ -576,6 +582,7 @@ function drawCallout(
   ink: PaneDrawingState['ink'],
   size: Size,
 ) {
+  const color = s.color ?? DRAWING_COLOR;
   const tri = calloutPointer(s);
   const { left, top } = calloutBox(s);
   const pointer = () => {
@@ -587,7 +594,7 @@ function drawCallout(
   };
 
   ctx.fillStyle = ink.bg;
-  ctx.strokeStyle = COLOR;
+  ctx.strokeStyle = color;
   ctx.lineWidth = on ? 2 : 1;
   pointer();
   ctx.fill();
@@ -606,7 +613,7 @@ function drawCallout(
   ctx.strokeRect(left, top, s.w, s.h);
 
   ctx.font = TEXT_FONT;
-  ctx.fillStyle = ink.text;
+  ctx.fillStyle = s.color ?? ink.text;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   s.lines.forEach((line, i) => {
@@ -614,10 +621,26 @@ function drawCallout(
   });
 
   if (!on) return;
-  ctx.fillStyle = COLOR;
+  ctx.fillStyle = color;
   ctx.beginPath();
   ctx.arc(s.x1, s.y1, HANDLE_R, 0, Math.PI * 2);
   ctx.fill();
+}
+
+/**
+ * 描一组线段。和上一段首尾相接就接着画、不另起子路径:回归通道的轨道是逐根 K 线的 1px 小段,
+ * 每段 moveTo 会让虚线节奏从头开始,整条看起来还是实线
+ */
+function strokeSegments(ctx: CanvasRenderingContext2D, segs: [Pt, Pt][], dash: number[]) {
+  ctx.setLineDash(dash);
+  ctx.beginPath();
+  segs.forEach(([from, to], i) => {
+    const prev = segs[i - 1]?.[1];
+    if (!prev || prev[0] !== from[0] || prev[1] !== from[1]) ctx.moveTo(...from);
+    ctx.lineTo(...to);
+  });
+  ctx.stroke();
+  ctx.setLineDash([]);
 }
 
 class DrawingsRenderer implements IPrimitivePaneRenderer {
@@ -638,13 +661,14 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
           return;
         }
 
+        const color = s.color ?? DRAWING_COLOR;
         ctx.lineWidth = on ? 2 : 1.5;
-        ctx.strokeStyle = COLOR;
+        ctx.strokeStyle = color;
         // 按 kind 取对应那一行;联合类型下 TS 认不出 s 和 GEOM[s.kind] 是同一种,只能断言
         const g = GEOM[s.kind](s as never, mediaSize);
         if (g.fill) {
           ctx.globalAlpha = FILL_ALPHA;
-          ctx.fillStyle = COLOR;
+          ctx.fillStyle = color;
           ctx.beginPath();
           const [first, ...rest] = g.fill;
           ctx.moveTo(...first);
@@ -656,27 +680,13 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
           ctx.globalAlpha = 1;
         }
 
-        ctx.beginPath();
-        g.lines.forEach(([from, to]) => {
-          ctx.moveTo(...from);
-          ctx.lineTo(...to);
-        });
-        ctx.stroke();
-
-        if (g.dashed) {
-          ctx.setLineDash([4, 4]);
-          ctx.beginPath();
-          g.dashed.forEach(([from, to]) => {
-            ctx.moveTo(...from);
-            ctx.lineTo(...to);
-          });
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
+        strokeSegments(ctx, g.lines, s.dash ? LINE_DASH[s.dash] : []);
+        // 通道中线固定用比「虚线」线型更密的节奏:轨道选了虚线时中线仍分得开
+        if (g.dashed) strokeSegments(ctx, g.dashed, [4, 4]);
 
         if (g.label) {
           ctx.font = LABEL_FONT;
-          ctx.fillStyle = COLOR;
+          ctx.fillStyle = color;
           ctx.textAlign = 'left';
           ctx.textBaseline = 'top';
           ctx.fillText(g.label.text, g.label.at[0], g.label.at[1] + LABEL_PAD);
@@ -684,7 +694,7 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
 
         if (!on) return;
 
-        ctx.fillStyle = COLOR;
+        ctx.fillStyle = color;
         g.handles.forEach(([hx, hy]) => {
           ctx.beginPath();
           ctx.arc(hx, hy, HANDLE_R, 0, Math.PI * 2);
@@ -703,7 +713,7 @@ class DrawingsRenderer implements IPrimitivePaneRenderer {
       // 落点预览:空心圈,不挡下面的 K 线
       if (preview) {
         ctx.lineWidth = 1.5;
-        ctx.strokeStyle = COLOR;
+        ctx.strokeStyle = DRAWING_COLOR;
         ctx.beginPath();
         ctx.arc(preview.x, preview.y, PREVIEW_R, 0, Math.PI * 2);
         ctx.stroke();

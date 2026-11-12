@@ -24,6 +24,7 @@ import { type ReactNode, useState } from 'react';
 import { Button } from '../../../components/ui/button';
 import { Checkbox } from '../../../components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/popover';
+import { DRAWING_COLOR, LINE_DASH, type LineDash } from '../../../chart/drawings';
 import { cn } from '../../../lib/utils';
 import { allDrawings, type ChartDoc, type Drawing } from '../../../views/chartDoc/chartDoc';
 import { layerLabel } from '../../../views/chartDoc/layerLabel';
@@ -419,8 +420,67 @@ export function DrawingToolbar({
   );
 }
 
+const DASHES: { id: LineDash | undefined; name: string }[] = [
+  { id: undefined, name: '实线' },
+  { id: 'dashed', name: '虚线' },
+  { id: 'dotted', name: '点线' },
+];
+
+/** 线型的样子(浮条按钮和下拉项共用) */
+function DashSample({ dash }: { dash: LineDash | undefined }) {
+  return (
+    <svg width="24" height="4" aria-hidden="true">
+      <line
+        x1="0"
+        y1="2"
+        x2="24"
+        y2="2"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeDasharray={dash ? LINE_DASH[dash].join(' ') : undefined}
+      />
+    </svg>
+  );
+}
+
+/** 浮条上的线型:点按钮弹出三种,选了就关 */
+function DashPicker({ dash, onPick }: { dash: LineDash | undefined; onPick: (d: LineDash | undefined) => void }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        title="线型"
+        aria-label="线型"
+        className="flex h-5 items-center rounded px-1 text-neutral-300 hover:bg-neutral-800"
+      >
+        <DashSample dash={dash} />
+      </PopoverTrigger>
+      <PopoverContent side="top" sideOffset={6} className="w-auto gap-0 p-1 text-xs">
+        {DASHES.map((o) => (
+          <button
+            key={o.name}
+            type="button"
+            onClick={() => {
+              onPick(o.id);
+              setOpen(false);
+            }}
+            className={cn(
+              'flex w-full items-center gap-2 rounded px-2 py-1.5 text-neutral-300 hover:bg-neutral-800',
+              o.id === dash && 'bg-neutral-800 text-neutral-100',
+            )}
+          >
+            <DashSample dash={o.id} />
+            {o.name}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /**
- * 选中一条画线时浮在图下方(时间轴上面,上方是图例、会压住读数):是什么线、挂在哪条线上、竖线的「延伸到所有格」、删除
+ * 选中一条画线时浮在图下方(时间轴上面,上方是图例、会压住读数):是什么线、挂在哪条线上、颜色 / 线型、各种画线自己的开关、删除
  */
 export function DrawingBar({
   doc,
@@ -451,6 +511,17 @@ export function DrawingBar({
         {KIND_NAME[d.kind]}
         <span className="text-neutral-500"> · 挂在 {layerLabel(doc, layer)}</span>
       </span>
+      {/* 颜色 / 线型的默认值存成「不设」:老存档、没改过的线都不带这两个字段 */}
+      <input
+        type="color"
+        value={d.color ?? DRAWING_COLOR}
+        onChange={(e) => onUpdate({ ...d, color: e.target.value === DRAWING_COLOR ? undefined : e.target.value })}
+        className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border-0 bg-transparent p-0"
+        title="颜色"
+      />
+      {d.kind !== 'text' && d.kind !== 'callout' && (
+        <DashPicker dash={d.dash} onPick={(dash) => onUpdate({ ...d, dash })} />
+      )}
       {d.kind === 'text' && (
         <label className="flex cursor-pointer items-center gap-1.5">
           <Checkbox

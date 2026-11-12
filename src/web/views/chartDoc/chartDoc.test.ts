@@ -826,6 +826,25 @@ describe('画线', () => {
     expect(parseChartDoc(raw)).toEqual(base);
   });
 
+  test('画线样式:颜色 / 线型往返保留,改回默认(undefined)字段删掉,非法值整条丢掉', () => {
+    const styled = { ...trend, id: 'd10', color: '#2962ff', dash: 'dotted' as const };
+    const doc = addDrawing(base, vix, styled);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+
+    const reset = updateDrawing(doc, { ...styled, color: undefined, dash: undefined });
+    expect(allDrawings(reset)[0].drawing).toEqual({ ...trend, id: 'd10' });
+
+    const count = (d: unknown) => {
+      const raw = JSON.parse(JSON.stringify(doc));
+      raw.panes[0].layers[0].drawings = [d];
+      const parsed = parseChartDoc(raw);
+      return parsed && allDrawings(parsed).length;
+    };
+    expect(count({ ...styled, color: 'red' })).toBe(0);
+    expect(count({ ...styled, dash: 'wavy' })).toBe(0);
+    expect(count({ ...styled, dash: 'toString' })).toBe(0);
+  });
+
   test('平行通道:三个点往返保留,缺 c 的丢掉', () => {
     const channel = { ...trend, id: 'd4', kind: 'channel' as const, c: { time: '2026-02-10', value: 25 } };
     const doc = addDrawing(base, vix, channel);

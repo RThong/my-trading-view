@@ -2,6 +2,7 @@
 // 这份结构是标准 —— 以后旧图表往它上面映射,不是它迁就旧代码。图层只存序列 id,不存数据。
 // 本文件全是纯函数:编辑操作返回新文档,并经 normalize 保证不变式。
 import { INDICATOR_IDS, INDICATORS, type IndicatorId } from '../../chart/indicatorDefs';
+import { LINE_DASH, type LineDash } from '../../chart/drawings';
 import { withAlpha } from '../../chart/palette';
 
 export type ScaleSide = 'right' | 'left' | 'overlay';
@@ -86,19 +87,28 @@ export type DrawingPoint = { time: string; value: number };
  * 只用 a、b 的日期,数值不用(画的时候按所挂那条序列现算;终点在已有 K 线上时之后的新数据不进区间、通道不变,
  * 终点在右边空白区时新数据落进区间才跟着变);存成点是为了和两点线共用画法 / 拖动。
  * extend = 按拟合出的斜率把三条线延长到图的右缘,拟合区间不变(同 TradingView Regression Trend 的 Extend lines)。
- * 竖线默认延伸到所有格(同 TradingView 竖线的 Extend);paneOnly = 只画所属图层那一格
+ * 竖线默认延伸到所有格(同 TradingView 竖线的 Extend);paneOnly = 只画所属图层那一格。
+ * 各种画线都可带样式 color / dash(见 DrawingStyle)
  */
-export type Drawing =
-  | { id: string; kind: 'trend'; a: DrawingPoint; b: DrawingPoint }
-  | { id: string; kind: 'ray'; a: DrawingPoint; b: DrawingPoint }
-  | { id: string; kind: 'hline'; value: number }
-  | { id: string; kind: 'hray'; a: DrawingPoint }
-  | { id: string; kind: 'channel'; a: DrawingPoint; b: DrawingPoint; c: DrawingPoint }
-  | { id: string; kind: 'text'; a: DrawingPoint; text: string; box?: true }
-  | { id: string; kind: 'callout'; a: DrawingPoint; b: DrawingPoint; text: string }
-  | { id: string; kind: 'rect'; a: DrawingPoint; b: DrawingPoint; extend?: true }
-  | { id: string; kind: 'regression'; a: DrawingPoint; b: DrawingPoint; extend?: true }
-  | { id: string; kind: 'vline'; time: string; paneOnly?: true };
+export type Drawing = DrawingStyle &
+  (
+    | { id: string; kind: 'trend'; a: DrawingPoint; b: DrawingPoint }
+    | { id: string; kind: 'ray'; a: DrawingPoint; b: DrawingPoint }
+    | { id: string; kind: 'hline'; value: number }
+    | { id: string; kind: 'hray'; a: DrawingPoint }
+    | { id: string; kind: 'channel'; a: DrawingPoint; b: DrawingPoint; c: DrawingPoint }
+    | { id: string; kind: 'text'; a: DrawingPoint; text: string; box?: true }
+    | { id: string; kind: 'callout'; a: DrawingPoint; b: DrawingPoint; text: string }
+    | { id: string; kind: 'rect'; a: DrawingPoint; b: DrawingPoint; extend?: true }
+    | { id: string; kind: 'regression'; a: DrawingPoint; b: DrawingPoint; extend?: true }
+    | { id: string; kind: 'vline'; time: string; paneOnly?: true }
+  );
+
+/**
+ * 画线样式(选中后浮条里改,同 TradingView 浮动工具栏的线色 / 线型);不设 = 默认黄色实线。
+ * 文字 / 气泡的 color 管字和边框,没有线型
+ */
+export type DrawingStyle = { color?: string; dash?: LineDash };
 
 export type Layer = {
   id: string;
@@ -837,7 +847,9 @@ function isDrawing(x: unknown): x is Drawing {
     isStr(x.id) &&
     isStr(x.kind) &&
     Object.hasOwn(DRAWING_FIELDS, x.kind) &&
-    DRAWING_FIELDS[x.kind as Drawing['kind']](x)
+    DRAWING_FIELDS[x.kind as Drawing['kind']](x) &&
+    (x.color === undefined || isColor(x.color)) &&
+    (x.dash === undefined || (isStr(x.dash) && Object.hasOwn(LINE_DASH, x.dash)))
   );
 }
 
@@ -888,7 +900,11 @@ const CANONICAL_DRAWING: { [K in Drawing['kind']]: (d: Extract<Drawing, { kind: 
 
 function canonicalDrawing(d: Drawing): Drawing {
   // 按 kind 取对应那一项;联合类型下 TS 认不出 d 和 CANONICAL_DRAWING[d.kind] 是同一种,只能断言(同 drawings.ts 的 GEOM)
-  return CANONICAL_DRAWING[d.kind](d as never);
+  return {
+    ...CANONICAL_DRAWING[d.kind](d as never),
+    ...(d.color && { color: d.color }),
+    ...(d.dash && { dash: d.dash }),
+  };
 }
 
 function canonicalRender(r: LayerRender): LayerRender {
