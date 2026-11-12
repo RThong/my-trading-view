@@ -4,7 +4,7 @@
 > 「查过、确认没有的」——先读那一节，能省掉重复调研。
 > 本文只放**实际访问 / 下载验证过**的候选。未验的线索单独放在文末 §4，别混。
 >
-> 最近核实：2026-09-25（§2.4 撤出）。
+> 最近核实：2026-11-12（加 §2.0 DTCC 日元 OIS；§4 补 OpenBB 线索）。
 
 ---
 
@@ -79,6 +79,44 @@ DATE  ACMY01..ACMY10 (fitted yields)  ACMTP01..ACMTP10 (期限溢价)  ACMRNY01.
 ## 2. 日本（现在整块是空的）
 
 日本侧目前只接了 MOF JGB 名义曲线 + JPX JGB VIX。下面按性价比排。
+
+### ⭐ 2.0 DTCC SDR 公开掉期成交 → 日元 OIS 曲线 + 日银政策路径（2026-11-12 实测）
+
+线索来自 OpenBB（`openbb_platform/providers/cftc/`，Apache-2.0，名字叫 cftc，实际是 DTCC 的 PPD）。
+补的是 `AGENTS.md`「查过、确认没有的」里「日元 OIS 曲线」那一格：JSCC 不发利率这条结论仍成立，
+但 **CFTC Part 43 要求掉期成交实时公开披露**，日元 OIS 的成交价就在这里。
+
+| | |
+|---|---|
+| 清单 | `https://pddata.dtcc.com/ppd/api/cumulative/CFTC/IR`（免 key，JSON 数组，每项带 `fileName` / `rowCount` / `fullFilePath`）|
+| 文件 | `https://kgc0418-tdw-data-0.s3.amazonaws.com/cftc/eod/CFTC_CUMULATIVE_RATES_YYYY_MM_DD.zip`，**URL 可按日期构造** |
+| 格式 | zip 包一个 CSV，约 18 MB / 3 万行（全币种利率掉期），**零依赖**（zip 用已有 `fflate`）|
+| 频率 | 日频，次日 00:15 UTC 发 |
+| 回填 | ⚠️ **滚动约 2 年**：2026-11-12 当天 `2024_11_11` 能下、`2024_11_08` 回 403；清单接口只列最近 365 天，更早的要自己构造 URL。→ **必须 daily job 落库**，否则头部每天都在丢 |
+
+筛选与字段（实测）：
+
+- 日元 OIS：`UPI FISN = "NA/Swap OIS JPY"`，`UPI Underlier Name = "JPY-TONA-OIS Compound"`
+- 价格只取 `Action type = NEWT`；`MODI` / `CORR` / `TERM` / `EROR` 是生命周期事件
+- 利率是**小数**：`Fixed rate-Leg 1 = 0.03215` = 3.215%；名义本金带千分位逗号
+- 期限 = `Expiration Date − Effective Date`；起息日比 `Execution Timestamp` 晚超过一周的算远期起息
+
+2026-11-10 单日：日元 OIS 新成交 885 笔，其中 401 笔远期起息。即期起息的主要期限：
+
+| 期限 | 1Y | 2Y | 5Y | 7Y | 10Y | 20Y | 30Y |
+|---|---|---|---|---|---|---|---|
+| 笔数 | 37 | 28 | 30 | 17 | 54 | 27 | 20 |
+| 中位数 | 1.617% | 1.753% | 2.087% | 2.277% | 2.584% | 3.211% | 3.415% |
+
+⚠️ 接之前要处理的：
+
+1. **偏离市价的成交**：同日 8Y −0.05%、13Y 0.575%、23Y 0.35%，和相邻期限差了 200bp 以上，要按离群值剔掉，别直接取均值
+2. **短端（1 年以内）单日只有一两笔**，要合并多天，或者改用远期起息的那批推政策路径（OpenBB 的 `ois_policy_path` 就是这么做的：会议日起息的远期 OIS，合并最近几天）
+3. 只覆盖**向美国 SDR 报告的成交**（有美国人一方），不是全市场。量够用，但个别期限某天可能为空
+4. 2026-11-11（美国退伍军人节）全币种只有 1.2 万行，美国假日数据会变稀
+
+同一份数据里还有：USD SOFR OIS（可以和 Eris 对照）、FX 期权成交（OpenBB 拿它算 `fx_implied_vol`）、
+CDS 指数成交（`CR` 资产类别）。这几样**都没实测**。
 
 ### ⭐ 2.1 MOF 対外及び対内証券売買契約等の状況（周频跨境证券流）
 
@@ -230,6 +268,15 @@ CI / DI 的**先行指数**，日本景气拐点的标准判据。
 | 全国銀行協会 | 银行统计 | 完全未验 |
 | JPX 投資部門別売買状況 | 周频、按投资部门分的日股买卖 | **哈希目录 URL**（`t13vrt000001rg1m-att`）构造不出来，要爬索引；且是 BIFF8 `.xls` |
 | 日本相互証券 BB/JBTS | JGB **業者間実勢**レート，2Y–40Y 日频終値 | **只有 HTML 表格，无 CSV/Excel**。且我们已有 MOF 那条，增量不大 |
+
+以下来自 OpenBB 源码（2026-11-12 读），**OpenBB 有实现、我们没下载验过**：
+
+| 机构 | 想要的 | 线索 |
+|---|---|---|
+| NY Fed | 一级交易商持仓（美债按期限的净多空） | `markets.newyorkfed.org/api/pd/get/...`（OpenBB `federal_reserve/models/primary_dealer_positioning.py`）|
+| 费城联储 | SPF 专业预测者通胀预期 | `philadelphiafed.org/-/media/FRBP/Assets/Surveys-And-Data/...` 下的 Excel（`inflation_expectations.py`），扩展名没确认是 `.xlsx` 还是 `.xls` |
+| FINRA | 个股做空余额（半月频） | `finra/models/equity_short_interest.py` |
+| SEC | 交割失败（FTD） | `sec/models/equity_ftd.py` |
 
 ---
 
