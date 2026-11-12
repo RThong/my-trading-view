@@ -1,11 +1,12 @@
 // MOVE(ICE BofA 债市波动率指数)。Yahoo `^MOVE` 的日线 close 会整段返回 null
 // (2026-07-20 起持续至今),但同一响应的 meta 仍带当日值 —— 数据在 Yahoo 手上,
 // 只是没写进时间序列。故:序列缺的当天用 meta 补,整条序列落库做本地镜像;
-// 读时 Yahoo 优先、库兜底(mergeMove),源自愈后旧值自动被真值盖掉,无需清理。
+// 读时 Yahoo 优先、库兜底(analytics/regime 的 preferLive),源自愈后旧值自动被真值盖掉,无需清理。
 // (带 caret;无 caret 的 MOVE 是 Movado 股票。)
 import YahooFinance from 'yahoo-finance2';
 import { HISTORY_START_DATE } from '../config';
 import { nyParts } from '../jobs/tradingCalendar';
+import { preferLive } from '../analytics/regime';
 
 export type MovePoint = { date: string; value: number };
 /** meta 快照点 = 序列点 + 原始时间戳(毫秒)。 */
@@ -58,14 +59,6 @@ export function metaPoint(meta: MoveChart['meta'], now: number = Date.now()): Me
   return { date: nyParts(new Date(millis)).date, value, at: millis };
 }
 
-/** Yahoo 优先、库兜底:同一天两边都有取 bars,升序输出。 */
-export function mergeMove(bars: MovePoint[], fallback: MovePoint[]): MovePoint[] {
-  // fallback 先入、bars 后入:同 key 后者覆盖 = Yahoo 优先。
-  const byDate = new Map([...fallback, ...bars].map((p) => [p.date, p.value]));
-
-  return [...byDate].map(([date, value]) => ({ date, value })).sort((a, b) => a.date.localeCompare(b.date));
-}
-
 /**
  * 对外主入口:一次 chart 调用 → 非空日线 + meta 补当天,合成一条序列。
  * meta 单独回传:抓取成败要看它有没有值(日线断供时它是当天唯一来源,
@@ -81,5 +74,5 @@ export async function fetchMoveSeries(
     .map((q) => ({ date: toIsoDate(q.date), value: q.close as number }));
   const meta = metaPoint(chart.meta);
 
-  return { points: mergeMove(bars, meta ? [meta] : []), meta };
+  return { points: preferLive(bars, meta ? [meta] : []), meta };
 }

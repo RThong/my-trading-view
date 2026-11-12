@@ -15,6 +15,18 @@
  */
 export type Point = { date: string; value: number };
 
+/**
+ * 现拉优先、库兜底:同一天两边都有取现拉的,其余取并集、升序。
+ * 给「源会丢历史 / 会断供,所以 daily job 把它镜像进库」的序列用(MOVE、FRED 上只留 3 年的 ICE BofA 利差):
+ * 源自愈或修订后,现拉的值自动盖掉库里的旧值,不需要删除路径。
+ */
+export function preferLive(live: Point[], stored: Point[]): Point[] {
+  // stored 先入、live 后入:同 key 后者覆盖
+  const byDate = new Map([...stored, ...live].map((p) => [p.date, p.value]));
+
+  return [...byDate].map(([date, value]) => ({ date, value })).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 /** 逐日相除 num/den(按日期 inner join,缺日或 den=0 跳过)。用于 RXM/SPX 这类同频比值。 */
 export function divideAligned(num: Point[], den: Point[]): Point[] {
   const dMap = new Map(den.map((p) => [p.date, p.value]));

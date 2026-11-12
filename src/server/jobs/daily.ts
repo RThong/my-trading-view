@@ -21,6 +21,7 @@ import { updateVrpInputs } from './vrpInputs';
 import { updateVxTermStructure } from './vxTermStructure';
 import { updateErisSnapshot } from './erisSnapshot';
 import { updateIceCds } from './iceCdsSnapshot';
+import { updateCreditSpreads } from './creditSpreadSnapshot';
 import { updateMoveIndex, type MoveUpdateResult } from './moveSnapshot';
 import { updateIsm, type IsmResult } from './ismSnapshot';
 import { updatePutCall, PUT_CALL_SERIES, type PutCallResult } from './putCallSnapshot';
@@ -47,6 +48,8 @@ type RunDailyJobOpts = {
   erisUpdater?: (db: Database) => Promise<{ total: number }>;
   /** ICE 单名 CDS(AI 巨头 + 甲骨文)更新器(注入式;CLI 传 updateIceCds,测试省略以免联网)。 */
   iceCdsUpdater?: (db: Database) => Promise<{ total: number; missing: string[] }>;
+  /** ICE BofA 信用利差(FRED 只留 3 年,落库保历史)更新器(注入式;CLI 传 updateCreditSpreads,测试省略以免联网)。 */
+  creditSpreadUpdater?: (db: Database) => Promise<{ total: number; succeeded: number; failures: string[] }>;
   /** MOVE 债市波动率更新器(注入式;CLI 传 updateMoveIndex,测试省略以免联网)。 */
   moveUpdater?: (db: Database) => Promise<MoveUpdateResult>;
   /** ISM 制造业 / 服务业 PMI 更新器(注入式;CLI 传 updateIsm,测试省略以免联网)。 */
@@ -139,6 +142,14 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       return missing.length
         ? { status: 'failed', error: `核心标的缺失(数据源可能变动):${missing.join(', ')}`, recordsWritten: total }
         : { status: 'success', recordsWritten: total };
+    });
+  }
+
+  // credit_spread 分组:ICE BofA 利差镜像进库(FRED 窗口每天往前挪,漏跑一天就永久丢最早那天 → 失败当天后续触发重跑)。
+  if (opts.creditSpreadUpdater) {
+    await withJobRun(opts.db, 'credit_spread', async () => {
+      const { total, succeeded, failures } = await opts.creditSpreadUpdater!(opts.db);
+      return threeState(total, succeeded, failures);
     });
   }
 
@@ -285,6 +296,7 @@ const DAILY_GROUPS: GroupTable = {
   vx_term_structure: () => ({ vxUpdater: updateVxTermStructure }),
   eris_snapshot: () => ({ erisUpdater: updateErisSnapshot }),
   ice_cds: () => ({ iceCdsUpdater: updateIceCds }),
+  credit_spread: () => ({ creditSpreadUpdater: updateCreditSpreads }),
   move: () => ({ moveUpdater: updateMoveIndex }),
   ism: () => ({ ismUpdater: updateIsm }),
   put_call: () => ({ putCallUpdater: updatePutCall }),

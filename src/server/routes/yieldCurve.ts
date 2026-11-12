@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { resolve } from 'node:path';
 import { createSwrCache } from './swrCache';
 import { createFredFetcher } from '../fetchers/fred';
-import type { Point } from '../analytics/regime';
+import { preferLive, type Point } from '../analytics/regime';
 import { HISTORY_START_DATE, PROJECT_ROOT } from '../config';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
@@ -33,20 +33,25 @@ type CurveBody = {
 };
 
 /**
- * 通用 FRED 曲线构建:一组 (tenor→series) 读时现拉全历史,并行 + 优雅降级。
- * 单序列失败(FRED key 缺 / 序列 404)→ 归入 unavailable,其余照常返回。
+ * 信用利差曲线(ICE BofA 评级 / 期限梯队):FRED 读时现拉 + 库里的长历史合并(现拉优先,见 preferLive)。
+ * FRED 只留最近 3 年,更早的只在库里(daily 的 credit_spread 组镜像,见 jobs/creditSpreadSnapshot)。
+ * 单序列现拉失败(FRED key 缺 / 序列 404)→ 只用库里的;两边都没有才归入 unavailable。
  * 值已是百分点,原样透传。服务端缓存见下方 liveCaches(swrCache)。
  */
 async function buildFredCurve(pairs: { tenor: string; series: string }[]): Promise<CurveBody> {
   const fred = createFredFetcher({ apiKey: process.env.FRED_API_KEY ?? '' });
   const settled = await Promise.allSettled(pairs.map((p) => fred.fetchSeries(p.series, HISTORY_START_DATE)));
+  const db = openDb();
+  const stored = pairs.map((p) => getMarketSeries(db, p.series));
+  db.close();
 
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
   settled.forEach((s, i) => {
     const { tenor } = pairs[i];
-    if (s.status === 'fulfilled' && s.value.length)
-      series[tenor] = s.value.map((r) => ({ date: r.obsDate, value: r.value }));
+    const live = s.status === 'fulfilled' ? s.value.map((r) => ({ date: r.obsDate, value: r.value })) : [];
+    const merged = preferLive(live, stored[i]);
+    if (merged.length) series[tenor] = merged;
     else unavailable.push(tenor);
   });
 

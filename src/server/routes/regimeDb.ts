@@ -1,6 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { mergeMove } from '../fetchers/moveIndex';
-import { rollingMean, type Point } from '../analytics/regime';
+import { preferLive, rollingMean, type Point } from '../analytics/regime';
 import { OIS_INPUT_TENORS, hikesByTenor } from '../../shared/calc/policyPath';
 import type { SeriesKey } from '../../shared/regimeSeries';
 import { nearMinusFar } from '../analytics/termStructure';
@@ -70,6 +69,8 @@ export function readDbBacked(
   moveLive: Point[],
   /** FRED SOFR 定盘值:OIS 加息次数的基准(现拉),曲线那半在库里,所以同样得在这里合。 */
   sofrLive: Point[],
+  /** HY OAS 现拉腿:FRED 只留 3 年,更早的在库里(daily 的 credit_spread 组镜像),同 MOVE 在这里合 */
+  hyOasLive: Point[],
 ): {
   series: Record<string, Point[]>;
   unavailable: string[];
@@ -125,7 +126,8 @@ export function readDbBacked(
   put('vxTermSpread', nearMinusFar({ near: getMarketSeries(db, 'VX1'), far: getMarketSeries(db, 'VX3') }));
 
   // MOVE:实时拉的优先,库里的补丁只填 Yahoo 断供的那些天。
-  put('move', mergeMove(moveLive, getMarketSeries(db, 'MOVE')));
+  put('move', preferLive(moveLive, getMarketSeries(db, 'MOVE')));
+  put('hyOas', preferLive(hyOasLive, getMarketSeries(db, 'BAMLH0A0HYM2')));
 
   // OIS 隐含「到 N 为止累计计入几次加息」:逐日用当天整条曲线反推。Eris 由 daily job 写库,所以归这一批重读。
   // 基准 = 当日 SOFR 定盘值;FRED 次日早上才发,当天没有就沿用上一个(≤ 当日最近)。

@@ -78,7 +78,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
   const db = openDb();
   try {
     const sec = readSecSeries(db);
-    const job = readDbBacked(db, cache.moveLive, cache.sofrLive);
+    const job = readDbBacked(db, cache.moveLive, cache.sofrLive, cache.hyOasLive ?? []);
     return c.json({
       ...cache.body,
       ...mergeDbRead(cache.body, [sec, job]),
@@ -116,6 +116,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     rpo: fredSeries('RPONTSYD'),
     sofr: fredSeries('SOFR'),
     iorb: fredSeries('IORB'),
+    // FRED 只留 3 年:长历史在库里(daily 的 credit_spread 组镜像),在下方 db 段合并,同 MOVE
     hyOas: fredSeries('BAMLH0A0HYM2'),
     // dgs10 / dgs2 改走财政部 par yield 直发源(当天出,FRED DGS 慢 1-2 天),见下方 ustP。
     wages: fredSeries('FRBATLWGT3MMAUMHWGO'), // Atlanta Fed 薪资增速 tracker(3mma,月频 %)
@@ -354,7 +355,6 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
 
   // 直接对外的序列(对外名 → 原始源名)。
   const direct: Partial<Record<RegimeSeries, keyof typeof src>> = {
-    hyOas: 'hyOas',
     cor1m: 'cor1m',
     cor3m: 'cor3m',
     vixeq: 'vixeq',
@@ -623,7 +623,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // VIX / VXN 已在库里(market_series,daily job 维护)→ 直接读,不外拉。
   const db = openDb();
   try {
-    const dbBacked = readDbBacked(db, raw.move ?? [], sofrLive);
+    const dbBacked = readDbBacked(db, raw.move ?? [], sofrLive, raw.hyOas ?? []);
     Object.assign(series, dbBacked.series);
     Object.assign(ohlc, dbBacked.ohlc);
     unavailable.push(...dbBacked.unavailable);
@@ -658,5 +658,5 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 全部源都打(按耗时降序),一行:定位慢源要看到每一个,不只最慢几个。
   const bySlowest = timings.sort((a, b) => b[1] - a[1]).map(([name, ms]) => `${name} ${(ms / 1000).toFixed(1)}s`);
   console.log(`[regime] 现拉 ${((performance.now() - t0) / 1000).toFixed(1)}s;各源耗时:${bySlowest.join(', ')}`);
-  return { value: { body, moveLive: raw.move ?? [], sofrLive }, complete };
+  return { value: { body, moveLive: raw.move ?? [], sofrLive, hyOasLive: raw.hyOas ?? [] }, complete };
 }

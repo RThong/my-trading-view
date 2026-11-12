@@ -34,6 +34,7 @@ case "${1:-status}" in
                  WHEN 'vx_term_structure' THEN 'VX 期限结构'
                  WHEN 'btc_price'         THEN 'BTC 现货'
                  WHEN 'ice_cds'           THEN 'AI CDS'
+                 WHEN 'credit_spread'     THEN '信用利差'
                  ELSE last.job_name
                END AS 品类,
                CASE last.status WHEN 'success' THEN '✅' WHEN 'partial' THEN '⚠️' ELSE '❌' END AS 结果,
