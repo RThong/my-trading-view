@@ -101,6 +101,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
             drawing.setSelected(null);
           }}
           onEditText={drawing.editText}
+          canLogFit={drawing.canLogFit}
         />
         <InlineTextEditor editing={drawing.editing} onCommit={drawing.commitText} />
         {status.length > 0 && (

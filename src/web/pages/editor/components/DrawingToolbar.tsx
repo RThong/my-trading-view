@@ -69,7 +69,7 @@ const TOOL: Record<DrawingTool, { icon: LucideIcon; name: string; hint: string }
   regression: {
     icon: ChartSpline,
     name: '回归通道',
-    hint: `回归通道:点两下选起止日期,按这段数据自动算回归中线 ± 2 倍标准差,左下角标相关系数 r(越接近 ±1 趋势越直);终点定在已有 K 线上就冻结,下方浮条可勾「向右延伸」。${OWNER_HINT}`,
+    hint: `回归通道:点两下选起止日期,按这段数据自动算回归中线 ± 2 倍标准差,左下角标相关系数 r(越接近 ±1 趋势越直);终点定在已有 K 线上就冻结,下方浮条可勾「向右延伸」「对数」(跨好几年的长区间用对数拟合)。${OWNER_HINT}`,
   },
   hray: { icon: ArrowRightFromLine, name: '水平射线', hint: `水平射线:点一下,从这一点往右延伸。${OWNER_HINT}` },
   hline: { icon: Minus, name: '水平线', hint: `水平线:点一下。${OWNER_HINT}` },
@@ -488,6 +488,7 @@ export function DrawingBar({
   onUpdate,
   onRemove,
   onEditText,
+  canLogFit,
 }: {
   doc: ChartDoc;
   selected: string | null;
@@ -495,10 +496,14 @@ export function DrawingBar({
   onRemove: (id: string) => void;
   /** 文字 / 气泡:就地改字(同双击) */
   onEditText: (id: string) => void;
+  /** 回归通道能不能勾「对数」(区间里有 ≤ 0 的值就不能);已勾上的总能取消 */
+  canLogFit: (id: string) => boolean;
 }) {
   const entry = selected ? allDrawings(doc).find((e) => e.drawing.id === selected) : undefined;
   if (!entry) return null;
   const { drawing: d, layer } = entry;
+  // 已勾上的总能取消,没勾的要区间里的值全 > 0 才能勾
+  const logLocked = d.kind === 'regression' && !d.log && !canLogFit(d.id);
 
   return (
     <div
@@ -555,6 +560,31 @@ export function DrawingBar({
             }}
           />
           向右延伸
+        </label>
+      )}
+      {d.kind === 'regression' && (
+        <label
+          className={cn(
+            'flex items-center gap-1.5',
+            logLocked ? 'cursor-not-allowed text-neutral-500' : 'cursor-pointer',
+          )}
+          title={
+            logLocked
+              ? '这段数据有 ≤0 的值(利差、MACD 常见),取不了对数'
+              : '对数拟合:按固定增长率拟合,上下轨是中线上下同一个百分比;配合对数坐标看是三条直线。区间跨好几年、价格翻倍以上时用'
+          }
+        >
+          <Checkbox
+            checked={!!d.log}
+            disabled={logLocked}
+            onCheckedChange={(on) => {
+              // 点的这一刻再查一次:切周期等同一次提交里换了数据时,渲染时算的 logLocked 可能还是旧数据的
+              if (on && !canLogFit(d.id)) return;
+              const { log: _drop, ...rest } = d;
+              onUpdate(on ? { ...rest, log: true } : rest);
+            }}
+          />
+          对数
         </label>
       )}
       {d.kind === 'vline' && (

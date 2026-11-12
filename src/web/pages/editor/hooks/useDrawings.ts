@@ -248,7 +248,8 @@ function itemValue(item: object): number | null {
 
 /**
  * 回归通道要拟合的点:两个日期换成图上的逻辑下标,只按下标取区间内的那几根(dataByIndex),不扫整条序列 ——
- * 图元每次重画、每次鼠标移动(lw 的 hitTest)都要算一遍,日线从 1990 年起有上万根。下标处这条序列没数据(空白点)就跳过
+ * 图元每次重画、每次鼠标移动(lw 的 hitTest)都要算一遍,日线从 1990 年起有上万根。下标处这条序列没数据(空白点)就跳过。
+ * 对数拟合(log)时纵坐标取 ln;≤ 0 的点取不了对数,跳过(对数拟合本来就只对价格这类正值有意义)
  */
 function regressionPoints(
   ctx: Ctx,
@@ -263,7 +264,8 @@ function regressionPoints(
   return Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => from + i).flatMap((x) => {
     const item = s.dataByIndex(x);
     const y = item ? itemValue(item) : null;
-    return y === null ? [] : [{ x, y }];
+    if (y === null || (d.log && y <= 0)) return [];
+    return [{ x, y: d.log ? Math.log(y) : y }];
   });
 }
 
@@ -276,9 +278,20 @@ function tooFewPoints(ctx: Ctx | null, s: ISeriesApi<SeriesType> | undefined, d:
 }
 
 /**
+ * 回归通道能不能改成对数拟合:区间里的点全 > 0 且够两个。浮条勾选直接写文档、不经过 tooFewPoints,
+ * 不先拦下的话,有 ≤ 0 值的序列(利差、MACD)勾上后负值点被悄悄丢掉,不够两个点时整条变成看不见、点不中的空通道
+ */
+function logFittable(ctx: Ctx | null, s: ISeriesApi<SeriesType> | undefined, d: Drawing): boolean {
+  if (d.kind !== 'regression' || !ctx || !s) return false;
+  const pts = regressionPoints(ctx, s, { ...d, log: undefined });
+  return pts.length >= 2 && pts.every((p) => p.y > 0);
+}
+
+/**
  * 回归通道在这一格的像素:取所挂序列在两个日期之间(含两端)的数据点,对图上的逻辑下标做直线回归(同 TradingView 按根数,
  * 不按日历天),中线 / 上下轨在每个数据点处换成像素;不足两个点画不出来。手柄按 a / b 各自落在中线的哪一端放,拖哪个改哪个日期。
- * 向右延伸(同 TradingView Extend lines):拟合不变,从区间最后一点起逐根往右算到画布右缘 —— 逐根而不是连直线,对数轴下才弯得对
+ * 向右延伸(同 TradingView Extend lines):拟合不变,从区间最后一点起逐根往右算到画布右缘 —— 逐根而不是连直线,对数轴下才弯得对。
+ * 对数拟合:拟合在 ln 空间做,画的时候 exp 回原值 —— 上下轨是中线乘除同一个比例,对数轴下三条都是直线
  */
 function regressionShape(ctx: Ctx, s: ISeriesApi<SeriesType>, d: Extract<Drawing, { kind: 'regression' }>): Shape[] {
   const pts = regressionPoints(ctx, s, d);
@@ -286,7 +299,8 @@ function regressionShape(ctx: Ctx, s: ISeriesApi<SeriesType>, d: Extract<Drawing
   if (!g) return [];
 
   const px = (x: number, k: number): Pt[] => {
-    const y = s.priceToCoordinate(regressionAt(g, x) + k * g.sd);
+    const v = regressionAt(g, x) + k * g.sd;
+    const y = s.priceToCoordinate(d.log ? Math.exp(v) : v);
     // 下降趋势延伸到负值时对数轴换不出坐标
     return y === null || !Number.isFinite(y) ? [] : [[ctx.toX(x), y]];
   };
@@ -1127,6 +1141,14 @@ export function useDrawings(
     setHidden(!hidden);
   };
 
+  /** 浮条「对数」勾选框能不能勾上(见 logFittable),按当前视图现算 */
+  const canLogFit = (id: string) => {
+    const chart = chartRef.current;
+    const entry = allDrawings(doc).find((e) => e.drawing.id === id);
+    const ctx = chart && makeCtx(chart, seriesRef.current, axisRef.current, transformRef.current);
+    return !!entry && logFittable(ctx, ctx?.seriesOf(entry.layer.id), entry.drawing);
+  };
+
   /** 浮条「编辑」:就地改这条文字 / 气泡(同双击) */
   const editText = (id: string) => {
     const chart = chartRef.current;
@@ -1172,5 +1194,6 @@ export function useDrawings(
     editing,
     editText,
     commitText,
+    canLogFit,
   };
 }
