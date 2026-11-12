@@ -49,6 +49,7 @@ function expandLayer(l: Layer, sevenDay: boolean): Layer[] {
     color: p.color,
     title: p.title,
     ...(p.kind === 'signed' && { render: { kind: 'signed' as const } }),
+    ...(p.refLines && { refLines: p.refLines }),
     ...(l.hidden && { hidden: true as const }),
   }));
 }

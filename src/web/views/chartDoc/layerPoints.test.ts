@@ -203,6 +203,12 @@ describe('指标图层展开成子线', () => {
       ['l2#rsi12', true],
     ]);
     expect(expandIndicators(doc)).toBe(view);
+    // RSI 30/50/70 分界线只挂在第一条子线上(挂多条会重复画)
+    expect(view.panes[0].layers.map((l) => l.refLines?.map((r) => r.price))).toEqual([
+      undefined,
+      [30, 50, 70],
+      undefined,
+    ]);
     const plain = { v: 1 as const, panes: [pane([{ series: 'SPY' }])] };
     expect(expandIndicators(plain)).toBe(plain); // 没有指标就原样
   });

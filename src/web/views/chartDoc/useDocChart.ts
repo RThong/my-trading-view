@@ -112,6 +112,20 @@ const KINDS: Record<Kind, KindDef> = {
   }),
 };
 
+/**
+ * 指标自带的分界线(RSI 30/50/70)有绝对含义:撑住自动缩放,数据只在 40~60 走时线也不被裁出屏外。
+ * 只管指标子线:用户自己加的参考线保持原样(不撑轴)
+ */
+function levelRange(layer: Layer): [number, number] | undefined {
+  const prices = isPlotLayer(layer) ? (layer.refLines ?? []).map((r) => r.price) : [];
+  return prices.length ? [Math.min(...prices), Math.max(...prices)] : undefined;
+}
+
+/** 两个「至少撑到」的范围取并集;缺一个就用另一个 */
+function expandRange(a: [number, number] | undefined, b: [number, number] | undefined): [number, number] | undefined {
+  return a && b ? [Math.min(a[0], b[0]), Math.max(a[1], b[1])] : (a ?? b);
+}
+
 /** 各画法的 series 选项。每次对账整份写回,改色 / 换轴 / 显隐 / 范围框都走这里 */
 function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
   const hidden = !!layer.hidden;
@@ -130,7 +144,9 @@ function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
 
   const scale = pane.scales.find((sc) => sc.id === layer.scale);
   // 轴的范围框落到这根轴上每条线的自动缩放上,轴取并集(语义见 boxAutoscaleProvider)
-  const autoscaleInfoProvider = boxAutoscaleProvider(scale?.clampVisibleTo, scale?.expandVisibleTo) ?? PASS_AUTOSCALE;
+  const autoscaleInfoProvider =
+    boxAutoscaleProvider(scale?.clampVisibleTo, expandRange(scale?.expandVisibleTo, levelRange(layer))) ??
+    PASS_AUTOSCALE;
   // 蜡烛:涨绿跌红(同符号柱的两色),图层颜色不起作用
   if (drawnKind(layer) === 'candle')
     return {
