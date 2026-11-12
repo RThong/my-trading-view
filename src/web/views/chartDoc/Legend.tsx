@@ -5,11 +5,11 @@ import { drawnKind } from './registry';
 import { CandleSwatch } from './CandleSwatch';
 import type { Interval } from '../../hooks/interval';
 import { shiftBusinessDays } from '../../chart/analysis';
-import { isMarkLayer, type ChartDoc, type Layer } from './chartDoc';
+import { isMarkLayer, type ChartDoc, type Layer, type Pane } from './chartDoc';
 import { changeStats, type Bar, type LinePoint } from '../../chart/core';
 import { SIGNED_DOWN, SIGNED_UP } from '../../chart/palette';
-import { layerLabel, layerUnit } from './layerLabel';
-import { allSevenDay, layerMarks, plotId, plotsOf, type LayerData } from './layerPoints';
+import { layerLabel, layerUnit, shiftText } from './layerLabel';
+import { allSevenDay, canLogScale, layerMarks, plotId, plotsOf, type LayerData } from './layerPoints';
 import { percentileRank } from '../../../shared/calc/stats';
 import { asOfPoint, type LegendLayout } from './useCrosshairLegend';
 
@@ -75,7 +75,7 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
             {/* 第 1 格顶上放十字线日期 */}
             {i === 0 && <span className="text-neutral-500">{hoverTime ?? '最新'}</span>}
             {shown.map((l, j) => (
-              <LayerRow key={l.id} layer={l} info={j === 0 ? info : undefined} {...row} />
+              <LayerRow key={l.id} layer={l} pane={pane} info={j === 0 ? info : undefined} {...row} />
             ))}
             {hidden.length > 0 && (
               <span className="pointer-events-auto flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
@@ -106,19 +106,20 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
   );
 }
 
-type RowProps = Omit<Props, 'layout'> & { layer: Layer; info: ReactNode };
+type RowProps = Omit<Props, 'layout'> & { layer: Layer; pane: Pane; info: ReactNode };
 
 function LayerRow(props: RowProps) {
   return props.layer.indicator ? <IndicatorRow {...props} /> : <SeriesRow {...props} />;
 }
 
 /** 指标:一个指标一行,各条子线的读数按自己的颜色排开(EMA 5 652 · 20 640 …) */
-function IndicatorRow({ doc, data, hoverTime, onHidden, layer: l, info }: RowProps) {
+function IndicatorRow({ doc, data, hoverTime, onHidden, layer: l, pane, info }: RowProps) {
   const plots = plotsOf(l, allSevenDay(doc));
   return (
     <span className="group pointer-events-auto flex items-center gap-1.5 whitespace-nowrap">
       <span className="h-0.5 w-3 rounded" style={{ background: plots[0]?.color }} />
-      <span className="text-neutral-400">{layerLabel(doc, l)}</span>
+      <span className="text-neutral-400">{layerLabel(doc, l, { withShift: false })}</span>
+      <LayerTags pane={pane} layer={l} data={data} />
       {info}
       {plots.map((p) => {
         const v = asOfPoint(data[plotId(l, p)]?.display, hoverTime)?.value;
@@ -131,6 +132,37 @@ function IndicatorRow({ doc, data, hoverTime, onHidden, layer: l, info }: RowPro
       })}
       <HideButton onClick={() => onHidden(l.id, true)} />
     </span>
+  );
+}
+
+// 带边框的小标签:比 TradingView 角落里一个高亮的 log 按钮显眼,做成固定面板后一眼看得出这条线被改过刻度 / 时间
+const TAG = 'rounded-sm border border-neutral-600 px-1 text-[10px] leading-4 text-neutral-300';
+
+/**
+ * 线名后的状态标签:对数(按实际生效算 —— 轴上有 ≤0 的值时开了也按普通坐标画,不标)、平移几个交易日
+ * (平移原本写在线名括号里,图例改用标签、线名不再带它,别处照旧)。
+ * 倒轴不标(负责人 2026-11-12 定:看轴刻度方向即可,同 TradingView)
+ */
+function LayerTags({ pane, layer: l, data }: Pick<RowProps, 'pane' | 'layer' | 'data'>) {
+  const log = pane.scales.find((sc) => sc.id === l.scale)?.log && canLogScale(pane, l.scale, data);
+  const shift = l.shift ?? 0;
+
+  return (
+    <>
+      {log && (
+        <span className={TAG} title="对数坐标:等比例的涨跌画成等高,纵向距离代表百分比而不是点数">
+          对数
+        </span>
+      )}
+      {shift !== 0 && (
+        <span
+          className={TAG}
+          title={`整条线往${shift > 0 ? '右(后)' : '左(前)'}挪了 ${Math.abs(shift)} 个交易日(看领先关系用):图上的位置不是它真实的日期`}
+        >
+          {shiftText(shift)}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -149,7 +181,7 @@ function HideButton({ onClick }: { onClick: () => void }) {
 }
 
 /** 显示中的一条序列:名称、读数(蜡烛给开高低收)、涨跌、分位排名、平移原日期、显隐按钮 */
-function SeriesRow({ doc, interval, data, hoverTime, onHidden, layer: l, info }: RowProps) {
+function SeriesRow({ doc, interval, data, hoverTime, onHidden, layer: l, pane, info }: RowProps) {
   const pts = data[l.id]?.display;
   const pt = asOfPoint(pts, hoverTime);
   const shift = l.shift ?? 0;
@@ -169,7 +201,8 @@ function SeriesRow({ doc, interval, data, hoverTime, onHidden, layer: l, info }:
       ) : (
         <span className="h-0.5 w-3 rounded" style={{ background: l.color }} />
       )}
-      <span className="text-neutral-400">{layerLabel(doc, l)}</span>
+      <span className="text-neutral-400">{layerLabel(doc, l, { withShift: false })}</span>
+      <LayerTags pane={pane} layer={l} data={data} />
       {info}
       {/* 标记图层(竖线、背景色带)的值无意义,只给名字 */}
       {!isMarkLayer(l) &&
