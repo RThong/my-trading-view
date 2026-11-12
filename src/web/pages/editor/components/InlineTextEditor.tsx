@@ -62,8 +62,10 @@ function OpenEditor({ editing, onCommit }: Props & { editing: TextEditing }) {
         lineHeight: `${TEXT_LINE}px`,
         padding: `${TEXT_PAD / 2}px ${TEXT_PAD}px`,
         minWidth: CALLOUT_MIN_W,
+        ...(editing.color && { color: editing.color, outlineColor: editing.color }),
       }}
       // 颜色同画布:neutral-200 / 950 就是 CHART_CHROME 的 ink / bg(浅色主题一起翻);黄框同选中的画线。
+      // 画线改过颜色时,字和框用它(上面 style 覆盖),同画布
       // 气泡:以框中心定位(向四周长,同画布上的框),底色不透明,盖住画在框中心的指针根部
       className={cn(
         'absolute z-20 resize-none overflow-hidden whitespace-pre text-neutral-200 outline-1 outline-yellow-500 [field-sizing:content] placeholder:text-neutral-500',

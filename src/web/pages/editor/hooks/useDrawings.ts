@@ -57,10 +57,14 @@ export type DrawingTool =
   | 'regression';
 
 /** 要就地写字的画线(文字 / 标注气泡):新放的(还没存进文档,id 缺)或改已有的那条 */
-type TextDraft = { id?: string; layerId: string; a: DrawingPoint; text: string } & (
-  | { kind: 'text'; box: boolean }
-  | { kind: 'callout'; b: DrawingPoint }
-);
+type TextDraft = {
+  id?: string;
+  layerId: string;
+  a: DrawingPoint;
+  text: string;
+  /** 改已有的那条时带着它的颜色(编辑框、写回文档都要用) */
+  color?: string;
+} & ({ kind: 'text'; box: boolean } | { kind: 'callout'; b: DrawingPoint });
 /**
  * 正在图上就地编辑的那条。x / y = 编辑框相对图表容器的像素位置(文字是左上角 = 锚点,气泡是框中心 = b),
  * 打开时算一次(编辑中平移 / 缩放图表会先结束编辑)
@@ -298,43 +302,48 @@ function regressionShape(ctx: Ctx, s: ISeriesApi<SeriesType>, d: Extract<Drawing
   return [{ id: d.id, kind: 'regression', x1: pa[0], y1: pa[1], x2: pb[0], y2: pb[1], mid, up, down, r: g.r }];
 }
 
-/** 第 i 格此刻要画的像素:趋势线 / 水平线只画在所属图层那一格;竖线延伸的每格都画,只画本格的(paneOnly)只在那一格 */
+/** 第 i 格此刻要画的像素(带上画线的颜色 / 线型) */
 function paneShapes(ctx: Ctx, entries: Entry[], i: number): Shape[] {
-  return entries.flatMap(({ drawing: d, layer, paneIndex }): Shape[] => {
-    if (d.kind === 'vline') {
-      const l = ctx.axis.toLogical(d.time);
-      return (d.paneOnly && paneIndex !== i) || l === null ? [] : [{ id: d.id, kind: 'vline', x: ctx.toX(l) }];
-    }
-    const s = paneIndex === i ? ctx.seriesOf(layer.id) : undefined;
-    if (!s) return [];
-    if (d.kind === 'hline') {
-      const y = s.priceToCoordinate(d.value);
-      return y === null ? [] : [{ id: d.id, kind: 'hline', y }];
-    }
-    if (d.kind === 'hray') {
-      const a = toPx(ctx, s, d.a);
-      return a ? [{ id: d.id, kind: 'hray', x: a.x, y: a.y }] : [];
-    }
-    if (d.kind === 'text') {
-      const a = toPx(ctx, s, d.a);
-      const lines = d.text.split('\n');
-      return a ? [{ id: d.id, kind: 'text', x: a.x, y: a.y, lines, box: !!d.box, ...textSize(lines) }] : [];
-    }
+  return entries.flatMap((e) =>
+    drawingShapes(ctx, e, i).map((sh) => ({ ...sh, color: e.drawing.color, dash: e.drawing.dash })),
+  );
+}
+
+/** 一条画线在第 i 格的像素:趋势线 / 水平线只画在所属图层那一格;竖线延伸的每格都画,只画本格的(paneOnly)只在那一格 */
+function drawingShapes(ctx: Ctx, { drawing: d, layer, paneIndex }: Entry, i: number): Shape[] {
+  if (d.kind === 'vline') {
+    const l = ctx.axis.toLogical(d.time);
+    return (d.paneOnly && paneIndex !== i) || l === null ? [] : [{ id: d.id, kind: 'vline', x: ctx.toX(l) }];
+  }
+  const s = paneIndex === i ? ctx.seriesOf(layer.id) : undefined;
+  if (!s) return [];
+  if (d.kind === 'hline') {
+    const y = s.priceToCoordinate(d.value);
+    return y === null ? [] : [{ id: d.id, kind: 'hline', y }];
+  }
+  if (d.kind === 'hray') {
     const a = toPx(ctx, s, d.a);
-    const b = toPx(ctx, s, d.b);
-    if (!a || !b) return [];
-    if (d.kind === 'channel') {
-      const c = toPx(ctx, s, d.c);
-      return c ? [{ id: d.id, kind: 'channel', x1: a.x, y1: a.y, x2: b.x, y2: b.y, x3: c.x, y3: c.y }] : [];
-    }
-    if (d.kind === 'callout') {
-      const lines = d.text.split('\n');
-      return [{ id: d.id, kind: 'callout', x1: a.x, y1: a.y, x2: b.x, y2: b.y, lines, ...calloutSize(lines) }];
-    }
-    if (d.kind === 'rect') return [{ id: d.id, kind: 'rect', x1: a.x, y1: a.y, x2: b.x, y2: b.y, extend: !!d.extend }];
-    if (d.kind === 'regression') return regressionShape(ctx, s, d);
-    return [{ id: d.id, kind: d.kind, x1: a.x, y1: a.y, x2: b.x, y2: b.y }];
-  });
+    return a ? [{ id: d.id, kind: 'hray', x: a.x, y: a.y }] : [];
+  }
+  if (d.kind === 'text') {
+    const a = toPx(ctx, s, d.a);
+    const lines = d.text.split('\n');
+    return a ? [{ id: d.id, kind: 'text', x: a.x, y: a.y, lines, box: !!d.box, ...textSize(lines) }] : [];
+  }
+  const a = toPx(ctx, s, d.a);
+  const b = toPx(ctx, s, d.b);
+  if (!a || !b) return [];
+  if (d.kind === 'channel') {
+    const c = toPx(ctx, s, d.c);
+    return c ? [{ id: d.id, kind: 'channel', x1: a.x, y1: a.y, x2: b.x, y2: b.y, x3: c.x, y3: c.y }] : [];
+  }
+  if (d.kind === 'callout') {
+    const lines = d.text.split('\n');
+    return [{ id: d.id, kind: 'callout', x1: a.x, y1: a.y, x2: b.x, y2: b.y, lines, ...calloutSize(lines) }];
+  }
+  if (d.kind === 'rect') return [{ id: d.id, kind: 'rect', x1: a.x, y1: a.y, x2: b.x, y2: b.y, extend: !!d.extend }];
+  if (d.kind === 'regression') return regressionShape(ctx, s, d);
+  return [{ id: d.id, kind: d.kind, x1: a.x, y1: a.y, x2: b.x, y2: b.y }];
 }
 
 /** 正在就地编辑的气泡:按空文字画(框 + 指针),编辑框以同一中心盖在框上;只有指针露在外面 */
@@ -342,7 +351,7 @@ function editingCallout(doc: ChartDoc, ed: TextEditing | null): Entry[] {
   const owner = ed?.kind === 'callout' ? findLayer(doc, ed.layerId) : undefined;
   if (ed?.kind !== 'callout' || !owner || owner.layer.hidden) return [];
 
-  const drawing: Drawing = { id: ed.id ?? '', kind: 'callout', a: ed.a, b: ed.b, text: '' };
+  const drawing: Drawing = { id: ed.id ?? '', kind: 'callout', a: ed.a, b: ed.b, text: '', color: ed.color };
   return [{ drawing, layer: owner.layer, paneIndex: doc.panes.indexOf(owner.pane) }];
 }
 
@@ -584,7 +593,7 @@ function existingText(doc: ChartDoc, id: string): TextDraft | null {
   const d = entry?.drawing;
   if (!entry || !d) return null;
 
-  const base = { id, layerId: entry.layer.id };
+  const base = { id, layerId: entry.layer.id, color: d.color };
   if (d.kind === 'text') return { ...base, kind: 'text', a: d.a, text: d.text, box: !!d.box };
   if (d.kind === 'callout') return { ...base, kind: 'callout', a: d.a, b: d.b, text: d.text };
   return null;
@@ -1145,8 +1154,8 @@ export function useDrawings(
 
     const drawing =
       ed.kind === 'callout'
-        ? { kind: 'callout' as const, a: ed.a, b: ed.b, text }
-        : { kind: 'text' as const, a: ed.a, text, ...(ed.box && { box: true as const }) };
+        ? { kind: 'callout' as const, a: ed.a, b: ed.b, text, color: ed.color }
+        : { kind: 'text' as const, a: ed.a, text, color: ed.color, ...(ed.box && { box: true as const }) };
     const id = ed.id ?? nextId(doc, 'd');
     if (ed.id) actions.updateDrawing({ id, ...drawing });
     else actions.addDrawing(ed.layerId, { id, ...drawing });
