@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { fetchMoveSeries, mergeMove, metaPoint } from './moveIndex';
+import { fetchMoveSeries, metaPoint } from './moveIndex';
+import { preferLive } from '../analytics/regime';
 
 describe('metaPoint', () => {
   it('取 meta 当日点(Date 与 epoch 秒都认)', () => {
@@ -58,7 +59,7 @@ describe('metaPoint', () => {
   });
 });
 
-describe('mergeMove', () => {
+describe('preferLive', () => {
   it('同日 Yahoo 覆盖补丁,其余并集升序', () => {
     const bars = [
       { date: '2026-07-17', value: 70.88 },
@@ -69,7 +70,7 @@ describe('mergeMove', () => {
       { date: '2026-07-31', value: 83.02 },
     ];
 
-    expect(mergeMove(bars, patch)).toEqual([
+    expect(preferLive(bars, patch)).toEqual([
       { date: '2026-07-17', value: 70.88 },
       { date: '2026-07-20', value: 72.0 },
       { date: '2026-07-31', value: 83.02 },

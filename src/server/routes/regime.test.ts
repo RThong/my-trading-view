@@ -88,7 +88,7 @@ test('DB_BACKED_KEYS 等于 readDbBacked 实际产出的 key 全集', () => {
   migrate(db);
   try {
     // 空库 → 每一格都进 unavailable,于是 unavailable 就是全集。
-    const { unavailable, series } = readDbBacked(db, [], []);
+    const { unavailable, series } = readDbBacked(db, [], [], []);
 
     expect(series).toEqual({});
     expect(new Set(unavailable)).toEqual(new Set(DB_BACKED_KEYS));
@@ -172,7 +172,7 @@ test('fillFromPrev:没有上一份 → 原样返回', () => {
 test('mergeDbRead:剔掉缓存里的库读 key,外部源 key 保留,本次读库结果覆盖', () => {
   const p = (value: number) => [{ date: '2026-10-16', value }];
   const cached = {
-    series: { hyOas: p(2.8), move: p(80), 'fund:NVDA:gm': p(70), qqq: p(500) },
+    series: { cor1m: p(2.8), move: p(80), 'fund:NVDA:gm': p(70), qqq: p(500) },
     ohlc: { usd: [], btc: [] },
     unavailable: ['refUtil', 'fund:AMD:gm', 'gpuB300'],
   };
@@ -180,7 +180,7 @@ test('mergeDbRead:剔掉缓存里的库读 key,外部源 key 保留,本次读库
   const job = { series: { move: p(81) }, ohlc: {}, unavailable: ['qqq'] };
 
   const out = mergeDbRead(cached, [sec, job]);
-  expect(out.series).toEqual({ hyOas: p(2.8), 'fund:MU:gm': p(40), move: p(81) }); // 旧 NVDA / qqq 不冒充
+  expect(out.series).toEqual({ cor1m: p(2.8), 'fund:MU:gm': p(40), move: p(81) }); // 旧 NVDA / qqq 不冒充
   expect(Object.keys(out.ohlc ?? {})).toEqual(['usd']); // btc 是库读的
   expect(out.unavailable).toEqual(['refUtil', 'fund:NVDA:gm', 'qqq']);
 });

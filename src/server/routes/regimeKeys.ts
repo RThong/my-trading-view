@@ -62,6 +62,7 @@ export const DB_BACKED_KEYS: ReadonlySet<string> = new Set<string>([
   'btcSupplyDensityRaw',
   'vxTermSpread',
   'move',
+  'hyOas',
   ...OIS_HIKE_HORIZONS.map(([out]) => out),
   ...PUT_CALL_MAS.map(([out]) => out),
 ]);

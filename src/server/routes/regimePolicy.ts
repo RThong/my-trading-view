@@ -26,7 +26,13 @@ export type RegimeBody = {
  * 而库那半边由 daily job(别的进程)写 —— 只缓存合并结果的话,job 补上的那天最长要等满 TTL 才出现。
  * 存住 live 腿,缓存命中时就能拿它重新和库里的 merge 一次,和 readDbBacked 的动机同一个。
  */
-export type RegimeCached = { body: RegimeBody; moveLive: Point[]; sofrLive: Point[] };
+export type RegimeCached = {
+  body: RegimeBody;
+  moveLive: Point[];
+  sofrLive: Point[];
+  /** HY OAS 现拉腿,同 moveLive(库里是 daily job 镜像的长历史,见 jobs/creditSpreadSnapshot)。加这个字段前落盘的旧快照里没有 */
+  hyOasLive?: Point[];
+};
 
 /**
  * 缓存里的外部源部分 + 本次读库结果。缓存(尤其是重启后读回的盘上快照)里那份库读序列是旧的:
