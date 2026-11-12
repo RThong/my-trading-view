@@ -824,6 +824,12 @@ describe('画线', () => {
     expect(parseChartDoc(JSON.parse(JSON.stringify(extended)))).toEqual(extended);
     raw.panes[0].layers[0].drawings = [{ ...regression, extend: false }];
     expect(parseChartDoc(raw)).toEqual(base);
+
+    // 对数拟合:同 extend,true 往返保留,其它值整条丢掉
+    const logged = addDrawing(base, vix, { ...regression, log: true });
+    expect(parseChartDoc(JSON.parse(JSON.stringify(logged)))).toEqual(logged);
+    raw.panes[0].layers[0].drawings = [{ ...regression, log: 1 }];
+    expect(parseChartDoc(raw)).toEqual(base);
   });
 
   test('画线样式:颜色 / 线型往返保留,改回默认(undefined)字段删掉,非法值整条丢掉', () => {

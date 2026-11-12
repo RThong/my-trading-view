@@ -87,6 +87,7 @@ export type DrawingPoint = { time: string; value: number };
  * 只用 a、b 的日期,数值不用(画的时候按所挂那条序列现算;终点在已有 K 线上时之后的新数据不进区间、通道不变,
  * 终点在右边空白区时新数据落进区间才跟着变);存成点是为了和两点线共用画法 / 拖动。
  * extend = 按拟合出的斜率把三条线延长到图的右缘,拟合区间不变(同 TradingView Regression Trend 的 Extend lines)。
+ * log = 对数拟合:对 ln(值) 回归,斜率是固定增长率、上下轨是中线乘除同一个比例(TradingView 没有;长窗口看复利增长用)。
  * 竖线默认延伸到所有格(同 TradingView 竖线的 Extend);paneOnly = 只画所属图层那一格。
  * 各种画线都可带样式 color / dash(见 DrawingStyle)
  */
@@ -100,7 +101,7 @@ export type Drawing = DrawingStyle &
     | { id: string; kind: 'text'; a: DrawingPoint; text: string; box?: true }
     | { id: string; kind: 'callout'; a: DrawingPoint; b: DrawingPoint; text: string }
     | { id: string; kind: 'rect'; a: DrawingPoint; b: DrawingPoint; extend?: true }
-    | { id: string; kind: 'regression'; a: DrawingPoint; b: DrawingPoint; extend?: true }
+    | { id: string; kind: 'regression'; a: DrawingPoint; b: DrawingPoint; extend?: true; log?: true }
     | { id: string; kind: 'vline'; time: string; paneOnly?: true }
   );
 
@@ -836,7 +837,11 @@ const DRAWING_FIELDS: Record<Drawing['kind'], (x: Record<string, unknown>) => bo
   text: (x) => isPoint(x.a) && isText(x.text) && (x.box === undefined || x.box === true),
   callout: (x) => isPoint(x.a) && isPoint(x.b) && isText(x.text),
   rect: (x) => isPoint(x.a) && isPoint(x.b) && (x.extend === undefined || x.extend === true),
-  regression: (x) => isPoint(x.a) && isPoint(x.b) && (x.extend === undefined || x.extend === true),
+  regression: (x) =>
+    isPoint(x.a) &&
+    isPoint(x.b) &&
+    (x.extend === undefined || x.extend === true) &&
+    (x.log === undefined || x.log === true),
   vline: (x) => isDate(x.time) && (x.paneOnly === undefined || x.paneOnly === true),
 };
 
@@ -894,7 +899,14 @@ const CANONICAL_DRAWING: { [K in Drawing['kind']]: (d: Extract<Drawing, { kind: 
   text: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), text: d.text, ...(d.box && { box: true as const }) }),
   callout: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b), text: d.text }),
   rect: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b), ...(d.extend && { extend: true as const }) }),
-  regression: (d) => ({ id: d.id, kind: d.kind, a: pt(d.a), b: pt(d.b), ...(d.extend && { extend: true as const }) }),
+  regression: (d) => ({
+    id: d.id,
+    kind: d.kind,
+    a: pt(d.a),
+    b: pt(d.b),
+    ...(d.extend && { extend: true as const }),
+    ...(d.log && { log: true as const }),
+  }),
   vline: (d) => ({ id: d.id, kind: d.kind, time: d.time, ...(d.paneOnly && { paneOnly: true as const }) }),
 };
 
