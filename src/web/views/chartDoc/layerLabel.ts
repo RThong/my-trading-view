@@ -16,14 +16,15 @@ export function shiftText(shift: number) {
   return `${shift > 0 ? '右移' : '左移'} ${Math.abs(shift)} 天`;
 }
 
-export function layerLabel(doc: ChartDoc, l: Layer): string {
+/** withShift = false:不带「(右移 N 天)」,给另外用标签显示平移的地方(图例)用 */
+export function layerLabel(doc: ChartDoc, l: Layer, { withShift = true } = {}): string {
   // 图层写了 title 就用它(固定面板的格子都给了图例名),缺省才用注册表名;指标图层缺省 =「序列名 · 指标名」
   const name =
     l.title ??
     (l.indicator
       ? `${seriesLabel(l.series, l.calc)} · ${indicatorLabel(l, allSevenDay(doc))}`
       : seriesLabel(l.series, l.calc));
-  const shift = l.shift ? `(${shiftText(l.shift)})` : '';
+  const shift = l.shift && withShift ? `(${shiftText(l.shift)})` : '';
   const fit = l.fit ? ` · 叠加在${baseLabel(doc, l.fit.target)}上` : '';
   return `${name}${shift}${fit}`;
 }
