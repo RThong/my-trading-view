@@ -25,6 +25,12 @@ describe('内置指标表', () => {
     expect(INDICATORS.rsi.compute(pts, [6], ctx)).toEqual([rsi(closes, 6)]);
   });
 
+  test('RSI 30/50/70 分界线只挂一条,挂在周期最短(数据最多)的那条上,不管它排第几', () => {
+    const hosts = (periods: number[]) => INDICATORS.rsi.plots(periods).map((p) => p.refLines?.map((r) => r.price));
+    expect(hosts([6, 12, 24])).toEqual([[30, 50, 70], undefined, undefined]);
+    expect(hosts([200, 6])).toEqual([undefined, [30, 50, 70]]);
+  });
+
   test('365 年线:7×24 资产的默认那组自动带上、只在日线上有数;自定义周期不自动加,自己写了 365 就照画', () => {
     expect(periodsOf('ema', undefined, true)).toEqual([5, 20, 50, 144, 169, 200, 365]);
     expect(periodsOf('ema', undefined, false)).toEqual([5, 20, 50, 144, 169, 200]);

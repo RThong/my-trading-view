@@ -14,6 +14,8 @@ export type PlotSpec = {
   color: string;
   kind: 'line' | 'signed';
   fillTo?: { key: string; color: string };
+  /** 挂在这条上的水平参考线(RSI 30/50/70):一组只挂一条,挂多条会在同一格重复画 */
+  refLines?: { price: number; title: string }[];
 };
 
 export type IndicatorCtx = {
@@ -54,6 +56,8 @@ const BB3_COLOR = '#71717a'; // 3σ 外层(同 moomoo BOLL(20,2,1,3) 的 UPPER3/
 const BB_FILL = 'rgba(96, 165, 250, 0.1)'; // 通道底色:淡蓝,压在蜡烛下层
 // RSI 配色照 moomoo:6 橙 / 12 蓝 / 24 紫;MACD:DIF 橙 / DEA 蓝
 const RSI_COLORS = ['#d89050', '#3a72ce', '#c04fd6'];
+// 超卖 / 中轴 / 超买分界(同 TradingView / moomoo 的 RSI 默认水平线)
+const RSI_LEVELS = [30, 50, 70];
 
 function closes(pts: LinePoint[]) {
   return pts.map((p) => ({ time: p.time, close: p.value }));
@@ -133,13 +137,17 @@ export const INDICATORS: Record<IndicatorId, Def> = {
     label: 'RSI',
     place: 'pane',
     periods: [6, 12, 24],
-    plots: (periods) =>
-      periods.map((n, i) => ({
+    plots: (periods) => {
+      // 分界线挂在周期最短的那条:它暖机最短、数据最多,格里只要有 RSI 就有它(挂在没数据的线上,价位线画不出来)
+      const host = periods.indexOf(Math.min(...periods));
+      return periods.map((n, i) => ({
         key: `rsi${n}`,
         title: `RSI${n}`,
         color: RSI_COLORS[i % RSI_COLORS.length],
         kind: 'line',
-      })),
+        ...(i === host && { refLines: RSI_LEVELS.map((v) => ({ price: v, title: '' })) }),
+      }));
+    },
     compute: (pts, periods) => periods.map((n) => rsi(closes(pts), n)),
   },
 };
