@@ -48,7 +48,7 @@ function fmtChange({ delta, pct }: { delta: number; pct: number | null }): strin
  * 平移过的线图上的日期是挪过的,还原成原始日期再比(右移的线不还原会拿到一个还没到的日子);隐藏的线不参与。
  * 不写「最新」:存成图片后看图的人不知道最新是哪天(负责人 2026-11-13 定;TV 图例不写日期,我们的图要能单独拿出去看)
  */
-function latestTime(doc: ChartDoc, data: Record<string, LayerData>): string | undefined {
+export function latestTime(doc: ChartDoc, data: Record<string, LayerData>): string | undefined {
   return doc.panes
     .flatMap((p) => p.layers)
     .filter((l) => !isMarkLayer(l) && !l.hidden)
@@ -157,28 +157,55 @@ const TAG = 'rounded-sm border border-neutral-600 px-1 text-[10px] leading-4 tex
 /**
  * 线名后的状态标签:对数(按实际生效算 —— 轴上有 ≤0 的值时开了也按普通坐标画,不标)、平移几个交易日
  * (平移原本写在线名括号里,图例改用标签、线名不再带它,别处照旧)。
- * 倒轴不标(负责人 2026-11-12 定:看轴刻度方向即可,同 TradingView)
+ * 倒轴不标(负责人 2026-11-12 定:看轴刻度方向即可,同 TradingView)。屏幕图例与导出图片共用
  */
-function LayerTags({ pane, layer: l, data }: Pick<RowProps, 'pane' | 'layer' | 'data'>) {
+function layerTags(pane: Pane, l: Layer, data: Record<string, LayerData>): { text: string; title: string }[] {
   const log = pane.scales.find((sc) => sc.id === l.scale)?.log && canLogScale(pane, l.scale, data);
   const shift = l.shift ?? 0;
 
+  return [
+    ...(log ? [{ text: '对数', title: '对数坐标:等比例的涨跌画成等高,纵向距离代表百分比而不是点数' }] : []),
+    ...(shift !== 0
+      ? [
+          {
+            text: shiftText(shift),
+            title: `整条线往${shift > 0 ? '右(后)' : '左(前)'}挪了 ${Math.abs(shift)} 个交易日(看领先关系用):图上的位置不是它真实的日期`,
+          },
+        ]
+      : []),
+  ];
+}
+
+function LayerTags({ pane, layer: l, data }: Pick<RowProps, 'pane' | 'layer' | 'data'>) {
   return (
     <>
-      {log && (
-        <span className={TAG} title="对数坐标:等比例的涨跌画成等高,纵向距离代表百分比而不是点数">
-          对数
+      {layerTags(pane, l, data).map((t) => (
+        <span key={t.text} className={TAG} title={t.title}>
+          {t.text}
         </span>
-      )}
-      {shift !== 0 && (
-        <span
-          className={TAG}
-          title={`整条线往${shift > 0 ? '右(后)' : '左(前)'}挪了 ${Math.abs(shift)} 个交易日(看领先关系用):图上的位置不是它真实的日期`}
-        >
-          {shiftText(shift)}
-        </span>
-      )}
+      ))}
     </>
+  );
+}
+
+/** 导出图片里一格的图例:只有名字(说明哪条线是什么),不带读数 */
+export type SnapshotLegendItem = { label: string; swatch: string | 'candle'; tags: string[] };
+
+/**
+ * 导出图片用的图例:每格一行,显示中的线各给色块、名字、标签。读数是某一天的快照,图片拿出去看意义不大,
+ * 一条一行又占高度(负责人 2026-11-13 定;TV 的截图照屏幕图例原样带读数,这里有意不同)
+ */
+export function snapshotLegend(doc: ChartDoc, data: Record<string, LayerData>): SnapshotLegendItem[][] {
+  const sevenDay = allSevenDay(doc);
+
+  return doc.panes.map((pane) =>
+    pane.layers
+      .filter((l) => !l.hidden)
+      .map((l) => ({
+        label: layerLabel(doc, l, { withShift: false }),
+        swatch: drawnKind(l) === 'candle' ? 'candle' : (plotsOf(l, sevenDay)[0]?.color ?? l.color),
+        tags: layerTags(pane, l, data).map((t) => t.text),
+      })),
   );
 }
 

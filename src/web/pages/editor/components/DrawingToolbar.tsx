@@ -2,7 +2,6 @@
 // 状态与交互见 hooks/useDrawings。
 import {
   Camera,
-  Check,
   ChevronRight,
   Copy,
   Download,
@@ -361,7 +360,6 @@ function PluginButton({
 /** 相机按钮 + 菜单(同 TradingView 顶栏的 Chart snapshot:下载 / 复制,快捷键也同) */
 function SnapshotMenu({ snapshot, disabled }: { snapshot: SnapshotActions; disabled: boolean }) {
   const [open, setOpen] = useState(false);
-  const { copied } = snapshot;
   // 点完菜单项先收起菜单
   const run = (fn: () => void) => () => {
     setOpen(false);
@@ -372,9 +370,9 @@ function SnapshotMenu({ snapshot, disabled }: { snapshot: SnapshotActions; disab
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         disabled={disabled}
-        render={<Button variant="ghost" size="icon-sm" title={copied ? '已复制图片' : '导出图片'} className={IDLE} />}
+        render={<Button variant="ghost" size="icon-sm" title="导出图片" className={IDLE} />}
       >
-        {copied ? <Check /> : <Camera />}
+        <Camera />
       </PopoverTrigger>
       <PopoverContent side="right" align="end" sideOffset={6} className="w-44 gap-0 p-1 text-xs">
         <MenuSection title="导出图片">

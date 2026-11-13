@@ -1,65 +1,107 @@
-// 导出图片(同 TradingView 的「Download image / Copy image」,2026-11-13 演示页实测):只截图表区、不带工具栏,
-// 图例画进图里;我们另在顶上写标题、底下写落款(TV 底下是它的 logo 栏)。
-// 图表本身(各格、坐标轴、画线)走 lightweight-charts 的 takeScreenshot;图例是叠在画布上的 HTML,
-// 照屏幕上的位置把每个元素的底色 / 边框 / 文字描到画布上 —— 不另写一份图例排版,图例改了导出自动跟着变。
+// 导出图片(同 TradingView 的「Download image / Copy image」,2026-11-13 演示页实测):只截图表区、不带工具栏;
+// 我们另在顶上写标题、底下写落款(TV 底下是它的 logo 栏)。
+// 图表本身(各格、坐标轴、画线)走 lightweight-charts 的 takeScreenshot;图例不照搬屏幕上的那块(那是悬停读数用的),
+// 另画横排的「色块 + 名字 + 标签」(居中、放不下折行),只说明哪条线是什么(见 Legend.tsx 的 snapshotLegend):
+// 主图的在标题和图表之间单独一条,副图的在各自格子顶部。
 import type { IChartApi } from 'lightweight-charts';
+import { SIGNED_DOWN, SIGNED_UP } from '../../chart/palette';
+import type { SnapshotLegendItem } from '../../views/chartDoc/Legend';
+import { flowLayout } from '../../chart/flowLayout';
 
 const HEADER = 36;
 // 没标题时顶上也留一条窄空白:图表直接顶到卡片上沿不好看(负责人 2026-11-13 定,不自动拿序列名凑标题)
 const NO_TITLE_GAP = 12;
 const FOOTER = 26;
-const PAD = 12;
+// 标题、落款离卡片左右边的距离(12 太贴边,负责人 2026-11-13 嫌丑)
+const PAD = 20;
+// 图例一行:高、内边距、离两边价格轴至少留多少、色块宽、色块与名字 / 名字与标签 / 两项之间的间距
+const LEGEND = { h: 20, pad: 6, margin: 24, swatch: 12, gap: 6, itemGap: 16, tagPad: 4 };
+// 主图图例条与图表之间的空隙
+const LEGEND_BAND_GAP = 6;
 
-function visible(c: string): boolean {
-  return c !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(c);
+type Colors = { bg: string; text: string; font: string };
+
+/** 量一格图例的排版:每项宽(含标签)、标签在项内的位置、按 width 折行后每项落在哪行哪里 */
+function legendLayout(ctx: CanvasRenderingContext2D, items: SnapshotLegendItem[], width: number, font: string) {
+  const [nameFont, tagFont] = [`12px ${font}`, `10px ${font}`];
+  const measure = (s: string, f: string) => {
+    ctx.font = f;
+    return ctx.measureText(s).width;
+  };
+  // 每项:名字宽、各标签宽及其在项内的横坐标(标签跟在名字后面一字排开,不折行)
+  const parts = items.map((it) => {
+    const nameW = measure(it.label, nameFont);
+    const tagWs = it.tags.map((t) => measure(t, tagFont) + LEGEND.tagPad * 2);
+    const tagsStart = LEGEND.swatch + LEGEND.gap + nameW + LEGEND.gap;
+    const tags = flowLayout(tagWs, Number.POSITIVE_INFINITY, LEGEND.gap);
+    const itemW = it.tags.length ? tagsStart + (tags.rowWidths[0] ?? 0) : tagsStart - LEGEND.gap;
+    return { tagWs, tagXs: tags.items.map((p) => tagsStart + p.x), width: itemW };
+  });
+  const flow = flowLayout(
+    parts.map((p) => p.width),
+    width - LEGEND.margin * 2 - LEGEND.pad * 2,
+    LEGEND.itemGap,
+  );
+
+  return { parts, flow, nameFont, tagFont };
 }
 
 /**
- * 把 el 底下的元素按屏幕位置描到 ctx(坐标以 origin 左上为原点,CSS 像素)。
- * ponytail: 只描底色、边框、文字,图标(svg)略过 —— 图例里只有隐藏块前的小眼睛和 ⓘ 是图标,丢了不影响读数
+ * 一格的图例:横排(色块 名字 [标签]),每行在画图区(两根价格轴之间)居中、离两边的轴都隔开(同研报图);
+ * 放不下就换行(一格线多、名字长时一行会压到价格轴上被裁掉);每行垫一层半透明底色,免得字压在线上看不清
  */
-function paintDom(ctx: CanvasRenderingContext2D, el: Element, origin: DOMRect) {
-  const s = getComputedStyle(el);
-  if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0' || el instanceof SVGElement) return;
+function drawLegend(
+  ctx: CanvasRenderingContext2D,
+  items: SnapshotLegendItem[],
+  at: { x: number; y: number; width: number },
+  c: Colors,
+) {
+  if (!items.length) return;
+  const { parts, flow, nameFont, tagFont } = legendLayout(ctx, items, at.width, c.font);
 
-  const r = el.getBoundingClientRect();
-  const [x, y] = [r.left - origin.left, r.top - origin.top];
-  const radius = Number.parseFloat(s.borderTopLeftRadius) || 0;
-  if (r.width && visible(s.backgroundColor)) {
-    ctx.fillStyle = s.backgroundColor;
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = c.bg;
+  // 每行的左边:按行宽在画图区里居中
+  const rowX = flow.rowWidths.map((rw) => at.x + (at.width - rw - LEGEND.pad * 2) / 2);
+  flow.rowWidths.forEach((rw, row) => {
     ctx.beginPath();
-    ctx.roundRect(x, y, r.width, r.height, radius);
+    ctx.roundRect(rowX[row], at.y + row * LEGEND.h, rw + LEGEND.pad * 2, LEGEND.h, 4);
     ctx.fill();
-  }
+  });
+  ctx.restore();
 
-  const border = Number.parseFloat(s.borderTopWidth);
-  if (border && visible(s.borderTopColor)) {
-    ctx.strokeStyle = s.borderTopColor;
-    ctx.lineWidth = border;
-    ctx.beginPath();
-    ctx.roundRect(x + border / 2, y + border / 2, r.width - border, r.height - border, radius);
-    ctx.stroke();
-  }
+  ctx.textBaseline = 'middle';
+  items.forEach((it, i) => {
+    const x = rowX[flow.items[i].row] + LEGEND.pad + flow.items[i].x;
+    const mid = at.y + flow.items[i].row * LEGEND.h + LEGEND.h / 2;
 
-  el.childNodes.forEach((n) => {
-    if (n instanceof Element) {
-      paintDom(ctx, n, origin);
-      return;
+    // 色块同屏幕图例:蜡烛涨绿跌红各半,其余一小段线
+    if (it.swatch === 'candle') {
+      ctx.fillStyle = SIGNED_UP;
+      ctx.fillRect(x, mid - 5, LEGEND.swatch / 2, 10);
+      ctx.fillStyle = SIGNED_DOWN;
+      ctx.fillRect(x + LEGEND.swatch / 2, mid - 5, LEGEND.swatch / 2, 10);
+    } else {
+      ctx.fillStyle = it.swatch;
+      ctx.fillRect(x, mid - 1, LEGEND.swatch, 2);
     }
-    if (n.nodeType !== Node.TEXT_NODE) return;
 
-    // 只量去掉首尾空白的那段:折叠掉的空格不占位,带着画会整段右移
-    const raw = n.textContent ?? '';
-    const start = raw.search(/\S/);
-    if (start < 0) return;
-    const range = document.createRange();
-    range.setStart(n, start);
-    range.setEnd(n, raw.trimEnd().length);
-    const t = range.getBoundingClientRect();
-    ctx.font = `${s.fontWeight} ${s.fontSize} ${s.fontFamily}`;
-    ctx.fillStyle = s.color;
-    ctx.textBaseline = 'middle';
-    ctx.fillText(range.toString(), t.left - origin.left, t.top - origin.top + t.height / 2);
+    ctx.font = nameFont;
+    ctx.fillStyle = c.text;
+    ctx.fillText(it.label, x + LEGEND.swatch + LEGEND.gap, mid);
+
+    it.tags.forEach((t, j) => {
+      const [tx, tw] = [x + parts[i].tagXs[j], parts[i].tagWs[j]];
+      ctx.strokeStyle = c.text;
+      ctx.globalAlpha = 0.5;
+      ctx.beginPath();
+      ctx.roundRect(tx + 0.5, mid - 7.5, tw - 1, 15, 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.font = tagFont;
+      ctx.fillText(t, tx + LEGEND.tagPad, mid);
+    });
   });
 }
 
@@ -67,21 +109,36 @@ type Snapshot = {
   chart: IChartApi;
   /** 图表容器:截图的坐标原点 */
   origin: HTMLElement;
-  /** 叠在图上要一起画进去的 HTML(图例) */
-  overlay: HTMLElement | null;
+  /** 各格图例(按格的顺序)+ 各格顶边、左轴宽(同屏幕图例的位置,见 useCrosshairLegend 的 layout) */
+  legend: SnapshotLegendItem[][];
+  layout: { tops: number[]; left: number };
   title?: string;
-  /** 右下角落款(周期、日期) */
+  /** 标题色:页面正文色(主题的 ink),比轴刻度的灰更实 */
+  ink: string;
+  /** 右下角落款(周期、数据截至哪天) */
   footer: string;
 };
 
-/** 拼出导出用的整张图:标题栏 + 图表(含图例)+ 落款栏,再套上外框 */
-export function snapshotCanvas({ chart, origin, overlay, title, footer }: Snapshot): HTMLCanvasElement {
+/**
+ * 拼出导出用的整张图:标题栏 + 主图图例条 + 图表 + 落款栏,再套上外框。
+ * 第 1 格的图例画在图表上方单独一条(不压在画图区里,同研报图);副图的图例只能画在各自格子顶部(截图是一整张,格子之间插不进空白)
+ */
+export function snapshotCanvas({ chart, origin, legend, layout, title, ink, footer }: Snapshot): HTMLCanvasElement {
   const shot = chart.takeScreenshot(true);
   // 截图是设备像素(Retina 上 2 倍),下面按 CSS 像素画
   const scale = shot.width / origin.clientWidth;
   const [w, h] = [shot.width / scale, shot.height / scale];
-  const header = title ? HEADER : NO_TITLE_GAP;
   const { background, textColor, fontFamily } = chart.options().layout;
+  const bg = 'color' in background ? background.color : background.topColor;
+  const colors = { bg, text: textColor, font: fontFamily };
+  // 画图区 = 左轴右边起、时间轴那么宽(左右两根价格轴之间)
+  const plot = { x: layout.left, width: chart.timeScale().width() };
+  // 主图图例条的高度:先拿一块草稿画布量出折成几行
+  const scratch = document.createElement('canvas').getContext('2d');
+  const mainRows =
+    scratch && legend[0]?.length ? legendLayout(scratch, legend[0], plot.width, fontFamily).flow.rowWidths.length : 0;
+  const titleH = title ? HEADER : NO_TITLE_GAP;
+  const header = titleH + (mainRows ? mainRows * LEGEND.h + LEGEND_BAND_GAP : 0);
 
   const out = document.createElement('canvas');
   out.width = shot.width;
@@ -89,20 +146,24 @@ export function snapshotCanvas({ chart, origin, overlay, title, footer }: Snapsh
   const ctx = out.getContext('2d');
   if (!ctx) return shot;
   ctx.scale(scale, scale);
-  ctx.fillStyle = 'color' in background ? background.color : background.topColor;
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, w, h + header + FOOTER);
   ctx.drawImage(shot, 0, header, w, h);
 
-  ctx.save();
-  ctx.translate(0, header);
-  if (overlay) paintDom(ctx, overlay, origin.getBoundingClientRect());
-  ctx.restore();
+  drawLegend(ctx, legend[0] ?? [], { ...plot, y: titleH }, colors);
+  legend.slice(1).forEach((items, i) => {
+    drawLegend(ctx, items, { ...plot, y: header + (layout.tops[i + 1] ?? 0) + 6 }, colors);
+  });
 
   ctx.fillStyle = textColor;
   ctx.textBaseline = 'middle';
   if (title) {
-    ctx.font = `600 16px ${fontFamily}`;
-    ctx.fillText(title, PAD, HEADER / 2);
+    // 标题用页面的字体和正文色、加粗加大(图表的字体 / 轴刻度灰写标题发虚,负责人 2026-11-13 嫌丑)
+    ctx.font = `700 18px ${getComputedStyle(document.body).fontFamily}`;
+    ctx.fillStyle = ink;
+    // 很长的标题(最多 80 字)按卡片宽压窄,不被截掉
+    ctx.fillText(title, PAD, HEADER / 2, w - PAD * 2);
+    ctx.fillStyle = textColor;
   }
   ctx.font = `12px ${fontFamily}`;
   ctx.globalAlpha = 0.6;

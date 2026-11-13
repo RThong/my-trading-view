@@ -1,7 +1,18 @@
 import { useRef, useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Copy, PanelRightClose, PanelRightOpen, Upload } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  Copy,
+  PanelRightClose,
+  PanelRightOpen,
+  Upload,
+} from 'lucide-react';
 import type { Interval } from '../../hooks/interval';
 import { Button } from '../../components/ui/button';
+import { cn } from '../../lib/utils';
 import { Textarea } from '../../components/ui/textarea';
 import { AnalysisPanel, pairRequests, resolvePair } from './components/AnalysisPanel';
 import { allDrawings, type ChartDoc, EMPTY_DOC, parseChartDoc } from '../../views/chartDoc/chartDoc';
@@ -33,7 +44,6 @@ import { useVisibleRange } from './hooks/useVisibleRange';
 // 全部编辑状态就是 doc 这一份 JSON(右下角可查看)。
 export function ChartEditorPage({ interval }: { interval: Interval }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const legendRef = useRef<HTMLDivElement>(null);
   const actions = useChartDoc();
   const { doc, load, toggleSeries, setStretches } = actions;
   const [showJson, setShowJson] = useState(false);
@@ -54,7 +64,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
   const visibleRange = useVisibleRange(chartRef);
   const selectedLineRef = useLineDrag(containerRef, chartRef, seriesRef, doc);
   const plugins = usePluginSettings();
-  const snapshot = useSnapshot(containerRef, chartRef, legendRef, doc.title, interval);
+  const snapshot = useSnapshot(containerRef, chartRef, doc, data, layout, interval);
   useEditorShortcuts(containerRef, {
     undo: actions.undo,
     redo: actions.redo,
@@ -79,6 +89,23 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
 
   return (
     <div className="flex h-full gap-3">
+      {/* 导出图片做完的提示:页面顶部居中,几秒后自己消失(见 useSnapshot) */}
+      {snapshot.message && (
+        <div
+          role="status"
+          className={cn(
+            'fixed top-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-md border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm shadow-lg',
+            snapshot.message.error ? 'text-amber-500' : 'text-neutral-100',
+          )}
+        >
+          {snapshot.message.error ? (
+            <CircleAlert className="size-4 shrink-0" />
+          ) : (
+            <CircleCheck className="size-4 shrink-0 text-green-500" />
+          )}
+          {snapshot.message.text}
+        </div>
+      )}
       <DrawingToolbar
         tool={drawing.tool}
         onTool={drawing.chooseTool}
@@ -101,17 +128,14 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
           {empty ? (
             <EmptyState onLoad={(d) => load(d, '载入示例图')} />
           ) : (
-            // 包一层(不占布局)给导出图片认图例:要画进图里的就是这块底下的元素
-            <div ref={legendRef} className="contents">
-              <Legend
-                doc={doc}
-                interval={interval}
-                data={data}
-                hoverTime={hoverTime}
-                layout={layout}
-                onHidden={actions.setHidden}
-              />
-            </div>
+            <Legend
+              doc={doc}
+              interval={interval}
+              data={data}
+              hoverTime={hoverTime}
+              layout={layout}
+              onHidden={actions.setHidden}
+            />
           )}
           <DrawingBar
             doc={doc}
