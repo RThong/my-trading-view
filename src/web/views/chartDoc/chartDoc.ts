@@ -143,7 +143,8 @@ export type Pane = {
   desc?: string;
 };
 
-export type ChartDoc = { v: 1; panes: Pane[] };
+/** title:整张图的标题(导出图片时写在顶上);没有就不写这个字段 */
+export type ChartDoc = { v: 1; title?: string; panes: Pane[] };
 
 /** 图层挂轴的选择:内置左右轴、新开一根独立轴,或挂到本格已有的某根独立轴。 */
 export type ScaleChoice = 'right' | 'left' | 'newOverlay' | { overlay: string };
@@ -271,7 +272,7 @@ export function normalize(doc: ChartDoc): ChartDoc {
       return { ...p, layers, scales: [...declared, ...missing] };
     });
 
-  return { v: 1, panes };
+  return { v: 1, ...(doc.title ? { title: doc.title } : {}), panes };
 }
 
 function mapLayer(doc: ChartDoc, layerId: string, fn: (l: Layer, p: Pane) => Partial<Layer>): ChartDoc {
@@ -702,6 +703,15 @@ export function clearDrawings(doc: ChartDoc, { keepLocked = false } = {}): Chart
   return mapDrawings(doc, (ds) => (keepLocked ? ds.filter((d) => d.locked) : []));
 }
 
+/** 改标题:去掉首尾空白,空了就删掉字段;没变返回原文档(不记撤销步) */
+export function setDocTitle(doc: ChartDoc, title: string): ChartDoc {
+  const t = title.trim();
+  if (t === (doc.title ?? '')) return doc;
+  const { title: _, ...rest } = doc;
+
+  return t ? { ...rest, title: t } : rest;
+}
+
 /** 文档里还没用到的第一个调色板颜色;全用过了就按图层数轮转。 */
 export function nextColor(doc: ChartDoc, palette: readonly string[]): string {
   const used = new Set(doc.panes.flatMap((p) => p.layers.map((l) => l.color)));
@@ -1038,11 +1048,12 @@ function dropBadDrawings(panes: unknown[]): unknown[] {
 }
 
 /**
- * 结构不对 / id 冲突返回 null(坏画线例外:只丢那一条,见 dropBadDrawings);
+ * 结构不对 / id 冲突返回 null(坏画线例外:只丢那一条,见 dropBadDrawings);标题不是字符串也整张拒收 ——
+ * 标题只会是编辑器自己写的字符串,不是就说明这份 JSON 不是本编辑器出的,不按「只丢那一项」放行。
  * 通过则过一遍 normalize(修补引用不一致这类可自愈的问题)。
  */
 export function parseChartDoc(x: unknown): ChartDoc | null {
-  if (!isObj(x) || x.v !== 1 || !Array.isArray(x.panes)) return null;
+  if (!isObj(x) || x.v !== 1 || !Array.isArray(x.panes) || (x.title !== undefined && !isStr(x.title))) return null;
   const raw = dropBadDrawings(x.panes);
   if (!raw.every(isPane) || !idsUnique(raw)) return null;
 
@@ -1055,5 +1066,5 @@ export function parseChartDoc(x: unknown): ChartDoc | null {
     ...(p.desc !== undefined ? { desc: p.desc } : {}),
   }));
 
-  return normalize({ v: 1, panes });
+  return normalize({ v: 1, ...(x.title ? { title: x.title } : {}), panes });
 }

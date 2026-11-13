@@ -1,7 +1,11 @@
 // 画线的界面:图左边一条竖向工具栏(同 TradingView 左栏:单按钮 + 工具组)+ 选中一条画线后图上方的小浮条。
 // 状态与交互见 hooks/useDrawings。
 import {
+  Camera,
+  Check,
   ChevronRight,
+  Copy,
+  Download,
   Eye,
   EyeOff,
   ChartSpline,
@@ -35,6 +39,7 @@ import { layerLabel } from '../../../views/chartDoc/layerLabel';
 import { type PluginControls, POINT_PLUGINS } from '../drawingPlugins';
 import type { PointPlugin } from '../drawingPlugins/types';
 import type { DrawingTool } from '../hooks/useDrawings';
+import type { SnapshotActions } from '../hooks/useSnapshot';
 
 const OWNER_HINT = '画在这一格里选中的那条线上(先点一下线),没选中就画在这一格第一条线上';
 const TOOL: Record<DrawingTool, { icon: LucideIcon; name: string; hint: string }> = {
@@ -353,6 +358,40 @@ function PluginButton({
   );
 }
 
+/** 相机按钮 + 菜单(同 TradingView 顶栏的 Chart snapshot:下载 / 复制,快捷键也同) */
+function SnapshotMenu({ snapshot, disabled }: { snapshot: SnapshotActions; disabled: boolean }) {
+  const [open, setOpen] = useState(false);
+  const { copied } = snapshot;
+  // 点完菜单项先收起菜单
+  const run = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        disabled={disabled}
+        render={<Button variant="ghost" size="icon-sm" title={copied ? '已复制图片' : '导出图片'} className={IDLE} />}
+      >
+        {copied ? <Check /> : <Camera />}
+      </PopoverTrigger>
+      <PopoverContent side="right" align="end" sideOffset={6} className="w-44 gap-0 p-1 text-xs">
+        <MenuSection title="导出图片">
+          <MenuItem
+            icon={Download}
+            name="下载图片"
+            hint="下载 PNG(⌥⌘S)"
+            active={false}
+            onClick={run(snapshot.download)}
+          />
+          <MenuItem icon={Copy} name="复制图片" hint="复制到剪贴板(⇧⌘S)" active={false} onClick={run(snapshot.copy)} />
+        </MenuSection>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export function DrawingToolbar({
   tool,
   onTool,
@@ -366,6 +405,7 @@ export function DrawingToolbar({
   disabled,
   plugins,
   history,
+  snapshot,
 }: {
   tool: DrawingTool;
   onTool: (t: DrawingTool) => void;
@@ -384,6 +424,8 @@ export function DrawingToolbar({
   plugins: PluginControls;
   /** 撤销 / 重做(撤的是整张图的编辑,不只画线);label 为 undefined = 没有可撤 / 可重做的 */
   history: { undo: () => void; redo: () => void; undoLabel?: string; redoLabel?: string };
+  /** 导出图片:下载 / 复制到剪贴板 */
+  snapshot: SnapshotActions;
 }) {
   const [last, setLast] = useState(loadLast);
 
@@ -470,6 +512,7 @@ export function DrawingToolbar({
       >
         <Redo2 />
       </Button>
+      <SnapshotMenu snapshot={snapshot} disabled={disabled} />
     </div>
   );
 }
