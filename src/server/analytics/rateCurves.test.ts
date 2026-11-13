@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { ERIS_OIS_TENORS, CREDIT_RATING, CREDIT_TERM, computeBeiCurve } from './rateCurves';
+import { ERIS_OIS_TENORS, CREDIT_RATING, CREDIT_TERM, computeBeiCurve, dropLowPrints } from './rateCurves';
 
 describe('rateCurves 纯转换', () => {
   it('Eris OIS 期限表含短端到长端', () => {
@@ -64,5 +64,23 @@ describe('computeBeiCurve(BEI = 名义 − TIPS 实际)', () => {
     ]);
     expect(Object.keys(series)).toEqual(['5Y']);
     expect(unavailable).toEqual(['10Y', '30Y']);
+  });
+});
+
+describe('dropLowPrints', () => {
+  const pts = (vs: number[]) => vs.map((value, i) => ({ date: `2026-01-${String(i + 1).padStart(2, '0')}`, value }));
+
+  it('剔掉明显偏低的单点(实测 2025-03-28 那种 151 夹在 ~280 中间)', () => {
+    expect(dropLowPrints(pts([280, 275, 151, 283, 290])).map((p) => p.value)).toEqual([280, 275, 283, 290]);
+  });
+
+  it('首尾只有一侧邻居 → 不判(最新的点哪怕大幅收窄也照常显示)', () => {
+    expect(dropLowPrints(pts([400, 400, 400, 300])).map((p) => p.value)).toEqual([400, 400, 400, 300]);
+    expect(dropLowPrints(pts([150, 280, 280, 280])).map((p) => p.value)).toEqual([150, 280, 280, 280]);
+  });
+
+  it('向上跳不剔(信用事件);整体下移后的新水平也不剔', () => {
+    expect(dropLowPrints(pts([300, 310, 420, 305])).map((p) => p.value)).toEqual([300, 310, 420, 305]);
+    expect(dropLowPrints(pts([400, 400, 400, 300, 300, 300, 300])).map((p) => p.value)).toHaveLength(7);
   });
 });

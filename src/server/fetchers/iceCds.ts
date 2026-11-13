@@ -12,7 +12,7 @@ export type CdsPoint = { ticker: string; price: number };
 export type CdsSnapshot = { date: string; points: CdsPoint[] };
 
 // 名单内 ticker → 要取的票息档(字符串,对齐 instrumentName 第 5 段)。不在 Map = 名单外。
-const COUPON = new Map(AI_CDS.map((c) => [c.ticker, String(c.coupon ?? 100)]));
+const COUPON = new Map(AI_CDS.filter((c) => !c.jpy).map((c) => [c.ticker, String(c.coupon ?? 100)]));
 
 // 每名取标准 5Y 基准合约:SNRFOR + USD + 该名配置的票息档(默认 100bp,高收益名 500bp)。同名若多档到期,取最长到期
 // (= on-the-run 5Y,短档是历史残留)。maturity 为 YYYY-MM-DD,字典序即时间序。

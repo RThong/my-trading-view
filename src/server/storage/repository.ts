@@ -61,6 +61,16 @@ export function insertMarketSeries(db: Database, rows: MarketSeriesRow[]): void 
   );
 }
 
+/** 删掉某序列的若干天(源头撤回了那天的数据时用,如 DTCC 成交被撤销后那天已无有效成交)。 */
+export function deleteMarketSeriesDates(db: Database, seriesId: string, dates: string[]): void {
+  const stmt = db.query(`DELETE FROM market_series WHERE series_id = $id AND obs_date = $date`);
+  db.transaction(() =>
+    dates.forEach((d) => {
+      stmt.run({ $id: seriesId, $date: d });
+    }),
+  )();
+}
+
 export function getMarketSeries(db: Database, seriesId: string): Array<{ date: string; value: number }> {
   return db
     .query(`

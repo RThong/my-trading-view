@@ -114,7 +114,7 @@ export const AI_DOCS = {
     ],
   },
   // 默认显示 core 的 7 家(与服务端 AI_CDS 的 core 同一份名单:core 缺失会让每日 job 告警);
-  // Broadcom / Dell / Intel 较次要,CoreWeave(~1000bp)/ SpaceX(~200bp)量级会把其余几家压扁,在图例里按需点开
+  // Broadcom / Dell / Intel 较次要,CoreWeave(~1000bp)/ SpaceX(~200bp)/ 软银(~500bp)量级会把其余几家压扁,在图例里按需点开
   aiCds: curveHistoryDoc({
     family: 'cds',
     shown: AI_CDS.filter((c) => c.core).map((c) => c.name),
@@ -124,6 +124,7 @@ export const AI_DOCS = {
       '利差越高 = 市场定价的违约风险越大;甲骨文因 AI 举债显著高于同类,是 AI 信用风险风向标。',
       'CoreWeave(默认隐藏,~1000bp 量级会压扁其余几家)= 租算力给巨头、自己举债买卡的新云,信贷型脆弱的前线;2026-10-15 起才有数据。',
       'SpaceX(默认隐藏,~200bp 量级)= FT 报道 AI 对冲盘集中买 CDS 的七家之一;2026-10-20 起才有数据。',
+      'SoftBank (JPY)(默认隐藏,~500bp 量级)= OpenAI / Stargate 背后的最大举债方。ICE 不清算日本名字,改用 DTCC 公开的成交价:当天各笔成交的中位数,没成交的日子空着(2026 年约六成工作日有点,2025 年约三成)。⚠️ 是日元计价合约(回收率 35%、日元利率换算):比同一家的美元 CDS 读数偏低,和美元那几家比水平时打个折扣,比走势不受影响。',
       '纵轴从 0 起(对齐常见 CDS 图):高度比例 = 真实幅度,不被自动缩放放大。',
     ].join('\n'),
     zeroBase: true,
