@@ -33,6 +33,13 @@ describe('withConnection', () => {
     expect(ws.closed).toBe(1);
   });
 
+  test('SDK 以裸字符串 reject(自带 5s 超时)→ 转成带原文的 Error', async () => {
+    const ws = { ...hangingWs(), GetOptionChain: () => Promise.reject('timeout') };
+    const p = withConnection(CFG, (w) => w.GetOptionChain({}), { connect: async () => ws });
+
+    await expect(p).rejects.toThrow('moomoo: timeout');
+  });
+
   test('小写方法(stop / start 等 SDK 自身方法)不套截止时间', async () => {
     const ws = { ...hangingWs(), ping: () => 'pong' };
     const r = await withConnection(CFG, async (w) => w.ping(), { connect: async () => ws, timeoutMs: 30 });

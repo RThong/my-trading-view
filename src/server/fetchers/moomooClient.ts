@@ -130,6 +130,8 @@ export async function withConnection<T>(
     if (e && typeof e === 'object' && !(e instanceof Error) && 'retMsg' in e) {
       throw new Error(`moomoo: ${e.retMsg} (retType=${e.retType})`);
     }
+    // SDK 自带 5s 请求超时(base.js sendBuff),超时 reject 的是裸字符串 'timeout'。
+    if (typeof e === 'string') throw new Error(`moomoo: ${e}`);
     throw e;
   } finally {
     disconnect(ws);
