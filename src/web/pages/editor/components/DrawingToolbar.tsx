@@ -7,6 +7,8 @@ import {
   ChartSpline,
   Lock,
   LockOpen,
+  Redo2,
+  Undo2,
   type LucideIcon,
   MessageSquare,
   Minus,
@@ -363,6 +365,7 @@ export function DrawingToolbar({
   onClear,
   disabled,
   plugins,
+  history,
 }: {
   tool: DrawingTool;
   onTool: (t: DrawingTool) => void;
@@ -379,6 +382,8 @@ export function DrawingToolbar({
   /** 空图:没有线可挂,整排禁用 */
   disabled: boolean;
   plugins: PluginControls;
+  /** 撤销 / 重做(撤的是整张图的编辑,不只画线);label 为 undefined = 没有可撤 / 可重做的 */
+  history: { undo: () => void; redo: () => void; undoLabel?: string; redoLabel?: string };
 }) {
   const [last, setLast] = useState(loadLast);
 
@@ -442,6 +447,28 @@ export function DrawingToolbar({
         className={IDLE}
       >
         <Trash2 />
+      </Button>
+      <div className="my-1 h-px w-5 bg-neutral-800" />
+      {/* 空图也能点:清空了还要撤回来。提示写出撤的是哪一步(同 TradingView 的「Undo remove trendline」) */}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        title={history.undoLabel ? `撤销 ${history.undoLabel}(⌘Z)` : '没有可撤销的'}
+        disabled={!history.undoLabel}
+        onClick={history.undo}
+        className={IDLE}
+      >
+        <Undo2 />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        title={history.redoLabel ? `重做 ${history.redoLabel}(⌘⇧Z)` : '没有可重做的'}
+        disabled={!history.redoLabel}
+        onClick={history.redo}
+        className={IDLE}
+      >
+        <Redo2 />
       </Button>
     </div>
   );

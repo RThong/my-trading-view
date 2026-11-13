@@ -1,11 +1,13 @@
-// 编辑状态:一份 ChartDoc + 一组编辑动作。动作全部走 chartDoc.ts 的纯函数(updater 形式,不依赖闭包里的旧 doc)。
-// 最后一次显示的图存在 localStorage,刷新 / 切页回来接着用。
+// 编辑状态:一份 ChartDoc + 一组编辑动作 + 撤销 / 重做。动作全部走 chartDoc.ts 的纯函数(updater 形式,不依赖闭包里的旧 doc),
+// 每个动作带一个中文名记进历史(见 docHistory)。最后一次显示的图存在 localStorage,刷新 / 切页回来接着用;历史不落盘。
 import { useEffect, useState } from 'react';
 import { EDITOR_STORAGE_KEY, pendingDoc, useOpenInEditor } from '../../../views/chartDoc/openInEditor';
 import { SERIES_COLORS } from '../../../chart/palette';
 import type { IndicatorId } from '../../../chart/indicatorDefs';
+import { commit, drawingEditLabel, initHistory, redo, undo, type History } from '../docHistory';
 import {
   EMPTY_DOC,
+  allDrawings,
   addDrawing,
   addLayer,
   clearDrawings,
@@ -65,9 +67,20 @@ function loadSaved(): ChartDoc {
 }
 
 export function useChartDoc() {
-  const [doc, setDoc] = useState<ChartDoc>(loadSaved);
+  // 用 state 不用 ref:撤销 / 重做按钮能不能点、提示写什么要跟着重渲染
+  const [hist, setHist] = useState<History>(() => initHistory(loadSaved()));
+  const { doc } = hist;
+
+  /** 改文档并记一步;label 可按改之前的文档现定(如勾选序列是加还是减);mergeKey 见 docHistory.commit */
+  const edit = (label: string | ((d: ChartDoc) => string), fn: (d: ChartDoc) => ChartDoc, mergeKey?: string) => {
+    const now = Date.now();
+    setHist((h) => commit(h, fn(h.doc), typeof label === 'string' ? label : label(h.doc), now, mergeKey));
+  };
+  /** 整张换图(示例图、导入 JSON、清空、在编辑器中打开)也算一步:误换了能撤回 */
+  const load = (next: ChartDoc, label = '载入图表') => edit(label, () => next);
+
   // 固定面板点了「在编辑器中打开」:已挂载的编辑器直接换成那张图(没挂载的,挂载时从存档读到)
-  useOpenInEditor(setDoc);
+  useOpenInEditor((d) => load(d, '在编辑器中打开'));
 
   // 文档每变一次就落盘(文档只经编辑动作或校验过的导入改变,存下来的一定是能显示的图)
   useEffect(() => {
@@ -78,41 +91,62 @@ export function useChartDoc() {
     }
   }, [doc]);
 
+  // 只看普通图层:A − B 不算「A 在图上」(计算图层在卡片上单独删)
+  const onChart = (d: ChartDoc, series: string) =>
+    d.panes.some((p) => p.layers.some((l) => l.series === series && !l.calc));
+
   return {
     doc,
-    load: setDoc,
+    load,
+    undo: () => setHist(undo),
+    redo: () => setHist(redo),
+    /** 撤销 / 重做各自会撤掉 / 重做哪一步;没有可撤的为 undefined */
+    undoLabel: hist.past.at(-1)?.label,
+    redoLabel: hist.future[0]?.label,
     /** 下拉框勾选 / 取消勾选:在图上的就整条拿掉,不在的加到第 0 格 */
     toggleSeries: (series: string) =>
-      setDoc((d) =>
-        // 只看普通图层:A − B 不算「A 在图上」(计算图层在卡片上单独删)
-        d.panes.some((p) => p.layers.some((l) => l.series === series && !l.calc))
-          ? removeSeries(d, series)
-          : addLayer(d, series, nextColor(d, SERIES_COLORS)),
+      edit(
+        (d) => (onChart(d, series) ? '移除序列' : '添加序列'),
+        (d) => (onChart(d, series) ? removeSeries(d, series) : addLayer(d, series, nextColor(d, SERIES_COLORS))),
       ),
-    remove: (layerId: string) => setDoc((d) => removeLayer(d, layerId)),
+    remove: (layerId: string) => edit('删除图层', (d) => removeLayer(d, layerId)),
     move: (layerId: string, target: PaneTarget, before?: string) =>
-      setDoc((d) => moveLayer(d, layerId, target, before)),
-    setScale: (layerId: string, choice: ScaleChoice) => setDoc((d) => setLayerScale(d, layerId, choice)),
-    setColor: (layerId: string, color: string) => setDoc((d) => setLayerColor(d, layerId, color)),
-    setStretches: (stretches: number[]) => setDoc((d) => setStretches(d, stretches)),
-    setShift: (layerId: string, shift: number) => setDoc((d) => setLayerShift(d, layerId, shift)),
-    setHidden: (layerId: string, hidden: boolean) => setDoc((d) => setLayerHidden(d, layerId, hidden)),
-    setRender: (layerId: string, render: LayerRender | undefined) => setDoc((d) => setLayerRender(d, layerId, render)),
-    setCalc: (layerId: string, calc: Calc | undefined) => setDoc((d) => setLayerCalc(d, layerId, calc)),
-    addIndicator: (layerId: string, id: IndicatorId) => setDoc((d) => addIndicator(d, layerId, id)),
+      edit('移动图层', (d) => moveLayer(d, layerId, target, before)),
+    setScale: (layerId: string, choice: ScaleChoice) => edit('换轴', (d) => setLayerScale(d, layerId, choice)),
+    // 取色器拖动时连续触发:并成一步
+    setColor: (layerId: string, color: string) =>
+      edit('改线条颜色', (d) => setLayerColor(d, layerId, color), `layer-color:${layerId}`),
+    setStretches: (stretches: number[]) => edit('调整格高', (d) => setStretches(d, stretches)),
+    setShift: (layerId: string, shift: number) => edit('平移', (d) => setLayerShift(d, layerId, shift)),
+    setHidden: (layerId: string, hidden: boolean) =>
+      edit(hidden ? '隐藏线' : '显示线', (d) => setLayerHidden(d, layerId, hidden)),
+    setRender: (layerId: string, render: LayerRender | undefined) =>
+      edit('改画法', (d) => setLayerRender(d, layerId, render)),
+    setCalc: (layerId: string, calc: Calc | undefined) => edit('改计算', (d) => setLayerCalc(d, layerId, calc)),
+    addIndicator: (layerId: string, id: IndicatorId) => edit('加指标', (d) => addIndicator(d, layerId, id)),
     setPeriods: (layerId: string, periods: number[] | undefined) =>
-      setDoc((d) => setIndicatorPeriods(d, layerId, periods)),
+      edit('改指标周期', (d) => setIndicatorPeriods(d, layerId, periods)),
     setInvert: (paneId: string, scaleId: string, invert: boolean) =>
-      setDoc((d) => setScaleInvert(d, paneId, scaleId, invert)),
-    setLog: (paneId: string, scaleId: string, log: boolean) => setDoc((d) => setScaleLog(d, paneId, scaleId, log)),
+      edit(invert ? '倒轴' : '取消倒轴', (d) => setScaleInvert(d, paneId, scaleId, invert)),
+    setLog: (paneId: string, scaleId: string, log: boolean) =>
+      edit(log ? '对数坐标' : '取消对数坐标', (d) => setScaleLog(d, paneId, scaleId, log)),
     /** 叠加对比:先按找到的偏移平移,再挂自己的轴叠到 fit.target 上(invert = 这根轴要不要倒) */
     overlay: (layerId: string, shift: number, fit: Fit, invert: boolean) =>
-      setDoc((d) => applyLayerFit(setLayerShift(d, layerId, shift), layerId, fit, invert)),
-    clearFit: (layerId: string) => setDoc((d) => clearLayerFit(d, layerId)),
-    addDrawing: (layerId: string, drawing: Drawing) => setDoc((d) => addDrawing(d, layerId, drawing)),
-    updateDrawing: (drawing: Drawing) => setDoc((d) => updateDrawing(d, drawing)),
-    removeDrawing: (id: string) => setDoc((d) => removeDrawing(d, id)),
-    clearDrawings: (keepLocked: boolean) => setDoc((d) => clearDrawings(d, { keepLocked })),
+      edit('叠加对比', (d) => applyLayerFit(setLayerShift(d, layerId, shift), layerId, fit, invert)),
+    clearFit: (layerId: string) => edit('取消叠加', (d) => clearLayerFit(d, layerId)),
+    addDrawing: (layerId: string, drawing: Drawing) => edit('新建画线', (d) => addDrawing(d, layerId, drawing)),
+    // 改的是哪儿按改之前的那条比出来(见 drawingEditLabel)
+    updateDrawing: (drawing: Drawing) => {
+      const now = Date.now();
+      setHist((h) => {
+        const prev = allDrawings(h.doc).find((e) => e.drawing.id === drawing.id)?.drawing;
+        const { label, mergeKey } = drawingEditLabel(prev, drawing);
+        return commit(h, updateDrawing(h.doc, drawing), label, now, mergeKey);
+      });
+    },
+    removeDrawing: (id: string) => edit('删除画线', (d) => removeDrawing(d, id)),
+    clearDrawings: (keepLocked: boolean) =>
+      edit(keepLocked ? '删除未锁定的画线' : '删除全部画线', (d) => clearDrawings(d, { keepLocked })),
   };
 }
 
