@@ -62,7 +62,7 @@ type TextDraft = {
   layerId: string;
   a: DrawingPoint;
   text: string;
-  /** 改已有的那条时带着它的颜色(编辑框、写回文档都要用) */
+  /** 改已有的那条时带着它的颜色(编辑框按它显示字色 / 框色) */
   color?: string;
 } & ({ kind: 'text'; box: boolean } | { kind: 'callout'; b: DrawingPoint });
 /**
@@ -316,10 +316,15 @@ function regressionShape(ctx: Ctx, s: ISeriesApi<SeriesType>, d: Extract<Drawing
   return [{ id: d.id, kind: 'regression', x1: pa[0], y1: pa[1], x2: pb[0], y2: pb[1], mid, up, down, r: g.r }];
 }
 
-/** 第 i 格此刻要画的像素(带上画线的颜色 / 线型) */
-function paneShapes(ctx: Ctx, entries: Entry[], i: number): Shape[] {
+/** 第 i 格此刻要画的像素(带上画线的颜色 / 线型 / 锁定;lockAll = 左栏锁定全部,每条都按锁定画光标) */
+function paneShapes(ctx: Ctx, entries: Entry[], i: number, lockAll = false): Shape[] {
   return entries.flatMap((e) =>
-    drawingShapes(ctx, e, i).map((sh) => ({ ...sh, color: e.drawing.color, dash: e.drawing.dash })),
+    drawingShapes(ctx, e, i).map((sh) => ({
+      ...sh,
+      color: e.drawing.color,
+      dash: e.drawing.dash,
+      locked: lockAll || e.drawing.locked,
+    })),
   );
 }
 
@@ -601,11 +606,14 @@ function redrawAll(prims: Map<IPaneApi<Time>, DrawingsPrimitive>) {
 // 输入框里打字、弹层(侧栏的设置浮层、下拉菜单)里按键都不归画线管:弹层自己在 document 冒泡阶段听 Esc 关闭
 const POPUP = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
-/** 已有的那条文字 / 气泡(拿来就地改);别的画线或已不在文档里就是 null */
+/**
+ * 已有的那条文字 / 气泡(拿来就地改);别的画线、已不在文档里、锁定的就是 null ——
+ * 锁定 = 整条冻结:改字也不让(清空文字会按「空白就删」把它删掉,绕过锁定),双击 / 铅笔都打不开,要改先解锁
+ */
 function existingText(doc: ChartDoc, id: string): TextDraft | null {
   const entry = allDrawings(doc).find((e) => e.drawing.id === id);
   const d = entry?.drawing;
-  if (!entry || !d) return null;
+  if (!entry || !d || d.locked) return null;
 
   const base = { id, layerId: entry.layer.id, color: d.color };
   if (d.kind === 'text') return { ...base, kind: 'text', a: d.a, text: d.text, box: !!d.box };
@@ -636,6 +644,25 @@ function notOurs(t: EventTarget | null): boolean {
   );
 }
 
+// 左栏「锁定全部」跨刷新记住(只是偏好,读写失败就当没锁)
+const LOCK_ALL_KEY = 'mtv:drawings:lockAll';
+
+function loadLockAll(): boolean {
+  try {
+    return localStorage.getItem(LOCK_ALL_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveLockAll(on: boolean) {
+  try {
+    localStorage.setItem(LOCK_ALL_KEY, on ? '1' : '0');
+  } catch {
+    /* 隐私模式存不上:本次会话照常 */
+  }
+}
+
 export function useDrawings(
   containerRef: RefObject<HTMLDivElement | null>,
   chartRef: RefObject<IChartApi | null>,
@@ -649,6 +676,8 @@ export function useDrawings(
   const [tool, setTool] = useState<DrawingTool>('cursor');
   const [selected, setSelected] = useState<string | null>(null);
   const [hidden, setHidden] = useState(false);
+  // 锁定全部(同 TradingView 左栏的 Lock all drawings):每条都按锁定处理,单条的 locked 不动
+  const [lockAll, setLockAll] = useState(loadLockAll);
   const [editing, setEditing] = useState<TextEditing | null>(null);
   // 选中的那条被删了(删图层、撤掉画线、导入别的图)就不算选中:nextId 可能把同一个 id 发给新画的线;
   // 所属图层被隐藏了也不算:看不见的线别留着浮条、被 Delete 删掉
@@ -662,6 +691,7 @@ export function useDrawings(
   const toolRef = useRef(tool);
   const selectedRef = useRef(live);
   const hiddenRef = useRef(hidden);
+  const lockAllRef = useRef(lockAll);
   const draftRef = useRef<Draft | null>(null);
   // 正在就地编辑的那条不画在画布上(编辑框盖在原处显示它;气泡按空文字画、编辑框盖在框上,见 editingCallout)
   const editingRef = useRef<TextEditing | null>(null);
@@ -703,6 +733,7 @@ export function useDrawings(
     toolRef.current = tool;
     selectedRef.current = live;
     hiddenRef.current = hidden;
+    lockAllRef.current = lockAll;
     editingRef.current = editing;
     actionsRef.current = actions;
     transformRef.current = transformPoint;
@@ -744,6 +775,7 @@ export function useDrawings(
                     ...editingCallout(docRef.current, editingRef.current),
                   ],
                   api.paneIndex(),
+                  lockAllRef.current,
                 )
               : [];
           const el = containerRef.current;
@@ -950,6 +982,11 @@ export function useDrawings(
         setSelected(null);
         return;
       }
+      // 锁定的只选中、不接管这次按键:按住拖照常是平移图表(同 TradingView)
+      if (entry.drawing.locked || lockAllRef.current) {
+        setSelected(h.id);
+        return;
+      }
       take();
       setSelected(h.id);
       gestureRef.current = {
@@ -983,7 +1020,7 @@ export function useDrawings(
       if (toolRef.current !== 'cursor' || h) e.stopPropagation();
 
       // 双击文字 = 就地改它(监听里读 docRef:闭包里的 doc 是挂监听那次的旧文档)
-      const t = toolRef.current === 'cursor' && h ? existingText(docRef.current, h.id) : null;
+      const t = toolRef.current === 'cursor' && h && !lockAllRef.current ? existingText(docRef.current, h.id) : null;
       if (t) setEditing(placeEditor(el, chart, ctx, docRef.current, t));
     };
 
@@ -1091,7 +1128,11 @@ export function useDrawings(
         e.stopPropagation();
         return;
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && id && !gestureRef.current) {
+      const locked =
+        lockAllRef.current ||
+        (!!id && allDrawings(docRef.current).some((en) => en.drawing.id === id && en.drawing.locked));
+      // 锁定的按 Delete 不删(同 TradingView),也不吞掉这次按键
+      if ((e.key === 'Delete' || e.key === 'Backspace') && id && !locked && !gestureRef.current) {
         e.preventDefault();
         e.stopPropagation();
         actionsRef.current.removeDrawing(id);
@@ -1141,6 +1182,11 @@ export function useDrawings(
     setHidden(!hidden);
   };
 
+  const toggleLockAll = () => {
+    setLockAll(!lockAll);
+    saveLockAll(!lockAll);
+  };
+
   /** 浮条「对数」勾选框能不能勾上(见 logFittable),按当前视图现算 */
   const canLogFit = (id: string) => {
     const chart = chartRef.current;
@@ -1154,7 +1200,7 @@ export function useDrawings(
     const chart = chartRef.current;
     const el = containerRef.current;
     const ctx = chart && makeCtx(chart, seriesRef.current, axisRef.current, transformRef.current);
-    const t = existingText(doc, id);
+    const t = lockAll ? null : existingText(doc, id);
     if (el && chart && ctx && t) setEditing(placeEditor(el, chart, ctx, doc, t));
   };
 
@@ -1176,10 +1222,12 @@ export function useDrawings(
 
     const drawing =
       ed.kind === 'callout'
-        ? { kind: 'callout' as const, a: ed.a, b: ed.b, text, color: ed.color }
-        : { kind: 'text' as const, a: ed.a, text, color: ed.color, ...(ed.box && { box: true as const }) };
+        ? { kind: 'callout' as const, a: ed.a, b: ed.b, text }
+        : { kind: 'text' as const, a: ed.a, text, ...(ed.box && { box: true as const }) };
     const id = ed.id ?? nextId(doc, 'd');
-    if (ed.id) actions.updateDrawing({ id, ...drawing });
+    // 改已有的:以原画线为底只盖文字相关字段,颜色、锁定等其它字段原样保留(以后新加的字段也不会漏)
+    const orig = allDrawings(doc).find((e) => e.drawing.id === id)?.drawing;
+    if (ed.id) actions.updateDrawing({ ...orig, id, ...drawing });
     else actions.addDrawing(ed.layerId, { id, ...drawing });
     setSelected(id);
   };
@@ -1191,6 +1239,8 @@ export function useDrawings(
     setSelected,
     hidden,
     toggleHidden,
+    lockAll,
+    toggleLockAll,
     editing,
     editText,
     commitText,
