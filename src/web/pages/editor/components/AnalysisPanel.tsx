@@ -34,11 +34,20 @@ const PAIR_LOCKED = '已叠加,先取消叠加才能换线';
 /** 点「叠加对比」的结果,记着是哪一对、按 A 多少平移算的(换了 A / B 就不显示;日期是 A 未平移的) */
 type ShownResult = { a: string; b: string; key: string; aShift: number; invert: boolean; res: OverlayResult };
 
+/**
+ * 能参与叠加对比的图层:折线和蜡烛(蜡烛按收盘算;B 按原值画在自己的轴上、只换算轴的范围,所以蜡烛当 B 也不用换算开高低收)。
+ * 事件竖线没有值;柱状(符号柱)不能隐藏后继续撑轴,当 A 时 B 的轴会定住;
+ * 指标图层画的是展开后的子线,父层既没有自己的 series、也不是一条值,不参与
+ */
+function overlayable(doc: ChartDoc): Layer[] {
+  return doc.panes
+    .flatMap((p) => p.layers)
+    .filter((l) => (drawnKind(l) === 'line' || drawnKind(l) === 'candle') && !l.indicator);
+}
+
 /** 选中的两条序列图层:选的不在图上了就退回默认(第一 / 第二条)。 */
 export function resolvePair(doc: ChartDoc, pair: { a?: string; b?: string }): { a?: Layer; b?: Layer } {
-  // 叠加对比只认折线:事件竖线没有值;柱状(符号柱)不能隐藏后继续撑轴,当 A 时 B 的轴会定住;
-  // 指标图层画的是展开后的子线,父层既没有自己的 series、也不是一条值,不参与
-  const series = doc.panes.flatMap((p) => p.layers).filter((l) => drawnKind(l) === 'line' && !l.indicator);
+  const series = overlayable(doc);
   // 叠加期间 A / B 锁定为叠加的那一对(同时只有一组叠加):换线要先取消叠加
   const fitted = series.find((l) => l.fit);
   if (fitted) return { a: series.find((l) => l.id === fitted.fit?.target), b: fitted };
@@ -62,9 +71,7 @@ export function AnalysisPanel({ doc, points, visibleRange, pair, onPair, actions
   const [open, setOpen] = useState(true);
   const [result, setResult] = useState<ShownResult | null>(null);
 
-  // 叠加对比只认折线:事件竖线没有值;柱状(符号柱)不能隐藏后继续撑轴,当 A 时 B 的轴会定住;
-  // 指标图层画的是展开后的子线,父层既没有自己的 series、也不是一条值,不参与
-  const series = doc.panes.flatMap((p) => p.layers).filter((l) => drawnKind(l) === 'line' && !l.indicator);
+  const series = overlayable(doc);
   const { a, b } = resolvePair(doc, pair);
   const pairLocked = series.some((l) => l.fit);
   const aPts = a && points[requestKey(rawRequest(a))];

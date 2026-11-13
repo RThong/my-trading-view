@@ -147,20 +147,23 @@ function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
   const autoscaleInfoProvider =
     boxAutoscaleProvider(scale?.clampVisibleTo, expandRange(scale?.expandVisibleTo, levelRange(layer))) ??
     PASS_AUTOSCALE;
-  // 蜡烛:涨绿跌红(同符号柱的两色),图层颜色不起作用
-  if (drawnKind(layer) === 'candle')
+  // 蜡烛:涨绿跌红(同符号柱的两色),图层颜色不起作用。
+  // 被叠加的 A 隐藏时同折线(见下):照旧进自动缩放撑住 A 轴,只是画成透明 —— 蜡烛没有 lineVisible 可关
+  if (drawnKind(layer) === 'candle') {
+    const [up, down] = hidden ? ['transparent', 'transparent'] : [SIGNED_UP, SIGNED_DOWN];
     return {
       priceScaleId: layer.scale,
-      visible: !hidden,
+      visible: !hidden || fitTargets.has(layer.id),
       lastValueVisible: !hidden,
       autoscaleInfoProvider,
-      upColor: SIGNED_UP,
-      downColor: SIGNED_DOWN,
-      borderUpColor: SIGNED_UP,
-      borderDownColor: SIGNED_DOWN,
-      wickUpColor: SIGNED_UP,
-      wickDownColor: SIGNED_DOWN,
+      upColor: up,
+      downColor: down,
+      borderUpColor: up,
+      borderDownColor: down,
+      wickUpColor: up,
+      wickDownColor: down,
     };
+  }
   if (drawnKind(layer) === 'signed')
     return {
       priceScaleId: layer.scale,
