@@ -23,6 +23,7 @@ import { useDrawings } from './hooks/useDrawings';
 import { runPlugins, usePluginSettings } from './drawingPlugins';
 import { useLineDrag } from './hooks/useLineDrag';
 import { useSidebar } from './hooks/useSidebar';
+import { useUndoShortcuts } from './hooks/useUndoShortcuts';
 import { useVisibleRange } from './hooks/useVisibleRange';
 
 // 图表编辑页:空白图上自己挑序列、分格叠放、把一条线叠到另一条上看劈叉。只负责组装 ——
@@ -50,6 +51,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
   const visibleRange = useVisibleRange(chartRef);
   const selectedLineRef = useLineDrag(containerRef, chartRef, seriesRef, doc);
   const plugins = usePluginSettings();
+  useUndoShortcuts(containerRef, actions.undo, actions.redo);
   const drawing = useDrawings(containerRef, chartRef, seriesRef, selectedLineRef, doc, data, actions, (p, c) =>
     runPlugins(p, c, plugins.settings),
   );
@@ -80,11 +82,12 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
         onClear={actions.clearDrawings}
         disabled={empty}
         plugins={plugins}
+        history={actions}
       />
       <div className="relative min-w-0 flex-1">
         <div ref={containerRef} className="absolute inset-0" />
         {empty ? (
-          <EmptyState onLoad={load} />
+          <EmptyState onLoad={(d) => load(d, '载入示例图')} />
         ) : (
           <Legend
             doc={doc}
@@ -139,7 +142,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
           selected={seriesLayers.filter((l) => !l.calc).map((l) => ({ series: l.series, color: l.color }))}
           canClear={seriesLayers.length > 0}
           onToggle={toggleSeries}
-          onClear={() => load(EMPTY_DOC)}
+          onClear={() => load(EMPTY_DOC, '清空图表')}
         />
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
           <LayerList doc={doc} data={data} actions={actions} />
@@ -162,7 +165,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
             {showJson ? <ChevronDown /> : <ChevronRight />}
             查看 JSON
           </Button>
-          {showJson && <JsonView json={JSON.stringify(doc, null, 2)} onLoad={load} />}
+          {showJson && <JsonView json={JSON.stringify(doc, null, 2)} onLoad={(d) => load(d, '导入 JSON')} />}
         </div>
       </aside>
     </div>

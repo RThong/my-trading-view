@@ -1116,7 +1116,8 @@ export function useDrawings(
     // 在 window 的捕获阶段听:画线这边用掉了这次按键就截下,useLineDrag 的 Esc 不再顺带清掉选中的线
     // (先点选 B 线再画,Esc 取消重画时还挂 B;用户定)。没东西可取消时不截,Esc 照旧去清选中的线
     const onKey = (e: KeyboardEvent) => {
-      if (notOurs(e.target)) return;
+      // 切到别的页面时编辑器只是藏起来(keep-alive,不卸载):那里按 Delete / Esc 别动编辑器里的画线
+      if (notOurs(e.target) || !el.getClientRects().length) return;
       const id = selectedRef.current;
       if (e.key === 'Escape') {
         // 先收起测量尺,再取消画到一半 / 拖到一半的(拖动丢掉草稿、线回原处),再退出绘图工具,最后取消选中画线
