@@ -21,6 +21,7 @@ import { updateVrpInputs } from './vrpInputs';
 import { updateVxTermStructure } from './vxTermStructure';
 import { updateErisSnapshot } from './erisSnapshot';
 import { updateIceCds } from './iceCdsSnapshot';
+import { updateSbgCds, type SbgCdsResult } from './sbgCdsSnapshot';
 import { updateCreditSpreads } from './creditSpreadSnapshot';
 import { updateMoveIndex, type MoveUpdateResult } from './moveSnapshot';
 import { updateIsm, type IsmResult } from './ismSnapshot';
@@ -48,6 +49,8 @@ type RunDailyJobOpts = {
   erisUpdater?: (db: Database) => Promise<{ total: number }>;
   /** ICE 单名 CDS(AI 巨头 + 甲骨文)更新器(注入式;CLI 传 updateIceCds,测试省略以免联网)。 */
   iceCdsUpdater?: (db: Database) => Promise<{ total: number; missing: string[] }>;
+  /** 软银 5Y CDS(DTCC 成交披露)更新器(注入式;CLI 传 updateSbgCds,测试省略以免联网)。 */
+  sbgCdsUpdater?: (db: Database) => Promise<SbgCdsResult>;
   /** ICE BofA 信用利差(FRED 只留 3 年,落库保历史)更新器(注入式;CLI 传 updateCreditSpreads,测试省略以免联网)。 */
   creditSpreadUpdater?: (db: Database) => Promise<{ total: number; succeeded: number; failures: string[] }>;
   /** MOVE 债市波动率更新器(注入式;CLI 传 updateMoveIndex,测试省略以免联网)。 */
@@ -142,6 +145,17 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       return missing.length
         ? { status: 'failed', error: `核心标的缺失(数据源可能变动):${missing.join(', ')}`, recordsWritten: total }
         : { status: 'success', recordsWritten: total };
+    });
+  }
+
+  // sbg_cds 分组:软银 5Y CDS(DTCC 成交)。源只留约 2 年、每轮重拉最近两周;任一文件拉失败或两周零成交 → failed,
+  // 当天后续触发点重跑(失败的那天下一轮的窗口还覆盖得到,不会永久丢)。
+  if (opts.sbgCdsUpdater) {
+    await withJobRun(opts.db, 'sbg_cds', async () => {
+      const { written, failed } = await opts.sbgCdsUpdater!(opts.db);
+      return failed.length
+        ? { status: 'failed', error: failed.join('; '), recordsWritten: written }
+        : { status: 'success', recordsWritten: written };
     });
   }
 
@@ -296,6 +310,7 @@ const DAILY_GROUPS: GroupTable = {
   vx_term_structure: () => ({ vxUpdater: updateVxTermStructure }),
   eris_snapshot: () => ({ erisUpdater: updateErisSnapshot }),
   ice_cds: () => ({ iceCdsUpdater: updateIceCds }),
+  sbg_cds: () => ({ sbgCdsUpdater: (db: Database) => updateSbgCds(db) }),
   credit_spread: () => ({ creditSpreadUpdater: updateCreditSpreads }),
   move: () => ({ moveUpdater: updateMoveIndex }),
   ism: () => ({ ismUpdater: updateIsm }),

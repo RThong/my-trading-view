@@ -85,7 +85,8 @@ export const CREDIT_TERM: { tenor: string; series: string }[] = [
 // core = 前端默认展示的 7 家;缺任一即视为数据源异常(见 missingCoreCds)。
 // 注:前端「AI CDS」tab 默认显示的就是这份 core 名单(pages/ai/docs 直接读它)。
 // coupon 缺省 = 100bp(投资级惯例);高收益名只挂 500bp 合约,需单独给。
-export const AI_CDS: { ticker: string; name: string; core?: boolean; coupon?: number }[] = [
+// jpy = 不走 ICE:日元计价、来自 DTCC 成交披露,存库 series_id = DTCC_CDS_{ticker}(见 fetchers/dtccSbgCds)。
+export const AI_CDS: { ticker: string; name: string; core?: boolean; coupon?: number; jpy?: boolean }[] = [
   { ticker: 'ORCLE', name: 'Oracle', core: true },
   { ticker: 'MSFT', name: 'Microsoft', core: true },
   { ticker: 'ALPHINC', name: 'Alphabet', core: true },
@@ -102,4 +103,8 @@ export const AI_CDS: { ticker: string; name: string; core?: boolean; coupon?: nu
   // FT 2026-10-20(大摩数据):AI 对冲盘集中买的七家 CDS 之一,其余六家上面都有。2026-10-20 起才攒数。
   // 非 core:新挂的名,缺失不该让 job failed;~227bp 低于甲骨文,不压扁别的线,但默认勾选须与 core 名单一致,故不默认勾。
   { ticker: 'SPACEXP', name: 'SpaceX' },
+  // AI 链上最大的举债方之一(OpenAI / Stargate)。ICE 没有日本名字 → DTCC 成交价,日元计价、成交稀(2026 年约六成工作日有点,2025 年约三成)。
+  // 日元计价比同一家的美元 CDS 读数偏低(日本公司违约时日元大概率同时贬值),跟美元那几家比水平时要记着。
+  // 非 core:~500bp 量级会压扁其余几家;缺数不该让 ice_cds 告警(它自己一组 sbg_cds)。
+  { ticker: 'SBG', name: 'SoftBank (JPY)', jpy: true },
 ];

@@ -13,6 +13,9 @@ import {
   computeBeiCurve,
   AI_CDS,
   cdsPriceToSpreadBp,
+  dropLowPrints,
+  JPY_CDS,
+  USD_CDS,
 } from '../analytics/rateCurves';
 import { fetchJgbCurve } from '../fetchers/mofJgb';
 import {
@@ -80,14 +83,17 @@ async function buildUst(fetchCurve: () => Promise<Record<string, Point[]>>, teno
 }
 
 // 从 market_series 读一组 (label→symbol),按 xform 转值;缺行的 label 进 unavailable。
-// xform 逐名给(缺省恒等):如 CDS 各名票息不同。
-function buildFromDb(pairs: { label: string; symbol: string; xform?: (v: number) => number }[]): CurveBody {
+// xform 逐名给(缺省恒等):如 CDS 各名票息不同。clean = 换算后对整条序列再过一遍(如剔离群成交)。
+function buildFromDb(
+  pairs: { label: string; symbol: string; xform?: (v: number) => number; clean?: (pts: Point[]) => Point[] }[],
+): CurveBody {
   const db = openDb();
   try {
     // 一次查库,再声明式拆成 series(有数据)/ unavailable(缺数据)两组。
     const fetched = pairs.map((p) => ({
       label: p.label,
       xform: p.xform ?? ((v: number) => v),
+      clean: p.clean ?? ((pts: Point[]) => pts),
       rows: getMarketSeries(db, p.symbol),
     }));
     const series = Object.fromEntries(
@@ -96,7 +102,9 @@ function buildFromDb(pairs: { label: string; symbol: string; xform?: (v: number)
         .map((f) => [
           f.label,
           // xform 无解(NaN,如 CDS 价 ≤ 回收价)的点丢掉,不吐 null 给前端
-          f.rows.map((r) => ({ date: r.date, value: f.xform(r.value) })).filter((p) => Number.isFinite(p.value)),
+          f.clean(
+            f.rows.map((r) => ({ date: r.date, value: f.xform(r.value) })).filter((p) => Number.isFinite(p.value)),
+          ),
         ]),
     );
     const unavailable = fetched.filter((f) => !f.rows.length).map((f) => f.label);
@@ -133,15 +141,17 @@ function buildOis(): CurveBody {
   return buildFromDb(ERIS_OIS_TENORS.map((t) => ({ label: t, symbol: `ERIS_OIS_${t}` })));
 }
 
-// AI 巨头 + 甲骨文 + CoreWeave + SpaceX 单名 CDS:读库原始价,xform 成约定 spread(bp)。"tenor" 复用为公司名。
+// AI 巨头 + 甲骨文 + CoreWeave + SpaceX + 软银 单名 CDS:读库原始价,xform 成约定 spread(bp)。"tenor" 复用为公司名。
 // 非真曲线(公司无序),但复用 CurveBody 给前端「AI CDS」tab 当时间序列看(每名一条线,见 web/pages/curveHistory)。
 // 票息按名不同(CoreWeave 500bp 档),故逐名给 xform。
 function buildAiCds(): CurveBody {
   return buildFromDb(
     AI_CDS.map((c) => ({
       label: c.name,
-      symbol: `ICE_CDS_${c.ticker}`,
-      xform: (v: number) => cdsPriceToSpreadBp(v, c.coupon),
+      symbol: c.jpy ? `DTCC_CDS_${c.ticker}` : `ICE_CDS_${c.ticker}`,
+      xform: (v: number) => cdsPriceToSpreadBp(v, c.coupon, c.jpy ? JPY_CDS : USD_CDS),
+      // 成交价(单笔可能少报前端费)才剔;ICE 是清算所结算价,不动
+      clean: c.jpy ? dropLowPrints : undefined,
     })),
   );
 }
