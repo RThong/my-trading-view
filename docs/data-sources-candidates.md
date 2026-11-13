@@ -4,7 +4,31 @@
 > 「查过、确认没有的」——先读那一节，能省掉重复调研。
 > 本文只放**实际访问 / 下载验证过**的候选。未验的线索单独放在文末 §4，别混。
 >
-> 最近核实：2026-11-12（加 §2.0 DTCC 日元 OIS；§4 补 OpenBB 线索）。
+> 最近核实：2026-11-13（OpenBB 系统性对照：开头速查表、§1 新增多条、§2 JGB VIX 补洞、§4 线索结案、§4.5 否定结论、§4.6 新坑）。
+
+---
+
+## 速查：OpenBB 系统性对照（2026-11-13）
+
+对照对象：OpenBB（`github.com/openbq-org/OpenBB`，组织由 OpenBB-finance 改名而来，旧地址 301 过去），
+`openbb_platform/providers` 下 16 个 provider 的 models + utils 逐个读过，地区联储 138 个文件逐个过；
+EIA 那约 250 个模型是 API v2 的机械镜像，按「任意 v2 序列」处理。下表每条都**实际下载 / 调 API 验过**，
+细节见各节；看过但不做的见 §4.5，新发现的坑见 §4.6。
+
+| # | 内容 | 对应视角 | 依赖 | 回填 | 工作量 | 建议 | 详见 |
+|---|---|---|---|---|---|---|---|
+| 1 | CDS 指数（CDX IG/HY、iTraxx Main/Crossover）：ICE 结算价每天存 + DTCC 补约 2.2 年 | 信用 | 零 / `fflate` | ICE 只有当天；DTCC 约 2.2 年 | ICE 约 2h；回填约 1 天 | **接，越早越好** | §1.2 |
+| 2 | 单名 CDS 用 DTCC 回填 ICE 那几家的历史（拼接已核对） | AI 链信用 | `fflate` | 约 2.2 年 | 约半天 | **接** | §1.1 |
+| 3 | JGB VIX 用 CBOE `SPJGBV_History.csv` 补 JPX 文件缺的天 | 日本 | 零 | 2008-11 起 | 小 | **接** | §2.0′ |
+| 4 | EIA 馏分油 / 汽油表观需求（`WDIUPUS2` / `WGFUPUS2`） | 能源实物面 | 零 | 全历史 | 加两个 id | **接** | EIA 节 |
+| 5 | DTCC 利率文件：美元会议日远期 OIS（拆单次 FOMC 定价）+ 美元零息通胀掉期（补 1Y/2Y 通胀预期） | 利率 / 通胀 | `fflate` | 约 2.0 年，必须落库 | 中到大 | **接**（和 §2.0 日元 OIS 并成一个 job） | §1.3 |
+| 6 | CBOE 延迟期权链，当 moomoo 的备份 | 期权 | 零 | 只有当天 | 约半天 | 接（先当备份并行跑） | §1.4 |
+| 7 | 旧金山联储期限溢价（独立的第三个模型，日频） | 利率拆解 | `fflate` | 全历史 | 小 | 记入候选（中） | §1.5 |
+| 8 | IMF PortWatch 霍尔木兹海峡每日过船数 | 能源 | 零 | 2019 起 | 小 | 记入候选（中） | §1.6 |
+| 9 | FINRA TRACE 单券收益率：Oracle / CoreWeave 等信用历史追到债券发行日 | AI 链信用 | 零（要先拿 cookie） | 发行日起 | 中 | 记入候选（中） | §1.7 |
+| 10 | 其余 15 条低优先（VXSMH、政策利率分布、CMDI、SCE、GSCPI…） | 各视角 | — | — | 小 | 记入候选（低） | §1.8 |
+
+另有一处**现有源要改**：`cdn.cboe.com` 现在 307 跳到 `cdn-api.cboe.com`（`fetchers/cboeIndex.ts`、`cboeVx.ts` 仍写旧域名，`fetch` 跟随跳转所以没坏），见 §4.6。
 
 ---
 
@@ -56,7 +80,7 @@ DATE  ACMY01..ACMY10 (fitted yields)  ACMTP01..ACMTP10 (期限溢价)  ACMRNY01.
 
 ---
 
-### ⭐ DTCC 单名 CDS 成交 → 回填 ICE 那几家的历史（2026-11-13 实测）
+### ⭐ 1.1 DTCC 单名 CDS 成交 → 回填 ICE 那几家的历史（2026-11-13 实测，拼接已核对）
 
 源与解析已落地（软银那条，见 `AGENTS.md` 取数总览 DTCC 行 + `fetchers/dtccSbgCds.ts`），扩到别的名字**不用再调研端点**。
 
@@ -85,12 +109,223 @@ DATE  ACMY01..ACMY10 (fitted yields)  ACMTP01..ACMTP10 (期限溢价)  ACMRNY01.
 
 名字是按 `UPI Underlier Name` / `Underlying Asset Name` 正则粗匹配数的，接的时候要按 RED 码 / ISIN 精确认（软银那条踩过：标识有四种写法，按名字会混进同名的别家公司）。
 
-⚠️ 接之前要处理的：
+#### 拼接核对结果（2026-11-13，家里那台的库，重叠期 2026-07-24 ~ 11-12）
 
-1. **先在家里那台的库上核对拼接**：成交中位数 vs ICE 结算价在重叠期差多少。差得小直接拼；差得大就在图上标出来源分界
-2. **票息按名单配**：CoreWeave 只挂 500bp，其余 100bp（`AI_CDS[].coupon`）；`Fixed rate-Leg 1` 是小数（`0.01` / `0.05`）
-3. 都是美元计价，没有软银那种日元偏差，换算直接用 `USD_CDS` 参数
-4. 软银那条的另外几个坑同样适用：只收 `Event type = TRAD`（排除更替 NOVA / 压缩 COMP）、跨文件剔掉被撤销（EROR）的成交、2025-11 前表头不带引号、文件里混着几年前的补报单（只收披露前 7 天内成交的）、偶有前端费少报的离群单（`dropLowPrints`）
+方法：DTCC 当天各笔成交折成价取中位数，和同日 ICE 结算价都用 `cdsPriceToSpreadBp`（`USD_CDS`）换成 bp 再比。
+付款方向用**前一天的 ICE 价**当锚来选（不用当天，免得拿答案对答案）。核对脚本是一次性的，没进仓库。
+
+扣掉应计票息之后（见下面坑 1），**差的中位数是 0.0bp**：
+
+| 公司 | 重叠天数 | 每天差多少（中位） | 90% 的天数差在多少以内 |
+|---|---|---|---|
+| Nvidia / Meta / Broadcom / Alphabet | 71~76 | 0.7~1.0bp | ≤ 3bp |
+| Oracle / Amazon / Microsoft | 66~74 | 0.7~0.8bp | 7~8bp |
+| SpaceX | 16 | 2.4bp | 6bp |
+| Dell / Intel | 42 / 51 | 1.2~1.6bp | 9 / 24bp（成交稀） |
+| CoreWeave | 18 | 10bp（约 1%，水平在 1100bp） | 44bp |
+| Apple | 6 | — | 太稀，**不回填** |
+
+**结论：可以拼，只补 ICE 开始存数（2026-07-24）之前的日子，ICE 仍是主数据。** 不拿 DTCC 换掉 ICE 的理由：
+没成交的日子是空的（重叠 80 天里 Dell 只有 42 天）、成交分散在白天而 ICE 是收盘价（行情剧烈的日子偏差最大）、
+付款方向要靠锚来猜（没有 ICE 当锚就只能用自己前一天，选错会一路错下去）、规则多容易悄悄算错、文件次日才出全。
+
+⚠️ 接的时候要处理的：
+
+1. **成交里的前端费含应计票息，必须扣掉**。不扣时 DTCC 比 ICE 系统性低约 3bp（投资级公司低 3~6%），偏差随距上个付息日的天数线性变大：
+
+   | 应计票息（点） | 0.00 | 0.05 | 0.10 | 0.15 | 0.20+ |
+   |---|---|---|---|---|---|
+   | 修正前价差（DTCC − ICE，点） | 0.073 | 0.074 | 0.120 | 0.172 | 0.230 |
+   | 修正后 | 0.043 | 0.007 | −0.005 | −0.002 | −0.001 |
+
+   公式：u = 前端费 ÷ 名义本金（%），应计 = 票息 × 距上个付息日（3/20、6/20、9/20、12/20）天数 ÷ 360；
+   买方付时价 = 100 − u − 应计，卖方付时价 = 100 + u − 应计。
+   ⚠️ **已上线的软银那条（`fetchers/dtccSbgCds.ts`）也没扣**，读数偏低、每季度锯齿一次，最多约 0.25 点（~500bp 水平上约 6bp），要一起修
+2. **换新合约那周成交价分两团**：9/21~9/23 Meta 同一份 2031-12 合约，前端费一团 0.3~0.5%、一团 1.9~2.0%，笔数相当，中位数会偏 30~40bp；9/24 起恢复一团。
+   Oracle、Intel 同样。原因没查明。处理：按前一天水平选最近的那一团，或者跳过换合约那周。
+   软银代码里「同日同合约两笔差 4 倍」的少报单（`dropLowPrints`）可能是同一回事，接的时候顺便核对
+3. **公司识别**：公司名常常是债券描述（`NT`、`SR NT`），要用名字正则 + RED 码前 6 位 / ISIN 前 8 位（发行人前缀）一起认；
+   一批行的标识只写通用的 `XSSNRREFOBL0`，只能靠名字认。实测前缀：
+
+   ```
+   Oracle 6EC42L US68389X   Microsoft US594918 5EDDA9   Alphabet US02079K 0C27GT   Amazon 0C5448 US023135
+   Apple 03AFCJ US037833    Nvidia 6D76CM US67066G      Broadcom 1C248K US11135F   Intel US458140 49D954
+   Meta UZEAAG US30303M     CoreWeave 239FAV US21873S   SpaceX 8CA76V US84615Q USU8531H   Dell 26B72T US247025
+   ```
+
+   正则别写太宽：`INTEL` 会撞上 Intelsat，用 `INTEL CORP`；Dell 用 `DELL INC`
+4. 只收 `UPI FISN` 为 `NA/CDS Corp SN` 或 `NA/CDS Corp SN Sr` 的（排除 Sub / Jr / Basket / Sov）
+5. **票息按名单配**：CoreWeave 只挂 500bp，其余 100bp（`AI_CDS[].coupon`）；`Fixed rate-Leg 1` 是小数（`0.01` / `0.05`）。
+   都是美元计价，没有软银那种日元偏差，换算直接用 `USD_CDS` 参数
+6. 软银那条的另外几个坑同样适用：只收 `Event type = TRAD`（排除更替 NOVA / 压缩 COMP）、跨文件剔掉被撤销（EROR）的成交、2025-11 前表头不带引号、文件里混着几年前的补报单（只收披露前 7 天内成交的）
+7. 保留期：SEC 信用文件最早约 2024-09-02，中间有零星缺天（2024-10-01 回 403）；判断文件在不在**要用 GET**，见 §4.6
+
+**公司更多（次要）**：2026-11-12 一个文件里有 787 笔单名新成交、229 种标的写法，名单外还有 AT&T、UPS、Prudential、Petrobras、一批欧洲公司；
+很多写法是债券描述，实际公司数要按 RED / ISIN 归并后才知道。
+
+---
+
+### ⭐ 1.2 CDS 指数：ICE 结算价 + DTCC CFTC 信用文件（2026-11-13 实测）
+
+OpenBB 的 `cftc/models/cds_index_trades.py` 读的是 DTCC 的 **CFTC 信用文件**（指数归 CFTC 管，单名归 SEC，所以和软银那条是同一家的两份文件）。
+顺着查到 ICE 也有指数结算价端点，和单名那个是同门。
+
+| | ICE（主） | DTCC（补历史） |
+|---|---|---|
+| 端点 | `www.ice.com/api/cds-settlement-prices/icc-indexes`（免 key，JSON，208 条） | `kgc0418-tdw-data-0.s3.amazonaws.com/cftc/eod/CFTC_CUMULATIVE_CREDITS_YYYY_MM_DD.zip` |
+| 内容 | 清算所结算价，`instrumentName` 如 `CDX-NAIGS47V1-5Y`、`eodPrice` | 成交明细，约 100KB / 天 |
+| 回填 | ❌ **只有当天**，从开始存那天往后攒 | 约 2.2 年（2024-09-03 能下、2024-08-01 回 403） |
+| 覆盖 | CDX NA IG / HY / EM / EMIG / EMHY / FIN，iTraxx Europe / Crossover / FinSen / FinSub / AsiaXJ / Australia | 同上 + iTraxx Japan、CMBX、iBoxx 杠杆贷款等 15 个系列 |
+
+2026-11-12 两边对得上：
+
+| 指数 | ICE 结算价 | DTCC 成交（当天笔数） |
+|---|---|---|
+| CDX NA IG S47 5Y | 101.86（约 60bp） | 58.7bp（453 笔） |
+| CDX NA HY S47 5Y | 106.19 | 价 106.195（519 笔） |
+| iTraxx Europe S46 5Y | 101.92 | 59.3bp（332 笔） |
+| iTraxx Crossover S46 5Y | 108.95 | 291bp（295 笔） |
+
+**补的空白**：信用 tab 只有现货债券的 ICE BofA 利差（FRED 只留滚动 3 年，见 `AGENTS.md`）。CDX 是场内交易的信用指标，可以和现货利差对照，且不受 FRED 截断影响。
+
+⚠️ 接的时候要处理的：
+
+1. **ICE 只有当天 → 越早开始存越好**，晚一天少一天（DTCC 只能补回约 2.2 年）
+2. **票息按指数配**：IG / Main / EM 是 100bp，HY / Crossover 是 500bp
+3. **回收率要核对**：CDX HY 的报价惯例回收率印象中是 30%，不是 40%，接的时候查证
+4. **DTCC 里 HY 的价格有两种写法**：同一份合约 `Spread notation-Leg 1 = 1` 写 106.195，`= 3` 写 0.0106（正好是价格 ÷ 10000），两种都要认；IG 这类的 `= 3` 是小数利差（0.00585 = 58.5bp）
+5. **系列 / 版本号会变**：每年 3/20、9/20 换新系列（S47 → S48），成分公司违约时版本号变（V1 → V2）。按最高系列取，别写死名字
+6. **iTraxx Japan 暂时不能用**：一天只有 7 笔左右，只给前端费不带付款方向（100bp 票息下，前端费 1.57% 可能是 133bp 也可能是 67bp），ICE 也不清算它
+
+---
+
+### ⭐ 1.3 DTCC 利率文件里的美元产品：会议日远期 OIS + 零息通胀掉期（2026-11-13 实测）
+
+文件、格式、保留期见 §2.0（同一个 `CFTC_CUMULATIVE_RATES_YYYY_MM_DD.zip`）。建议和日元 OIS 合成一个落库 job，一次解析出三类产品。
+⚠️ 利率文件保留期是**约 2.0 年**（最早 2024-11-10），比信用文件短。
+
+**美元会议日远期 OIS** —— 拆出每次 FOMC 会议的定价。我们的 `oisHikes*`（读 Eris）只给累计加息次数，代码注释写明「不拆单次会议」。
+
+- 筛选：`UPI FISN = NA/Swap OIS USD`，`Action type = NEWT`，起息日比成交日晚 7 天以上，期限 20~60 天；按起息日 / 到期日聚成会议窗口取中位数
+- 11-10 实测：12-09 到 01-27 窗口 240 笔，中位数 4.144%，比 SOFR 3.89 高 25bp；亚特兰大联储 MPT 同日给 12 月加息概率 97.4%，吻合。按会议段加权回算 3M 是 4.09，Eris 3M 是 4.13，差约 4bp
+- 日元同理：12-21 到 01-22 窗口 19 笔，1.417%
+- ⚠️ 混着一批 21 天期的 IMM 式小段（如 03-18 到 04-08），要按 FOMC 日期对齐过滤
+- ⚠️ FOMC 日期源 `federalreserve.gov/json/calendar.json` 带 UTF-8 BOM，只列到 2026-12-09；2027 年的要另抓 `fomccalendars.htm` 或从成交聚类里推
+
+**美元零息通胀掉期（ZCIS）** —— 补 BEI 没有的 1Y / 2Y 短端（TIPS 短端不流动，我们的 `bei` 从 5Y 起）。
+
+- 筛选：`UPI FISN = NA/Swap Infl Idx USD`，`UPI Underlier Name = USA-CPI-U`，`Event type = TRAD`
+- ⚠️ **只收现货起息的**（起息日 − 成交日在 0~6 天、期限整年）。成交里混着几个月前起息的「老化」合约（如 2026-01-01 起息、3.5%），11-12 的 1Y 直接取中位数是 2.658%，只收现货起息的是 2.113%
+- 实测（%）：
+
+  | | 1Y | 2Y | 5Y | 10Y | 30Y |
+  |---|---|---|---|---|---|
+  | 11-10 | 2.073（43 笔） | 2.228 | 2.329 | 2.345 | 2.300 |
+  | 11-12 | 2.113 | 2.261 | 2.376 | 2.382 | 2.324 |
+  | 11-12 的 BEI | — | — | 2.31 | 2.24 | 2.19 |
+
+  掉期比 BEI 高 8~15bp 是正常基差。
+- 两天的文件里通胀掉期只有 USD / EUR / GBP / CLP，**没有日元** → 「日元 ZCIS 无免费源」的否定结论更稳了
+
+---
+
+### 1.4 CBOE 延迟期权链 → moomoo 的备份（2026-11-13 实测）
+
+| | |
+|---|---|
+| URL | `https://cdn-api.cboe.com/api/global/delayed_quotes/options/{SPY,QQQ,GLD,USO,TLT,IBIT,_VIX}.json`（指数前面加 `_`；旧域名 `cdn.cboe.com` 307 过来） |
+| 格式 | JSON，零依赖，免 key；SPY 约 6MB、`_VIX` 约 0.7MB |
+| 内容 | 每个合约带 `iv`（小数）、`delta`、`gamma`、`vega`、`theta`、`rho`、`open_interest`、`volume`、bid/ask；**一次请求给全部到期日**（SPY 34 个）；顶层另有 `iv30` |
+| 时点 | 文件 `timestamp` 是 UTC，持续刷新；11-13 11:00 UTC 拉到的是 11-12 收盘的值 |
+| 回填 | ❌ 只有当天快照，和 moomoo 一样 |
+
+和库里 moomoo 2026-11-12 的链逐合约对比（同一到期日、OI ≥ 100 的合约）：
+
+| 标的 | IV 差中位数 | 25Δ call / put IV（CBOE vs moomoo） |
+|---|---|---|
+| SPY | −0.17pp | 12.25 / 17.89 vs 12.49 / 17.85 |
+| GLD | −0.26pp | 23.59 / 25.28 vs 23.90 / 25.48 |
+| TLT | −0.72pp | 行权价间距大，25Δ 选到了不同档 |
+| .VIX | −4.5pp | 121.7 / 66.3 vs 127.9 / 57.3 ⚠️ 差得大 |
+
+OI 基本一致（TLT 83.5 那档两边都是 10180）。
+
+**价值**：不用 OpenD，没有 moomoo 的 30 天窗口和限频闸门。OpenD 相关的运维坑（启动即崩、行情会话悬空、本体丢失）全部绕开；
+若将来完全替换，`moomoo-api` 连同 protobufjs 的 audit 漏洞也能去掉。
+
+⚠️ 坑：.VIX 的 IV 口径和 moomoo 不同（直接换源会在换源那天出台阶）；文件带已到期的合约要过滤；约一成合约没有 IV。
+**建议先当备份并行跑两周**，再决定要不要完全替换。
+
+---
+
+### 1.5 旧金山联储期限溢价（第三个独立模型，2026-11-13 实测）
+
+| | |
+|---|---|
+| URL | `https://www.frbsf.org/wp-content/uploads/FRBSF_Term_Web_Chart_Data.xlsx` |
+| 格式 | `.xlsx`，451KB → `fflate` |
+| 表 | `Ten_year_decomposition` / `Two_year_decomposition`（列 `date, ZCYLD, AVGEXP, ZCTERM`，日期是 Excel 序列号）+ `Estimated_Short_Rate_Path` |
+| 频率 | 日频，复查时更新到 2026-11-12（KW 同期只到 11-06） |
+| 回填 | ✅ 一个文件给全历史 |
+
+和 KW 对比（6705 个共同交易日）：差的均值 0.26pp、中位 0.23、|差| P90 1.05；**20 日变化的相关只有 0.63**；
+11-06 那天旧金山 1.28% 对 KW 0.87%。它是 AFNS 体系，和 KW 不同族 —— 不是 DKW 那种和 KW 只差 8.5bp 的「伪第三条」
+（见 `rates-decomposition-handoff.md` §9.5）。可以叠在 `tp10Kw` / `tp10Acm` 那一格当第三条对照线。
+
+---
+
+### 1.6 IMF PortWatch：霍尔木兹海峡每日过船数（2026-11-13 实测）
+
+| | |
+|---|---|
+| URL | `https://services9.arcgis.com/weJ1QsnbMYJlCHdG/arcgis/rest/services/Daily_Chokepoints_Data/FeatureServer/0/query?where=portname%3D%27Strait%20of%20Hormuz%27&outFields=date,n_tanker,capacity_tanker,n_total&orderByFields=date%20DESC&f=json` |
+| 格式 | ArcGIS JSON，零依赖，免 key；单次最多 2000 行（`exceededTransferLimit`），要分页 |
+| 历史 | 2019-01-01 起 |
+| 时效 | 约滞后 5 天（11-13 拉到 11-08） |
+
+月均过船数（艘 / 天）：2025 年在 56~103 之间；**2026-03 起掉到 3~13，到 11 月还是 4**。
+
+**补的空白**：原油页注释写着「海峡恢复后切回本职」，但面板上没有一条线直接量「海峡恢复了没有」。
+同一服务下还有港口日数据、贸易量、扰动事件库（OpenBB `imf/models/` 里有完整的图层名）。
+
+---
+
+### 1.7 FINRA TRACE 单券收益率（2026-11-13 实测）
+
+**补的空白**：ICE 单名 CDS 2026-07 才开始攒，DTCC 只有约 2 年；TRACE 能回到债券发行日（Oracle 2060 年到期那只 2020-03-30 起逐日有数）。
+Oracle 2031 年到期那只对 5Y 美债的利差，与 ICE CDS 在 77 天里**水平相关 0.937、日变化相关 0.499**。
+
+- 端点（网站自己用的内部接口，没有正式文档，改版风险和 CNN 恐贪那条同级）：
+  1. 先 `GET https://services-dynarep.ddwa.finra.org/public/reporting/v2/data/group/FixedIncomeMarket/name/CorporateAndAgencySecurities`：回 400，但会种下 `XSRF-TOKEN` cookie
+  2. 再 POST 同前缀下的 `.../CorporateAndAgencySecurities`（查券）或 `.../endOfDayPriceYield`（每日收盘），带 cookie、`X-XSRF-TOKEN`、`Origin/Referer: finra.org`；不带 token 回 401
+- 按发行人搜要用 `multiFieldMatchFilters`；写成 `searchFilters` 会被**静默忽略**，返回 28 万行全量
+- 拿历史用 `domainFilters: [{fieldName: 'cusip', values: [...]}]` + `dateRangeFilters`，单页上限 5000 行
+- 字段 `tradeDate` / `lastSalePrice` / `lastSaleYield`：是最后一笔成交，不是中间价，有零星小单噪声
+- ⚠️ U 开头的 CUSIP（Reg S / 144A）`lastSaleYield` 是 null；CoreWeave 的 1.75% / 2.875% 两只是可转债，收益率不能用（6.9% 对普通高收益券的 13.7~14.7%）
+- 每家要挑一只基准券，到期要换券，还要按到期日在美债曲线上插值
+
+---
+
+### 1.8 其余候选（2026-11-13 实测，低优先）
+
+| 内容 | 端点 / 序列 | 实测 | 依赖 | 备注 |
+|---|---|---|---|---|
+| 半导体 vol 脱钩大盘：`VXSMH − VXN` | CBOE `VXSMH_History.csv` | 2025-09-16 起 294 行；差值均值 20.0（11.9~36.8），最新 21.15；日变化相关 0.83 | 零 | 只有约 14 个月，先别算分位；不用 moomoo 就能做（对照记忆里砍 SOXX 的理由） |
+| 期权隐含的政策利率分布（二选一，PRS 更便宜） | 亚特兰大联储 MPT `.../-/media/Project/Atlanta/FRBA/Documents/research-and-data/data/market-probability-tracker/mpt_histdata.xlsx`；堪萨斯城联储 PRS `kcresearch-share.kansascityfed.org/kc-prs/KCPRU_KCPRS.csv` | MPT 7.2MB、32 万行长表，2023-03-29~2026-11-10 共 911 天；PRS 209KB，1989 起到 11-11，和 MOVE 水平相关 0.90、日变化 0.55 | `fflate` / 零 | MPT 坑：`date` 是 ISO 字符串、`reference_start` 是 Excel 序列号。PRS 真正的新信息是偏度列 `KCPRS`；构造口径没读原文 |
+| 纽约联储公司债压力指数 CMDI（IG / HY） | `newyorkfed.org/medialibrary/research/interactives/cmdi/downloads/Market%20CMDI.xlsx`，读 `Index Data` 表，表头第 6 行 | 每周五一个点，2005-01-07~2026-10-23 共 1138 点，滞后约 3 周；2018 起和 HY OAS 水平相关 0.848、**周变化相关 0.195** | `fflate` | 信息和 HY 利差不重复，且不受 FRED 3 年截断影响 |
+| 旧金山联储核心 PCE 需求 / 供给拆分 | `frbsf.org/wp-content/uploads/supply-demand-pce-inflation.xlsx`，读 `Data` 表 | 1969m1~2026m9；最新需求 1.21、不确定 0.77、供给 1.13 | `fflate` | 最近几行月份标签前面多一个空格（`" 2026m7"`） |
+| 纽约联储消费者调查 SCE 1/3/5 年通胀预期 | `frbny-sce-data.xlsx`，读 `Inflation expectations` 表，表头第 4 行 | 2013-06~2026-10（密歇根 MICH 只到 2026-09）；最新 1y 3.91、3y 3.29、5y 3.0 | `fflate`（1.27MB，43 张表） | 5 年期那列起点更晚 |
+| 全球供应链压力 GSCPI | `newyorkfed.org/medialibrary/research/interactives/data/gscpi/gscpi_interactive_data.csv` | 338KB，1997-09~2026-10，最新 1.26 | 零 | 每一列是一个发布版本（表头是 Excel 序列号），取最后一列；缺值写 `#N/A`。官方「.xlsx」下载其实是 BIFF8，见 §4.6 |
+| 回购尾部压力 / 融资压力 | FRED `SOFR99`；`RIFSPPFAAD90NB − DTB3` | SOFR99 2018 起，2025-09 以来最高 4.68（2025-09-15） | 零 | 各加一行 |
+| VIX 期限结构两端 | CBOE `VIX9D`（2011 起）、`VIX1Y`（2007 起） | 都 200，更新到 11-12 | 零 | 各加一行 |
+| BTC 永续资金费率 | `deribit.com/api/v2/public/get_funding_rate_history?instrument_name=BTC-PERPETUAL&start_timestamp=&end_timestamp=` | 每小时一点，至少 2019-06 起；单次最多 744 行要翻页 | 零 | Deribit 是小交易所，代表性有限 |
+| 一级交易商美债分期限净头寸 | `markets.newyorkfed.org/api/pd/get/{PDPOSGSC-G7L11,G11L21,G21,PDPOSGS-B}.json` | 每周三时点，最新 2026-11-04（滞后 8 天），2013-04 起 | 零 | 11Y 以上两档 2022-01 才有（期限档重新划分过） |
+| VX 曲线每日校验探针 | `www.cboe.com/us/futures/market_statistics/settlement/csv?dt=YYYY-MM-DD` | 1.7KB；和库里 `VX:*` 精确到 4 位小数一致；旧日期（2025-06-02）只回表头 | 零 | 周度 VX 的值等于下个月度合约（占位数，别用）；同文件有 IBHY / IBIG 信用期货 |
+| 美元/日元隐含波动率 | DTCC CFTC 辖区的外汇期权成交（OpenBB `cftc/models/fx_option_trades.py`、`fx_implied_vol.py`） | 11-12 普通期权 536 笔（11~45 天到期 276 笔）；期权费、行权价、到期日齐全；有的打包成交直接报波动率 | `fflate` | 要自己反推隐含波动率、还要即期价，工作量大；部分未验 |
+| 堪萨斯城联储 r\* | `kcresearch-share.kansascityfed.org/kc-mbnr/KCFed_ModelBased_Rstar_Ustar.csv` | 月频，最新 2026-09：1.46%，区间 −0.35~2.54 | 零 | 可当 HLW 对照；区间太宽 |
+| 堪萨斯城联储 RORO 风险偏好指数 | `kcresearch-share.kansascityfed.org/kc-roro/roro_daily.csv` | 日频，到 11-11 | 零 | 和我们自己的 regime 面板重叠 |
+| 克利夫兰联储 CPI 临近预测 | `clevelandfed.org/-/media/files/webcharts/inflationnowcasting/nowcast_month.json` | 200，7.7MB | 零 | 太胖 |
+| 旧金山联储代理联邦基金利率 | `frbsf.org/wp-content/uploads/proxy-funds-rate-data.xlsx` | 周 / 月两张表；最新 5.17%，同期 EFFR 3.88% | `fflate` | 金融条件折算成等效利率 |
 
 ---
 
@@ -112,11 +347,41 @@ DATE  ACMY01..ACMY10 (fitted yields)  ACMTP01..ACMTP10 (期限溢价)  ACMRNY01.
 ⚠️ 接之前先想清楚**发什么形式**：按「能源实物面」既定口径，库存的裸水位不携带信息，要发季节 z；
 但 SPR 是**政策性释放/回补**驱动的，不是季节性的，对它算季节 z 属于口径误用。SPR 更可能该发水位或同比。
 
+#### ⭐ 同一端点再加两条：馏分油 / 汽油表观需求（2026-11-13 实测）
+
+| | |
+|---|---|
+| series_id | `WDIUPUS2`（馏分油 product supplied）/ `WGFUPUS2`（汽油 product supplied），千桶/日 |
+| 实测 | v2 接口测通；最新 2026-11-06 馏分油 3411，4 周均同比 +4.2%；约 1991 年起 1866 行 |
+| 为什么要 | 回答「紧张来自需求还是供应」里需求那一半。现有六条全在供应 / 库存侧 |
+
+⚠️ 单周噪声大（周变化中位数 7.2%），按「能源实物面」口径发 **4 周均同比或季节 z**，别发水位。
+线索来自 OpenBB 的 EIA provider（它把 v2 的约 250 个数据集都镜像成了模型）。
+⚠️ EIA v2 单次最多返回 5000 行且不报警，见 §4.6；这两条周频只有约 1866 行，不受影响。
+
 ---
 
 ## 2. 日本（现在整块是空的）
 
 日本侧目前只接了 MOF JGB 名义曲线 + JPX JGB VIX。下面按性价比排。
+
+### ⭐ 2.0′ JGB VIX：用 CBOE 镜像补 JPX 文件缺的天（2026-11-13 实测）
+
+| | |
+|---|---|
+| URL | `https://cdn-api.cboe.com/api/global/us_indices/daily_prices/SPJGBV_History.csv`（旧域名 `cdn.cboe.com` 307 过来） |
+| 格式 | `DATE,SPJGBV`，日期 MM/DD/YYYY；现成的 `parseCboeIndexCsv` 直接能解，零依赖 |
+| 历史 | 2008-11 起，更新到 11-12（和 JPX 同步） |
+
+**补的洞**：我们的 `fetchers/jpxJgbVix.ts` 读的 JPX 文件有整段缺失 —— 2021-10 整月 0 行，2019-03 只有 11 行、2019-04 只有 4 行、
+2019-08 只有 6 行、2021-11 只有 12 行。2018 年起 CBOE 多出 87 天，其中 19 天是日本假日沿用前值，**约 68 天是真缺**。
+两边重叠 4233 天，差超过 0.005 的只有 5 天。另外 JPX 那条用的是哈希 URL（注释自己写了「改版会变」），CBOE 正好兼作备份。
+
+⚠️ 坑：
+
+1. CBOE 按美国日历：美国假日没有值（2018 起有 17 个日本交易日 CBOE 没有）；日本假日沿用前一天的值（19 天）
+2. 所以建议「**JPX 为主，CBOE 只补 JPX 缺的天，并剔掉和前一天相同的值**」；整条换成 CBOE 的代价是丢掉美国假日那些天
+3. 2019-11-06 两边差 0.66（CBOE 2.85 对 JPX 2.19），哪边对还没核
 
 ### ⭐ 2.0 DTCC SDR 公开掉期成交 → 日元 OIS 曲线 + 日银政策路径（2026-11-12 实测）
 
@@ -130,7 +395,7 @@ DATE  ACMY01..ACMY10 (fitted yields)  ACMTP01..ACMTP10 (期限溢价)  ACMRNY01.
 | 文件 | `https://kgc0418-tdw-data-0.s3.amazonaws.com/cftc/eod/CFTC_CUMULATIVE_RATES_YYYY_MM_DD.zip`，**URL 可按日期构造** |
 | 格式 | zip 包一个 CSV，约 18 MB / 3 万行（全币种利率掉期），**零依赖**（zip 用已有 `fflate`）|
 | 频率 | 日频，次日 00:15 UTC 发 |
-| 回填 | ⚠️ **滚动约 2 年**：2026-11-12 当天 `2024_11_11` 能下、`2024_11_08` 回 403；清单接口只列最近 365 天，更早的要自己构造 URL。→ **必须 daily job 落库**，否则头部每天都在丢 |
+| 回填 | ⚠️ **滚动约 2.0 年**：2026-11-12 当天 `2024_11_11` 能下、`2024_11_08` 回 403（11-13 复查最早 2024-11-10）；清单接口只列最近 365 天（OpenBB 的 `PPD_RETENTION_DAYS=366` 指的就是这个，不是文件保留期），更早的要自己构造 URL。⚠️ **判断文件在不在要用 GET**，HEAD 对过期文件也回 200。→ **必须 daily job 落库**，否则头部每天都在丢 |
 
 筛选与字段（实测）：
 
@@ -155,8 +420,9 @@ DATE  ACMY01..ACMY10 (fitted yields)  ACMTP01..ACMTP10 (期限溢价)  ACMRNY01.
 
 > ✅ SEC 辖区那份(单名 CDS)**已接软银 5Y**(2026-11-13,见 `AGENTS.md` 取数总览 DTCC 行);本节的日元 OIS 仍未接。
 
-同一份数据里还有：USD SOFR OIS（可以和 Eris 对照）、FX 期权成交（OpenBB 拿它算 `fx_implied_vol`）、
-CDS 指数成交（`CR` 资产类别）。这几样**都没实测**。
+同一份数据里还有（2026-11-13 已实测，见 §1）：USD 会议日远期 OIS 与零息通胀掉期（§1.3）、
+CDS 指数成交（另一个文件 `CFTC_CUMULATIVE_CREDITS_*`，§1.2）、FX 期权成交（§1.8，只核了字段和笔数）。
+**日元通胀掉期在这份数据里是 0 笔。**
 
 ### ⭐ 2.1 MOF 対外及び対内証券売買契約等の状況（周频跨境证券流）
 
@@ -309,14 +575,91 @@ CI / DI 的**先行指数**，日本景气拐点的标准判据。
 | JPX 投資部門別売買状況 | 周频、按投资部门分的日股买卖 | **哈希目录 URL**（`t13vrt000001rg1m-att`）构造不出来，要爬索引；且是 BIFF8 `.xls` |
 | 日本相互証券 BB/JBTS | JGB **業者間実勢**レート，2Y–40Y 日频終値 | **只有 HTML 表格，无 CSV/Excel**。且我们已有 MOF 那条，增量不大 |
 
-以下来自 OpenBB 源码（2026-11-12 读），**OpenBB 有实现、我们没下载验过**：
+2026-11-12 记下的四条 OpenBB 线索，**2026-11-13 已全部验过结案**：
 
-| 机构 | 想要的 | 线索 |
+| 机构 | 想要的 | 结论 |
 |---|---|---|
-| NY Fed | 一级交易商持仓（美债按期限的净多空） | `markets.newyorkfed.org/api/pd/get/...`（OpenBB `federal_reserve/models/primary_dealer_positioning.py`）|
-| 费城联储 | SPF 专业预测者通胀预期 | `philadelphiafed.org/-/media/FRBP/Assets/Surveys-And-Data/...` 下的 Excel（`inflation_expectations.py`），扩展名没确认是 `.xlsx` 还是 `.xls` |
-| FINRA | 个股做空余额（半月频） | `finra/models/equity_short_interest.py` |
-| SEC | 交割失败（FTD） | `sec/models/equity_ftd.py` |
+| NY Fed | 一级交易商持仓 | ✅ 可用，记入 §1.8（低优先） |
+| 费城联储 | SPF 专业预测者通胀预期 | 是 `.xlsx` 不是 `.xls`（11.7KB），季频，最新 2026Q3 → 不做（§4.5） |
+| FINRA | 个股做空余额 | `api.finra.org` 免 key 可用，半月频，按个股 → 不在任何视角，不做（§4.5） |
+| SEC | 交割失败 FTD | 可用，滞后约 6 周，按个股 → 不做（§4.5） |
+
+2026-11-13 OpenBB 对照里**只读了代码、没下载验过**的（看描述判断不在现有视角内）：
+
+- 达拉斯联储：能源调查和页岩盈亏平衡价、DGEI、德州各项调查
+- 里士满联储：NEI、CFO 调查；明尼阿波利斯联储、波士顿联储全部；堪萨斯城联储 LMCI 和农业；芝加哥联储 BBKI / CARTS / CFLMI / CFNAI
+- 纽约联储：Business Leaders 调查、HHDC、市场预期调查 SME（按期发的 xlsx + PDF）、staff nowcast（OpenBB 用的 `.../NowCast/downloads/New-York-Fed-Staff-Nowcast_download_data` 没测）
+- 费城联储：ATSIX（下载了 1.1MB xlsx 但没解析）、Anxious、Livingston、partisan conflict
+- 美联储的货币市场基金、国际证券投资（EFA）
+- DTCC 外汇：美元/日元远期点、交叉货币基差没算；外汇期权隐含波动率没实际反推
+- ECB / IMF 经济指标 / OECD 其余数据
+
+---
+
+## 4.5 看过、判为不做（2026-11-13 OpenBB 对照）
+
+每条一句理由。成熟后可以并进 `AGENTS.md`「查过、确认没有的」。
+
+**和 FRED 同一天更新，换源没有时效增量**
+
+- 纽约联储利率 API（SOFR / EFFR / OBFR / TGCR / BGCR）：和 FRED 同一个观测日，FRED 的 SOFR 发布当天 07:02 CT 就更新
+- 美联储数据下载站 DDP（H.4.1 / H.15 / H.6）：FRED 在发布后约 1 小时内更新（WALCL 15:32 CT）
+- BLS 直连 CPI：FRED 的 `CPILFESL` 发布当天 08:13 CT 更新，只晚约 45 分钟，对日终数据没影响
+- 达拉斯联储 WEI / IGREA / 截尾 PCE，克利夫兰联储中位数 CPI / EXPINF：都在 FRED 上
+- 亚特兰大联储 sticky CPI / 工资增速：**保持走 FRED**，别抄 OpenBB 的直连地址（全部 404，见 §4.6）
+
+**和现有序列重复，或者没有可用的增量**
+
+- 财政部日报 DTS 的每日 TGA：96 个周三和 `WDTGAL` 全部一致；只多给周中的值，和「净流动性只取周三」的设计冲突
+- 财政部国债拍卖结果（fiscaldata）：没有发行前收益率（when-issued），算不出拍卖尾差；续发的期限标签不统一
+- 纽约联储 SOMA 持仓汇总：WALCL 已经覆盖
+- CBOE DSPX 离散度指数：和 √(VIXEQ² − VIX²) 相关 0.998（2018 起 2229 天），我们能自己算
+- 克利夫兰联储通胀预期模型：`rates-decomposition-handoff.md` 已经讨论过（DKW 那段）
+- 堪萨斯城联储 FSI（月频，和 HY / VIX / MOVE 重复）、纽约联储 MCT 趋势通胀（月频，和 sticky CPI 同角色）
+
+**数据坏了或停更**
+
+- VXHYG：2024 起只有 377 个点，日变化中位数 7.3%、P95 达 32%，在两个值之间来回跳（和记忆里「HYG 期权死盘」一致）
+- JYVIX、EUVIX、BPVIX、TYVIX、SRVIX：已停发（403）
+- 克利夫兰联储系统性风险 CSV：停在 2025-10-01
+- 芝加哥联储 NFCI 直连 CSV：停在 2026-04-24；FRED 的 `NFCI` 是最新的
+
+**不是市场定价，或和现有面板角色重叠**
+
+- 旧金山联储新闻情绪（文本情绪）、费城联储 ADS 日度景气（宏观模型）、里士满联储 SOS 衰退指标（基于失业金申领）
+- 费城联储 SPF：`.xlsx` 11.7KB、季频、最新 2026Q3，优先级低
+
+**范围外或者成本太高**
+
+- SEC 交割失败 FTD：滞后约 6 周（最新 cnsfails202609a），按个股；SEC 的 `data.json` 已 307 到 `/files/data.json`
+- FINRA 做空余额：`api.finra.org` 免 key 可用，半月频，按个股
+- JODI：23.6MB zip，月频，滞后约 2 个月，EIA 周报更好用
+- OECD 日本先行指数 CLI：月频，最新只到 2026-08；§2.6 已有内閣府的 CI
+- EIA 天然气库存（`NW2_EPG0_SWO_R48_BCF`，测通，最新 2026-10-30 为 3801 Bcf）：面板没有天然气维度，等开了再接
+- DTCC 商品掉期：标的只到类别一级（"Oil"、"Heating Oil"），没有 Dubai 这类具体名字
+- DTCC 日元通胀掉期：两天的文件里都是 0 笔
+- 和视角无关的 provider 整组不做：ECB 及欧元相关、famafrench、nasdaq、tmx、USDA、国会、FFIEC 银行报表、BLS 新闻稿表格
+
+---
+
+## 4.6 OpenBB 对照中发现的坑（2026-11-13，待并入 `AGENTS.md`）
+
+1. **CBOE 换了下载域名**：`cdn.cboe.com` 一律 307 跳到 `cdn-api.cboe.com`（`daily_prices` 和 `delayed_quotes` 都是）。
+   我们的 `fetchers/cboeIndex.ts`、`cboeVx.ts` 和 `AGENTS.md` 仍写旧域名；`fetch` 默认跟随跳转所以没坏，OpenBB 自己也还在用旧域名。
+   另外 CBOE 不存在的代码回 **403 + XML（AccessDenied）**，不是 404
+2. **DTCC 保留期**：HEAD 对过期文件也回 200，真 GET 才回 403，判断可用性**必须 GET**（加 Range）。
+   保留期按资产类别不同：利率文件最早约 2024-11-10（约 2.0 年），信用文件最早约 2024-09-02（约 2.2 年），中间有零星缺天
+3. **DTCC 成交的前端费含应计票息**，换算价格前要扣掉（单名 CDS 实测，见 §1.1 坑 1）；已上线的软银那条也受影响
+4. **DTCC 通胀掉期混着「老化」合约**：必须只收现货起息的（§1.3）
+5. **EIA v2 单次最多返回 5000 行，超了不报警**：日频 `RWTC` 的 `total` 是 10292，只返回 5000。`offset` 参数有效，`start` 仍被忽略。
+   现有周频序列约 1866 行不受影响，**将来接日频序列必须翻页**。另外 EIA 日频现货在美国联邦假日沿用前一天的值（11-11 等于 11-10）
+6. **GSCPI 官方下载名为 `.xlsx`，实际是 BIFF8 的 OLE 格式**，要 SheetJS；改走交互页那个 CSV（§1.8）
+7. **财政部日报 DTS 的 TGA 收盘余额放错了字段**：在「TGA Closing Balance」那一行的 `open_today_bal` 里，`close_today_bal` 是字符串 `"null"`
+8. **亚特兰大联储网站改版**：OpenBB 里所有 atlantafed 路径都 404（BIE、GDPNow、sticky、wage、Taylor、SBU、MPT），
+   新前缀是 `/-/media/Project/Atlanta/FRBA/Documents/research-and-data/data/...`
+9. **芝加哥联储 NFCI 直连 CSV 停在 2026-04-24**，要用就走 FRED
+10. **FRED 限流可能在 HTTP 200 的 JSON 里返回 429**：OpenBB 会检查 payload 里的错误码。真出现时我们的 `fred.ts` 会报一个误导性的 TypeError
+    （读 undefined 的 filter），不会污染数据。⚠️ 只读了代码，没复现
 
 ---
 
