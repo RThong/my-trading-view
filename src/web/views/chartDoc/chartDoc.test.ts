@@ -16,6 +16,7 @@ import {
   nextId,
   normalize,
   parseChartDoc,
+  setDocTitle,
   removeLayer,
   removeSeries,
   setLayerCalc,
@@ -186,6 +187,16 @@ describe('normalize / parseChartDoc', () => {
   test('往返:序列化后能原样解析回来', () => {
     const d = setLayerScale(moveLayer(twoOnMain(), 'l2', 'new'), 'l1', 'newOverlay');
     expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
+  });
+
+  test('标题:往返保留、改编辑不丢;去空白、清空删字段、没变返回原文档;不是字符串 → null', () => {
+    const d = setDocTitle(twoOnMain(), '  SPX 对数回归  ');
+    expect(d.title).toBe('SPX 对数回归');
+    expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
+    expect(normalize(d).title).toBe('SPX 对数回归');
+    expect(setDocTitle(d, 'SPX 对数回归 ')).toBe(d);
+    expect('title' in setDocTitle(d, ' ')).toBe(false);
+    expect(parseChartDoc({ ...d, title: 1 })).toBeNull();
   });
 
   test('id 冲突或保留轴 id 与 side 不符 → null', () => {

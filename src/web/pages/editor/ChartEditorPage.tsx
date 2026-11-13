@@ -23,7 +23,9 @@ import { useDrawings } from './hooks/useDrawings';
 import { runPlugins, usePluginSettings } from './drawingPlugins';
 import { useLineDrag } from './hooks/useLineDrag';
 import { useSidebar } from './hooks/useSidebar';
-import { useUndoShortcuts } from './hooks/useUndoShortcuts';
+import { useEditorShortcuts } from './hooks/useEditorShortcuts';
+import { useSnapshot } from './hooks/useSnapshot';
+import { ChartTitle } from './components/ChartTitle';
 import { useVisibleRange } from './hooks/useVisibleRange';
 
 // 图表编辑页:空白图上自己挑序列、分格叠放、把一条线叠到另一条上看劈叉。只负责组装 ——
@@ -31,6 +33,7 @@ import { useVisibleRange } from './hooks/useVisibleRange';
 // 全部编辑状态就是 doc 这一份 JSON(右下角可查看)。
 export function ChartEditorPage({ interval }: { interval: Interval }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const legendRef = useRef<HTMLDivElement>(null);
   const actions = useChartDoc();
   const { doc, load, toggleSeries, setStretches } = actions;
   const [showJson, setShowJson] = useState(false);
@@ -51,7 +54,13 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
   const visibleRange = useVisibleRange(chartRef);
   const selectedLineRef = useLineDrag(containerRef, chartRef, seriesRef, doc);
   const plugins = usePluginSettings();
-  useUndoShortcuts(containerRef, actions.undo, actions.redo);
+  const snapshot = useSnapshot(containerRef, chartRef, legendRef, doc.title, interval);
+  useEditorShortcuts(containerRef, {
+    undo: actions.undo,
+    redo: actions.redo,
+    download: snapshot.download,
+    copy: snapshot.copy,
+  });
   const drawing = useDrawings(containerRef, chartRef, seriesRef, selectedLineRef, doc, data, actions, (p, c) =>
     runPlugins(p, c, plugins.settings),
   );
@@ -83,53 +92,60 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
         disabled={empty}
         plugins={plugins}
         history={actions}
+        snapshot={snapshot}
       />
-      <div className="relative min-w-0 flex-1">
-        <div ref={containerRef} className="absolute inset-0" />
-        {empty ? (
-          <EmptyState onLoad={(d) => load(d, '载入示例图')} />
-        ) : (
-          <Legend
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        {!empty && <ChartTitle key={doc.title ?? ''} title={doc.title} onChange={actions.setTitle} />}
+        <div className="relative min-h-0 flex-1">
+          <div ref={containerRef} className="absolute inset-0" />
+          {empty ? (
+            <EmptyState onLoad={(d) => load(d, '载入示例图')} />
+          ) : (
+            // 包一层(不占布局)给导出图片认图例:要画进图里的就是这块底下的元素
+            <div ref={legendRef} className="contents">
+              <Legend
+                doc={doc}
+                interval={interval}
+                data={data}
+                hoverTime={hoverTime}
+                layout={layout}
+                onHidden={actions.setHidden}
+              />
+            </div>
+          )}
+          <DrawingBar
             doc={doc}
-            interval={interval}
-            data={data}
-            hoverTime={hoverTime}
-            layout={layout}
-            onHidden={actions.setHidden}
+            selected={drawing.selected}
+            onUpdate={actions.updateDrawing}
+            onRemove={(id) => {
+              actions.removeDrawing(id);
+              drawing.setSelected(null);
+            }}
+            onEditText={drawing.editText}
+            lockAll={drawing.lockAll}
+            canLogFit={drawing.canLogFit}
           />
-        )}
-        <DrawingBar
-          doc={doc}
-          selected={drawing.selected}
-          onUpdate={actions.updateDrawing}
-          onRemove={(id) => {
-            actions.removeDrawing(id);
-            drawing.setSelected(null);
-          }}
-          onEditText={drawing.editText}
-          lockAll={drawing.lockAll}
-          canLogFit={drawing.canLogFit}
-        />
-        <InlineTextEditor editing={drawing.editing} onCommit={drawing.commitText} />
-        {status.length > 0 && (
-          <div className="pointer-events-none absolute right-16 top-1 z-10 rounded bg-neutral-950/80 px-2 py-0.5 text-xs text-amber-400">
-            {status.join(' · ')}
-          </div>
-        )}
-        {/* 放在价格轴与时间轴交汇的右下角小方格里(lw-charts 那里不画东西),不另占一列宽度;
+          <InlineTextEditor editing={drawing.editing} onCommit={drawing.commitText} />
+          {status.length > 0 && (
+            <div className="pointer-events-none absolute right-16 top-1 z-10 rounded bg-neutral-950/80 px-2 py-0.5 text-xs text-amber-400">
+              {status.join(' · ')}
+            </div>
+          )}
+          {/* 放在价格轴与时间轴交汇的右下角小方格里(lw-charts 那里不画东西),不另占一列宽度;
             放右上角会压住价格轴最上面的刻度。展开 / 收起都在同一个位置 */}
-        {!empty && (
-          <Button
-            variant="ghost"
-            // 方格高 = 时间轴高 28px,按钮取同高
-            size="icon-sm"
-            onClick={sidebar.toggle}
-            className="absolute right-1 bottom-0 z-10 text-neutral-500 hover:text-neutral-200"
-            title={sidebar.open ? '收起操作区' : '展开操作区'}
-          >
-            {sidebar.open ? <PanelRightClose /> : <PanelRightOpen />}
-          </Button>
-        )}
+          {!empty && (
+            <Button
+              variant="ghost"
+              // 方格高 = 时间轴高 28px,按钮取同高
+              size="icon-sm"
+              onClick={sidebar.toggle}
+              className="absolute right-1 bottom-0 z-10 text-neutral-500 hover:text-neutral-200"
+              title={sidebar.open ? '收起操作区' : '展开操作区'}
+            >
+              {sidebar.open ? <PanelRightClose /> : <PanelRightOpen />}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* 侧栏本身不滚:下拉框要能盖住下面的图层区;只有图层区自己滚。

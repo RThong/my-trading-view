@@ -43,6 +43,22 @@ function fmtChange({ delta, pct }: { delta: number; pct: number | null }): strin
   return `${sign(delta)}${fmtValue(delta)}${pct === null ? '' : ` (${sign(pct)}${pct.toFixed(2)}%)`}`;
 }
 
+/**
+ * 没有十字线时图例顶上写的日期:显示中的线(竖线 / 背景色带这类标记图层除外)最后一个点里最晚的那天。
+ * 平移过的线图上的日期是挪过的,还原成原始日期再比(右移的线不还原会拿到一个还没到的日子);隐藏的线不参与。
+ * 不写「最新」:存成图片后看图的人不知道最新是哪天(负责人 2026-11-13 定;TV 图例不写日期,我们的图要能单独拿出去看)
+ */
+function latestTime(doc: ChartDoc, data: Record<string, LayerData>): string | undefined {
+  return doc.panes
+    .flatMap((p) => p.layers)
+    .filter((l) => !isMarkLayer(l) && !l.hidden)
+    .map((l) => {
+      const t = data[l.id]?.display?.at(-1)?.time;
+      return t && l.shift ? shiftBusinessDays(t, -l.shift) : t;
+    })
+    .reduce<string | undefined>((max, t) => (t !== undefined && (max === undefined || t > max) ? t : max), undefined);
+}
+
 type Props = {
   doc: ChartDoc;
   /** 页头周期:只有日线才标原始日期(周 / 月线聚合后只剩周期键,反推出来的不是真实来源日) */
@@ -53,7 +69,7 @@ type Props = {
   onHidden: (layerId: string, hidden: boolean) => void;
 };
 
-// 每格左上角一块:该格各图层的名称 + 十字线当日(无十字线时为最新)的值。不挡鼠标。
+// 每格左上角一块:该格各图层的名称 + 十字线当日(无十字线时为最新)的值,顶上写这一天的日期。不挡鼠标。
 // 换算过的线读原始值(换算值只是为了叠图);平移过的线附上这个点的原始日期,免得把挪过的日子当真。
 // 显隐按钮同 TradingView:悬停这一行才出现。隐藏的线收进下面一块紧凑小字(名字 + 读数,点一下显示):
 // 曲线走势那类一格挂十几二十条期限的,一条一行会比图还高。只有行本身接鼠标,块的其余部分照旧不挡十字线。
@@ -72,8 +88,8 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
             className="pointer-events-none absolute z-10 flex max-w-xl flex-col gap-0.5 rounded bg-neutral-950/70 px-1.5 py-1 text-xs"
             style={{ top: (layout.tops[i] ?? 0) + 4, left: layout.left + 8 }}
           >
-            {/* 第 1 格顶上放十字线日期 */}
-            {i === 0 && <span className="text-neutral-500">{hoverTime ?? '最新'}</span>}
+            {/* 第 1 格顶上放十字线日期,没有十字线时是数据最后一天 */}
+            {i === 0 && <span className="text-neutral-500">{hoverTime ?? latestTime(doc, data) ?? '最新'}</span>}
             {shown.map((l, j) => (
               <LayerRow key={l.id} layer={l} pane={pane} info={j === 0 ? info : undefined} {...row} />
             ))}

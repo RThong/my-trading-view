@@ -29,6 +29,7 @@ import {
   setLayerShift,
   setScaleInvert,
   setScaleLog,
+  setDocTitle,
   parseChartDoc,
   setStretches,
   type Calc,
@@ -147,6 +148,7 @@ export function useChartDoc() {
     removeDrawing: (id: string) => edit('删除画线', (d) => removeDrawing(d, id)),
     clearDrawings: (keepLocked: boolean) =>
       edit(keepLocked ? '删除未锁定的画线' : '删除全部画线', (d) => clearDrawings(d, { keepLocked })),
+    setTitle: (title: string) => edit(title.trim() ? '改标题' : '删除标题', (d) => setDocTitle(d, title)),
   };
 }
 
