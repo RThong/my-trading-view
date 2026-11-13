@@ -72,8 +72,11 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
         tool={drawing.tool}
         onTool={drawing.chooseTool}
         hidden={drawing.hidden}
+        lockAll={drawing.lockAll}
+        onToggleLockAll={drawing.toggleLockAll}
         onToggleHidden={drawing.toggleHidden}
         count={allDrawings(doc).length}
+        lockedCount={allDrawings(doc).filter((e) => e.drawing.locked).length}
         onClear={actions.clearDrawings}
         disabled={empty}
         plugins={plugins}
@@ -101,6 +104,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
             drawing.setSelected(null);
           }}
           onEditText={drawing.editText}
+          lockAll={drawing.lockAll}
           canLogFit={drawing.canLogFit}
         />
         <InlineTextEditor editing={drawing.editing} onCommit={drawing.commitText} />

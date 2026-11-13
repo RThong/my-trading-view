@@ -694,6 +694,19 @@ describe('画线', () => {
     expect(findLayer(clearDrawings(doc), vix)?.layer).not.toHaveProperty('drawings');
   });
 
+  test('锁定:往返保留,非 true 整条丢掉;清空时可只留锁定的', () => {
+    const locked = { ...trend, id: 'd3', locked: true as const };
+    const doc = addDrawing(addDrawing(base, vix, trend), vix, locked);
+    expect(parseChartDoc(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+
+    const raw = JSON.parse(JSON.stringify(doc));
+    raw.panes[0].layers[0].drawings = [{ ...locked, locked: false }];
+    expect(parseChartDoc(raw)).toEqual(base);
+
+    expect(allDrawings(clearDrawings(doc, { keepLocked: true })).map((e) => e.drawing.id)).toEqual(['d3']);
+    expect(allDrawings(clearDrawings(doc))).toEqual([]);
+  });
+
   test('id 已被占用(画线或图层)就不加,免得存档载不回来', () => {
     const doc = addDrawing(base, vix, trend);
     expect(addDrawing(doc, vix, { id: 'd1', kind: 'hline', value: 1 })).toBe(doc);

@@ -71,7 +71,7 @@ export function timeAxis(times: string[]): TimeAxis {
 type TwoPoints = { id: string; x1: number; y1: number; x2: number; y2: number };
 
 /** 一条画线换算到当前这一格的像素(media 坐标,绘图区左上角为原点);color / dash 原样带过来(见 chartDoc 的 DrawingStyle) */
-export type Shape = { color?: string; dash?: LineDash } & (
+export type Shape = { color?: string; dash?: LineDash; locked?: true } & (
   | (TwoPoints & { kind: 'trend' })
   | (TwoPoints & { kind: 'ray' })
   | { id: string; kind: 'hline'; y: number }
@@ -790,7 +790,13 @@ export class DrawingsPrimitive implements IPanePrimitive<Time> {
     const hit = hitShapes(shapes, x, y);
     const shape = hit && shapes.find((s) => s.id === hit.id);
     return hit && shape
-      ? { externalId: hit.id, zOrder: 'top' as const, cursorStyle: hitCursor(shape, hit.part), distance: hit.dist }
+      ? {
+          externalId: hit.id,
+          zOrder: 'top' as const,
+          // 锁定的拖不动:不给移动 / 放缩箭头,给手指表示「能点选」
+          cursorStyle: shape.locked ? 'pointer' : hitCursor(shape, hit.part),
+          distance: hit.dist,
+        }
       : null;
   }
 }

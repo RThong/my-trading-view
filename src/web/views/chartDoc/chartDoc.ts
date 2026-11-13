@@ -89,10 +89,10 @@ export type DrawingPoint = { time: string; value: number };
  * extend = 按拟合出的斜率把三条线延长到图的右缘,拟合区间不变(同 TradingView Regression Trend 的 Extend lines)。
  * log = 对数拟合:对 ln(值) 回归,斜率是固定增长率、上下轨是中线乘除同一个比例(TradingView 没有;长窗口看复利增长用)。
  * 竖线默认延伸到所有格(同 TradingView 竖线的 Extend);paneOnly = 只画所属图层那一格。
- * 各种画线都可带样式 color / dash(见 DrawingStyle)
+ * 各种画线都可带样式 color / dash(见 DrawingStyle)。
+ * locked = 锁定(同 TradingView 的 Lock):能选中、能改样式,但拖不动、不能单条删;「删除全部」时另问要不要连它一起删
  */
-export type Drawing = DrawingStyle &
-  (
+export type Drawing = DrawingStyle & { locked?: true } & (
     | { id: string; kind: 'trend'; a: DrawingPoint; b: DrawingPoint }
     | { id: string; kind: 'ray'; a: DrawingPoint; b: DrawingPoint }
     | { id: string; kind: 'hline'; value: number }
@@ -697,8 +697,9 @@ export function removeDrawing(doc: ChartDoc, id: string): ChartDoc {
   return mapDrawings(doc, (ds) => ds.filter((d) => d.id !== id));
 }
 
-export function clearDrawings(doc: ChartDoc): ChartDoc {
-  return mapDrawings(doc, () => []);
+/** 删除全部画线;keepLocked = 锁定的留下(同 TradingView 删除全部时问「保留锁定的」) */
+export function clearDrawings(doc: ChartDoc, { keepLocked = false } = {}): ChartDoc {
+  return mapDrawings(doc, (ds) => (keepLocked ? ds.filter((d) => d.locked) : []));
 }
 
 /** 文档里还没用到的第一个调色板颜色;全用过了就按图层数轮转。 */
@@ -854,7 +855,8 @@ function isDrawing(x: unknown): x is Drawing {
     Object.hasOwn(DRAWING_FIELDS, x.kind) &&
     DRAWING_FIELDS[x.kind as Drawing['kind']](x) &&
     (x.color === undefined || isColor(x.color)) &&
-    (x.dash === undefined || (isStr(x.dash) && Object.hasOwn(LINE_DASH, x.dash)))
+    (x.dash === undefined || (isStr(x.dash) && Object.hasOwn(LINE_DASH, x.dash))) &&
+    (x.locked === undefined || x.locked === true)
   );
 }
 
@@ -916,6 +918,7 @@ function canonicalDrawing(d: Drawing): Drawing {
     ...CANONICAL_DRAWING[d.kind](d as never),
     ...(d.color && { color: d.color }),
     ...(d.dash && { dash: d.dash }),
+    ...(d.locked && { locked: true as const }),
   };
 }
 

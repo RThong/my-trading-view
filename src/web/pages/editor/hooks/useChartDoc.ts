@@ -112,7 +112,7 @@ export function useChartDoc() {
     addDrawing: (layerId: string, drawing: Drawing) => setDoc((d) => addDrawing(d, layerId, drawing)),
     updateDrawing: (drawing: Drawing) => setDoc((d) => updateDrawing(d, drawing)),
     removeDrawing: (id: string) => setDoc((d) => removeDrawing(d, id)),
-    clearDrawings: () => setDoc((d) => clearDrawings(d)),
+    clearDrawings: (keepLocked: boolean) => setDoc((d) => clearDrawings(d, { keepLocked })),
   };
 }
 

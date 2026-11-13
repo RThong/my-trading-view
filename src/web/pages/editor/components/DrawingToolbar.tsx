@@ -5,6 +5,8 @@ import {
   Eye,
   EyeOff,
   ChartSpline,
+  Lock,
+  LockOpen,
   type LucideIcon,
   MessageSquare,
   Minus,
@@ -34,7 +36,11 @@ import type { DrawingTool } from '../hooks/useDrawings';
 
 const OWNER_HINT = '画在这一格里选中的那条线上(先点一下线),没选中就画在这一格第一条线上';
 const TOOL: Record<DrawingTool, { icon: LucideIcon; name: string; hint: string }> = {
-  cursor: { icon: MousePointer2, name: '光标', hint: '光标:点画线选中,拖端点 / 线身调整,Delete 删除(Esc)' },
+  cursor: {
+    icon: MousePointer2,
+    name: '光标',
+    hint: '光标:点画线选中,拖端点 / 线身调整,Delete 删除(Esc);锁定的只能选中,拖不动、删不掉',
+  },
   trend: { icon: Slash, name: '趋势线', hint: `趋势线:点两下,或按住拖。${OWNER_HINT}` },
   ray: {
     icon: MoveUpRight,
@@ -350,7 +356,10 @@ export function DrawingToolbar({
   onTool,
   hidden,
   onToggleHidden,
+  lockAll,
+  onToggleLockAll,
   count,
+  lockedCount,
   onClear,
   disabled,
   plugins,
@@ -359,9 +368,14 @@ export function DrawingToolbar({
   onTool: (t: DrawingTool) => void;
   hidden: boolean;
   onToggleHidden: () => void;
+  /** 锁定全部画线(同 TradingView 左栏 Lock all drawings) */
+  lockAll: boolean;
+  onToggleLockAll: () => void;
   /** 图上有几条画线(没有就不给隐藏 / 删除) */
   count: number;
-  onClear: () => void;
+  /** 其中锁定的条数:有就多问一次要不要连它们一起删 */
+  lockedCount: number;
+  onClear: (keepLocked: boolean) => void;
   /** 空图:没有线可挂,整排禁用 */
   disabled: boolean;
   plugins: PluginControls;
@@ -407,10 +421,23 @@ export function DrawingToolbar({
       <Button
         variant="ghost"
         size="icon-sm"
-        title="删除全部画线"
-        disabled={disabled || count === 0}
+        title={lockAll ? '已锁定全部画线(拖不动、删不掉、不能改字),点一下解锁' : '锁定全部画线:防误碰'}
+        aria-pressed={lockAll}
+        disabled={disabled}
+        onClick={onToggleLockAll}
+        className={lockAll ? ACTIVE : IDLE}
+      >
+        {lockAll ? <Lock /> : <LockOpen />}
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        title={lockAll ? '已锁定全部画线,先解锁再删' : '删除全部画线'}
+        disabled={disabled || count === 0 || lockAll}
         onClick={() => {
-          if (window.confirm(`删除图上全部 ${count} 条画线?`)) onClear();
+          if (!window.confirm(`删除图上全部 ${count} 条画线?`)) return;
+          // 同 TradingView:有锁定的另问一次,取消 = 只删没锁的
+          onClear(lockedCount > 0 && !window.confirm(`其中 ${lockedCount} 条已锁定,也一起删吗?(取消 = 保留锁定的)`));
         }}
         className={IDLE}
       >
@@ -489,6 +516,7 @@ export function DrawingBar({
   onRemove,
   onEditText,
   canLogFit,
+  lockAll,
 }: {
   doc: ChartDoc;
   selected: string | null;
@@ -498,12 +526,16 @@ export function DrawingBar({
   onEditText: (id: string) => void;
   /** 回归通道能不能勾「对数」(区间里有 ≤ 0 的值就不能);已勾上的总能取消 */
   canLogFit: (id: string) => boolean;
+  /** 左栏锁定了全部:每条都按锁定处理(删除 / 改字 / 单条的锁开关都禁用) */
+  lockAll: boolean;
 }) {
   const entry = selected ? allDrawings(doc).find((e) => e.drawing.id === selected) : undefined;
   if (!entry) return null;
   const { drawing: d, layer } = entry;
   // 已勾上的总能取消,没勾的要区间里的值全 > 0 才能勾
   const logLocked = d.kind === 'regression' && !d.log && !canLogFit(d.id);
+  const frozen = !!d.locked || lockAll;
+  const frozenWhy = d.locked ? '已锁定' : '已锁定全部画线(左栏)';
 
   return (
     <div
@@ -543,7 +575,8 @@ export function DrawingBar({
         <Button
           variant="ghost"
           size="icon-2xs"
-          title="编辑文字(双击文字也行)"
+          title={frozen ? `${frozenWhy},先解锁再改字` : '编辑文字(双击文字也行)'}
+          disabled={frozen}
           onClick={() => onEditText(d.id)}
           className="text-neutral-500 hover:text-neutral-200"
         >
@@ -602,7 +635,29 @@ export function DrawingBar({
       <Button
         variant="ghost"
         size="icon-2xs"
-        title="删除这条(Delete)"
+        title={
+          lockAll
+            ? '已锁定全部画线,先在左栏解锁'
+            : d.locked
+              ? '已锁定(拖不动、不能删),点一下解锁'
+              : '锁定:拖不动、不能删,防误碰'
+        }
+        aria-pressed={frozen}
+        // 左栏锁定全部时单条的锁不让点:点了也不起作用(全部锁仍盖着它),还会让人以为解开了
+        disabled={lockAll}
+        onClick={() => {
+          const { locked: _drop, ...rest } = d;
+          onUpdate(d.locked ? rest : { ...rest, locked: true });
+        }}
+        className={frozen ? 'text-neutral-100' : 'text-neutral-500 hover:text-neutral-200'}
+      >
+        {frozen ? <Lock /> : <LockOpen />}
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-2xs"
+        title={frozen ? `${frozenWhy},先解锁再删` : '删除这条(Delete)'}
+        disabled={frozen}
         onClick={() => onRemove(d.id)}
         className="text-neutral-500 hover:text-red-400"
       >
