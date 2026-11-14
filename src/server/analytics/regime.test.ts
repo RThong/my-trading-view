@@ -7,6 +7,7 @@ import {
   netLiquidityWeekly,
   divideAligned,
   yoyPct,
+  yoyPctWeekly,
   monthlyAnnualizedPct,
   releaseMarkers,
   scale,
@@ -491,4 +492,17 @@ test('eqwDdSpread:两腿内连接后各算回撤再相减;正 = 等权跌得更�
   const out = eqwDdSpread(eqw, cap);
   expect(out.map((p) => p.date)).toEqual([d(0), d(1), d(2)]);
   expect(out.map((p) => +p.value.toFixed(6))).toEqual([0, 9, 5]); // eqw 回撤 0/10/5,cap 0/1/0
+});
+
+test('yoyPctWeekly:比 52 周前同一周(不是 53 周前);去年那周缺数就跳过', () => {
+  const rows = [
+    { date: '2025-10-31', value: 90 }, // 53 周前:不该被选中
+    { date: '2025-11-07', value: 100 },
+    { date: '2026-10-30', value: 50 }, // 52 周前 2025-10-31 → 有
+    { date: '2026-11-06', value: 104 },
+    { date: '2026-11-13', value: 104 }, // 52 周前 2025-11-14 缺 → 跳过
+  ];
+  const out = yoyPctWeekly(rows);
+  expect(out.map((p) => p.date)).toEqual(['2026-10-30', '2026-11-06']);
+  expect(out[1].value).toBeCloseTo(4, 9);
 });

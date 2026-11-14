@@ -193,6 +193,20 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   distYield: { label: '馏分油收率', category: '能源', freq: '周', unit: '%', aliases: ['eia', '柴油'] },
   crudeRunsYoy: { label: '炼厂加工量同比', category: '能源', freq: '周', unit: '%', aliases: ['eia'] },
   distProdYoy: { label: '馏分油产量同比', category: '能源', freq: '周', unit: '%', aliases: ['eia', '柴油'] },
+  distDemandYoy: {
+    label: '馏分油表观需求同比 (4 周均)',
+    category: '能源',
+    freq: '周',
+    unit: '%',
+    aliases: ['eia', '柴油', 'product supplied'],
+  },
+  gasDemandYoy: {
+    label: '汽油表观需求同比 (4 周均)',
+    category: '能源',
+    freq: '周',
+    unit: '%',
+    aliases: ['eia', 'product supplied'],
+  },
   dieselRetail: { label: '零售柴油', category: '能源', freq: '周', unit: '$/gal', aliases: ['eia', '泵价'] },
   gasRetail: { label: '零售汽油', category: '能源', freq: '周', unit: '$/gal', aliases: ['eia', '泵价'] },
   dieselRetailMargin: { label: '柴油零售加价', category: '能源', freq: '周', unit: '$/gal', aliases: ['eia'] },
@@ -314,6 +328,8 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   distYield: 'server', // 馏分油产量 ÷ 加工量 × 100
   crudeRunsYoy: 'server', // 同比
   distProdYoy: 'server',
+  distDemandYoy: 'server', // 4 周滚动均值后取同比
+  gasDemandYoy: 'server',
   rbobYoy: 'server',
   coreCpiYoy: 'server', // 由 CPI 指数算同比 / 3 个月年化
   coreCpi3m: 'server',

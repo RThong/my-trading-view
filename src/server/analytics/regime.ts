@@ -115,6 +115,21 @@ export function yoyPct(rows: Point[]): Point[] {
 }
 
 /**
+ * 周频序列的同比 %:对比 52 周(364 天)前**同一周**,与 EIA 周报「同期」口径一致。
+ * 别用 yoyPct:52 周比一年少一天,「≤ 去年同日的最近观测」恒落到 53 周前(2026-11 实测馏分油产量
+ * 同比因此偏 2.6 个百分点)。去年那周缺数 → 该点跳过,不往前后贴。
+ */
+export function yoyPctWeekly(rows: Point[]): Point[] {
+  const byDate = new Map(rows.map((p) => [p.date, p.value]));
+  const weekAgo52 = (d: string) => new Date(Date.parse(d) - 364 * 86_400_000).toISOString().slice(0, 10);
+
+  return rows.flatMap((p) => {
+    const prev = byDate.get(weekAgo52(p.date));
+    return prev ? [{ date: p.date, value: (p.value / prev - 1) * 100 }] : [];
+  });
+}
+
+/**
  * 把 daily 序列在 anchor 的每个日期上取点后相加(逐点前向填充:取 ≤ 该日的最近观测)。
  *
  * ⚠️ **刻意不把 anchor 拉成日频。** 用途是低频腿 + 高频腿拼一个复合量(季频 r* + 日频通胀远期):

@@ -113,12 +113,12 @@ export const GPU_KEY_PREFIX = 'gpu';
  * 这次结果算不算完整。**完整才长缓存(6h)+ 落盘**;降级结果只缓存 10 分钟就重试、不落盘(见 swrCache)。四类例外:
  *  · `fund:` —— SEC 季频,靠独立 job 逐季攒,从没跑过 job 的库里必然缺。
  *  · `gpu`  —— 新接的 experimental 源,允许缺。
- *  · EIA 那 12 条(见 `EIA_SERIES`),**且仅当没配 key 时** —— 那是配置状态,不是失败。
+ *  · EIA 那 14 条(见 `EIA_SERIES`),**且仅当没配 key 时** —— 那是配置状态,不是失败。
  *  · e-Stat 那条(新核心核心 CPI),同样**仅当没配 ESTAT_APP_ID 时**。
  *
  * ⚠️ 第三条的「仅当」是要害:配了 key 还缺 = 网络挂了或源结构变了,属 transient,
  * 就该算不完整、10 分钟后重试。一律豁免的话会把降级结果缓存 6 小时、还写进盘上快照。
- * ⚠️ 反过来不豁免也不行:README 把 EIA key 写成可选项,缺 key 时这 12 条恒缺 →
+ * ⚠️ 反过来不豁免也不行:README 把 EIA key 写成可选项,缺 key 时这 14 条恒缺 →
  * `every` 恒 false → 永远不完整:每 10 分钟重拉一轮全套上游,快照也永远写不进盘。
  */
 export function shouldCache(
@@ -133,8 +133,8 @@ export function shouldCache(
 
 /**
  * ⚠️ **这张名单是手抄的,必须和 fetchFresh(routes/regime.ts)里实际 `put()` 的 EIA 线一致** ——
- * 现在 12 条:周报派生 8 条(开工率水位 + 4 条季节 z + 收率 + 2 条同比)+ 零售泵价 2 条 + 零售加价 2 条。
- * 将来加第 13 条却忘了同步,缺 key 时那条不在豁免里 → 缓存又会永久关不上(见 `shouldCache`)。
+ * 现在 14 条:周报派生 10 条(开工率水位 + 4 条季节 z + 收率 + 2 条同比 + 2 条表观需求同比)+ 零售泵价 2 条 + 零售加价 2 条。
+ * 将来加第 15 条却忘了同步,缺 key 时那条不在豁免里 → 缓存又会永久关不上(见 `shouldCache`)。
  * `regimeKeys.ts` 的 `DB_BACKED_KEYS` 有同构的回归测试,这里同样在 `routes/regime.test.ts` 里钉住。
  */
 export const EIA_SERIES: readonly SeriesKey[] = [
@@ -146,6 +146,8 @@ export const EIA_SERIES: readonly SeriesKey[] = [
   'distYield',
   'crudeRunsYoy',
   'distProdYoy',
+  'distDemandYoy',
+  'gasDemandYoy',
   // 零售两条与两条加价同样只在配了 key 时才有 —— 加价虽然有一条 Yahoo 腿(ULSD/RBOB),
   // 但缺 key 时零售腿为空、整条出不来,所以照样要豁免。裸 `ulsd` 不在此列(它与 EIA 无关)。
   'dieselRetail',

@@ -110,7 +110,7 @@ test('shouldCache:SEC / GPU 缺席是常态,不挡缓存', () => {
   expect(ok(['fund:NVDA:fcf', 'gpuB300'], true)).toBe(true);
 });
 
-test('shouldCache:没配 EIA key 时那 12 条恒缺,必须豁免 —— 否则缓存永久关不上', () => {
+test('shouldCache:没配 EIA key 时那 14 条恒缺,必须豁免 —— 否则缓存永久关不上', () => {
   // 这正是回归点:不豁免的话每次请求都会重拉 FRED/CBOE/Yahoo 全套上游。
   expect(ok([...EIA_SERIES], false)).toBe(true);
   expect(ok([...EIA_SERIES, 'fund:NVDA:fcf'], false)).toBe(true);
@@ -121,7 +121,7 @@ test('shouldCache:配了 key 还缺 = 真失败,照旧挡住缓存等下次重�
   expect(ok(['distStocksZ5y'], true)).toBe(false);
 });
 
-test('shouldCache:豁免只覆盖 EIA 那 12 条,别的源缺席照样挡', () => {
+test('shouldCache:豁免只覆盖 EIA 那 14 条,别的源缺席照样挡', () => {
   expect(ok(['hyOas'], false)).toBe(false);
   expect(ok([...EIA_SERIES, 'hyOas'], false)).toBe(false);
 });

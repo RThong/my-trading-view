@@ -162,6 +162,9 @@ export const REGIME_SERIES = [
   'distYield',
   'crudeRunsYoy',
   'distProdYoy',
+  // 表观需求(product supplied)4 周均同比:「紧张来自需求还是供应」里需求那一半
+  'distDemandYoy',
+  'gasDemandYoy',
   // 零售泵价两条 + 各自的零售加价(EIA 周度零售价调查,**周一发**,与上面那批周三的不同天)。
   // 加价 = 泵价 − 同口径批发期货,$/gal。材料里「加油站并没有按同样比例降价」「下调慢于上调」
   // 说的就是这一层 —— 批发价与裂解都在批发口径,看不见它。

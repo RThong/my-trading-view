@@ -27,6 +27,8 @@ import {
   scale,
   divideAligned,
   yoyPct,
+  yoyPctWeekly,
+  rollingMean,
   sumAtAnchorDates,
   seasonalZFrom,
   oilCracks,
@@ -239,7 +241,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 各标的已 catch→null,Promise.all 不会拒绝;先建后 await(与其它源同批),
   // 别在 allSettled(src) 挂处理器前 await——否则 src 源在此窗口拒绝会成 unhandled。
   const oilP = Promise.all(['CL=F', 'BZ=F', 'HO=F', 'RB=F'].map(yahooClose));
-  // EIA 周报(周三 10:30 ET 发,数据截止上周五)。六条都不落库:一次 GET 给全量历史,
+  // EIA 周报(周三 10:30 ET 发,数据截止上周五)。全都不落库:一次 GET 给全量历史,
   // 修订(下周会改上周值)因此自然带回来,不必攒增量。各自 catch→null,挂了只丢那一格。
   //
   // **这一条 catch 会出声,同文件另外那些不会** —— 不是随手加的:EIA 的 fetcher 会在
@@ -248,8 +250,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 其余源的失败是网络/源侧不可用,unavailable 本身已经说明问题,不必再刷日志。
   const eiaKey = process.env.EIA_API_KEY ?? '';
   const eia = createEiaFetcher({ apiKey: eiaKey });
-  // 没 key 就别发这六个请求 —— 每个都会往回抛同一句「缺 key」,徒增六次往返和六行日志。
-  // 那不是失败,是没配;下面 hasEiaKey 也据此把 EIA 那 12 条(见 EIA_SERIES)从缓存条件里豁免。
+  // 没 key 就别发这十个请求 —— 每个都会往回抛同一句「缺 key」,徒增十次往返和十行日志。
+  // 那不是失败,是没配;下面 hasEiaKey 也据此把 EIA 那 14 条(见 EIA_SERIES)从缓存条件里豁免。
   if (!eiaKey) console.warn('[regime] 未配 EIA_API_KEY,「炼厂·库存」整块不可用(其余视角不受影响)');
   const eiaWeekly = (id: string): Promise<Point[] | null> =>
     eiaKey
@@ -272,6 +274,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
       // 数值几乎重合,所以选错不会露馅 —— 正因为不露馅,这里写死并注明。
       'EMD_EPD2DXL0_PTE_NUS_DPG', // 零售柴油 $/gal
       'EMM_EPM0_PTE_NUS_DPG', // 零售汽油(全等级)$/gal
+      // 表观需求(product supplied = 产量 + 进口 − 出口 − 库存变动,EIA 的需求代理)千桶/日,与实物六条同批周三发
+      'WDIUPUS2', // 馏分油
+      'WGFUPUS2', // 汽油(成品车用汽油)
     ].map(eiaWeekly),
   );
   // 记每个源从发起到 settle 的耗时,冷拉结束打一行,方便定位拖慢冷启动的源。
@@ -330,7 +335,18 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const [bojBank, mufgBars, cgpi, coreCoreCpi] = await Promise.all([bojBankP, mufgBarsP, cgpiP, coreCoreCpiP]);
   const [wti, brent, diesel, rbob] = await oilP;
   const [coreCpi, corePce] = await coreInflP;
-  const [refUtil, distStocks, gasStocks, distExports, crudeRuns, distProd, dieselRetail, gasRetail] = await eiaP;
+  const [
+    refUtil,
+    distStocks,
+    gasStocks,
+    distExports,
+    crudeRuns,
+    distProd,
+    dieselRetail,
+    gasRetail,
+    distDemand,
+    gasDemand,
+  ] = await eiaP;
   const jgb2y = jgbCurve?.series['2Y'] ?? null;
   const jgb10y = jgbCurve?.series['10Y'] ?? null;
   const dgs10 = ust?.['10Y'] ?? null;
@@ -583,7 +599,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   put('oilRollCrack', roll?.crack);
   put('oilRollBrentWti', roll?.brentWti);
 
-  // EIA 周报六条原始序列 → 八条对外线。**水位只发炼厂开工率** —— 它是有绝对刻度的(口播的"98%"就是它,
+  // EIA 周报八条实物原始序列 → 十条对外线。**水位只发炼厂开工率** —— 它是有绝对刻度的(口播的"98%"就是它,
   // 且 100% 是硬顶,一眼看得出还剩多少余量)。库存/出口的裸水位单看不携带信息
   // (1.05 亿桶是高是低取决于现在是 3 月还是 9 月),所以库存两条与出口只发季节 z。
   // EIA 多拉的那几年历史(展示起点再往前垫 SEASONAL_BASELINE_YEARS 年,约 2013 起)是**给季节 z 当基准期用的**,不该画到图上(别的线都从 2018 起,
@@ -603,8 +619,13 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 开工率那格已经答了「开多狠」,这里不重复发加工量水位。
   const yieldPct = distillateYield(distProd, crudeRuns);
   put('distYield', yieldPct && fromHistoryStart(yieldPct));
-  put('crudeRunsYoy', crudeRuns ? fromHistoryStart(yoyPct(crudeRuns)) : undefined);
-  put('distProdYoy', distProd ? fromHistoryStart(yoyPct(distProd)) : undefined);
+  put('crudeRunsYoy', crudeRuns ? fromHistoryStart(yoyPctWeekly(crudeRuns)) : undefined);
+  put('distProdYoy', distProd ? fromHistoryStart(yoyPctWeekly(distProd)) : undefined);
+  // 表观需求只发 4 周均同比(EIA 周报自己的头条口径):单周噪声大(周变化中位数:馏分油约 7.7%、汽油约 2.9%),
+  // 水位又带强季节(汽油夏高冬低),单看答不了「需求比去年强还是弱」。
+  const demandYoy = (rows: Point[] | null) => (rows ? fromHistoryStart(yoyPctWeekly(rollingMean(rows, 4))) : undefined);
+  put('distDemandYoy', demandYoy(distDemand));
+  put('gasDemandYoy', demandYoy(gasDemand));
   // 零售泵价与零售加价。**加价才是可测量,泵价水位不是** —— 家庭体感钉的是泵价,
   // 但泵价里同时装着原油、裂解、零售加价三层,只发水位则涨跌归因不了。
   // 加价 = 泵价 − 同口径批发($/gal 直接减,不 ×42),锚在零售的周一上(见 analytics/retailMargin)。
@@ -651,7 +672,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 全成功才算 complete(降级结果只短暂缓存、不落盘,见 swrCache)。例外:SEC 那几条是季频、GPU 那几条(gpu 前缀)
   // 是新接的 experimental 源(B300 允许缺、库还没跑过 job 时四条都缺)—— 两者都靠独立 job 逐日/逐季攒,
   // 从没跑过 job 的库里必然缺——不能让这类常态把整条路由的缓存永久关掉。
-  // 没配 key 时 EIA 那 12 条恒缺 —— 与 SEC/GPU 同属「必然缺」,不能让它把缓存永久关掉。
+  // 没配 key 时 EIA 那 14 条恒缺 —— 与 SEC/GPU 同属「必然缺」,不能让它把缓存永久关掉。
   // 配了 key 才缺则是真失败(网络/源结构变了),照旧挡住缓存等下次重试。
   const complete =
     shouldCache(unavailable, { hasEiaKey: Boolean(eiaKey), hasEstatKey: Boolean(estatKey) }) && !jgbVix?.degraded;
