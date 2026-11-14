@@ -173,6 +173,13 @@
   假日 `lastClosedTradingDate()` 会返回假日当天,导致整天判失败、守卫永远不绿。
 - **CBOE(VIX 家族/SKEW/RXM/VX1)**:直接打 API + 下 CSV,**不需要 Playwright**。
 - **FRED(利率 / 信用利差 / 流动性 / 通胀)**:免费 key 在 `.env`(`FRED_API_KEY`),不要提交。**油品现货/期货走 Yahoo(`CL/BZ/HO/RB=F`),不是 FRED**;DXY 也走 Yahoo 真 ICE 指数(`DX-Y.NYB`),不用 FRED 的贸易加权 `DTWEXBGS`。
+  ⚠️ 限流可能是 **HTTP 200 + JSON 里带 429 错误码**(OpenBB 专门查 payload);`fred.ts` 撞上时会报误导性的 TypeError
+  (读 undefined 的 filter),不污染数据(只读过代码,没复现)。亚特兰大联储的序列(sticky CPI / 工资)**保持走 FRED**:
+  其官网改版,OpenBB 里所有 atlantafed 直连路径都 404(新前缀 `/-/media/Project/Atlanta/FRBA/Documents/research-and-data/data/...`)。
+- **DTCC 公开文件判断在不在必须 GET**(加 Range):HEAD 对已过保留期的文件也回 200,真 GET 才回 403。
+  保留期按资产类别不同(利率约 2.0 年、信用约 2.2 年),中间有零星缺天(如 SEC 信用 2024-10-01 回 403)。
+- **EIA v2 单次最多返回 5000 行、超了不报警**(日频 `RWTC` 的 `total` 10292 只回 5000)。`offset` 有效、`start` 仍被忽略。
+  现有周频序列约 1866 行不受影响,**将来接日频序列必须翻页**。EIA 日频现货在美国联邦假日沿用前一天的值。
 - **ICE 单名 CDS(AI 巨头 + 甲骨文 + CoreWeave)**:免费公开端点(无 auth),真 CDS 结算价,不是债券代理/二手抓取。
   几个坑:①端点吐的是**价**(平价 100)不是 spread,读时用 `cdsPriceToSpreadBp` 按标准 CDS 定价反解成 bp(回收率 40%、违约强度恒定、平坦利率 4%、T=5Y,二分;价 ≤ 回收价 40 = 无解 → NaN,路由丢点)。2026-10-16 前是 annuity=4.7 线性近似,离校准点越远越偏低、困境区严重低估,已换掉;
   存库存**原始价**(真值源)。②`instrumentName`(如 `ORCLE.SNRFOR.USD.XR14.100.2031-06-20`)按 ticker 匹配名单,

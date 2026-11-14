@@ -679,7 +679,9 @@ CI / DI 的**先行指数**，日本景气拐点的标准判据。
 
 ---
 
-## 4.6 OpenBB 对照中发现的坑（2026-11-13，待并入 `AGENTS.md`）
+## 4.6 OpenBB 对照中发现的坑（2026-11-13）
+
+> ✅ 2026-11-14：涉及已接源的（1、2、3、4、5、8、10）已并入 `AGENTS.md`；6、7、9 只关乎未接的源，留在这里，接的时候再搬。
 
 1. **CBOE 换了下载域名**：`cdn.cboe.com` 对 `api/global/...`（`daily_prices` 和 `delayed_quotes`）307 跳到 `cdn-api.cboe.com`。
    ✅ 已并入（2026-11-14）：`cboeIndex.ts` 与 AGENTS.md 已改新域名。⚠️ **VX 期货合约 CSV（`data/us/futures/...`）不跳转，且在 `cdn-api` 上回 403**，`cboeVx.ts` 保持旧域名。
