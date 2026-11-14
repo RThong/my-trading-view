@@ -49,6 +49,7 @@ import {
   type RegimeCached,
   mergeDbRead,
   resolveSofr,
+  resolveJgbVix,
   fillFromPrev,
   shouldCache,
 } from './regimePolicy';
@@ -438,7 +439,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   put('expShort10Kw', subtractAt(raw.kwFitted10 ?? [], raw.tp10Kw ?? []));
   put('jgb2y', jgb2y?.length ? jgb2y : undefined);
   put('jgb10y', jgb10y?.length ? jgb10y : undefined);
-  put('jgbVix', jgbVix?.length ? jgbVix : undefined);
+  // 单源降级:历史沿用上一份、新点用活着的源补(见 resolveJgbVix);不算完整,见下面 complete
+  const jgb = resolveJgbVix(jgbVix, prev?.body.series.jgbVix);
+  put('jgbVix', jgb.points?.length ? jgb.points : undefined);
   // 日银产出缺口(日历季度)+ 潜在增速及四项贡献度(财年半期)。**两条频率不同、时间轴不是一套**,
   // 各发各的,面板上也分两格 —— 别在任何一层把它们对齐(见 fetchers/bojOutputGap 的文件头)。
   put('jpOutputGap', bojGap?.outputGap);
@@ -650,10 +653,13 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 从没跑过 job 的库里必然缺——不能让这类常态把整条路由的缓存永久关掉。
   // 没配 key 时 EIA 那 12 条恒缺 —— 与 SEC/GPU 同属「必然缺」,不能让它把缓存永久关掉。
   // 配了 key 才缺则是真失败(网络/源结构变了),照旧挡住缓存等下次重试。
-  const complete = shouldCache(unavailable, { hasEiaKey: Boolean(eiaKey), hasEstatKey: Boolean(estatKey) });
+  const complete =
+    shouldCache(unavailable, { hasEiaKey: Boolean(eiaKey), hasEstatKey: Boolean(estatKey) }) && !jgbVix?.degraded;
   const filled = complete ? fresh : fillFromPrev(fresh, prev?.body);
   // 加息次数是库读派生量、不经 fillFromPrev,但基准沿用了上一份 SOFR → 同样标「沿用上次」。
-  const body = sofrFallback.length ? { ...filled, fallback: [...(filled.fallback ?? []), ...sofrFallback] } : filled;
+  // JGB VIX 单源降级时历史沿用了上一份,同样标「沿用上次」
+  const extraFallback = [...sofrFallback, ...(jgb.usedPrev ? ['jgbVix'] : [])];
+  const body = extraFallback.length ? { ...filled, fallback: [...(filled.fallback ?? []), ...extraFallback] } : filled;
 
   // 全部源都打(按耗时降序),一行:定位慢源要看到每一个,不只最慢几个。
   const bySlowest = timings.sort((a, b) => b[1] - a[1]).map(([name, ms]) => `${name} ${(ms / 1000).toFixed(1)}s`);

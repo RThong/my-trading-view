@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { dotDateToIso, parseJgbVixXlsx } from './jpxJgbVix';
+import { dotDateToIso, mergeJgbVix, parseJgbVixXlsx } from './jpxJgbVix';
 
 describe('dotDateToIso', () => {
   test('YYYY.MM.DD → ISO', () => expect(dotDateToIso('2008.01.15')).toBe('2008-01-15'));
@@ -26,5 +26,51 @@ describe('parseJgbVixXlsx', () => {
       { date: '2018-01-04', value: 3.1 },
       { date: '2018-01-05', value: 3.22 },
     ]);
+  });
+});
+
+describe('mergeJgbVix', () => {
+  test('JPX 为主;CBOE 只补 JPX 缺的天,沿用前值的(日本假日)丢掉', () => {
+    const jpx = [
+      { date: '2021-09-30', value: 2.5 },
+      { date: '2021-11-01', value: 2.9 },
+    ];
+    const cboe = [
+      { date: '2021-09-30', value: 9.9 }, // 重叠:以 JPX 为准
+      { date: '2021-10-01', value: 2.6 }, // JPX 缺 → 补
+      { date: '2021-10-04', value: 2.6 }, // 和前一天相同 = 日本假日沿用 → 丢
+      { date: '2021-10-05', value: 2.7 },
+    ];
+    expect(mergeJgbVix(jpx, cboe)).toEqual([
+      { date: '2021-09-30', value: 2.5 },
+      { date: '2021-10-01', value: 2.6 },
+      { date: '2021-10-05', value: 2.7 },
+      { date: '2021-11-01', value: 2.9 },
+    ]);
+  });
+
+  test('按日期去重:同一天以 JPX 为准,源里自身的重复日期只留一条', () => {
+    const jpx = [
+      { date: '2026-11-02', value: 3 },
+      { date: '2026-11-02', value: 3.05 },
+    ];
+    const cboe = [
+      { date: '2026-11-02', value: 9 },
+      { date: '2026-11-03', value: 3.1 },
+      { date: '2026-11-03', value: 3.2 },
+    ];
+    expect(mergeJgbVix(jpx, cboe)).toEqual([
+      { date: '2026-11-02', value: 3.05 },
+      { date: '2026-11-03', value: 3.2 },
+    ]);
+  });
+
+  test('JPX 挂了(空)→ 整条用 CBOE,同样剔沿用前值', () => {
+    const cboe = [
+      { date: '2026-11-02', value: 3 },
+      { date: '2026-11-03', value: 3 },
+      { date: '2026-11-04', value: 3.1 },
+    ];
+    expect(mergeJgbVix([], cboe).map((p) => p.date)).toEqual(['2026-11-02', '2026-11-04']);
   });
 });

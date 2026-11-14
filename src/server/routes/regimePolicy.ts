@@ -68,6 +68,24 @@ export function resolveSofr(
 }
 
 /**
+ * JGB VIX 只有一个源可用(degraded,见 fetchers/jpxJgbVix)时用什么:
+ *  · 有上一份结果:历史照用上一份(两源合并的完整版),上一份最后一天**之后**的新点用活着的那个源补 ——
+ *    JPX 哈希链接失效这类故障修好前一直在,单纯沿用会让图永远停在出故障那天、CBOE 的新数据白白丢掉。
+ *    usedPrev = true → 面板标「沿用上次」。
+ *  · 冷启动没有上一份:先用单源顶着。
+ * 两种都不算完整结果(调用方据 degraded 不长缓存、10 分钟后重试)。没降级就原样用。
+ */
+export function resolveJgbVix(
+  fresh: { points: Point[]; degraded: boolean } | null,
+  prev: Point[] | undefined,
+): { points: Point[] | undefined; usedPrev: boolean } {
+  if (!fresh?.degraded || !prev?.length) return { points: fresh?.points, usedPrev: false };
+
+  const last = prev.at(-1)!.date;
+  return { points: [...prev, ...fresh.points.filter((p) => p.date > last)], usedPrev: true };
+}
+
+/**
  * 本次现拉失败的**外部源**序列,用上一份结果顶上,记入 `fallback`(面板标「沿用上次」)。
  * 库读的(`fund:*` / DB_BACKED_KEYS)不补:它们每次请求都重读库,缺了就是真缺。
  */

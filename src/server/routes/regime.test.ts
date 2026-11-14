@@ -58,6 +58,7 @@ import {
   fillFromPrev,
   mergeDbRead,
   resolveSofr,
+  resolveJgbVix,
 } from './regimePolicy';
 import { JOB_WRITTEN_SERIES, DB_BACKED_KEYS } from './regimeKeys';
 
@@ -195,4 +196,19 @@ test('resolveSofr:现拉到 → 用现拉;没拉到且有上一份 → 用上一
     fallback: ['oisHikes3m', 'oisHikes6m', 'oisHikes12m', 'oisHikes2y'],
   });
   expect(resolveSofr([], undefined)).toEqual({ sofrLive: [], fallback: [] });
+});
+
+test('resolveJgbVix:没降级原样用;单源降级有上一份 → 历史沿用、新点用单源补并标沿用;冷启动 → 单源顶着', () => {
+  const pt = (date: string, value: number) => ({ date, value });
+  const prev = [pt('2026-11-10', 4.5), pt('2026-11-11', 4.6)];
+  const single = [pt('2026-11-04', 9), pt('2026-11-11', 9), pt('2026-11-12', 4.7)];
+
+  expect(resolveJgbVix({ points: single, degraded: false }, prev)).toEqual({ points: single, usedPrev: false });
+  // 上一份最后一天(11-11)及之前用上一份;之后的 11-12 来自单源
+  expect(resolveJgbVix({ points: single, degraded: true }, prev)).toEqual({
+    points: [...prev, pt('2026-11-12', 4.7)],
+    usedPrev: true,
+  });
+  expect(resolveJgbVix({ points: single, degraded: true }, undefined)).toEqual({ points: single, usedPrev: false });
+  expect(resolveJgbVix(null, prev)).toEqual({ points: undefined, usedPrev: false });
 });
