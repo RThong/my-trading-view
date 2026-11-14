@@ -144,8 +144,12 @@
 - **现货价**走 `get_index_price?index_name=btc_usd`(ticker 里的 `underlying_price` 是该到期日远期)。
 - **DVOL**(加密版 VIX,带历史):`get_volatility_index_data?currency=BTC&...&resolution=43200`,
   返回 OHLC。目前没接,要做加密波动率历史曲线时用它(对标 SKEW/VX 那种有历史的源)。
-- **加密 24/7**,没有"收盘"概念。我们仍用 `lastClosedTradingDate()` 给 BTC 打戳,
-  让它跟股票/指数落在同一日期轴上(便于同图对比),这是有意为之。
+- **加密 24/7**,没有"收盘"概念。BTC 期权快照按**抓取时的 UTC 日期**打戳(`getTradingDate`,不跳周末),
+  **不是** `lastClosedTradingDate()` —— 改成美股交易日会让周六 / 周日 / 周一早上三份都标周五、互相覆盖。
+  ⚠️ 所以 BTC 与 IBIT 的 25Δ **同标签日不可直接比**:BTC 标 D 那份 ≈ IBIT 标 D−1(上一美股收盘日)那份;
+  且 BTC 抓取时刻随电脑开机浮动(UTC 02~11 点),Deribit「约 30 天」那档 DTE 在 17~44 天间跳(只挂约 4 周内周度 + 月末)。
+  2026-11 实测:同标签日 IV 变化相关 0.05,按抓取时刻对齐(取 IBIT 收盘后第一份 BTC)升到 0.43、skew 水平 0.66。
+  两者在 BTC 页分两格、不叠图,故不改标签;要对比时按抓取时刻对齐。
 
 ### 其它数据源
 
