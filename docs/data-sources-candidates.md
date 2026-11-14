@@ -477,7 +477,7 @@ Oracle 2031 年到期那只对 5Y 美债的利差，与 ICE CDS 在 77 天里**�
 CDS 指数成交（另一个文件 `CFTC_CUMULATIVE_CREDITS_*`，§1.2）、FX 期权成交（§1.8，只核了字段和笔数）。
 **日元通胀掉期在这份数据里是 0 笔。**
 
-### ✅ 2.1 MOF 対外及び対内証券売買契約等の状況（周频跨境证券流）—— 已接（2026-11-14：`jpFlowOut{Bonds,Equity}` / `jpFlowIn{Equity,Bonds}`，4 周累计兆円，「日本 › 日元」末两格，见 `fetchers/mofSecurities`）
+### ✅ 2.1 MOF 対外及び対内証券売買契約等の状況（周频跨境证券流）—— 已接（2026-11-14：`jpFlowOut{Bonds,Equity}` / `jpFlowIn{Equity,Bonds}`，52 周累计兆円（起初发 4 周累计，在 0 上下乱翻看不出东西，同日改），「日本 › 资金流」tab，见 `fetchers/mofSecurities`）
 
 | | |
 |---|---|

@@ -48,6 +48,7 @@ export type RegimeDim =
   | 'policyRepricing'
   | 'ratesDecomp'
   | 'jpy'
+  | 'jpFlows'
   | 'jgbVol'
   | 'jpBanks'
   | 'jpInflation'

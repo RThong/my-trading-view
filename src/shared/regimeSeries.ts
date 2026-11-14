@@ -88,7 +88,7 @@ export const REGIME_SERIES = [
   'usd',
   'usdjpy',
   'cftcJpy',
-  // MOF 周度跨境证券流(4 周累计净买入,兆円,正 = 买超):carry 的资金流上游。
+  // MOF 周度跨境证券流(52 周累计净买入,兆円,正 = 买超):carry 的资金流上游。
   // 对外 = 日本居民买外国证券(寿险 / 信托 / 个人投信);对内 = 非居民买日本证券
   'jpFlowOutBonds',
   'jpFlowOutEquity',

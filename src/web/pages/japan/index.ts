@@ -5,6 +5,8 @@ export const JAPAN: Perspective = {
   label: '日本',
   tabs: [
     regimeTab('jpy', '日元', 'jpy'),
+    // MOF 周度跨境证券流(52 周累计):日元 carry 的资金流上游,周频、看年度波段,和日元那几格的日频价格分开放
+    regimeTab('jp_flows', '资金流', 'jpFlows'),
     curveTab('jgb_curve', '收益曲线', 'jgb'),
     // 只看各期限水平:利差 pane 与 8306 蜡烛挪去了「银行」那格(银行业传导在那边读)。
     regimeTab('jgb_history', '期限走势', 'jgbHistory'),

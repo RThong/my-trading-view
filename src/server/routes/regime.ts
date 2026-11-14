@@ -453,19 +453,21 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 日元 carry 三序列
   put('usdjpy', usdjpyBars?.length ? usdjpyBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
   put('cftcJpy', cftcJpy?.length ? cftcJpy : undefined);
-  // 周净额噪声大(单周常 ±1 兆円来回翻),发 4 周累计 ≈ 一个月的量,億円 → 兆円。先累计再裁到展示起点
-  const flow4w = (k: 'outBonds' | 'outEquity' | 'inEquity' | 'inBonds') =>
+  // 发 52 周累计(≈ 过去一年的净流向),億円 → 兆円。先累计再裁到展示起点(源 2005 起,2018 的点也有满窗)。
+  // 不用短窗:4 周累计在 0 上下来回翻(相邻周同号仅 80~88%),2022 年寿险抛外债 21.7 兆这种结构性反转被周度噪声盖住;
+  // 52 周相邻周同号 97~99%,一段段波段就是资金流的 regime
+  const flow52w = (k: 'outBonds' | 'outEquity' | 'inEquity' | 'inBonds') =>
     mofFlows &&
     fromHistoryStart(
       rollingMean(
         mofFlows.flatMap((w) => (Number.isFinite(w[k]) ? [{ date: w.date, value: w[k] }] : [])),
-        4,
-      ).map((p) => ({ date: p.date, value: (p.value * 4) / 1e4 })),
+        52,
+      ).map((p) => ({ date: p.date, value: (p.value * 52) / 1e4 })),
     );
-  put('jpFlowOutBonds', flow4w('outBonds') ?? undefined);
-  put('jpFlowOutEquity', flow4w('outEquity') ?? undefined);
-  put('jpFlowInEquity', flow4w('inEquity') ?? undefined);
-  put('jpFlowInBonds', flow4w('inBonds') ?? undefined);
+  put('jpFlowOutBonds', flow52w('outBonds') ?? undefined);
+  put('jpFlowOutEquity', flow52w('outEquity') ?? undefined);
+  put('jpFlowInEquity', flow52w('inEquity') ?? undefined);
+  put('jpFlowInBonds', flow52w('inBonds') ?? undefined);
   // VIX 期货持仓两类(周频,周二持仓 / 周五 15:30 ET 发)
   put('vixCotAm', vixCot?.assetMgr);
   put('vixCotLm', vixCot?.levMoney);
