@@ -232,6 +232,39 @@ describe('runOptionsSnapshot', () => {
     expect(getOptions25Delta(db, 'SPY', 3650)[0].snapshotDate).toBe('2026-06-18');
   });
 
+  test('storeKey:并行试跑的源落库键带后缀,不覆盖主源同一天的行', async () => {
+    const mock: OptionsChainClient = { fetchChain: async () => SAMPLE_CHAIN, getTradingDate: async () => '2026-11-13' };
+    await runOptionsSnapshot({ db, source: 'moomoo', underlyings: ['SPY'], client: mock });
+    await runOptionsSnapshot({ db, source: 'cboe', underlyings: ['SPY'], client: mock, storeKey: (u) => `${u}@cboe` });
+
+    expect(getOptions25Delta(db, 'SPY', 3650).map((r) => r.source)).toEqual(['moomoo']);
+    expect(getOptions25Delta(db, 'SPY@cboe', 3650).map((r) => r.source)).toEqual(['cboe']);
+    const raw = db.query(`SELECT underlying FROM option_chain_raw ORDER BY underlying`).all() as {
+      underlying: string;
+    }[];
+    expect(raw.map((r) => r.underlying)).toEqual(['SPY', 'SPY@cboe']);
+  });
+
+  test('strictTradingDate:取不到交易日就整轮失败、不写库(不回退本地推算)', async () => {
+    const mock: OptionsChainClient = {
+      fetchChain: async () => SAMPLE_CHAIN,
+      getTradingDate: async () => {
+        throw new Error('SPY 下载失败');
+      },
+    };
+    const r = await runOptionsSnapshot({
+      db,
+      source: 'cboe',
+      underlyings: ['SPY', 'QQQ'],
+      client: mock,
+      strictTradingDate: true,
+    });
+
+    expect(r.rows).toEqual([]);
+    expect(r.failures).toHaveLength(2);
+    expect(getOptions25Delta(db, 'SPY', 3650)).toEqual([]);
+  });
+
   test('source 原样落库:deribit 组写 deribit', async () => {
     const mock: OptionsChainClient = { fetchChain: async () => SAMPLE_CHAIN };
 

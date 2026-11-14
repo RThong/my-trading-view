@@ -248,6 +248,13 @@ OpenBB 的 `cftc/models/cds_index_trades.py` 读的是 DTCC 的 **CFTC 信用文
 
 ### 1.4 CBOE 延迟期权链 → moomoo 的备份（2026-11-13 实测）
 
+> **2026-11-14 进展**：并行试跑中（daily `options_cboe`，见 `AGENTS.md` moomoo 段），约 5 个交易日对照后切成主源、去掉 OpenD。
+> 同日逐合约核对后发现下表里的差异**是 moomoo 的问题，不是 CBOE 的**：
+> - **TLT**：两边报价、OI 完全相同，CBOE 计入分红、moomoo 不计 → moomoo 的 skew 系统性高约 2pp。历史已重算（11-13：0.30 对 CBOE 0.38）
+> - **VIX**：moomoo 以现货为标的算 IV，且约八成快照抓在夜盘（报价空或极宽），101 天里只有 15 天能修 → 切换时整段删、从 CBOE 重攒
+> - 覆盖：所有美国上市期权都有（个股 / ETF / 指数 SPX·NDX·RUT / ADR），非美国上市没有；纳指用 QQQ（NDX 周度期权 OI 太薄），标普 SPY 与 SPX 25Δ skew 只差 0.2~0.4pp，不换
+> - 本源期权（CME 的 CL / GC / ZN 期货期权）免费拿不到（CME 站点脚本 403、CVOL 付费），且 VRP 的隐含腿 OVX / GVZ / VXTLT 本身是 ETF 口径，继续用 ETF
+
 | | |
 |---|---|
 | URL | `https://cdn-api.cboe.com/api/global/delayed_quotes/options/{SPY,QQQ,GLD,USO,TLT,IBIT,_VIX}.json`（指数前面加 `_`；旧域名 `cdn.cboe.com` 307 过来） |
@@ -271,7 +278,7 @@ OI 基本一致（TLT 83.5 那档两边都是 10180）。
 若将来完全替换，`moomoo-api` 连同 protobufjs 的 audit 漏洞也能去掉。
 
 ⚠️ 坑：.VIX 的 IV 口径和 moomoo 不同（直接换源会在换源那天出台阶）；文件带已到期的合约要过滤；约一成合约没有 IV。
-**建议先当备份并行跑两周**，再决定要不要完全替换。
+~~建议先当备份并行跑两周~~ → 按本节开头的进展：并行约 5 个交易日对照后切换。
 
 ---
 

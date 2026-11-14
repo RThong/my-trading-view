@@ -87,6 +87,19 @@
 - **两个端口别搞混**:`33333` = WebSocket(我们 TS 用的 `moomoo-api` npm 包);
   `11111` = 原生 TCP(Python SDK / moomoo 官方 skill 用的)。
 - **IV 是百分数**:moomoo 返回 `19.296` 表示 19.296%,入库前 ÷100 归一化成小数。
+- ⚠️ **VIX 期权的 IV 不可用**(2026-11 查实,Codex 独立复核同结论):moomoo 以 **VIX 现货**为标的算 IV(正确口径是同到期 VX 远期 + Black-76,
+  CBOE 即如此),远期偏离现货时 put IV 严重偏低(10-15:行权价 18 的 put moomoo 20.6%、按远期 77.5%);且 daily 触发点大多落在
+  VIX 期权夜盘,101 天里只有 15 天 25Δ 附近有正常报价。→ VIX 的 25Δ 改用 CBOE(见下条),moomoo 的 `.VIX` 历史在切换那天整段删
+  (`bun run src/server/jobs/repairMoomooOptions.ts --write --drop-vix`)。
+- ⚠️ **不计分红**:TLT(年化约 4~5%,每月除息)call IV 偏低约 1pp、put 偏高约 1.3pp,skew 被系统性高估约 2pp。
+  历史已按「期限内实际除息」用美式二叉树重算(`jobs/repairMoomooOptions`,source 标 `moomoo-recalc`,2026-11-14 已改 99 天)。
+  ⚠️ 切换前 moomoo 每天新写的 TLT 仍没计分红(图上差约 2pp 的台阶),切换那天的 `--write --drop-vix` 会一并重算。
+- **CBOE 延迟期权链在并行试跑**(daily `options_cboe` 分组,落库键带 `@cboe` 后缀、不上图;`fetchers/cboeOptions`):
+  `cdn-api.cboe.com/api/global/delayed_quotes/options/{代码}.json`(免 key、无文档,指数前加 `_`),一个文件 = 全部到期日、
+  带 IV / 希腊值 / OI / 全市场最优买卖价,7 个标的一轮约 5 秒、不用 OpenD。交易日取文件里最后一笔成交的日期。
+  与 moomoo 逐合约对比:不分红 ETF IV 差 ≤ 0.2pp、OI 全同。
+  ⏰ **待办:2026-11-21 前后(并行满 5 个交易日)验收并切成主源,按 `docs/options-cboe-switch.md` 逐步做**
+  (验收脚本 `bun run src/server/jobs/compareOptionsSources.ts`;重点看工作日夜里 VIX 是否仍是收盘报价、USO 偏差)。
 - **put delta 为负、call delta 为正**(已用真实链核实)。25Δ 选取依赖这个符号约定。
 - **链/快照字段路径**(靠 debug dump 试出来的,非直觉):
   - 静态链:`o.call.basic.security.code`、`o.call.optionExData.strikePrice`

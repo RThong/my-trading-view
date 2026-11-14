@@ -17,6 +17,7 @@ import { lastClosedTradingDate } from './tradingCalendar';
 import { OPTIONS_UNDERLYINGS } from '../config';
 import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
 import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
+import { createCboeOptionsClient } from '../fetchers/cboeOptions';
 import { updateVrpInputs } from './vrpInputs';
 import { updateVxTermStructure } from './vxTermStructure';
 import { updateErisSnapshot } from './erisSnapshot';
@@ -34,6 +35,8 @@ const PUT_CALL_PROBE = PUT_CALL_SERIES.equity;
 
 type RunDailyJobOpts = {
   db: Database;
+  /** CBOE 延迟期权链(并行试跑,注入式;CLI 传 createCboeOptionsClient,测试省略以免联网)。 */
+  cboeOptionsClient?: OptionsChainClient;
   /** moomoo 期权标的(如 ['SPY', '.VIX'])。需配合 optionsClient 使用。 */
   optionsUnderlyings?: string[];
   optionsClient?: OptionsChainClient;
@@ -92,9 +95,19 @@ async function runOptionsGroup(
   source: string,
   underlyings: string[],
   client: OptionsChainClient,
+  storeKey?: (u: string) => string,
 ): Promise<void> {
   await withJobRun(db, jobName, async () => {
-    const { rows, failures } = await runOptionsSnapshot({ db, source, underlyings, client });
+    // CBOE 的交易日来自文件里的成交时间,取不到就整轮失败,不回退本地推算(不认假日)
+    const strictTradingDate = source === 'cboe';
+    const { rows, failures } = await runOptionsSnapshot({
+      db,
+      source,
+      underlyings,
+      client,
+      storeKey,
+      strictTradingDate,
+    });
     return threeState(rows.length, rows.length, failures); // rows==0 即无成功 → failed
   });
 }
@@ -103,6 +116,18 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   // 期权快照:moomoo(股票/ETF/指数)与 Deribit(加密)各记一个 job,互不连累。
   if (opts.optionsUnderlyings?.length && opts.optionsClient) {
     await runOptionsGroup(opts.db, 'options', 'moomoo', opts.optionsUnderlyings, opts.optionsClient);
+  }
+  // 并行试跑:CBOE 延迟期权链,同一批标的,落库键带 `@cboe` 后缀(不覆盖 moomoo、不上图)。
+  // 对照几个交易日、确认能接上后再切成主源(见 docs/data-sources-candidates.md §1.4)
+  if (opts.cboeOptionsClient) {
+    await runOptionsGroup(
+      opts.db,
+      'options_cboe',
+      'cboe',
+      OPTIONS_UNDERLYINGS,
+      opts.cboeOptionsClient,
+      (u) => `${u}@cboe`,
+    );
   }
   if (opts.cryptoOptionsUnderlyings?.length && opts.cryptoOptionsClient) {
     await runOptionsGroup(
@@ -327,6 +352,7 @@ const DAILY_GROUPS: GroupTable = {
   vrp_inputs: () => ({ vrpInputsUpdater: updateVrpInputs }),
   vx_term_structure: () => ({ vxUpdater: updateVxTermStructure }),
   eris_snapshot: () => ({ erisUpdater: updateErisSnapshot }),
+  options_cboe: () => ({ cboeOptionsClient: createCboeOptionsClient() }),
   ice_cds: () => ({ iceCdsUpdater: updateIceCds }),
   sbg_cds: () => ({ sbgCdsUpdater: (db: Database) => updateDtccCds(db) }),
   dtcc_zcis: () => ({ zcisUpdater: (db: Database) => updateDtccZcis(db) }),

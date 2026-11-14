@@ -96,6 +96,12 @@ type RunOpts = {
   client: OptionsChainClient;
   /** 另抓第二档(月度)到期日的标的;缺省按标的目录(secondExpiry)。 */
   secondExpiry?: readonly string[];
+  /** 落库用的标的键(缺省 = 原样)。并行试跑另一个源时加后缀(如 `SPY@cboe`),免得覆盖主源同一天的行 ——
+   *  两张表的主键不含 source;页面按具体标的名读,带后缀的行不会上图。 */
+  storeKey?: (u: string) => string;
+  /** 交易日只认 client 给的(取不到就整轮失败、不写库),不回退本地推算 —— 本地推算不认交易所假日,
+   *  假日前后会把数据写到错误日期。CBOE 用(它的交易日来自文件里的成交时间);moomoo 维持回退。 */
+  strictTradingDate?: boolean;
 };
 
 export type OptionsSnapshotResult = {
@@ -113,16 +119,21 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
   // 整批一个日期(同一市场同一交易日)。
   let snapshotDate: string;
   try {
-    snapshotDate = (await opts.client.getTradingDate?.()) ?? lastClosedTradingDate();
-  } catch {
+    const d = await opts.client.getTradingDate?.();
+    if (!d && opts.strictTradingDate) throw new Error('client 没给出交易日');
+    snapshotDate = d ?? lastClosedTradingDate();
+  } catch (err) {
+    if (opts.strictTradingDate)
+      return { rows: [], failures: opts.underlyings.map((u) => `${u}: 取交易日失败(${(err as Error).message})`) };
     snapshotDate = lastClosedTradingDate();
   }
   const rows: Options25DeltaRow[] = [];
   const failures: string[] = [];
   const secondExpiry = new Set(opts.secondExpiry ?? secondExpiryUnderlyings());
+  const key = opts.storeKey ?? ((u: string) => u);
 
   const toRaw = (u: string, chain: OptionChainSnapshot): OptionChainRawRow => ({
-    underlying: u,
+    underlying: key(u),
     source: opts.source,
     snapshotDate,
     expiry: chain.expirationDate,
@@ -141,7 +152,7 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
 
       // IV 以百分数存储(例如 16.63),方便图表坐标轴显示。
       const row: Options25DeltaRow = {
-        underlying: u,
+        underlying: key(u),
         source: opts.source,
         snapshotDate,
         callIv: sel.callIv * 100,
