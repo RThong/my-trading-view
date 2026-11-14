@@ -137,13 +137,17 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     });
   }
 
-  // ice_cds 分组:AI 巨头 + 甲骨文 + CoreWeave + SpaceX 单名 CDS EOD 结算价(ICE 免费)。
-  // 默认展示的 core 标的缺任一 → failed(数据源可能改 ticker),让当天后续触发重试并在状态板告警。
+  // ice_cds 分组:AI 巨头 + 甲骨文 + CoreWeave + SpaceX 单名 CDS EOD 结算价(ICE 免费),顺带 CDX 北美 IG / HY 指数。
+  // 默认展示的 core 标的或任一 CDX 缺 → failed(数据源可能改 ticker / 端点挂了),让当天后续触发重试并在状态板告警。
   if (opts.iceCdsUpdater) {
     await withJobRun(opts.db, 'ice_cds', async () => {
       const { total, missing } = await opts.iceCdsUpdater!(opts.db);
       return missing.length
-        ? { status: 'failed', error: `核心标的缺失(数据源可能变动):${missing.join(', ')}`, recordsWritten: total }
+        ? {
+            status: 'failed',
+            error: `核心标的 / CDX 缺失(数据源可能变动):${missing.join(', ')}`,
+            recordsWritten: total,
+          }
         : { status: 'success', recordsWritten: total };
     });
   }

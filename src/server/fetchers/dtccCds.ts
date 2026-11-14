@@ -57,7 +57,7 @@ export function onTheRun5y(date: string): string {
 // 引号可有可无:2025-11 起表头和数据全带引号,之前表头不带、数据带(名义本金 "500,000,000" 里有逗号)。
 // 实测两版都没有转义引号("")。
 // ponytail: 不处理转义引号;真出现了换成完整的 CSV 状态机。
-function splitCsvLine(line: string): string[] {
+export function splitCsvLine(line: string): string[] {
   return [...line.matchAll(/(?:^|,)(?:"([^"]*)"|([^,"]*))/g)].map((m) => m[1] ?? m[2]);
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseIceCds } from './iceCds';
+import { parseIceCds, parseIceCdx } from './iceCds';
 import { cdsPriceToSpreadBp, missingCoreCds } from '../analytics/rateCurves';
 
 // 真实端点样本(截断):含目标名、不同货币/票息干扰项、名单外实体、同名多到期。
@@ -121,5 +121,55 @@ describe('missingCoreCds', () => {
   it('只缺非 core(Broadcom/Dell/Intel)→ 空(容忍)', () => {
     const got = new Set([...all].filter((t) => !['BROINC', 'DELLN', 'INTC'].includes(t)));
     expect(missingCoreCds(got)).toEqual([]);
+  });
+});
+
+describe('parseIceCdx', () => {
+  const row = (instrumentName: string, eodPrice: string, clearingDate = '2026-11-13') => ({
+    clearingDate,
+    instrumentName,
+    eodPrice,
+  });
+
+  it('取最高系列、同系列最高版本的 5Y;3Y / 10Y / 欧洲不取;最高系列缺价 → 那条缺失,不退回旧系列', () => {
+    const snap = parseIceCdx([
+      row('CDX-NAIGS46V1-5Y', '101.5'), // 旧系列
+      row('CDX-NAIGS47V1-5Y', '101.8425'),
+      row('CDX-NAIGS47V1-10Y', '101.0'),
+      row('CDX-NAHYS47V1-5Y', '105.0'),
+      row('CDX-NAHYS47V2-5Y', '106.1096'), // 成分违约后的新版本
+      row('CDX-NAHYS47V2-3Y', '105.2'),
+      row('ITRAXX-EUROPES46V1-5Y', '101.92'),
+      row('CDX-NAIGS48V1-5Y', ''), // 新系列当天缺价:Number('') = 0,不能当有效价,也不能退回 S47
+    ]);
+    expect(snap.date).toBe('2026-11-13');
+    expect(Object.fromEntries(snap.points.map((p) => [p.ticker, p.price]))).toEqual({ CDX_HY: 106.1096 });
+  });
+});
+
+describe('parseIceCdx 日期', () => {
+  it('快照日 = 最新合法清算日;主力那行缺日期 / 日期落后 → 记缺失,不退回旧系列', () => {
+    const snap = parseIceCdx([
+      { clearingDate: '2026-11-13', instrumentName: 'CDX-NAIGS47V1-5Y', eodPrice: '101.8' },
+      // HY:新系列 S48 缺清算日期,旧系列 S47 有日期有价 —— 不能拿 S47 冒充主力
+      { clearingDate: '', instrumentName: 'CDX-NAHYS48V1-5Y', eodPrice: '107' },
+      { clearingDate: '2026-11-13', instrumentName: 'CDX-NAHYS47V1-5Y', eodPrice: '106' },
+    ]);
+    expect(snap.date).toBe('2026-11-13');
+    expect(snap.points).toEqual([{ ticker: 'CDX_IG', price: 101.8 }]);
+
+    // 主力那行是前一天的价 → 不拿来标成当天
+    const stale = parseIceCdx([
+      { clearingDate: '2026-11-13', instrumentName: 'CDX-NAIGS47V1-5Y', eodPrice: '101.8' },
+      { clearingDate: '2026-11-12', instrumentName: 'CDX-NAHYS47V1-5Y', eodPrice: '106' },
+    ]);
+    expect(stale.points.map((p) => p.ticker)).toEqual(['CDX_IG']);
+  });
+
+  it('全部行都缺清算日期,或日期早于开始存的那天 → 一条都不出', () => {
+    const snap = parseIceCdx([{ clearingDate: '', instrumentName: 'CDX-NAIGS47V1-5Y', eodPrice: '101.8' }]);
+    expect(snap.points).toEqual([]);
+    const early = parseIceCdx([{ clearingDate: '0001-01-01', instrumentName: 'CDX-NAIGS47V1-5Y', eodPrice: '101.8' }]);
+    expect(early.points).toEqual([]);
   });
 });

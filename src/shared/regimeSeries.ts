@@ -19,6 +19,9 @@ export type FundSeries = `${typeof FUND_KEY_PREFIX}${string}`;
 export const REGIME_SERIES = [
   // ── 直接透传的 FRED / CBOE / CNN 源(regime.ts 的 `direct` 映射)
   'hyOas',
+  // CDX 北美指数主力 5Y 的约定利差(%):ICE 结算价逐日存 + 之前的 DTCC 成交回填,读库换算(regimeDb)
+  'cdxIg',
+  'cdxHy',
   'cor1m',
   // Cboe 3 个月隐含相关性(标普前 50 大成分股两两隐含相关性均值),面板上紧挨 cor1m 单独一格。
   'cor3m',

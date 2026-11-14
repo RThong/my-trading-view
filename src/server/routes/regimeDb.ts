@@ -6,6 +6,7 @@ import { nearMinusFar } from '../analytics/termStructure';
 import { rollingSharpe } from '../analytics/sharpe';
 import { getMarketSeries, getPriceBars, getSecLag } from '../storage/repository';
 import { HISTORY_START_DATE } from '../config';
+import { cdsPriceToSpreadBp } from '../analytics/rateCurves';
 import {
   BUYER_FCF_SERIES,
   BUYER_FCFQ_SERIES,
@@ -56,6 +57,22 @@ const SERIES_ID: Record<FundKind, (ticker: string) => string> = {
   revM: (t) => twseSeriesId(t, 'revM'),
   revYoy: (t) => twseSeriesId(t, 'revYoy'),
 };
+
+/**
+ * CDX 主力 5Y:ICE 结算价(ice_cds 分组每天存)为准,ICE 开始存之前接 DTCC 成交回填的段;
+ * 价按单名同一套 CDS 定价模型反解成约定利差,发 %(与 HY OAS 同单位,能叠在一格里比)。
+ * ⚠️ HY 的报价惯例回收率有说 30% 的,这里统一按 40%:2026-11 实测两者只差约 3bp。
+ */
+export function cdxSpreadPct(db: Database, index: 'IG' | 'HY', coupon: number): Point[] {
+  const ice = getMarketSeries(db, `ICE_CDX_${index}`);
+  const iceFirst = ice[0]?.date ?? '9999';
+  const joined = [...getMarketSeries(db, `DTCC_CDX_${index}`).filter((p) => p.date < iceFirst), ...ice];
+
+  return joined.flatMap((p) => {
+    const bp = cdsPriceToSpreadBp(p.value, coupon);
+    return Number.isFinite(bp) ? [{ date: p.date, value: bp / 100 }] : [];
+  });
+}
 
 /**
  * 读**全部来自本地库**的东西:market_series 的直读几条、price_eod 的蜡烛、以及由它们派生的量。
@@ -128,6 +145,8 @@ export function readDbBacked(
   // MOVE:实时拉的优先,库里的补丁只填 Yahoo 断供的那些天。
   put('move', preferLive(moveLive, getMarketSeries(db, 'MOVE')));
   put('hyOas', preferLive(hyOasLive, getMarketSeries(db, 'BAMLH0A0HYM2')));
+  put('cdxIg', cdxSpreadPct(db, 'IG', 100));
+  put('cdxHy', cdxSpreadPct(db, 'HY', 500));
 
   // OIS 隐含「到 N 为止累计计入几次加息」:逐日用当天整条曲线反推。Eris 由 daily job 写库,所以归这一批重读。
   // 基准 = 当日 SOFR 定盘值;FRED 次日早上才发,当天没有就沿用上一个(≤ 当日最近)。

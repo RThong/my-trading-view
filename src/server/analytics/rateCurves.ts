@@ -35,6 +35,11 @@ function cdsPrice(spreadBp: number, coupon: number, m: CdsMarket): number {
   return 100 - ((spreadBp - coupon) / 100) * rpv01;
 }
 
+/** 约定 spread(bp)→ 价:cdsPriceToSpreadBp 的反函数(同一模型,来回无损)。DTCC 里 IG 指数按利差报,换成价与 ICE 同口径存。 */
+export function cdsSpreadToPrice(spreadBp: number, coupon = 100, m: CdsMarket = USD_CDS): number {
+  return cdsPrice(spreadBp, coupon, m);
+}
+
 // s → ∞ 时价趋近回收价 100×R:价 ≤ 回收价 = 模型无解(市场已按即刻违约定价)→ NaN,由调用方丢点。
 // 上界按需倍增,深困境区不被截断。
 export function cdsPriceToSpreadBp(price: number, coupon = 100, m: CdsMarket = USD_CDS): number {

@@ -123,6 +123,8 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
 
   // ── 信用·流动性
   hyOas: daily('信用·流动性', 'HY OAS 高收益信用利差', '%', ['高收益', '信用利差']),
+  cdxIg: daily('信用·流动性', 'CDX 北美投资级 5Y 利差', '%', ['cdx', 'cds', '投资级', 'ig']),
+  cdxHy: daily('信用·流动性', 'CDX 北美高收益 5Y 利差', '%', ['cdx', 'cds', '高收益', 'hy']),
   netLiquidity: { label: '净流动性', category: '信用·流动性', freq: '周', unit: '$B', aliases: ['liquidity'] },
   reverseRepo: daily('信用·流动性', '逆回购 RRP', '$B', ['rrp']),
   reserves: { label: '准备金', category: '信用·流动性', freq: '周', unit: '$B' },
@@ -300,6 +302,8 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
  * 两种都照常由 /api/regime 发出:知识库的 skill 还在读接口,也留着给前端现算结果对账。
  */
 export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
+  cdxIg: 'server', // 结算价 / 成交价按 CDS 定价模型反解成利差
+  cdxHy: 'server',
   // ── calc:A − B / A ÷ B
   vixeqVix: 'calc', // vixeq ÷ vixSpot(现拉 VIX,不等 daily job)
   corTermSpread: 'calc', // cor3m − cor1m
