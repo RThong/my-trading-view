@@ -15,6 +15,8 @@
 EIA 那约 250 个模型是 API v2 的机械镜像，按「任意 v2 序列」处理。下表每条都**实际下载 / 调 API 验过**，
 细节见各节；看过但不做的见 §4.5，新发现的坑见 §4.6。
 
+> **2026-11-14 收尾**：值得接的已接完（CDX、ZCIS、PortWatch、MOF 资金流、短観预期、SMH / VXSMH 等）；CMDI、EIA 原油 / SPR、JSDA 日本信用利差评估后不做（理由见各条）。其余低优先候选要么与已有重合、要么面板没有对应视角，**别再主动提议扩数据源**，等用户提出具体需求再查。
+
 | # | 内容 | 对应视角 | 依赖 | 回填 | 工作量 | 建议 | 详见 |
 |---|---|---|---|---|---|---|---|
 | 1 | CDS 指数（CDX IG/HY、iTraxx Main/Crossover）：ICE 结算价每天存 + DTCC 补约 2.2 年 | 信用 | 零 / `fflate` | ICE 只有当天；DTCC 约 2.2 年 | ICE 约 2h；回填约 1 天 | ✅ 已接 CDX 北美 IG / HY（2026-11-14，ICE 逐日存 + DTCC 回填）；欧洲不接（不在任何视角） | §1.2 |
@@ -352,7 +354,7 @@ Oracle 2031 年到期那只对 5Y 美债的利差，与 ICE CDS 在 77 天里**�
 |---|---|---|---|---|
 | ✅ 半导体 vol 脱钩大盘（2026-11-14 已接：「期权 › SMH」tab，不抓 SMH 期权链——25Δ 两翼价差约 40%）：`VXSMH − VXN` | CBOE `VXSMH_History.csv` | 2025-09-16 起 294 行；差值均值 20.0（11.9~36.8），最新 21.15；日变化相关 0.83 | 零 | 只有约 14 个月，先别算分位；不用 moomoo 就能做（对照记忆里砍 SOXX 的理由） |
 | 期权隐含的政策利率分布（二选一，PRS 更便宜） | 亚特兰大联储 MPT `.../-/media/Project/Atlanta/FRBA/Documents/research-and-data/data/market-probability-tracker/mpt_histdata.xlsx`；堪萨斯城联储 PRS `kcresearch-share.kansascityfed.org/kc-prs/KCPRU_KCPRS.csv` | MPT 7.2MB、32 万行长表，2023-03-29~2026-11-10 共 911 天；PRS 209KB，1989 起到 11-11，和 MOVE 水平相关 0.90、日变化 0.55 | `fflate` / 零 | MPT 坑：`date` 是 ISO 字符串、`reference_start` 是 Excel 序列号。PRS 真正的新信息是偏度列 `KCPRS`；构造口径没读原文 |
-| 纽约联储公司债压力指数 CMDI（IG / HY） | `newyorkfed.org/medialibrary/research/interactives/cmdi/downloads/Market%20CMDI.xlsx`，读 `Index Data` 表，表头第 6 行 | 每周五一个点，2005-01-07~2026-10-23 共 1138 点，滞后约 3 周；2018 起和 HY OAS 水平相关 0.848、**周变化相关 0.195** | `fflate` | 信息和 HY 利差不重复，且不受 FRED 3 年截断影响 |
+| ❌ 纽约联储公司债压力指数 CMDI（2026-11-14 评估后不做：说的是 HY 利差同一件事，HY + 13 条梯队已在；周频还滞后约 3 周，它报警时利差格早看到了；周变化相关低主要是频率 / 滞后差，不是新信息）（IG / HY） | `newyorkfed.org/medialibrary/research/interactives/cmdi/downloads/Market%20CMDI.xlsx`，读 `Index Data` 表，表头第 6 行 | 每周五一个点，2005-01-07~2026-10-23 共 1138 点，滞后约 3 周；2018 起和 HY OAS 水平相关 0.848、**周变化相关 0.195** | `fflate` | 信息和 HY 利差不重复，且不受 FRED 3 年截断影响 |
 | 旧金山联储核心 PCE 需求 / 供给拆分 | `frbsf.org/wp-content/uploads/supply-demand-pce-inflation.xlsx`，读 `Data` 表 | 1969m1~2026m9；最新需求 1.21、不确定 0.77、供给 1.13 | `fflate` | 最近几行月份标签前面多一个空格（`" 2026m7"`） |
 | 纽约联储消费者调查 SCE 1/3/5 年通胀预期 | `frbny-sce-data.xlsx`，读 `Inflation expectations` 表，表头第 4 行 | 2013-06~2026-10（密歇根 MICH 只到 2026-09）；最新 1y 3.91、3y 3.29、5y 3.0 | `fflate`（1.27MB，43 张表） | 5 年期那列起点更晚 |
 | 全球供应链压力 GSCPI | `newyorkfed.org/medialibrary/research/interactives/data/gscpi/gscpi_interactive_data.csv` | 338KB，1997-09~2026-10，最新 1.26 | 零 | 每一列是一个发布版本（表头是 Excel 序列号），取最后一列；缺值写 `#N/A`。官方「.xlsx」下载其实是 BIFF8，见 §4.6 |
@@ -369,7 +371,9 @@ Oracle 2031 年到期那只对 5Y 美债的利差，与 ICE CDS 在 77 天里**�
 
 ---
 
-### EIA 周报的上游缓冲垫（原油库存 / SPR）
+### ❌ EIA 周报的上游缓冲垫（原油库存 / SPR）—— 评估后不做（2026-11-14）
+
+> 能源页已有价格、裂解、炼厂与成品油库存,油价眼下由霍尔木兹海峡主导(那格已接);原油库存多一条线不改变对油市的判断。SPR 是政策性放储 / 回补,不是市场信号。下面的接入细节保留,真要接时只是加两个 series_id。
 
 配套：已接的八条 EIA 周度实物序列见 `AGENTS.md` 取数总览的 EIA 行 + `DATA_SOURCES.md` 的「能源实物面」。
 端点、鉴权、三个坑都已验证并落地在 `fetchers/eia.ts`，接这两条**只是加两个 series_id**，没有新的调研成本。
@@ -563,7 +567,9 @@ DB 名对照在官方手册 `https://www.stat-search.boj.or.jp/info/api_manual.p
 5-10Y / 10-30Y / 30+Y 分组），**没有利率，不是 OIS 曲线**；且只挂当天一份。已挪到 `AGENTS.md`
 「查过、确认没有的」。
 
-### 2.5 JSDA 公社債店頭売買参考統計値
+### ❌ 2.5 JSDA 公社債店頭売買参考統計値 —— 评估后不做（2026-11-14）
+
+> 日本公司债利差常年极窄、几乎不动(日银长期买公司债压住了波动),画出来近乎一条平线;还要每天从约 1.2 万行里挑券、分评级、减 JGB 才算得出利差,工作量与信息量不成比例。
 
 | | |
 |---|---|
