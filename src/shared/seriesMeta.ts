@@ -215,6 +215,15 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   gasRetail: { label: '零售汽油', category: '能源', freq: '周', unit: '$/gal', aliases: ['eia', '泵价'] },
   dieselRetailMargin: { label: '柴油零售加价', category: '能源', freq: '周', unit: '$/gal', aliases: ['eia'] },
   gasRetailMargin: { label: '汽油零售加价', category: '能源', freq: '周', unit: '$/gal', aliases: ['eia'] },
+  // 源含周末(船天天走):与期货同格时由 weekends 标记剔掉周末点,别让周末撑开价格格子的时间轴
+  hormuzTransits: {
+    ...daily('能源', '霍尔木兹过船数 (7 日均)', '艘/日', ['hormuz', '海峡', 'portwatch']),
+    weekends: true,
+  },
+  hormuzTankers: {
+    ...daily('能源', '霍尔木兹油轮过船数 (7 日均)', '艘/日', ['hormuz', '海峡', 'portwatch']),
+    weekends: true,
+  },
 
   // ── 日本
   jgb2y: daily('日本', '日债 2Y', '%', ['jgb', '日本国债']),
@@ -336,6 +345,8 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   distProdYoy: 'server',
   distDemandYoy: 'server', // 4 周滚动均值后取同比
   gasDemandYoy: 'server',
+  hormuzTransits: 'server', // 7 日滚动均值
+  hormuzTankers: 'server',
   rbobYoy: 'server',
   coreCpiYoy: 'server', // 由 CPI 指数算同比 / 3 个月年化
   coreCpi3m: 'server',

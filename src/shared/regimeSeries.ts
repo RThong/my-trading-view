@@ -181,6 +181,9 @@ export const REGIME_SERIES = [
   'gasRetail',
   'dieselRetailMargin',
   'gasRetailMargin',
+  // 霍尔木兹海峡每日过船数(IMF PortWatch,AIS 推算,7 日均):海峡通没通的直接读数,原油页其余格都只是价格侧的间接反映
+  'hormuzTransits',
+  'hormuzTankers',
 
   // ── 长端分解(rates-decomposition)
   'expShort10Kw',

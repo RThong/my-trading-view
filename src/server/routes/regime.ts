@@ -20,6 +20,7 @@ import { fetchShillerCape } from '../fetchers/capeShiller';
 import { fetchHlwRstar } from '../fetchers/nyfedRstar';
 import { fetchAcmTermPremium } from '../fetchers/nyfedAcm';
 import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
+import { fetchHormuzTransits } from '../fetchers/portwatch';
 import {
   subtractAligned,
   subtractAt,
@@ -241,6 +242,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 各标的已 catch→null,Promise.all 不会拒绝;先建后 await(与其它源同批),
   // 别在 allSettled(src) 挂处理器前 await——否则 src 源在此窗口拒绝会成 unhandled。
   const oilP = Promise.all(['CL=F', 'BZ=F', 'HO=F', 'RB=F'].map(yahooClose));
+  // 霍尔木兹海峡每日过船数(IMF PortWatch,2019 起全历史一次拉全,约滞后 5 天)。不落库。
+  const hormuzP = fetchHormuzTransits().catch(() => null);
   // EIA 周报(周三 10:30 ET 发,数据截止上周五)。全都不落库:一次 GET 给全量历史,
   // 修订(下周会改上周值)因此自然带回来,不必攒增量。各自 catch→null,挂了只丢那一格。
   //
@@ -306,6 +309,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     coreInfl: coreInflP,
     oil: oilP,
     eia: eiaP,
+    hormuz: hormuzP,
   };
   Object.entries(pending).forEach(([name, p]) => {
     const rec = () => timings.push([name, performance.now() - t0]);
@@ -334,6 +338,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   ]);
   const [bojBank, mufgBars, cgpi, coreCoreCpi] = await Promise.all([bojBankP, mufgBarsP, cgpiP, coreCoreCpiP]);
   const [wti, brent, diesel, rbob] = await oilP;
+  const hormuz = await hormuzP;
   const [coreCpi, corePce] = await coreInflP;
   const [
     refUtil,
@@ -598,6 +603,16 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const roll = wti && rollMismatchFlags(wti.map((p) => p.date));
   put('oilRollCrack', roll?.crack);
   put('oilRollBrentWti', roll?.brentWti);
+  // 单日艘数小、噪声大(危机期 0~8 艘来回跳),发 7 日均。源连续每日(含周末),按点数取窗即按天。
+  // ponytail: 不校验日期连续(2019 起实测一天不缺);源若冒出缺日,只是那几点的窗口跨过 7 天以上、平滑变宽,不会画错值
+  const hormuz7d = (k: 'total' | 'tanker') =>
+    hormuz &&
+    rollingMean(
+      hormuz.map((d) => ({ date: d.date, value: d[k] })),
+      7,
+    );
+  put('hormuzTransits', hormuz7d('total') ?? undefined);
+  put('hormuzTankers', hormuz7d('tanker') ?? undefined);
 
   // EIA 周报八条实物原始序列 → 十条对外线。**水位只发炼厂开工率** —— 它是有绝对刻度的(口播的"98%"就是它,
   // 且 100% 是硬顶,一眼看得出还剩多少余量)。库存/出口的裸水位单看不携带信息

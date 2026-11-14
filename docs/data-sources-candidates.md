@@ -298,12 +298,12 @@ OI 基本一致（TLT 83.5 那档两边都是 10180）。
 
 ---
 
-### 1.6 IMF PortWatch：霍尔木兹海峡每日过船数（2026-11-13 实测）
+### ✅ 1.6 IMF PortWatch：霍尔木兹海峡每日过船数（2026-11-13 实测，2026-11-14 已接：`hormuzTransits` / `hormuzTankers`，见 `fetchers/portwatch`）
 
 | | |
 |---|---|
 | URL | `https://services9.arcgis.com/weJ1QsnbMYJlCHdG/arcgis/rest/services/Daily_Chokepoints_Data/FeatureServer/0/query?where=portname%3D%27Strait%20of%20Hormuz%27&outFields=date,n_tanker,capacity_tanker,n_total&orderByFields=date%20DESC&f=json` |
-| 格式 | ArcGIS JSON，零依赖，免 key；单次最多 2000 行（`exceededTransferLimit`），要分页 |
+| 格式 | ArcGIS JSON，零依赖，免 key；~~单次最多 2000 行~~ → **实测单页上限 1000 行**（写 2000 也只回 1000，按 2000 翻页会静默漏掉中间 1000 天），要分页 |
 | 历史 | 2019-01-01 起 |
 | 时效 | 约滞后 5 天（11-13 拉到 11-08） |
 
