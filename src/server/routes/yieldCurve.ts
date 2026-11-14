@@ -84,18 +84,30 @@ async function buildUst(fetchCurve: () => Promise<Record<string, Point[]>>, teno
 
 // 从 market_series 读一组 (label→symbol),按 xform 转值;缺行的 label 进 unavailable。
 // xform 逐名给(缺省恒等):如 CDS 各名票息不同。clean = 换算后对整条序列再过一遍(如剔离群成交)。
+// before = 另一条序列,只取它早于 symbol 第一天的部分接在前面(如 DTCC 成交回填 ICE 开始存数之前的历史)。
 function buildFromDb(
-  pairs: { label: string; symbol: string; xform?: (v: number) => number; clean?: (pts: Point[]) => Point[] }[],
+  pairs: {
+    label: string;
+    symbol: string;
+    before?: string;
+    xform?: (v: number) => number;
+    clean?: (pts: Point[]) => Point[];
+  }[],
 ): CurveBody {
   const db = openDb();
   try {
     // 一次查库,再声明式拆成 series(有数据)/ unavailable(缺数据)两组。
-    const fetched = pairs.map((p) => ({
-      label: p.label,
-      xform: p.xform ?? ((v: number) => v),
-      clean: p.clean ?? ((pts: Point[]) => pts),
-      rows: getMarketSeries(db, p.symbol),
-    }));
+    const fetched = pairs.map((p) => {
+      const main = getMarketSeries(db, p.symbol);
+      const first = main[0]?.date ?? '9999-12-31';
+      const head = p.before ? getMarketSeries(db, p.before).filter((r) => r.date < first) : [];
+      return {
+        label: p.label,
+        xform: p.xform ?? ((v: number) => v),
+        clean: p.clean ?? ((pts: Point[]) => pts),
+        rows: [...head, ...main],
+      };
+    });
     const series = Object.fromEntries(
       fetched
         .filter((f) => f.rows.length)
@@ -144,11 +156,13 @@ function buildOis(): CurveBody {
 // AI 巨头 + 甲骨文 + CoreWeave + SpaceX + 软银 单名 CDS:读库原始价,xform 成约定 spread(bp)。"tenor" 复用为公司名。
 // 非真曲线(公司无序),但复用 CurveBody 给前端「AI CDS」tab 当时间序列看(每名一条线,见 web/pages/curveHistory)。
 // 票息按名不同(CoreWeave 500bp 档),故逐名给 xform。
+// 美国公司以 ICE 结算价为准,ICE 开始存数之前接 DTCC 成交回填的那段(见 jobs/dtccCdsSnapshot)。
 function buildAiCds(): CurveBody {
   return buildFromDb(
     AI_CDS.map((c) => ({
       label: c.name,
       symbol: c.jpy ? `DTCC_CDS_${c.ticker}` : `ICE_CDS_${c.ticker}`,
+      before: c.jpy ? undefined : `DTCC_CDS_${c.ticker}`,
       xform: (v: number) => cdsPriceToSpreadBp(v, c.coupon, c.jpy ? JPY_CDS : USD_CDS),
       // 成交价(单笔可能少报前端费)才剔;ICE 是清算所结算价,不动
       clean: c.jpy ? dropLowPrints : undefined,

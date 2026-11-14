@@ -21,7 +21,7 @@ import { updateVrpInputs } from './vrpInputs';
 import { updateVxTermStructure } from './vxTermStructure';
 import { updateErisSnapshot } from './erisSnapshot';
 import { updateIceCds } from './iceCdsSnapshot';
-import { updateSbgCds, type SbgCdsResult } from './sbgCdsSnapshot';
+import { updateDtccCds, type DtccCdsResult } from './dtccCdsSnapshot';
 import { updateCreditSpreads } from './creditSpreadSnapshot';
 import { updateMoveIndex, type MoveUpdateResult } from './moveSnapshot';
 import { updateIsm, type IsmResult } from './ismSnapshot';
@@ -49,8 +49,8 @@ type RunDailyJobOpts = {
   erisUpdater?: (db: Database) => Promise<{ total: number }>;
   /** ICE 单名 CDS(AI 巨头 + 甲骨文)更新器(注入式;CLI 传 updateIceCds,测试省略以免联网)。 */
   iceCdsUpdater?: (db: Database) => Promise<{ total: number; missing: string[] }>;
-  /** 软银 5Y CDS(DTCC 成交披露)更新器(注入式;CLI 传 updateSbgCds,测试省略以免联网)。 */
-  sbgCdsUpdater?: (db: Database) => Promise<SbgCdsResult>;
+  /** 软银 5Y CDS(DTCC 成交披露)更新器(注入式;CLI 传 updateDtccCds,测试省略以免联网)。 */
+  sbgCdsUpdater?: (db: Database) => Promise<DtccCdsResult>;
   /** ICE BofA 信用利差(FRED 只留 3 年,落库保历史)更新器(注入式;CLI 传 updateCreditSpreads,测试省略以免联网)。 */
   creditSpreadUpdater?: (db: Database) => Promise<{ total: number; succeeded: number; failures: string[] }>;
   /** MOVE 债市波动率更新器(注入式;CLI 传 updateMoveIndex,测试省略以免联网)。 */
@@ -310,7 +310,7 @@ const DAILY_GROUPS: GroupTable = {
   vx_term_structure: () => ({ vxUpdater: updateVxTermStructure }),
   eris_snapshot: () => ({ erisUpdater: updateErisSnapshot }),
   ice_cds: () => ({ iceCdsUpdater: updateIceCds }),
-  sbg_cds: () => ({ sbgCdsUpdater: (db: Database) => updateSbgCds(db) }),
+  sbg_cds: () => ({ sbgCdsUpdater: (db: Database) => updateDtccCds(db) }),
   credit_spread: () => ({ creditSpreadUpdater: updateCreditSpreads }),
   move: () => ({ moveUpdater: updateMoveIndex }),
   ism: () => ({ ismUpdater: updateIsm }),

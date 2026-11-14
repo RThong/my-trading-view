@@ -85,7 +85,8 @@ export const CREDIT_TERM: { tenor: string; series: string }[] = [
 // core = 前端默认展示的 7 家;缺任一即视为数据源异常(见 missingCoreCds)。
 // 注:前端「AI CDS」tab 默认显示的就是这份 core 名单(pages/ai/docs 直接读它)。
 // coupon 缺省 = 100bp(投资级惯例);高收益名只挂 500bp 合约,需单独给。
-// jpy = 不走 ICE:日元计价、来自 DTCC 成交披露,存库 series_id = DTCC_CDS_{ticker}(见 fetchers/dtccSbgCds)。
+// jpy = 不走 ICE:日元计价、来自 DTCC 成交披露,存库 series_id = DTCC_CDS_{ticker}(见 fetchers/dtccCds)。
+// 其余名字 ICE 开始存数之前的历史也由 DTCC 回填进 DTCC_CDS_{ticker},读时接在 ICE 前面(Apple 成交太稀,不回填)。
 export const AI_CDS: { ticker: string; name: string; core?: boolean; coupon?: number; jpy?: boolean }[] = [
   { ticker: 'ORCLE', name: 'Oracle', core: true },
   { ticker: 'MSFT', name: 'Microsoft', core: true },
