@@ -12,7 +12,7 @@ import { fetchJgbVix } from '../fetchers/jpxJgbVix';
 import { fetchCftcJpyNet, fetchCftcVixNetOi } from '../fetchers/cftcCot';
 import { fetchBojGap } from '../fetchers/bojOutputGap';
 import { fetchNakajimaJgb } from '../fetchers/nakajimaJgb';
-import { fetchBojSeries } from '../fetchers/bojStat';
+import { fetchBojSeries, TANKAN_INFL_EXP } from '../fetchers/bojStat';
 import { fetchCoreCoreCpiYoy } from '../fetchers/estatCpi';
 import { BOJ_HIKES, betaLegs, depositBeta, jpBankSpreads, monthlyMean } from '../analytics/jpBanks';
 import { fetchMoveSeries } from '../fetchers/moveIndex';
@@ -207,6 +207,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 日本通胀两条(「日本 · 通胀」那格)。CGPI:日银 PR01 月度指数,多拉一年给同比垫对照期;
   // 新核心核心 CPI:e-Stat(要 appId),表里现成有同比列,从展示起点拉即可。没配 appId 不发请求,归 unavailable。
   const cgpiP = fetchBojSeries('PR01', ['PRCG20_2200000000'], '201701').catch(() => null);
+  // 短観企业物价预期(季频,`YYYYQQ`;2014Q1 起才有这一问)。从展示起点那一季拉
+  const tankanP = fetchBojSeries('CO', TANKAN_INFL_EXP, '201801', { quarterly: true }).catch(() => null);
   const estatKey = process.env.ESTAT_APP_ID ?? '';
   const coreCoreCpiP = estatKey
     ? // 这条 catch 出声(同 EIA):配了 appId 还失败会一直挡缓存,静默的话查不到是 key 过期还是源挂了。
@@ -305,6 +307,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     nakajima: nakajimaP,
     bojBank: bojBankP,
     cgpi: cgpiP,
+    tankan: tankanP,
     coreCoreCpi: coreCoreCpiP,
     mufg: mufgBarsP,
     cape: capeP,
@@ -342,6 +345,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   ]);
   const [bojBank, mufgBars, cgpi, coreCoreCpi] = await Promise.all([bojBankP, mufgBarsP, cgpiP, coreCoreCpiP]);
   const [wti, brent, diesel, rbob] = await oilP;
+  const tankan = await tankanP;
   const hormuz = await hormuzP;
   const mofFlows = await mofFlowsP;
   const [coreCpi, corePce] = await coreInflP;
@@ -525,6 +529,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 企业物价同比(对照月精确命中,不往前贴 —— 见 monthlyAnnualizedPct)。指数最新月可能是 null,解析时已跳过。
   put('jpCgpiYoy', cgpi ? fromHistoryStart(monthlyAnnualizedPct(cgpi.PRCG20_2200000000, 12)) : undefined);
   put('jpCoreCoreCpiYoy', coreCoreCpi ?? undefined);
+  put('jpInflExp1y', tankan?.[TANKAN_INFL_EXP[0]]);
+  put('jpInflExp5y', tankan?.[TANKAN_INFL_EXP[1]]);
   put(
     'mufg',
     mufgBars?.map((b) => ({ date: b.tradeDate, value: b.close })),

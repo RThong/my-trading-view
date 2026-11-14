@@ -26,7 +26,7 @@ const COL = { outEquity: 3, outBonds: 6, inEquity: 14, inBonds: 17 } as const;
 const DAY_MS = 86_400_000;
 
 /**
- * 一周的四个净额(億円,正 = 买超;空格子为 NaN);date = 该周周五(源的周截止日是周六,图表默认去周末,标周六会被剔掉)。
+ * 一周的四个净额(億円,正 = 买超;空格子为 NaN);date = 该周周五(源的周截止日是周六;标周六会在与日频工作日序列共用的时间轴上多出一格周六)。
  */
 export type MofFlowWeek = { date: string } & Record<keyof typeof COL, number>;
 

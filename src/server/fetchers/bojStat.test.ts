@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { bojDateToIso, parseBojCsv } from './bojStat';
+import { bojDateToIso, bojQuarterToIso, parseBojCsv } from './bojStat';
 
 // 真实响应的形状(截取):元数据行 + 表头 + 数据行;名称列带逗号、缺值是字面量 null。
 const CSV = [
@@ -39,5 +39,23 @@ describe('parseBojCsv', () => {
 
   test('NEXTPOSITION 非空 = 被分页截断 → 抛错', () => {
     expect(() => parseBojCsv(CSV.replace('NEXTPOSITION,', 'NEXTPOSITION,250'), ['STRDCLUCON'])).toThrow('分页');
+  });
+});
+
+describe('季频(短観 YYYYQQ)', () => {
+  test('季号 01~04 → 季末;越界 / 月份形状不当成季度', () => {
+    expect(bojQuarterToIso('202602')).toBe('2026-06-30');
+    expect(bojQuarterToIso('201401')).toBe('2014-03-31');
+    expect(bojQuarterToIso('202606')).toBeNull();
+  });
+
+  test('quarterly 时按季解析(同为 6 位,不能当月份)', () => {
+    const csv = [
+      'NEXTPOSITION,',
+      'TK99F0000204HCQ00000,"Firms\' price expectations, 1 year",%,QUARTERLY,,20261001,202603,2.6',
+    ].join('\n');
+    expect(parseBojCsv(csv, ['TK99F0000204HCQ00000'], true)).toEqual({
+      TK99F0000204HCQ00000: [{ date: '2026-09-30', value: 2.6 }],
+    });
   });
 });

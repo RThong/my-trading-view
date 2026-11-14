@@ -300,6 +300,20 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
     unit: '%',
     aliases: ['通胀', 'cpi'],
   },
+  jpInflExp1y: {
+    label: '日本企业通胀预期 1 年后 (短観)',
+    category: '日本',
+    freq: '季',
+    unit: '%',
+    aliases: ['通胀预期', 'tankan'],
+  },
+  jpInflExp5y: {
+    label: '日本企业通胀预期 5 年后 (短観)',
+    category: '日本',
+    freq: '季',
+    unit: '%',
+    aliases: ['通胀预期', 'tankan'],
+  },
 
   // ── 加密
   // 编辑器里用 ohlc.btc 的收盘(registry 手写那条),这里登记供其它消费方用

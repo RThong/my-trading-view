@@ -144,6 +144,10 @@ export const REGIME_SERIES = [
   'jpCgpiYoy',
   // CPI 生鮮食品及びエネルギーを除く総合(新核心核心)前年同月比,e-Stat 2025 年基准。**要 ESTAT_APP_ID**。
   'jpCoreCoreCpiYoy',
+  // 日银短観「企業の物価見通し」:物价全般 1 年后 / 5 年后的企业预期平均(全规模全产业,%,季频,点落季末)。
+  // 日本没有可用的 BEI(见 AGENTS.md「查过、确认没有的」),这是最接近的通胀预期代理;是调查不是市场定价。
+  'jpInflExp1y',
+  'jpInflExp5y',
   // 三菱 UFJ(东证 8306,Yahoo 8306.T)蜡烛,「银行」那格的现货参照。
   'mufg',
   'cape',
