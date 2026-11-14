@@ -161,6 +161,34 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   pcIndexMa20: daily('情绪·持仓', 'Cboe 指数认沽认购比 20 日均线', undefined, ['put/call', 'pcr']),
   pcIndexMa63: daily('情绪·持仓', 'Cboe 指数认沽认购比 3 个月均线', undefined, ['put/call', 'pcr']),
   cftcJpy: { label: 'CFTC 日元净持仓', category: '情绪·持仓', freq: '周', unit: '张', aliases: ['cot', '日元'] },
+  jpFlowOutBonds: {
+    label: '日本居民净买外国中长期债 (4 周累计)',
+    category: '日本',
+    freq: '周',
+    unit: '兆円',
+    aliases: ['mof', '对外证券投资', '日元'],
+  },
+  jpFlowOutEquity: {
+    label: '日本居民净买外国股票 (4 周累计)',
+    category: '日本',
+    freq: '周',
+    unit: '兆円',
+    aliases: ['mof', '对外证券投资', '日元'],
+  },
+  jpFlowInEquity: {
+    label: '外国人净买日本股票 (4 周累计)',
+    category: '日本',
+    freq: '周',
+    unit: '兆円',
+    aliases: ['mof', '对内证券投资', '日股'],
+  },
+  jpFlowInBonds: {
+    label: '外国人净买日本中长期债 (4 周累计)',
+    category: '日本',
+    freq: '周',
+    unit: '兆円',
+    aliases: ['mof', '对内证券投资', 'jgb'],
+  },
   vixCotAm: {
     label: 'CFTC VIX 净持仓 · Asset Manager',
     category: '情绪·持仓',
@@ -376,6 +404,10 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   lProxyHlwT5yifr: 'server', // HLW r* + 5y5y
   expShort10Kw: 'server', // KW 拟合 10Y − 期限溢价(拟合那条没对外发)
   cftcJpy: 'server', // 多头 − 空头
+  jpFlowOutBonds: 'server', // 周净额 4 周滚动求和,億円 → 兆円
+  jpFlowOutEquity: 'server',
+  jpFlowInEquity: 'server',
+  jpFlowInBonds: 'server',
   vixCotAm: 'server', // 净持仓占未平仓 %
   vixCotLm: 'server',
 };

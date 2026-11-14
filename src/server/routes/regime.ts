@@ -21,6 +21,7 @@ import { fetchHlwRstar } from '../fetchers/nyfedRstar';
 import { fetchAcmTermPremium } from '../fetchers/nyfedAcm';
 import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
 import { fetchHormuzTransits } from '../fetchers/portwatch';
+import { fetchMofWeeklyFlows } from '../fetchers/mofSecurities';
 import {
   subtractAligned,
   subtractAt,
@@ -185,6 +186,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const ustP = fetchTreasuryCurve().catch(() => null);
   const jgbVixP = fetchJgbVix('2018-01-01').catch(() => null);
   const cftcJpyP = fetchCftcJpyNet('2018-01-01').catch(() => null);
+  // MOF 周度跨境证券流(carry 的资金流上游)。一个 CSV 2005 起全历史 → 不落库
+  const mofFlowsP = fetchMofWeeklyFlows().catch(() => null);
   // VIX 期货持仓(TFF):波动率的 **positioning** 轴,和上面 VIX / 期限结构那组 **pricing** 轴互补。
   // 一次请求出两类(Asset Manager / Leveraged Money),别拆成两次。
   const vixCotP = fetchCftcVixNetOi('2018-01-01').catch(() => null);
@@ -296,6 +299,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     ust: ustP,
     jgbVix: jgbVixP,
     cftcJpy: cftcJpyP,
+    mofFlows: mofFlowsP,
     vixCot: vixCotP,
     bojGap: bojGapP,
     nakajima: nakajimaP,
@@ -339,6 +343,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const [bojBank, mufgBars, cgpi, coreCoreCpi] = await Promise.all([bojBankP, mufgBarsP, cgpiP, coreCoreCpiP]);
   const [wti, brent, diesel, rbob] = await oilP;
   const hormuz = await hormuzP;
+  const mofFlows = await mofFlowsP;
   const [coreCpi, corePce] = await coreInflP;
   const [
     refUtil,
@@ -444,6 +449,19 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 日元 carry 三序列
   put('usdjpy', usdjpyBars?.length ? usdjpyBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
   put('cftcJpy', cftcJpy?.length ? cftcJpy : undefined);
+  // 周净额噪声大(单周常 ±1 兆円来回翻),发 4 周累计 ≈ 一个月的量,億円 → 兆円。先累计再裁到展示起点
+  const flow4w = (k: 'outBonds' | 'outEquity' | 'inEquity' | 'inBonds') =>
+    mofFlows &&
+    fromHistoryStart(
+      rollingMean(
+        mofFlows.flatMap((w) => (Number.isFinite(w[k]) ? [{ date: w.date, value: w[k] }] : [])),
+        4,
+      ).map((p) => ({ date: p.date, value: (p.value * 4) / 1e4 })),
+    );
+  put('jpFlowOutBonds', flow4w('outBonds') ?? undefined);
+  put('jpFlowOutEquity', flow4w('outEquity') ?? undefined);
+  put('jpFlowInEquity', flow4w('inEquity') ?? undefined);
+  put('jpFlowInBonds', flow4w('inBonds') ?? undefined);
   // VIX 期货持仓两类(周频,周二持仓 / 周五 15:30 ET 发)
   put('vixCotAm', vixCot?.assetMgr);
   put('vixCotLm', vixCot?.levMoney);
