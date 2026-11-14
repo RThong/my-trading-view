@@ -125,6 +125,20 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   hyOas: daily('信用·流动性', 'HY OAS 高收益信用利差', '%', ['高收益', '信用利差']),
   cdxIg: daily('信用·流动性', 'CDX 北美投资级 5Y 利差', '%', ['cdx', 'cds', '投资级', 'ig']),
   cdxHy: daily('信用·流动性', 'CDX 北美高收益 5Y 利差', '%', ['cdx', 'cds', '高收益', 'hy']),
+  marginDebtYoy: {
+    label: '美股融资余额同比 (FINRA 保证金债务)',
+    category: '信用·流动性',
+    freq: '月',
+    unit: '%',
+    aliases: ['融资余额', 'margin debt', '杠杆', 'finra'],
+  },
+  marginDebtNet: {
+    label: '美股净杠杆 (保证金债务 − 客户闲置现金)',
+    category: '信用·流动性',
+    freq: '月',
+    unit: '$B',
+    aliases: ['融资余额', 'margin debt', '杠杆', 'finra'],
+  },
   netLiquidity: { label: '净流动性', category: '信用·流动性', freq: '周', unit: '$B', aliases: ['liquidity'] },
   reverseRepo: daily('信用·流动性', '逆回购 RRP', '$B', ['rrp']),
   reserves: { label: '准备金', category: '信用·流动性', freq: '周', unit: '$B' },
@@ -418,6 +432,8 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   lProxyHlwT5yifr: 'server', // HLW r* + 5y5y
   expShort10Kw: 'server', // KW 拟合 10Y − 期限溢价(拟合那条没对外发)
   cftcJpy: 'server', // 多头 − 空头
+  marginDebtYoy: 'server', // FINRA 借方余额同比
+  marginDebtNet: 'server', // 借方 − 现金账户闲置现金 − 保证金账户闲置现金,百万 → 十亿美元
   jpFlowOutBonds: 'server', // 周净额 52 周滚动求和,億円 → 兆円
   jpFlowOutEquity: 'server',
   jpFlowInEquity: 'server',

@@ -22,6 +22,7 @@ import { fetchAcmTermPremium } from '../fetchers/nyfedAcm';
 import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
 import { fetchHormuzTransits } from '../fetchers/portwatch';
 import { fetchMofWeeklyFlows } from '../fetchers/mofSecurities';
+import { fetchFinraMargin } from '../fetchers/finraMargin';
 import {
   subtractAligned,
   subtractAt,
@@ -188,6 +189,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const cftcJpyP = fetchCftcJpyNet('2018-01-01').catch(() => null);
   // MOF 周度跨境证券流(carry 的资金流上游)。一个 CSV 2005 起全历史 → 不落库
   const mofFlowsP = fetchMofWeeklyFlows().catch(() => null);
+  // FINRA 保证金债务(美股融资余额,月频,1997 起一个 xlsx)。同比要往前垫一年,所以全量拉、算完再裁
+  const marginP = fetchFinraMargin().catch(() => null);
   // VIX 期货持仓(TFF):波动率的 **positioning** 轴,和上面 VIX / 期限结构那组 **pricing** 轴互补。
   // 一次请求出两类(Asset Manager / Leveraged Money),别拆成两次。
   const vixCotP = fetchCftcVixNetOi('2018-01-01').catch(() => null);
@@ -302,6 +305,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     jgbVix: jgbVixP,
     cftcJpy: cftcJpyP,
     mofFlows: mofFlowsP,
+    margin: marginP,
     vixCot: vixCotP,
     bojGap: bojGapP,
     nakajima: nakajimaP,
@@ -348,6 +352,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const tankan = await tankanP;
   const hormuz = await hormuzP;
   const mofFlows = await mofFlowsP;
+  const margin = await marginP;
   const [coreCpi, corePce] = await coreInflP;
   const [
     refUtil,
@@ -464,6 +469,31 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
         52,
       ).map((p) => ({ date: p.date, value: (p.value * 52) / 1e4 })),
     );
+  // 融资余额看同比不看水位:水位随市值一起涨(1997 年 1 千亿 → 2026 年 1.45 万亿)。
+  // 净杠杆 = 借方 − 两类客户闲置现金,扣掉账上还没动用的钱;保证金账户那列 2010-02 才有,之前不出点
+  put(
+    'marginDebtYoy',
+    margin
+      ? fromHistoryStart(
+          monthlyAnnualizedPct(
+            margin.map((m) => ({ date: m.date, value: m.debit })),
+            12,
+          ),
+        )
+      : undefined,
+  );
+  put(
+    'marginDebtNet',
+    margin
+      ? fromHistoryStart(
+          margin.flatMap((m) =>
+            Number.isFinite(m.marginCredit)
+              ? [{ date: m.date, value: (m.debit - m.cashCredit - m.marginCredit) / 1e3 }]
+              : [],
+          ),
+        )
+      : undefined,
+  );
   put('jpFlowOutBonds', flow52w('outBonds') ?? undefined);
   put('jpFlowOutEquity', flow52w('outEquity') ?? undefined);
   put('jpFlowInEquity', flow52w('inEquity') ?? undefined);

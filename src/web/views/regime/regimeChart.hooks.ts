@@ -38,6 +38,7 @@ export function useRegimeData(enabled = true) {
 }
 export type RegimeDim =
   | 'credit'
+  | 'leverage'
   | 'liquidity'
   | 'sentiment'
   | 'macro'
