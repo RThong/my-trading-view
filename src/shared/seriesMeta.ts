@@ -132,13 +132,6 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
     unit: '%',
     aliases: ['融资余额', 'margin debt', '杠杆', 'finra'],
   },
-  marginDebtNet: {
-    label: '美股净杠杆 (保证金债务 − 客户闲置现金)',
-    category: '信用·流动性',
-    freq: '月',
-    unit: '$B',
-    aliases: ['融资余额', 'margin debt', '杠杆', 'finra'],
-  },
   netLiquidity: { label: '净流动性', category: '信用·流动性', freq: '周', unit: '$B', aliases: ['liquidity'] },
   reverseRepo: daily('信用·流动性', '逆回购 RRP', '$B', ['rrp']),
   reserves: { label: '准备金', category: '信用·流动性', freq: '周', unit: '$B' },
@@ -433,7 +426,6 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   expShort10Kw: 'server', // KW 拟合 10Y − 期限溢价(拟合那条没对外发)
   cftcJpy: 'server', // 多头 − 空头
   marginDebtYoy: 'server', // FINRA 借方余额同比
-  marginDebtNet: 'server', // 借方 − 现金账户闲置现金 − 保证金账户闲置现金,百万 → 十亿美元
   jpFlowOutBonds: 'server', // 周净额 52 周滚动求和,億円 → 兆円
   jpFlowOutEquity: 'server',
   jpFlowInEquity: 'server',

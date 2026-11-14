@@ -22,9 +22,8 @@ export const REGIME_SERIES = [
   // CDX 北美指数主力 5Y 的约定利差(%):ICE 结算价逐日存 + 之前的 DTCC 成交回填,读库换算(regimeDb)
   'cdxIg',
   'cdxHy',
-  // FINRA 保证金统计(美股版融资余额,月频,日期 = 当月 1 日):借方余额同比 %、净杠杆(借方 − 两类客户闲置现金,十亿美元)
+  // FINRA 保证金统计(美股版融资余额,月频,日期 = 当月 1 日):借方余额同比 %
   'marginDebtYoy',
-  'marginDebtNet',
   'cor1m',
   // Cboe 3 个月隐含相关性(标普前 50 大成分股两两隐含相关性均值),面板上紧挨 cor1m 单独一格。
   'cor3m',

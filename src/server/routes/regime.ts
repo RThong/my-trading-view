@@ -469,8 +469,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
         52,
       ).map((p) => ({ date: p.date, value: (p.value * 52) / 1e4 })),
     );
-  // 融资余额看同比不看水位:水位随市值一起涨(1997 年 1 千亿 → 2026 年 1.45 万亿)。
-  // 净杠杆 = 借方 − 两类客户闲置现金,扣掉账上还没动用的钱;保证金账户那列 2010-02 才有,之前不出点
+  // 融资余额看同比不看水位:水位随市值一起涨(1997 年 1 千亿 → 2026 年 1.45 万亿)
   put(
     'marginDebtYoy',
     margin
@@ -478,18 +477,6 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
           monthlyAnnualizedPct(
             margin.map((m) => ({ date: m.date, value: m.debit })),
             12,
-          ),
-        )
-      : undefined,
-  );
-  put(
-    'marginDebtNet',
-    margin
-      ? fromHistoryStart(
-          margin.flatMap((m) =>
-            Number.isFinite(m.marginCredit)
-              ? [{ date: m.date, value: (m.debit - m.cashCredit - m.marginCredit) / 1e3 }]
-              : [],
           ),
         )
       : undefined,
