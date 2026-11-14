@@ -2,7 +2,9 @@
  * 通用的 CBOE 指数历史数据抓取器。
  *
  * CBOE 以扁平 CSV 的形式发布数百个指数的每日 EOD 历史数据,地址为:
- *   https://cdn.cboe.com/api/global/us_indices/daily_prices/{INDEX}_History.csv
+ *   https://cdn-api.cboe.com/api/global/us_indices/daily_prices/{INDEX}_History.csv
+ * (2026-11 起旧域名 cdn.cboe.com 对这条路径一律 307 跳到 cdn-api;VX 期货 CSV 例外,见 cboeVx)
+ * 不存在的指数代码回 403 + XML(AccessDenied),不是 404。
  *
  * 实际遇到的 CSV 表头有两种形态:
  *   - 单值:  "DATE,{SYMBOL}"           例如 "DATE,SKEW"
@@ -17,7 +19,7 @@ import { fetchWithTimeout } from './http';
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
-const CSV_BASE = 'https://cdn.cboe.com/api/global/us_indices/daily_prices/';
+const CSV_BASE = 'https://cdn-api.cboe.com/api/global/us_indices/daily_prices/';
 const UA = 'Mozilla/5.0 (compatible; my-trading-view/0.1)';
 
 export type CboeIndexRow = {

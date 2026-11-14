@@ -27,6 +27,7 @@ import { groupBy, sortBy } from 'remeda';
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
 const API_URL = 'https://www-api.cboe.com/us/futures/market_statistics/historical_data/product/list/VX/';
+// 别跟着指数 CSV 换成 cdn-api.cboe.com:VX 合约 CSV 在那边回 403,只有旧域名能下(2026-11 实测)
 const CDN_BASE = 'https://cdn.cboe.com/';
 const UA = 'Mozilla/5.0 (compatible; my-trading-view/0.1)';
 

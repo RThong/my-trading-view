@@ -28,7 +28,7 @@ EIA 那约 250 个模型是 API v2 的机械镜像，按「任意 v2 序列」�
 | 9 | FINRA TRACE 单券收益率：Oracle / CoreWeave 等信用历史追到债券发行日 | AI 链信用 | 零（要先拿 cookie） | 发行日起 | 中 | 记入候选（中） | §1.7 |
 | 10 | 其余 15 条低优先（VXSMH、政策利率分布、CMDI、SCE、GSCPI…） | 各视角 | — | — | 小 | 记入候选（低） | §1.8 |
 
-另有一处**现有源要改**：`cdn.cboe.com` 现在 307 跳到 `cdn-api.cboe.com`（`fetchers/cboeIndex.ts`、`cboeVx.ts` 仍写旧域名，`fetch` 跟随跳转所以没坏），见 §4.6。
+~~另有一处现有源要改~~ → ✅ 已改（2026-11-14）：指数 CSV 换到 `cdn-api.cboe.com`；VX 期货 CSV 实测只能用旧域名（`cdn-api` 回 403），不改。见 §4.6。
 
 ---
 
@@ -656,8 +656,8 @@ CI / DI 的**先行指数**，日本景气拐点的标准判据。
 
 ## 4.6 OpenBB 对照中发现的坑（2026-11-13，待并入 `AGENTS.md`）
 
-1. **CBOE 换了下载域名**：`cdn.cboe.com` 一律 307 跳到 `cdn-api.cboe.com`（`daily_prices` 和 `delayed_quotes` 都是）。
-   我们的 `fetchers/cboeIndex.ts`、`cboeVx.ts` 和 `AGENTS.md` 仍写旧域名；`fetch` 默认跟随跳转所以没坏，OpenBB 自己也还在用旧域名。
+1. **CBOE 换了下载域名**：`cdn.cboe.com` 对 `api/global/...`（`daily_prices` 和 `delayed_quotes`）307 跳到 `cdn-api.cboe.com`。
+   ✅ 已并入（2026-11-14）：`cboeIndex.ts` 与 AGENTS.md 已改新域名。⚠️ **VX 期货合约 CSV（`data/us/futures/...`）不跳转，且在 `cdn-api` 上回 403**，`cboeVx.ts` 保持旧域名。
    另外 CBOE 不存在的代码回 **403 + XML（AccessDenied）**，不是 404
 2. **DTCC 保留期**：HEAD 对过期文件也回 200，真 GET 才回 403，判断可用性**必须 GET**（加 Range）。
    保留期按资产类别不同：利率文件最早约 2024-11-10（约 2.0 年），信用文件最早约 2024-09-02（约 2.2 年），中间有零星缺天
