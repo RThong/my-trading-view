@@ -1,13 +1,13 @@
 /**
  * 更新 VRP 输入 + 标的现货到库:
- *   隐含腿 → market_series(close):VIX/VXN/GVZ/OVX/VXTLT/BITVX(CBOE)+ DVOL(Deribit);另存 VVIX / SKEW(不进 VRP)
- *   标的现货 → price_eod(OHLC):SPY/QQQ/GLD/USO/TLT/NOBL + VIX
- *     - ETF(SPY/QQQ/GLD/USO/TLT/NOBL):Yahoo close(唯一源)、每轮全量重拉
+ *   隐含腿 → market_series(close):VIX/VXN/GVZ/OVX/VXTLT/BITVX/VXSMH(CBOE)+ DVOL(Deribit);另存 VVIX / SKEW(不进 VRP)
+ *   标的现货 → price_eod(OHLC):SPY/QQQ/GLD/USO/TLT/NOBL/SMH + VIX
+ *     - ETF(SPY/QQQ/GLD/USO/TLT/NOBL/SMH):Yahoo close(唯一源)、每轮全量重拉
  *       口径 = 只调拆股、不调分红(TradingView 默认 / IBKR TRADES / moomoo App 显示同一个数)
  *     - VIX:CBOE(它既是 SPY 的 IV 腿,又是 .VIX tab 的现货,故两表都写)
  *     - BTC 现货:已移出本 job → cryptoDaily 的 btc_price 组(7 天跑,含周末)。
  *   VRP 的 RV 腿读 price_eod 的 close;基准对应 VIX↔SPY、VXN↔QQQ、GVZ↔GLD、OVX↔USO、VXTLT↔TLT、
- *   BITVX↔IBIT、DVOL↔BTC
+ *   BITVX↔IBIT、VXSMH↔SMH、DVOL↔BTC
  *   (BTC 的 price_eod 由 cryptoDaily 填,本 job 仍只负责读时无关的隐含腿/ETF 现货)。
  *
  * `updateVrpInputs` 除 ETF 现货外增量更新(按各序列已存最新日期续抓),库空时 CBOE 从 HISTORY_START_DATE

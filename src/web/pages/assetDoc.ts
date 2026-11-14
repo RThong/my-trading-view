@@ -36,8 +36,24 @@ function pane(layers: Omit<Layer, 'id' | 'scale'>[], desc: string, log?: true, s
   };
 }
 
-/** vrp:有 VRP 配方的标的(.VIX 没有)才加 隐含/RV、VRP 两格 */
-export function assetDoc(underlying: string, vrp: boolean): ChartDoc {
+// 标的专属的附加格(接在最后)。SMH:半导体隐含波动率减纳指的(VXN),看半导体是不是自己出事
+const EXTRA: Record<string, Omit<Layer, 'id' | 'scale'>[][]> = {
+  SMH: [[{ series: 'vrp:SMH:iv', calc: { op: '-', series: 'vrp:QQQ:iv' }, color: '#f97316', title: 'VXSMH − VXN' }]],
+};
+const EXTRA_DESC: Record<string, string> = {
+  SMH:
+    '定义:半导体隐含波动率(VXSMH)− 纳指 100 隐含波动率(VXN),百分点。两条都是 CBOE 按 VIX 同法编的 30 天口径。\n' +
+    '⭐ 读法:平时半导体本来就比纳指波动大(2025-09 以来差值均值约 20、区间约 12~37);差值走阔 = 半导体自己出事(行业 / 出口管制 / 财报),' +
+    '不是大盘在动;差值收窄而两条一起涨 = 大盘层面的恐慌。\n' +
+    '⚠️ VXSMH 2025-09-16 才有,历史只有一年多,别拿分位判高低,只看走势。\n' +
+    '⚠️ 本 tab 没有 25Δ IV / skew 两格:SMH 期权两翼买卖价差约 40%(QQQ 约 3%),25Δ 读数是报价噪声,只取 CBOE 的 VXSMH 当隐含腿。',
+};
+
+/**
+ * vrp:有 VRP 配方的标的(.VIX 没有)才加 隐含/RV、VRP 两格;
+ * options:抓期权链的才画 25Δ IV / skew 两格(SMH 不抓,见 marketCatalog)。
+ */
+export function assetDoc(underlying: string, vrp: boolean, options = true): ChartDoc {
   const spot = SPOT[underlying] ?? underlying;
   const k = optKey(underlying);
   const ivName = IV_INDEX[underlying] ?? 'IV';
@@ -55,14 +71,18 @@ export function assetDoc(underlying: string, vrp: boolean): ChartDoc {
       // 现货是主图(图例常有三行),给两倍高;其余各格等高
       2,
     ),
-    pane(
-      [
-        { series: `opt:${k}:callIv`, color: COLORS.call, title: 'Call IV' },
-        { series: `opt:${k}:putIv`, color: COLORS.put, title: 'Put IV' },
-      ],
-      DESC.iv,
-    ),
-    pane([{ series: `opt:${k}:skew`, color: COLORS.skew, title: 'Skew' }], DESC.skew),
+    ...(options
+      ? [
+          pane(
+            [
+              { series: `opt:${k}:callIv`, color: COLORS.call, title: 'Call IV' },
+              { series: `opt:${k}:putIv`, color: COLORS.put, title: 'Put IV' },
+            ],
+            DESC.iv,
+          ),
+          pane([{ series: `opt:${k}:skew`, color: COLORS.skew, title: 'Skew' }], DESC.skew),
+        ]
+      : []),
     ...(vrp
       ? [
           pane(
@@ -75,6 +95,7 @@ export function assetDoc(underlying: string, vrp: boolean): ChartDoc {
           pane([{ series: `vrp:${k}:vrp`, color: COLORS.vrp, title: 'VRP' }], DESC.vrp),
         ]
       : []),
+    ...(EXTRA[underlying] ?? []).map((layers) => pane(layers, EXTRA_DESC[underlying])),
   ];
 
   // 格与图层按顺序编号(p1 / l1 起,图层全图连号)

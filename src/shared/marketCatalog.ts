@@ -6,7 +6,7 @@
 // 指数无现货)仍留在各 job/adapter,不塞进这里。
 export type MarketAsset = {
   underlying: string; // 数据键 / 期权代码(SPY / .VIX / BTC / NOBL)
-  optionSource: 'moomoo' | 'deribit' | 'none'; // none = 只做价格(NOBL)
+  optionSource: 'moomoo' | 'deribit' | 'none'; // none = 不抓期权链(NOBL 只做价格;SMH 另有现货 + VRP)
   tab?: { id: string; label: string }; // 有 → 进「期权」视角横 tab(NOBL 无)
   index?: boolean; // 指数(.VIX):无现货报价,不抓 price
   vrp?: { ivIndex: string; window: number; periodsPerYear: number }; // 有 → 做 VRP;spot 恒 = underlying
@@ -67,6 +67,16 @@ export const MARKET_CATALOG: MarketAsset[] = [
     vrp: { ivIndex: 'BITVX', window: 21, periodsPerYear: 252 },
     secondExpiry: true,
   },
+  {
+    // 半导体。**不抓期权链**(optionSource none):2026-11-14 实测 ~30 天月度 25Δ 两翼 OI 有几百到几千张,
+    // 但买卖价差 37%~58%(同一时刻 QQQ 2.5%~3.6%),连平值也有 16%~21% —— 中间价离真实成交太远,
+    // 25Δ skew 是报价宽窄的噪声(同当年砍 SOXX 的理由,见 docs 与记忆)。
+    // 隐含腿用 VXSMH(CBOE 按 SMH 期权、VIX 同法编,多行权价加权把单合约报价噪声平均掉;2025-09-16 起)。
+    underlying: 'SMH',
+    optionSource: 'none',
+    tab: { id: 'smh', label: 'SMH' },
+    vrp: { ivIndex: 'VXSMH', window: 21, periodsPerYear: 252 },
+  },
   { underlying: 'NOBL', optionSource: 'none' }, // 只做价格:攻防指标的防御腿
 ];
 
@@ -102,9 +112,12 @@ export function priceLegUnderlyings(): string[] {
   return MARKET_CATALOG.filter((a) => !a.index && a.optionSource !== 'deribit').map((a) => a.underlying);
 }
 
-/** 从 CBOE 抓的 IV 指数腿:moomoo VRP 标的的 ivIndex,排除 VIX(它另经 VX 链路双写,不走这条)。 */
+/**
+ * 从 CBOE 抓的 IV 指数腿:非 Deribit 的 VRP 标的(含不抓期权链的 SMH)的 ivIndex,
+ * 排除 VIX(它另经 VX 链路双写,不走这条)和 DVOL(Deribit)。
+ */
 export function cboeIvLegs(): string[] {
-  return MARKET_CATALOG.filter((a) => a.vrp && a.optionSource === 'moomoo' && a.vrp.ivIndex !== 'VIX').map(
+  return MARKET_CATALOG.filter((a) => a.vrp && a.optionSource !== 'deribit' && a.vrp.ivIndex !== 'VIX').map(
     (a) => a.vrp!.ivIndex,
   );
 }

@@ -12,9 +12,15 @@ import type { Interval } from '../hooks/interval';
 export type TabDef = { id: string; label: string; group?: string; render: (interval: Interval) => ReactNode };
 export type Perspective = { id: string; label: string; tabs: TabDef[] };
 
-export function assetTab(id: string, label: string, underlying: string, vrpUnderlying?: string): TabDef {
+export function assetTab(
+  id: string,
+  label: string,
+  underlying: string,
+  vrpUnderlying?: string,
+  options = true,
+): TabDef {
   // 建 tab 时生成一次:DocChart 以它为初值,引用要稳定
-  const doc = assetDoc(underlying, !!vrpUnderlying);
+  const doc = assetDoc(underlying, !!vrpUnderlying, options);
   return {
     id,
     label,

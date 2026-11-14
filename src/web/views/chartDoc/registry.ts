@@ -131,6 +131,7 @@ const MANUAL: SeriesDef[] = [
   price('IBIT', 'IBIT', 'IBIT 比特币 ETF', ['比特币', 'bitcoin']),
   price('TLT', 'TLT', 'TLT 长期美债', ['美债', '国债']),
   price('USO', 'USO', 'USO 原油', ['原油', 'oil']),
+  price('SMH', 'SMH', 'SMH 半导体', ['半导体', 'semiconductor', '芯片']),
   price('NOBL', 'NOBL', 'NOBL 标普红利贵族', ['红利', '防御']),
   {
     id: 'btc',

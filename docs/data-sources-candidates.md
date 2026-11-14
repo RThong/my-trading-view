@@ -26,7 +26,7 @@ EIA 那约 250 个模型是 API v2 的机械镜像，按「任意 v2 序列」�
 | 7 | 旧金山联储期限溢价（独立的第三个模型，日频） | 利率拆解 | `fflate` | 全历史 | 小 | ❌ 评估后不接（2026-11-14：3 个月变化与 ACM 相关 0.92，基本是 ACM 翻版） | §1.5 |
 | 8 | IMF PortWatch 霍尔木兹海峡每日过船数 | 能源 | 零 | 2019 起 | 小 | ✅ 已接（2026-11-14，能源「油市结构」首格） | §1.6 |
 | 9 | FINRA TRACE 单券收益率：Oracle / CoreWeave 等信用历史追到债券发行日 | AI 链信用 | 零（要先拿 cookie） | 发行日起 | 中 | 记入候选（中） | §1.7 |
-| 10 | 其余 15 条低优先（VXSMH、政策利率分布、CMDI、SCE、GSCPI…） | 各视角 | — | — | 小 | 记入候选（低） | §1.8 |
+| 10 | 其余 15 条低优先（~~VXSMH~~ 已接、政策利率分布、CMDI、SCE、GSCPI…） | 各视角 | — | — | 小 | 记入候选（低） | §1.8 |
 
 ~~另有一处现有源要改~~ → ✅ 已改（2026-11-14）：指数 CSV 换到 `cdn-api.cboe.com`；VX 期货 CSV 实测只能用旧域名（`cdn-api` 回 403），不改。见 §4.6。
 
@@ -350,7 +350,7 @@ Oracle 2031 年到期那只对 5Y 美债的利差，与 ICE CDS 在 77 天里**�
 
 | 内容 | 端点 / 序列 | 实测 | 依赖 | 备注 |
 |---|---|---|---|---|
-| 半导体 vol 脱钩大盘：`VXSMH − VXN` | CBOE `VXSMH_History.csv` | 2025-09-16 起 294 行；差值均值 20.0（11.9~36.8），最新 21.15；日变化相关 0.83 | 零 | 只有约 14 个月，先别算分位；不用 moomoo 就能做（对照记忆里砍 SOXX 的理由） |
+| ✅ 半导体 vol 脱钩大盘（2026-11-14 已接：「期权 › SMH」tab，不抓 SMH 期权链——25Δ 两翼价差约 40%）：`VXSMH − VXN` | CBOE `VXSMH_History.csv` | 2025-09-16 起 294 行；差值均值 20.0（11.9~36.8），最新 21.15；日变化相关 0.83 | 零 | 只有约 14 个月，先别算分位；不用 moomoo 就能做（对照记忆里砍 SOXX 的理由） |
 | 期权隐含的政策利率分布（二选一，PRS 更便宜） | 亚特兰大联储 MPT `.../-/media/Project/Atlanta/FRBA/Documents/research-and-data/data/market-probability-tracker/mpt_histdata.xlsx`；堪萨斯城联储 PRS `kcresearch-share.kansascityfed.org/kc-prs/KCPRU_KCPRS.csv` | MPT 7.2MB、32 万行长表，2023-03-29~2026-11-10 共 911 天；PRS 209KB，1989 起到 11-11，和 MOVE 水平相关 0.90、日变化 0.55 | `fflate` / 零 | MPT 坑：`date` 是 ISO 字符串、`reference_start` 是 Excel 序列号。PRS 真正的新信息是偏度列 `KCPRS`；构造口径没读原文 |
 | 纽约联储公司债压力指数 CMDI（IG / HY） | `newyorkfed.org/medialibrary/research/interactives/cmdi/downloads/Market%20CMDI.xlsx`，读 `Index Data` 表，表头第 6 行 | 每周五一个点，2005-01-07~2026-10-23 共 1138 点，滞后约 3 周；2018 起和 HY OAS 水平相关 0.848、**周变化相关 0.195** | `fflate` | 信息和 HY 利差不重复，且不受 FRED 3 年截断影响 |
 | 旧金山联储核心 PCE 需求 / 供给拆分 | `frbsf.org/wp-content/uploads/supply-demand-pce-inflation.xlsx`，读 `Data` 表 | 1969m1~2026m9；最新需求 1.21、不确定 0.77、供给 1.13 | `fflate` | 最近几行月份标签前面多一个空格（`" 2026m7"`） |
