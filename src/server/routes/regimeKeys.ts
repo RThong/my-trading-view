@@ -32,6 +32,9 @@ export const JOB_WRITTEN_SERIES = [
   ['pcEquity', 'CBOE_PC_EQUITY'],
   ['pcIndex', 'CBOE_PC_INDEX'],
   ['pcTotal', 'CBOE_PC_TOTAL'],
+  // 美元零息通胀掉期(日频,daily 的 dtcc_zcis 分组写库)。同 ISM,不进「缺着也缓存」的豁免
+  ['zcis1y', 'DTCC_ZCIS_1Y'],
+  ['zcis2y', 'DTCC_ZCIS_2Y'],
 ] as const;
 
 /** 认沽认购比均线:对外名 → 哪条原始序列、几个交易日(63 ≈ 3 个月)。readDbBacked 现算 */

@@ -56,6 +56,9 @@ export const REGIME_SERIES = [
   'pcIndex',
   'pcTotal',
 
+  // 美元零息通胀掉期 1Y / 2Y(DTCC 成交,daily 的 dtcc_zcis 分组写库):BEI 从 5Y 起,短端市场通胀定价只有掉期给得出
+  'zcis1y',
+  'zcis2y',
   // ── 库里读 + 派生(readDbBacked)
   'qqq',
   'btc',

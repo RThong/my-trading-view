@@ -1,6 +1,8 @@
 // 「通胀」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 import { curveHistoryDoc } from '../curveHistory';
+import { nextId } from '../../views/chartDoc/chartDoc';
+import type { ChartDoc } from '../../views/chartDoc/chartDoc';
 
 export const INFLATION_DOCS = {
   // 通胀来源(供给侧):薪资增速 + 服务黏性 + 汽油同比,外加核心 CPI / PCE 发布值。与 BEI(市场前瞻预期)并读。高=通胀压力=风险。
@@ -113,21 +115,52 @@ export const INFLATION_DOCS = {
     ],
   },
   // 实际收益率与 BEI 同档位、刻意同一组默认显示 —— 与「实际走势」并排就是「名义 − BEI = 实际」的两边
-  beiHistory: curveHistoryDoc({
-    family: 'bei',
-    shown: ['5Y', '10Y', '30Y'],
-    desc: [
-      '定义:盈亏平衡通胀率(BEI)各期限的时间走势。',
-      'BEI = 名义 − TIPS 实际收益率 = 市场通胀补偿(含通胀风险溢价),可作预期代理但非纯预期。',
-      '差值读法见下方那格的 ⓘ。',
-    ].join('\n'),
-    spreads: [
+  beiHistory: withZcisPane(
+    curveHistoryDoc({
+      family: 'bei',
+      shown: ['5Y', '10Y', '30Y'],
+      desc: [
+        '定义:盈亏平衡通胀率(BEI)各期限的时间走势。',
+        'BEI = 名义 − TIPS 实际收益率 = 市场通胀补偿(含通胀风险溢价),可作预期代理但非纯预期。',
+        '差值读法见下方那格的 ⓘ。',
+      ].join('\n'),
+      spreads: [
+        {
+          long: '10Y',
+          short: '5Y',
+          title: '10Y − 5Y',
+          desc: '定义:10Y − 5Y BEI(虚线 = 0)。远端通胀补偿相对近端的差:正 = 市场把通胀风险定价在更远端。',
+        },
+      ],
+    }),
+  ),
+} satisfies RegimeDocs;
+
+// BEI 从 5Y 起:在「通胀走势」末尾补一格短端 —— 美元零息通胀掉期 1Y / 2Y(市场直接成交的通胀定价,日频)
+function withZcisPane(doc: ChartDoc): ChartDoc {
+  const l1 = nextId(doc, 'l');
+  const l2 = `l${Number(l1.slice(1)) + 1}`;
+  return {
+    ...doc,
+    panes: [
+      ...doc.panes,
       {
-        long: '10Y',
-        short: '5Y',
-        title: '10Y − 5Y',
-        desc: '定义:10Y − 5Y BEI(虚线 = 0)。远端通胀补偿相对近端的差:正 = 市场把通胀风险定价在更远端。',
+        id: nextId(doc, 'p'),
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          { id: l1, series: 'zcis1y', scale: 'right', color: '#f472b6', title: '通胀掉期 1Y' },
+          { id: l2, series: 'zcis2y', scale: 'right', color: '#38bdf8', title: '通胀掉期 2Y' },
+        ],
+        desc: [
+          '定义:美元零息通胀掉期(ZCIS,标的 CPI-U)1Y / 2Y 的固定利率 = 市场对未来 1 / 2 年年化 CPI 的定价,%。日频。',
+          '补的是 BEI 没有的短端:TIPS 短端不流动、财政部实际收益率曲线从 5Y 起,短端市场通胀定价只有掉期给得出。',
+          'CPI 公布日、油价冲击当天就看得到重定价;1Y 对汽油价格最敏感(headline CPI 含能源)。',
+          '',
+          '⚠️ 掉期含通胀风险溢价,比同期限 BEI 高约 7~15bp 是正常基差(2026-11 实测 5Y / 10Y / 30Y),不是纯预期。',
+          '⚠️ 数据来自 DTCC 公开成交:当天即期起息成交的中位数,不足 3 笔不出点(美国假日偏稀);只回填得到 2024-11 起。',
+        ].join('\n'),
       },
     ],
-  }),
-} satisfies RegimeDocs;
+  };
+}

@@ -133,6 +133,8 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
 
   // ── 通胀·宏观
   t5yifr: daily('通胀·宏观', '5y5y 通胀远期', '%', ['通胀预期']),
+  zcis1y: daily('通胀·宏观', '通胀掉期 1Y (ZCIS)', '%', ['通胀预期', 'zcis', 'inflation swap']),
+  zcis2y: daily('通胀·宏观', '通胀掉期 2Y (ZCIS)', '%', ['通胀预期', 'zcis', 'inflation swap']),
   wages: { label: '薪资增速 (Atlanta Fed)', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['工资'] },
   stickyCpi: { label: 'Sticky CPI', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['cpi', '通胀'] },
   coreCpiYoy: { label: '核心 CPI 同比', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['cpi', '通胀'] },
