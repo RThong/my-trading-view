@@ -36,6 +36,11 @@ export const REGIME_SERIES = [
   'reserves',
   'repoUsage',
   'wages',
+  // 就业(「宏观 · 就业」):官方失业率 UNRATE(FRED)+ 芝加哥联储 CFLMI 三条(月频 %,日期 = 当月 1 日)
+  'unrate',
+  'lmiFlowUnemp',
+  'lmiHiring',
+  'lmiSeparations',
   'stickyCpi',
   't5yifr',
   'tp10Kw',
@@ -148,6 +153,9 @@ export const REGIME_SERIES = [
   'jpCgpiYoy',
   // CPI 生鮮食品及びエネルギーを除く総合(新核心核心)前年同月比,e-Stat 2025 年基准。**要 ESTAT_APP_ID**。
   'jpCoreCoreCpiYoy',
+  // 内閣府景気動向指数 CI(2020=100,月频,日期 = 当月 1 日):先行 / 一致。「日本 · 景气」那格
+  'jpCiLeading',
+  'jpCiCoincident',
   // 日银短観「企業の物価見通し」:物价全般 1 年后 / 5 年后的企业预期平均(全规模全产业,%,季频,点落季末)。
   // 日本没有可用的 BEI(见 AGENTS.md「查过、确认没有的」),这是最接近的通胀预期代理;是调查不是市场定价。
   'jpInflExp1y',
@@ -231,6 +239,8 @@ export const REGIME_SERIES = [
   'oisHikes6m',
   'oisHikes12m',
   'oisHikes2y',
+  // 堪萨斯城联储政策利率偏度 KCPRS:一年期利率期权隐含的一年后短端利率分布偏度(正 = 上行风险,负 = 下行风险)
+  'policyRateSkew',
 
   // ── 派生量的原始腿(前端用 ChartDoc 的 calc 现算差 / 比值时要它们)
   'iorb',

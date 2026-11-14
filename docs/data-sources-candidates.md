@@ -28,7 +28,7 @@ EIA 那约 250 个模型是 API v2 的机械镜像，按「任意 v2 序列」�
 | 7 | 旧金山联储期限溢价（独立的第三个模型，日频） | 利率拆解 | `fflate` | 全历史 | 小 | ❌ 评估后不接（2026-11-14：3 个月变化与 ACM 相关 0.92，基本是 ACM 翻版） | §1.5 |
 | 8 | IMF PortWatch 霍尔木兹海峡每日过船数 | 能源 | 零 | 2019 起 | 小 | ✅ 已接（2026-11-14，能源「油市结构」首格） | §1.6 |
 | 9 | FINRA TRACE 单券收益率：Oracle / CoreWeave 等信用历史追到债券发行日 | AI 链信用 | 零（要先拿 cookie） | 发行日起 | 中 | 记入候选（中） | §1.7 |
-| 10 | 其余 15 条低优先（~~VXSMH~~ 已接、政策利率分布、CMDI、SCE、GSCPI…） | 各视角 | — | — | 小 | 记入候选（低） | §1.8 |
+| 10 | 其余 15 条低优先（~~VXSMH~~ 已接、~~政策利率分布~~ 已接 KCPRS、CMDI、SCE、GSCPI…） | 各视角 | — | — | 小 | 记入候选（低） | §1.8 |
 
 ~~另有一处现有源要改~~ → ✅ 已改（2026-11-14）：指数 CSV 换到 `cdn-api.cboe.com`；VX 期货 CSV 实测只能用旧域名（`cdn-api` 回 403），不改。见 §4.6。
 
@@ -353,7 +353,7 @@ Oracle 2031 年到期那只对 5Y 美债的利差，与 ICE CDS 在 77 天里**�
 | 内容 | 端点 / 序列 | 实测 | 依赖 | 备注 |
 |---|---|---|---|---|
 | ✅ 半导体 vol 脱钩大盘（2026-11-14 已接：「期权 › SMH」tab，不抓 SMH 期权链——25Δ 两翼价差约 40%）：`VXSMH − VXN` | CBOE `VXSMH_History.csv` | 2025-09-16 起 294 行；差值均值 20.0（11.9~36.8），最新 21.15；日变化相关 0.83 | 零 | 只有约 14 个月，先别算分位；不用 moomoo 就能做（对照记忆里砍 SOXX 的理由） |
-| 期权隐含的政策利率分布（二选一，PRS 更便宜） | 亚特兰大联储 MPT `.../-/media/Project/Atlanta/FRBA/Documents/research-and-data/data/market-probability-tracker/mpt_histdata.xlsx`；堪萨斯城联储 PRS `kcresearch-share.kansascityfed.org/kc-prs/KCPRU_KCPRS.csv` | MPT 7.2MB、32 万行长表，2023-03-29~2026-11-10 共 911 天；PRS 209KB，1989 起到 11-11，和 MOVE 水平相关 0.90、日变化 0.55 | `fflate` / 零 | MPT 坑：`date` 是 ISO 字符串、`reference_start` 是 Excel 序列号。PRS 真正的新信息是偏度列 `KCPRS`；构造口径没读原文 |
+| ✅ 期权隐含的政策利率分布（2026-11-15 已接 KCPRS 偏度：`policyRateSkew`，「利率 › 定价走势」第二格；不接 KCPRU / MPT） | 亚特兰大联储 MPT `.../-/media/Project/Atlanta/FRBA/Documents/research-and-data/data/market-probability-tracker/mpt_histdata.xlsx`；堪萨斯城联储 PRS `kcresearch-share.kansascityfed.org/kc-prs/KCPRU_KCPRS.csv` | MPT 7.2MB、32 万行长表，2023-03-29~2026-11-10 共 911 天；PRS 209KB，1989 起到 11-11，和 MOVE 水平相关 0.90、日变化 0.55 | `fflate` / 零 | MPT 坑：`date` 是 ISO 字符串、`reference_start` 是 Excel 序列号。PRS 真正的新信息是偏度列 `KCPRS`；构造口径没读原文 |
 | ❌ 纽约联储公司债压力指数 CMDI（2026-11-14 评估后不做：说的是 HY 利差同一件事，HY + 13 条梯队已在；周频还滞后约 3 周，它报警时利差格早看到了；周变化相关低主要是频率 / 滞后差，不是新信息）（IG / HY） | `newyorkfed.org/medialibrary/research/interactives/cmdi/downloads/Market%20CMDI.xlsx`，读 `Index Data` 表，表头第 6 行 | 每周五一个点，2005-01-07~2026-10-23 共 1138 点，滞后约 3 周；2018 起和 HY OAS 水平相关 0.848、**周变化相关 0.195** | `fflate` | 信息和 HY 利差不重复，且不受 FRED 3 年截断影响 |
 | 旧金山联储核心 PCE 需求 / 供给拆分 | `frbsf.org/wp-content/uploads/supply-demand-pce-inflation.xlsx`，读 `Data` 表 | 1969m1~2026m9；最新需求 1.21、不确定 0.77、供给 1.13 | `fflate` | 最近几行月份标签前面多一个空格（`" 2026m7"`） |
 | 纽约联储消费者调查 SCE 1/3/5 年通胀预期 | `frbny-sce-data.xlsx`，读 `Inflation expectations` 表，表头第 4 行 | 2013-06~2026-10（密歇根 MICH 只到 2026-09）；最新 1y 3.91、3y 3.29、5y 3.0 | `fflate`（1.27MB，43 张表） | 5 年期那列起点更晚 |
@@ -584,12 +584,12 @@ DB 名对照在官方手册 `https://www.stat-search.boj.or.jp/info/api_manual.p
 ⚠️ 里面的物価連動国債只有 10 只，且**是价格不是收益率**——想做日本 BEI 仍然要自己定价，见
 `AGENTS.md`「查过、确认没有的」。
 
-### 2.6 内閣府 景気動向指数
+### ✅ 2.6 内閣府 景気動向指数 —— 已接（2026-11-15：`jpCiLeading` / `jpCiCoincident`，「日本 › 景气」，用 SheetJS 读长期系列 xlsx，见 `fetchers/cabinetCi`）
 
 | | |
 |---|---|
 | URL | `https://www.esri.cao.go.jp/jp/stat/di/di.html`（页面上 7 个 `.xlsx`） |
-| 格式 | `.xlsx` → `fflate` |
+| 格式 | `.xlsx` → SheetJS(多行表头,已接时选的;`fflate` 也能解) |
 | 频率 | 月频 |
 
 CI / DI 的**先行指数**，日本景气拐点的标准判据。
@@ -621,7 +621,7 @@ CI / DI 的**先行指数**，日本景气拐点的标准判据。
 | 梯队 | 特征 | 谁 |
 |---|---|---|
 | **一** | 免 key、干净 CSV/JSON、URL 可构造、**零依赖** | **MOF 跨境流** · **BOJ API** · JSDA |
-| **二** | `.xlsx`，`fflate` 够，**不用加依赖** | BOJ オペ · 内閣府 · 投信協会 |
+| **二** | `.xlsx`，`fflate` 够，**不用加依赖** | BOJ オペ · ~~内閣府~~（已接，用 SheetJS）· 投信協会 |
 | **三** | 要爬索引 / BIFF8 / OLE / 反爬 | JPX 投資部門別 · METI(403) · 日本相互証券 |
 
 **优先接第一梯队** —— 零依赖意味着不用做「值不值得加一个包」这个决策。
@@ -656,7 +656,7 @@ CI / DI 的**先行指数**，日本景气拐点的标准判据。
 2026-11-13 OpenBB 对照里**只读了代码、没下载验过**的（看描述判断不在现有视角内）：
 
 - 达拉斯联储：能源调查和页岩盈亏平衡价、DGEI、德州各项调查
-- 里士满联储：NEI、CFO 调查；明尼阿波利斯联储、波士顿联储全部；堪萨斯城联储 LMCI 和农业；芝加哥联储 BBKI / CARTS / CFLMI / CFNAI
+- 里士满联储：NEI、CFO 调查；明尼阿波利斯联储、波士顿联储全部；堪萨斯城联储 LMCI 和农业；芝加哥联储 BBKI / CARTS / ~~CFLMI~~（2026-11-15 已接,「宏观 › 就业」,见 AGENTS.md）/ CFNAI
 - 纽约联储：Business Leaders 调查、HHDC、市场预期调查 SME（按期发的 xlsx + PDF）、staff nowcast（OpenBB 用的 `.../NowCast/downloads/New-York-Fed-Staff-Nowcast_download_data` 没测）
 - 费城联储：ATSIX（下载了 1.1MB xlsx 但没解析）、Anxious、Livingston、partisan conflict
 - 美联储的货币市场基金、国际证券投资（EFA）

@@ -24,6 +24,9 @@ import { fetchHormuzTransits } from '../fetchers/portwatch';
 import { fetchMofWeeklyFlows } from '../fetchers/mofSecurities';
 import { fetchFinraMargin } from '../fetchers/finraMargin';
 import { fetchJpxMarginBuy } from '../fetchers/jpxMargin';
+import { fetchKcPrs } from '../fetchers/kcFedPrs';
+import { fetchCabinetCi } from '../fetchers/cabinetCi';
+import { fetchCflmi } from '../fetchers/chicagoLmi';
 import {
   subtractAligned,
   subtractAt,
@@ -146,6 +149,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     // SEP 点阵图中值。⚠️ FEDTARMD 的日期轴是「预测哪一年」(YYYY-01-01),FRED 只留最新一版 → 下面改记为年底。
     sepMedian: fredSeries('FEDTARMD'),
     sepMedianLr: fredSeries('FEDTARMDLR'),
+    // 官方失业率(月频 %),「宏观 · 就业」里和 CFLMI 的流量一致失业率对照
+    unrate: fredSeries('UNRATE'),
     cor1m: cboeSeries('COR1M'),
     cor3m: cboeSeries('COR3M'),
     vixeq: cboeSeries('VIXEQ'),
@@ -200,6 +205,12 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const marginP = fetchFinraMargin().catch(warnNull('FINRA 保证金'));
   // JPX 信用买残(日本版融资余额,周频,2002 起;三份官方文件拼接,见 fetchers/jpxMargin)
   const jpMarginP = fetchJpxMarginBuy().catch(warnNull('JPX 信用残'));
+  // 堪萨斯城联储政策利率偏度(1989 起日频,一个 CSV)。解析器在表头 / 坏行时抛错,同样出声
+  const kcPrsP = fetchKcPrs().catch(warnNull('KC Fed 政策利率偏度'));
+  // 内閣府景気動向指数 CI(月频,1985 起一个 xlsx,速報后会改訂 → 现拉最新)
+  const ciP = fetchCabinetCi().catch(warnNull('内閣府 CI'));
+  // 芝加哥联储 CFLMI(月频,2008-07 起,一个 JSON;每月两次发布,现拉最新)
+  const cflmiP = fetchCflmi().catch(warnNull('芝加哥联储 CFLMI'));
   // VIX 期货持仓(TFF):波动率的 **positioning** 轴,和上面 VIX / 期限结构那组 **pricing** 轴互补。
   // 一次请求出两类(Asset Manager / Leveraged Money),别拆成两次。
   const vixCotP = fetchCftcVixNetOi('2018-01-01').catch(() => null);
@@ -316,6 +327,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     mofFlows: mofFlowsP,
     margin: marginP,
     jpMargin: jpMarginP,
+    kcPrs: kcPrsP,
+    ci: ciP,
+    cflmi: cflmiP,
     vixCot: vixCotP,
     bojGap: bojGapP,
     nakajima: nakajimaP,
@@ -364,6 +378,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const mofFlows = await mofFlowsP;
   const margin = await marginP;
   const jpMargin = await jpMarginP;
+  const kcPrs = await kcPrsP;
+  const ci = await ciP;
+  const cflmi = await cflmiP;
   const [coreCpi, corePce] = await coreInflP;
   const [
     refUtil,
@@ -417,6 +434,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     fedTargetUpper: 'fedTargetUpper',
     fedTargetLower: 'fedTargetLower',
     sepMedianLr: 'sepMedianLr',
+    unrate: 'unrate',
     // 下面几条原本只当派生量的腿在内部用(repoStress / vixSpotTerm / rxmSpx),现在原样发出来:
     // 前端用 ChartDoc 的 calc 现算差 / 比值,注册表下拉只放原始序列(派生的那几条仍照算、照发,见下)
     iorb: 'iorb',
@@ -562,6 +580,11 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 企业物价同比(对照月精确命中,不往前贴 —— 见 monthlyAnnualizedPct)。指数最新月可能是 null,解析时已跳过。
   put('jpCgpiYoy', cgpi ? fromHistoryStart(monthlyAnnualizedPct(cgpi.PRCG20_2200000000, 12)) : undefined);
   put('jpCoreCoreCpiYoy', coreCoreCpi ?? undefined);
+  put('lmiFlowUnemp', cflmi ? fromHistoryStart(cflmi.flowRate) : undefined);
+  put('lmiHiring', cflmi ? fromHistoryStart(cflmi.hiring) : undefined);
+  put('lmiSeparations', cflmi ? fromHistoryStart(cflmi.separations) : undefined);
+  put('jpCiLeading', ci ? fromHistoryStart(ci.map((m) => ({ date: m.date, value: m.leading }))) : undefined);
+  put('jpCiCoincident', ci ? fromHistoryStart(ci.map((m) => ({ date: m.date, value: m.coincident }))) : undefined);
   put('jpInflExp1y', tankan?.[TANKAN_INFL_EXP[0]]);
   put('jpInflExp5y', tankan?.[TANKAN_INFL_EXP[1]]);
   put(
@@ -572,6 +595,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // current 的历史值是今天用全部数据回头重画的,不是当时看得到的值(前视偏差)。
   put('rstarHlwCurrent', rstar?.length ? rstar : undefined);
   put('tp10Acm', acm ?? undefined);
+  put('policyRateSkew', kcPrs ? fromHistoryStart(kcPrs) : undefined);
   // 联储自己定价的 r*:长期名义中性利率 − 2% 通胀目标,与 HLW 同为实际口径才能并排。
   // 取整到 0.01:SEP 本身只给到 0.1,不取整会冒出 1.1000000000000001 这种浮点尾巴。
   put(
