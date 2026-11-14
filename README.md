@@ -4,12 +4,15 @@ A personal, local-only markets dashboard, organized as **vertical perspectives**
 (a left rail) × horizontal sub-tabs:
 
 - **期权 (Options)** — daily 25Δ IV + skew snapshot of SPY / QQQ / VIX / TLT / GLD / USO / IBIT
-  (via moomoo OpenD) and BTC (via Deribit), stored in SQLite. Underlyings with a free
-  volatility index (SPY/QQQ/GLD/USO/TLT/IBIT/BTC) also get implied-vs-realized + VRP panes.
+  (via moomoo OpenD; a CBOE delayed-quote chain runs in parallel ahead of a planned switch) and BTC
+  (via Deribit), stored in SQLite. Underlyings with a free volatility index (SPY/QQQ/GLD/USO/TLT/IBIT/SMH/BTC)
+  also get implied-vs-realized + VRP panes; SMH (semiconductors) has VRP only — its option wings are too
+  wide-quoted for a meaningful 25Δ skew.
   The spot candle pane carries TradingView-style overlays (EMA ribbon, Bollinger 2σ/3σ) and,
   in a one-click *spot-only* mode, MACD / RSI sub-charts — see [Spot chart tools](#spot-chart-tools).
 - **Regime perspectives** — macro/market *regime* indicators pulled on demand from
-  FRED / CBOE / CNN / Yahoo / Eris / MOF+JPX / CFTC / Shiller / ICE / Computable: **信用 · 流动性 · 情绪 ·
+  FRED / CBOE / CNN / Yahoo / Eris / MOF+JPX / CFTC / Shiller / ICE / DTCC / FINRA / EIA / BOJ / Cabinet Office /
+  Chicago Fed / Kansas City Fed / IMF PortWatch / Computable: **信用 · 流动性 · 情绪 ·
   宏观 · 能源 · 利率 · 日本 · AI · 通胀 · 估值**, plus a **特色指标 → 攻防** tab
   (NOBL/QQQ offense-defense regime via ZigZag). Series with a trailing distribution add
   P5/P95 bands, a current-percentile badge, and red/green shading of extreme periods.
@@ -157,10 +160,12 @@ IV + skew, plus implied-vs-realized + VRP where a free vol index exists:
 | SPY | `SPY`  | moomoo OpenD | VIX / SPX |
 | QQQ | `QQQ`  | moomoo OpenD | VXN / NDX |
 | VIX | `.VIX` | moomoo OpenD | — |
-| TLT | `TLT`  | moomoo OpenD | — |
+| TLT | `TLT`  | moomoo OpenD | VXTLT / TLT |
 | GLD | `GLD`  | moomoo OpenD | GVZ / GLD |
 | USO | `USO`  | moomoo OpenD | OVX / USO |
+| SMH | `SMH`  | — (no chain: 25Δ wings quoted ~40% wide) | VXSMH / SMH, plus VXSMH − VXN (semis decoupling from Nasdaq) |
 | BTC (tab sits under the **BTC** rail, not 期权) | `BTC`  | Deribit | DVOL / BTC |
+| IBIT (also under the **BTC** rail) | `IBIT` | moomoo OpenD | BITVX / IBIT |
 
 ### Indicators
 
@@ -185,15 +190,15 @@ several horizontal tabs:
 
 | Perspective | Tabs / panes | Source |
 |---|---|---|
-| 信用 Credit | 利差走势(HY OAS)· 评级利差 · 期限结构 | FRED |
+| 信用 Credit | 利差走势 (HY OAS + CDX HY / IG index CDS) · 评级利差 · 期限结构 · 杠杆 (US margin debt YoY + Japan margin-buying balance YoY) | FRED / ICE / DTCC / FINRA / JPX |
 | 流动性 Liquidity | net liquidity (WALCL−TGA−RRP, weekly, sampled on Wednesdays) · bank reserves (WRBWFRBL) · reverse repo · repo usage · repo stress (IORB−SOFR) | FRED |
-| 情绪 Sentiment | 波动率 (COR1M · VIXEQ · VIX · VXN · VX1−V3 term · RXM/SPX risk-reversal) · 情绪 (Fear&Greed) | CBOE / CNN |
-| 宏观 Macro | growth/inflation/policy regime read | FRED |
-| 能源 Energy | 油市结构 (Brent−WTI · diesel/gasoline/3-2-1 crack) · 炼厂·库存 (开工率 + 馏分油收率 + 加工量/产量同比 + 库存与出口的**季节 z**，判紧张来自需求还是供应) | Yahoo / EIA |
-| 利率 Rates | 收益曲线 · 期限走势 (+ 10Y−1Y / 30Y−10Y spread panes) · SOFR OIS · OIS 走势 · 利率波动率 (MOVE) · 实际收益率 (TIPS 曲线) · 实际走势 · 长端分解 (5y5y 通胀远期 + 期限溢价(Kim-Wright vs NY Fed ACM 两模型并排) + A vs L 缺口(KW 预期短端 vs HLW r*+5y5y) + HLW r*) | FRED / Eris / NY Fed / Yahoo |
-| 日本 Japan | 日元 (USD-JPY + CFTC 持仓) · JGB 收益曲线 · 期限走势 · 日债波动率 (JGB VIX) · 产出缺口 (需給ギャップ + 潜在成長率及四项贡献度) · 长端分解 (期限溢价 + 预期短端 + 自然利率 r\* 及 95% 区间，**r\* 是实际口径、与名义两条分格**) | Yahoo / CFTC / MOF / JPX / BOJ / Nakajima |
-| AI | 算力价格 (H100/H200/B200/B300 GPU 租赁价指数) · 买方合计 (AI 链 capex/FCF 判据线) · AI CDS (AI 巨头 + Oracle 单名 CDS，价近似 spread bp) · 产业链 (15 家公司财务明细) | Computable / ICE / SEC / TWSE |
-| 通胀 Inflation | 通胀预期 (BEI) · 通胀走势 · 通胀来源 (RBOB YoY 等) | US Treasury (BEI) / FRED / Yahoo |
+| 情绪 Sentiment | 波动率 (COR1M · VIXEQ · VIX · VXN · VX1−V3 term · RXM/SPX risk-reversal) · 情绪 (Fear&Greed · Cboe put/call ratios) | CBOE / CNN |
+| 宏观 Macro | 美元 (DXY) · ISM 景气 (PMI + Prices) · 就业 (Chicago Fed CFLMI: separation rate, outflow rate, flow-consistent unemployment vs BLS U-3) | FRED / ISM / Chicago Fed |
+| 能源 Energy | 油市结构 (Strait of Hormuz daily transits · Brent−WTI · diesel/gasoline/3-2-1 crack) · 炼厂·库存 (开工率 + 馏分油收率 + 加工量/产量同比 + 表观需求同比 + 库存与出口的**季节 z**，判紧张来自需求还是供应) · 泵价·加价 (retail diesel/gasoline vs wholesale) | Yahoo / EIA / IMF PortWatch |
+| 利率 Rates | 收益曲线 · 期限走势 (+ 10Y−1Y / 30Y−10Y spread panes) · SOFR OIS · OIS 走势 · 加息定价 / 定价走势 (OIS-implied hikes + Kansas City Fed policy-rate skew) · 利率波动率 (MOVE) · 实际收益率 (TIPS 曲线) · 实际走势 · 长端分解 (5y5y 通胀远期 + 期限溢价(Kim-Wright vs NY Fed ACM 两模型并排) + A vs L 缺口(KW 预期短端 vs HLW r*+5y5y) + HLW r*) | FRED / Eris / NY Fed / Kansas City Fed / Yahoo |
+| 日本 Japan | 日元 (USD-JPY + 美日 2Y 利差 + CFTC 持仓) · 资金流 (MOF weekly cross-border securities flows, 52-week sums) · JGB 收益曲线 · 期限走势 · 银行 (deposit/loan pass-through + MUFG) · 通胀 (CGPI + core-core CPI · Tankan firms' 1y/5y inflation expectations) · 日债波动率 (JGB VIX) · 景气 (Cabinet Office leading / coincident CI) · 产出缺口 (需給ギャップ + 潜在成長率及四项贡献度) · 长端分解 (期限溢价 + 预期短端 + 自然利率 r\* 及 95% 区间，**r\* 是实际口径、与名义两条分格**) | Yahoo / CFTC / MOF / JPX / BOJ / e-Stat / Cabinet Office / Nakajima |
+| AI | 算力价格 (H100/H200/B200/B300 GPU 租赁价指数) · 买方合计 (AI 链 capex/FCF 判据线) · AI CDS (AI 巨头 + Oracle + CoreWeave + SoftBank 单名 CDS，bp；ICE 结算价，之前约 2 年与软银由 DTCC 成交补) · 产业链 (15 家公司财务明细) | Computable / ICE / DTCC / SEC / TWSE |
+| 通胀 Inflation | 通胀预期 (BEI) · 通胀走势 (+ 1Y / 2Y zero-coupon inflation swaps) · 通胀来源 (RBOB YoY 等) | US Treasury (BEI) / FRED / DTCC / Yahoo |
 | 估值 Valuation | Shiller CAPE regime | Shiller |
 | 特色指标 Featured | 攻防 — NOBL/QQQ offense-defense via ZigZag · 集中度 — S&P 500 ÷ S&P 500 Equal Weight (`^GSPC` / `^SPXEW`, realized cap concentration; read direction, not level — structural uptrend since 2023) paired with VIXEQ / VIX (implied concentration / dispersion, ≈ 1/√avg correlation, with percentile bands) | Yahoo / CBOE |
 
