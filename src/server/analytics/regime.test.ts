@@ -506,3 +506,18 @@ test('yoyPctWeekly:比 52 周前同一周(不是 53 周前);去年那周缺数�
   expect(out.map((p) => p.date)).toEqual(['2026-10-30', '2026-11-06']);
   expect(out[1].value).toBeCloseTo(4, 9);
 });
+
+test('yoyPctWeekly 容差:去年那周因假日挪到周四也能对上,且优先正好 364 天', () => {
+  const rows = [
+    { date: '2025-03-20', value: 100 }, // 周四(周五放假),今年同周是正常周五
+    { date: '2025-11-07', value: 80 },
+    { date: '2025-11-08', value: 999 }, // 正好 364 天前那天存在时优先它,不取 ±1 的
+    { date: '2026-03-20', value: 110 },
+    { date: '2026-11-07', value: 88 },
+  ];
+  expect(yoyPctWeekly(rows).map((p) => p.date)).toEqual(['2026-11-07']); // 严格:3-20 对不上
+  const loose = yoyPctWeekly(rows, 3);
+  expect(loose.map((p) => p.date)).toEqual(['2026-03-20', '2026-11-07']);
+  expect(loose[0].value).toBeCloseTo(10, 9);
+  expect(loose[1].value).toBeCloseTo(-91.191191, 4); // 88 / 999 − 1
+});

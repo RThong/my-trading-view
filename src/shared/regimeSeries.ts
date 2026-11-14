@@ -24,6 +24,8 @@ export const REGIME_SERIES = [
   'cdxHy',
   // FINRA 保证金统计(美股版融资余额,月频,日期 = 当月 1 日):借方余额同比 %
   'marginDebtYoy',
+  // JPX 信用取引現在高(日本版融资余额,东京 + 名古屋信用买残金额,周频,日期 = 申込日周五)同比 %
+  'jpMarginBuyYoy',
   'cor1m',
   // Cboe 3 个月隐含相关性(标普前 50 大成分股两两隐含相关性均值),面板上紧挨 cor1m 单独一格。
   'cor3m',

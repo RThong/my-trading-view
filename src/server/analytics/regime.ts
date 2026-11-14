@@ -118,13 +118,17 @@ export function yoyPct(rows: Point[]): Point[] {
  * 周频序列的同比 %:对比 52 周(364 天)前**同一周**,与 EIA 周报「同期」口径一致。
  * 别用 yoyPct:52 周比一年少一天,「≤ 去年同日的最近观测」恒落到 53 周前(2026-11 实测馏分油产量
  * 同比因此偏 2.6 个百分点)。去年那周缺数 → 该点跳过,不往前后贴。
+ *
+ * toleranceDays:日期本身会挪的周频源(JPX 信用残:周五放假提前到周四、年末记 12-30)用 —— 在 364 天前 ±N 天内
+ * 找**最近**的一周(先找 0,再 −1 / +1,…)。N 要小于半周(≤ 3),否则会撞到相邻周。缺省 0 = 严格同一天(EIA)。
  */
-export function yoyPctWeekly(rows: Point[]): Point[] {
+export function yoyPctWeekly(rows: Point[], toleranceDays = 0): Point[] {
   const byDate = new Map(rows.map((p) => [p.date, p.value]));
-  const weekAgo52 = (d: string) => new Date(Date.parse(d) - 364 * 86_400_000).toISOString().slice(0, 10);
+  const offsets = [0, ...Array.from({ length: toleranceDays }, (_, i) => [-(i + 1), i + 1]).flat()];
+  const shifted = (d: string, back: number) => new Date(Date.parse(d) - back * 86_400_000).toISOString().slice(0, 10);
 
   return rows.flatMap((p) => {
-    const prev = byDate.get(weekAgo52(p.date));
+    const prev = offsets.map((o) => byDate.get(shifted(p.date, 364 + o))).find((v) => v !== undefined);
     return prev ? [{ date: p.date, value: (p.value / prev - 1) * 100 }] : [];
   });
 }

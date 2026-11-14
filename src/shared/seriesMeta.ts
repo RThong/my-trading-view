@@ -125,6 +125,13 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   hyOas: daily('信用·流动性', 'HY OAS 高收益信用利差', '%', ['高收益', '信用利差']),
   cdxIg: daily('信用·流动性', 'CDX 北美投资级 5Y 利差', '%', ['cdx', 'cds', '投资级', 'ig']),
   cdxHy: daily('信用·流动性', 'CDX 北美高收益 5Y 利差', '%', ['cdx', 'cds', '高收益', 'hy']),
+  jpMarginBuyYoy: {
+    label: '日本信用买入余额同比 (JPX 信用取引現在高)',
+    category: '信用·流动性',
+    freq: '周',
+    unit: '%',
+    aliases: ['融资余额', '信用残', '信用買い残', '杠杆', '日本', 'jpx'],
+  },
   marginDebtYoy: {
     label: '美股融资余额同比 (FINRA 保证金债务)',
     category: '信用·流动性',
@@ -425,6 +432,7 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   lProxyHlwT5yifr: 'server', // HLW r* + 5y5y
   expShort10Kw: 'server', // KW 拟合 10Y − 期限溢价(拟合那条没对外发)
   cftcJpy: 'server', // 多头 − 空头
+  jpMarginBuyYoy: 'server', // 52 周前同一周比
   marginDebtYoy: 'server', // FINRA 借方余额同比
   jpFlowOutBonds: 'server', // 周净额 52 周滚动求和,億円 → 兆円
   jpFlowOutEquity: 'server',

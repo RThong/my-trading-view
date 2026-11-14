@@ -23,6 +23,7 @@ import { fetchTreasuryCurve } from '../fetchers/usTreasuryPar';
 import { fetchHormuzTransits } from '../fetchers/portwatch';
 import { fetchMofWeeklyFlows } from '../fetchers/mofSecurities';
 import { fetchFinraMargin } from '../fetchers/finraMargin';
+import { fetchJpxMarginBuy } from '../fetchers/jpxMargin';
 import {
   subtractAligned,
   subtractAt,
@@ -190,7 +191,15 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // MOF 周度跨境证券流(carry 的资金流上游)。一个 CSV 2005 起全历史 → 不落库
   const mofFlowsP = fetchMofWeeklyFlows().catch(() => null);
   // FINRA 保证金债务(美股融资余额,月频,1997 起一个 xlsx)。同比要往前垫一年,所以全量拉、算完再裁
-  const marginP = fetchFinraMargin().catch(() => null);
+  // 两条杠杆源的 catch 出声(同 EIA):解析器会在表头 / 年月 / 交接处 / 数值对不上时抛错,那是「源改版了、只能改代码修」,
+  // 静默吞掉的话界面上和网络失败一样只显示 unavailable,分不出原因
+  const warnNull = (name: string) => (e: unknown) => {
+    console.warn(`[regime] ${name} 现拉失败,本次该格 unavailable: ${(e as Error).message}`);
+    return null;
+  };
+  const marginP = fetchFinraMargin().catch(warnNull('FINRA 保证金'));
+  // JPX 信用买残(日本版融资余额,周频,2002 起;三份官方文件拼接,见 fetchers/jpxMargin)
+  const jpMarginP = fetchJpxMarginBuy().catch(warnNull('JPX 信用残'));
   // VIX 期货持仓(TFF):波动率的 **positioning** 轴,和上面 VIX / 期限结构那组 **pricing** 轴互补。
   // 一次请求出两类(Asset Manager / Leveraged Money),别拆成两次。
   const vixCotP = fetchCftcVixNetOi('2018-01-01').catch(() => null);
@@ -306,6 +315,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     cftcJpy: cftcJpyP,
     mofFlows: mofFlowsP,
     margin: marginP,
+    jpMargin: jpMarginP,
     vixCot: vixCotP,
     bojGap: bojGapP,
     nakajima: nakajimaP,
@@ -353,6 +363,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const hormuz = await hormuzP;
   const mofFlows = await mofFlowsP;
   const margin = await marginP;
+  const jpMargin = await jpMarginP;
   const [coreCpi, corePce] = await coreInflP;
   const [
     refUtil,
@@ -481,6 +492,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
         )
       : undefined,
   );
+  // 周频同比比 52 周前同一周。申込日会因假日挪动(周五放假提前到周四、年末记 12-30),所以带 ±3 天容差找最近的一周;
+  // 严格同一天的话 2018 起约 6% 的周对不上(449 周缺 27 周),带容差后剩 3 周:黄金周 / 年末偶有整周不发,或去年那周挪得超过 3 天
+  put('jpMarginBuyYoy', jpMargin ? fromHistoryStart(yoyPctWeekly(jpMargin, 3)) : undefined);
   put('jpFlowOutBonds', flow52w('outBonds') ?? undefined);
   put('jpFlowOutEquity', flow52w('outEquity') ?? undefined);
   put('jpFlowInEquity', flow52w('inEquity') ?? undefined);
