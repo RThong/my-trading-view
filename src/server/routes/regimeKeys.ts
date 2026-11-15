@@ -67,6 +67,7 @@ export const DB_BACKED_KEYS: ReadonlySet<string> = new Set<string>([
   'btcSupplyDensityRaw',
   'btcMvrv',
   'btcAviv',
+  'weekendFlag',
   'vxTermSpread',
   'move',
   'hyOas',

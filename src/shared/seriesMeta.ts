@@ -422,6 +422,7 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
     ]),
     weekends: true,
   },
+  weekendFlag: { ...daily('加密', '周末(周六 / 周日 = 1)'), weekends: true, hidden: true },
 
   // ── AI 链(Computable GPU 租赁价,按 UTC 日聚合)
   gpuH100: { ...daily('AI 链', 'GPU 租赁价 H100', '$/GPU·时', ['gpu', '算力']), weekends: true },

@@ -134,6 +134,11 @@ export function readDbBacked(
   // 链上估值:库里存的就是对外值(BRK 现成比值),不派生
   put('btcMvrv', getMarketSeries(db, 'BTC_MVRV'));
   put('btcAviv', getMarketSeries(db, 'BTC_AVIV'));
+  // 周末标记(周六 / 周日 = 1,其余 0),日期取 BTC 日线自己的:BTC 各格画灰色背景带,周末成交 / 波动偏少,一眼分得出
+  put(
+    'weekendFlag',
+    btcBars.map((b) => ({ date: b.date, value: [0, 6].includes(new Date(`${b.date}T00:00:00Z`).getUTCDay()) ? 1 : 0 })),
+  );
 
   // 认沽认购比均线:日度噪音大(单日能从 0.59 跳到 0.89),读趋势看均线
   PUT_CALL_MAS.forEach(([out, sym, n]) => {

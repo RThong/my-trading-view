@@ -1,5 +1,13 @@
 // 「BTC」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
-import { normalBand, type Pane } from '../../views/chartDoc/chartDoc';
+import { normalBand, type Layer, type Pane } from '../../views/chartDoc/chartDoc';
+
+/**
+ * 周末灰色背景带(周六 / 周日):BTC 7×24,周末成交 / 波动偏少,和工作日分开看。背景色带只在日线画。
+ * id 按格传:图层 id 在整张图里必须唯一
+ */
+function weekendBg(id: string): Layer {
+  return { id, series: 'weekendFlag', scale: 'right', color: '#a3a3a3', title: '周末', render: { kind: 'background' } };
+}
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 
 /**
@@ -20,13 +28,14 @@ const BTC_SPOT_PANE: Pane = {
       title: 'BTC 现货 (USD)',
       render: { kind: 'candle' },
     },
+    weekendBg('wk1'),
   ],
   desc: [
     '定义:BTC 现货日线蜡烛,Bitstamp 全段(UTC 0 点切日;Yahoo BTC-USD 降级)。**参照物,不是判据**。',
     '「现货/夏普」tab 和下一格夏普同读:价格新高但夏普走低 = 这轮涨幅是靠加波动换来的,不是趋势变强。',
     '「链上」tab 和下一格供应密度同读:密度冲过 15% 之后往哪边破,看这格。',
     '',
-    '⚠️ 含周末(crypto 7 天有数),与本站其它 5 天口径的序列并排看时注意日期对不齐。',
+    '⚠️ 含周末(crypto 7 天有数),与本站其它 5 天口径的序列并排看时注意日期对不齐。灰色背景 = 周六 / 周日(只在日线画)。',
     '⚠️ 单一交易所:收盘与综合价差 ~0.02%,但急跌时 Bitstamp 盘口薄、影线可能比别处深几个点(只影响影线)。',
     '⚠️ 起于 2012-01(比全站其它序列的 2018 早得多):四轮周期才够看夏普顶部递减,故 BTC 单独放长。',
   ].join('\n'),
@@ -52,6 +61,7 @@ export const BTC_DOCS = {
             title: 'BTC 现货日成交额 (Binance, 亿美元)',
             render: { kind: 'volume' },
           },
+          weekendBg('wk2'),
         ],
         desc: [
           '定义:Binance 现货 BTCUSDT 每天的成交额(USDT 计 ≈ 美元),亿美元,2017-08 起。周 / 月线下按期求和。',
@@ -79,6 +89,7 @@ export const BTC_DOCS = {
             render: { kind: 'line', baseline: 0 },
             refLines: normalBand(-2, 2.9),
           },
+          weekendBg('wk3'),
         ],
         desc: [
           '定义:过去 365 天日对数收益的 均值/标准差 × √365。「每承受一单位波动换回多少超额涨幅」。',
@@ -128,6 +139,7 @@ export const BTC_DOCS = {
             title: '原始日值 (%)',
             hidden: true,
           },
+          weekendBg('wk4'),
         ],
         desc: [
           '定义:链上成本价落在当日收盘价 ±5% 内的 BTC 占总供应的比例,取 7 日均线',
@@ -167,6 +179,7 @@ export const BTC_DOCS = {
               { price: 1.9, title: '近两轮顶 1.9', color: '#ef4444' },
             ],
           },
+          weekendBg('wk5'),
         ],
         desc: [
           '定义:AVIV = 现价 ÷ True Market Mean(活跃投资者的平均买入成本,Glassnode × ARK 的 Cointime 口径):',

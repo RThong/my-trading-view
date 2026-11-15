@@ -81,6 +81,8 @@ export const REGIME_SERIES = [
   // BTC 链上估值(BRK 现成值,cryptoDaily 的 btc_supply_density 组一并写):现价 ÷ 全市场持仓成本 / ÷ 活跃投资者成本
   'btcMvrv',
   'btcAviv',
+  // 周末标记(0/1,日期同 BTC 日线):BTC 各格的灰色背景带
+  'weekendFlag',
   'vxTermSpread',
   'move',
   // 认沽认购比的均线(5 / 20 / 63 个交易日 ≈ 3 个月):日度噪音大,读趋势看均线

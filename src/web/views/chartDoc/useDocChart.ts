@@ -47,6 +47,7 @@ import {
   VOLUME_ALPHA,
 } from './layerPoints';
 import { BandFillPrimitive } from '../../chart/bandFill';
+import { DayBandPrimitive } from '../../chart/dayBand';
 import { commonRange } from './useSeriesData';
 import { latestIso } from '../../../shared/calc/isoDate';
 
@@ -106,13 +107,11 @@ const KINDS: Record<Kind, KindDef> = {
     input: (d) => d.bars,
     data: (_layer, d): CandlestickData[] => d.bars ?? [],
   },
-  background: kindDef(AreaSeries, (layer, pts) => {
-    const tint = withAlpha(layer.color, BACKGROUND_ALPHA);
-    return pts.map((p) => {
-      const fill = p.value !== 0 ? tint : TRANSPARENT;
-      return { time: p.time, value: 1, topColor: fill, bottomColor: fill };
-    });
-  }),
+  // 背景色带:面积图本身全透明,只留着占轴、图例、显示 / 隐藏;色块由 DayBandPrimitive 按整根 K 线宽度画(见下面的 effect)。
+  // 不直接用面积图上色:它只能在相邻两根 K 线的中心之间填,标记日会多出半根(周末两根画成三根宽,2026-11-15 实测)
+  background: kindDef(AreaSeries, (_layer, pts) =>
+    pts.map((p) => ({ time: p.time, value: 1, topColor: TRANSPARENT, bottomColor: TRANSPARENT })),
+  ),
 };
 
 /**
@@ -464,6 +463,33 @@ export function useDocChart(
         return lo === undefined ? [] : [{ time: pt.time, upper: pt.value, lower: lo }];
       });
       f.prim.setData(band, w.color);
+    });
+  }, [doc, data]);
+
+  // 背景色带的色块:挂在背景层的 series 上,按标记日整根 K 线宽度画(见 chart/dayBand)。
+  // 背景层被删 / 换画法重建时旧图元跟着旧 series 没了,重新挂;周 / 月线下背景层没有点,色块自然为空
+  const bandsRef = useRef(new Map<string, { s: ISeriesApi<SeriesType>; prim: DayBandPrimitive }>());
+  useEffect(() => {
+    const bands = bandsRef.current;
+    const wanted = doc.panes.flatMap((p) => p.layers).filter((l) => drawnKind(l) === 'background');
+    const wantedIds = new Set(wanted.map((l) => l.id));
+    [...bands].forEach(([id, b]) => {
+      const live = seriesRef.current.get(id) === b.s;
+      if (wantedIds.has(id) && live) return;
+      if (live) b.s.detachPrimitive(b.prim);
+      bands.delete(id);
+    });
+
+    wanted.forEach((l) => {
+      const s = seriesRef.current.get(l.id);
+      if (!s) return;
+      const b = bands.get(l.id) ?? { s, prim: new DayBandPrimitive() };
+      if (!bands.has(l.id)) {
+        s.attachPrimitive(b.prim);
+        bands.set(l.id, b);
+      }
+      const times = (data[l.id]?.display ?? []).filter((pt) => pt.value !== 0).map((pt) => pt.time);
+      b.prim.setData(times, withAlpha(l.color, BACKGROUND_ALPHA));
     });
   }, [doc, data]);
 
