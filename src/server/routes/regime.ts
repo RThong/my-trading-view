@@ -27,6 +27,7 @@ import { fetchJpxMarginBuy } from '../fetchers/jpxMargin';
 import { fetchKcPrs } from '../fetchers/kcFedPrs';
 import { fetchCabinetCi } from '../fetchers/cabinetCi';
 import { fetchCflmi } from '../fetchers/chicagoLmi';
+import { fetchGex } from '../fetchers/squeezemetrics';
 import {
   subtractAligned,
   subtractAt,
@@ -211,6 +212,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const ciP = fetchCabinetCi().catch(warnNull('内閣府 CI'));
   // 芝加哥联储 CFLMI(月频,2008-07 起,一个 JSON;每月两次发布,现拉最新)
   const cflmiP = fetchCflmi().catch(warnNull('芝加哥联储 CFLMI'));
+  // Squeezemetrics GEX(2011 起日频,一个 CSV)
+  const gexP = fetchGex().catch(warnNull('Squeezemetrics GEX'));
   // VIX 期货持仓(TFF):波动率的 **positioning** 轴,和上面 VIX / 期限结构那组 **pricing** 轴互补。
   // 一次请求出两类(Asset Manager / Leveraged Money),别拆成两次。
   const vixCotP = fetchCftcVixNetOi('2018-01-01').catch(() => null);
@@ -330,6 +333,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     kcPrs: kcPrsP,
     ci: ciP,
     cflmi: cflmiP,
+    gex: gexP,
     vixCot: vixCotP,
     bojGap: bojGapP,
     nakajima: nakajimaP,
@@ -381,6 +385,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const kcPrs = await kcPrsP;
   const ci = await ciP;
   const cflmi = await cflmiP;
+  const gex = await gexP;
   const [coreCpi, corePce] = await coreInflP;
   const [
     refUtil,
@@ -580,6 +585,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 企业物价同比(对照月精确命中,不往前贴 —— 见 monthlyAnnualizedPct)。指数最新月可能是 null,解析时已跳过。
   put('jpCgpiYoy', cgpi ? fromHistoryStart(monthlyAnnualizedPct(cgpi.PRCG20_2200000000, 12)) : undefined);
   put('jpCoreCoreCpiYoy', coreCoreCpi ?? undefined);
+  put('gex', gex ? fromHistoryStart(gex) : undefined);
   put('lmiFlowUnemp', cflmi ? fromHistoryStart(cflmi.flowRate) : undefined);
   put('lmiHiring', cflmi ? fromHistoryStart(cflmi.hiring) : undefined);
   put('lmiSeparations', cflmi ? fromHistoryStart(cflmi.separations) : undefined);

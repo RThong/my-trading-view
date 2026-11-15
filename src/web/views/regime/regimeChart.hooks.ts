@@ -41,6 +41,7 @@ export type RegimeDim =
   | 'leverage'
   | 'liquidity'
   | 'sentiment'
+  | 'gamma'
   | 'macro'
   | 'ism'
   | 'labor'

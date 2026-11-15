@@ -97,6 +97,8 @@ export const REGIME_SERIES = [
   'usd',
   'usdjpy',
   'cftcJpy',
+  // Squeezemetrics GEX:做市商 SPX 期权 gamma 敞口(亿美元 / SPX 每 1%),正 = 压波动、负 = 放大波动(伽马挤压那一侧)
+  'gex',
   // MOF 周度跨境证券流(52 周累计净买入,兆円,正 = 买超):carry 的资金流上游。
   // 对外 = 日本居民买外国证券(寿险 / 信托 / 个人投信);对内 = 非居民买日本证券
   'jpFlowOutBonds',

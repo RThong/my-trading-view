@@ -210,6 +210,7 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   pcIndexMa20: daily('情绪·持仓', 'Cboe 指数认沽认购比 20 日均线', undefined, ['put/call', 'pcr']),
   pcIndexMa63: daily('情绪·持仓', 'Cboe 指数认沽认购比 3 个月均线', undefined, ['put/call', 'pcr']),
   cftcJpy: { label: 'CFTC 日元净持仓', category: '情绪·持仓', freq: '周', unit: '张', aliases: ['cot', '日元'] },
+  gex: daily('情绪·持仓', '做市商 Gamma 敞口 GEX (Squeezemetrics)', '亿美元', ['gamma', 'gex', '伽马', '做市商']),
   jpFlowOutBonds: {
     label: '日本居民净买外国中长期债 (52 周累计)',
     category: '日本',
@@ -480,6 +481,7 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   rstarSepImplied: 'server', // 点阵图长期利率 − 2%
   lProxyHlwT5yifr: 'server', // HLW r* + 5y5y
   expShort10Kw: 'server', // KW 拟合 10Y − 期限溢价(拟合那条没对外发)
+  gex: 'server', // 美元 ÷ 1e8 → 亿美元
   cftcJpy: 'server', // 多头 − 空头
   jpMarginBuyYoy: 'server', // 52 周前同一周比
   marginDebtYoy: 'server', // FINRA 借方余额同比
