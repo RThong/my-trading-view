@@ -275,7 +275,17 @@ export const SENTIMENT_DOCS = {
         id: 'p1',
         stretch: 1,
         scales: [{ id: 'right', side: 'right' }],
-        layers: [{ id: 'l1', series: 'spx', scale: 'right', color: '#d4d4d8', title: '标普 500 (SPX)' }],
+        layers: [
+          // 蜡烛的整根 K 线按需从 Yahoo ^GSPC 取(注册表 spx 的 barsFrom),收盘与 regime 的 spx 同源
+          {
+            id: 'l1',
+            series: 'spx',
+            scale: 'right',
+            color: '#d4d4d8',
+            title: '标普 500 (SPX)',
+            render: { kind: 'candle' },
+          },
+        ],
         desc: [
           '定义:标普 500 指数收盘(Yahoo `^GSPC`)。下一格 GEX 的参照 —— GEX 算的就是 SPX 指数期权。',
           '读法:GEX 为负(红柱)那几段,对照这里的价格看波动是不是被放大了。',
