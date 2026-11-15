@@ -75,7 +75,9 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   // ── 资产
   qqq: daily('资产', 'QQQ 纳指 100', '$', ['纳指', 'nasdaq']),
   usd: daily('资产', '美元指数 DXY', undefined, ['dxy', '美元']),
-  usdjpy: { ...daily('资产', 'USD/JPY', undefined, ['日元', 'yen']), weekends: true },
+  // 不标 weekends:以前 Yahoo 外汇日期按 UTC 取,夏令时期间周一被标成周日才像「带周末」;已按交易所时区修正(fetchers/yahoo 的 exchangeDate)
+  usdjpy: daily('资产', 'USD/JPY', undefined, ['日元', 'yen']),
+  usdjpyRv21: daily('资产', 'USD/JPY 1 个月已实现波动率', '%', ['日元', 'yen', '波动率', 'carry']),
 
   // ── 波动率
   vix: daily('波动率', 'VIX', undefined, ['恐慌']),
@@ -508,6 +510,7 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   lProxyHlwT5yifr: 'server', // HLW r* + 5y5y
   expShort10Kw: 'server', // KW 拟合 10Y − 期限溢价(拟合那条没对外发)
   gex: 'server', // 美元 ÷ 1e8 → 亿美元
+  usdjpyRv21: 'server', // 21 日对数收益标准差 × √252
   cftcJpy: 'server', // 多头 − 空头
   jpMarginBuyYoy: 'server', // 52 周前同一周比
   marginDebtYoy: 'server', // FINRA 借方余额同比

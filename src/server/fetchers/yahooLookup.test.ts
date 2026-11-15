@@ -20,12 +20,23 @@ describe('toSearchHits', () => {
 });
 
 describe('toHistory', () => {
-  test('日期按交易所当地时间:澳股 10:00 AEDT 开盘 = 前一天 23:00Z,仍记为当地那天', () => {
+  test('日期按交易所当地日历:澳股 10:00 AEDT 开盘 = 前一天 23:00Z,仍记为当地那天', () => {
     const h = toHistory({
-      meta: { symbol: 'BHP.AX', gmtoffset: 11 * 3600 },
+      meta: { symbol: 'BHP.AX', exchangeTimezoneName: 'Australia/Sydney' },
       quotes: [{ date: new Date('2026-11-01T23:00:00Z'), close: 45 }],
     });
     expect(h.points).toEqual([{ date: '2026-11-02', close: 45, open: null, high: null, low: null }]);
+  });
+
+  test('按时区名逐根换算:同一条伦敦 0 点的外汇,夏令时(23:00Z)与冬令时(00:00Z)都落在当地那天', () => {
+    const h = toHistory({
+      meta: { symbol: 'JPY=X', exchangeTimezoneName: 'Europe/London' },
+      quotes: [
+        { date: new Date('2026-07-05T23:00:00Z'), close: 160 },
+        { date: new Date('2026-01-05T00:00:00Z'), close: 150 },
+      ],
+    });
+    expect(h.points.map((p) => p.date)).toEqual(['2026-07-06', '2026-01-05']);
   });
 
   test('负价是真实成交,保留', () => {

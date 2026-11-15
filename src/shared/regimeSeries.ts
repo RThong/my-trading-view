@@ -101,6 +101,8 @@ export const REGIME_SERIES = [
   'corTermSpread',
   'usd',
   'usdjpy',
+  // USD/JPY 1 个月(21 日)已实现波动率,年化 %:日元 carry 的波动腿(隐含波动率无免费源,见 docs/data-sources-candidates.md)
+  'usdjpyRv21',
   'cftcJpy',
   // Squeezemetrics GEX:做市商 SPX 期权 gamma 敞口(亿美元 / SPX 每 1%),正 = 压波动、负 = 放大波动(伽马挤压那一侧)
   'gex',

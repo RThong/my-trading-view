@@ -28,6 +28,7 @@ import { fetchKcPrs } from '../fetchers/kcFedPrs';
 import { fetchCabinetCi } from '../fetchers/cabinetCi';
 import { fetchCflmi } from '../fetchers/chicagoLmi';
 import { fetchGex } from '../fetchers/squeezemetrics';
+import { realizedVol } from '../analytics/vrp';
 import { fetchBtcVolume } from '../fetchers/binanceVolume';
 import {
   subtractAligned,
@@ -495,7 +496,10 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // DXY:close 进 series(unavailable/存在性),OHLC 进 ohlc(蜡烛)。缺 → 归 unavailable。
   put('usd', usdBars?.length ? usdBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
   // 日元 carry 三序列
-  put('usdjpy', usdjpyBars?.length ? usdjpyBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined);
+  const usdjpyClose = usdjpyBars?.length ? usdjpyBars.map((b) => ({ date: b.tradeDate, value: b.close })) : undefined;
+  put('usdjpy', usdjpyClose);
+  // 1 个月已实现波动率(21 个交易日,√252 年化,%):源 1996 起,先算再裁,2018 的点也有满窗
+  put('usdjpyRv21', usdjpyClose ? fromHistoryStart(realizedVol(usdjpyClose, 21, 252)) : undefined);
   put('cftcJpy', cftcJpy?.length ? cftcJpy : undefined);
   // 发 52 周累计(≈ 过去一年的净流向),億円 → 兆円。先累计再裁到展示起点(源 2005 起,2018 的点也有满窗)。
   // 不用短窗:4 周累计在 0 上下来回翻(相邻周同号仅 80~88%),2022 年寿险抛外债 21.7 兆这种结构性反转被周度噪声盖住;

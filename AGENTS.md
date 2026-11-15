@@ -166,6 +166,11 @@
 - **Yahoo(股票 EOD + DXY/MOVE/油品期货/USD-JPY)**:用 `yahoo-finance2` **v4**(class API `new YahooFinance()`;
   v4 相对 v3 只把最低 Node 提到 22,**API 无变化**)。周末它会返回标着周六/日的快照——用
   `lastClosedTradingDate()` 归到正确的周五,否则 X 轴混入周末。
+- ⚠️ **Yahoo 日 K 的日期必须按交易所时区取**(`fetchers/yahoo` 的 `exchangeDate`,用 `meta.exchangeTimezoneName` 逐根换算):
+  时间戳是交易所当地 0 点 / 开盘时刻,按 UTC 取日期只对美股成立(13:30Z / 04:00Z)。外汇 `JPY=X` 是**伦敦 0 点**,夏令时期间 = 前一天 23:00Z,
+  2026-11-15 前一直按 UTC 取 → 每年约 7 个月整条往前错一天(周一标成周日、周五标成周四;周五 189 根 vs 周日 273 根),
+  `usdjpy` 还因此被误标 `weekends`、编辑器把「周日」(其实是周一)的点滤掉。亚洲指数(`^N225` 东京 0 点 = 前一天 15:00Z)天天错。
+  也别用 `meta.gmtoffset`:那是「现在」的时差,夏令时一换,历史上另一半年照样错(`yahooLookup` 原来就这么写)。
 - **ETF 现货口径(`price_eod`,蜡烛 / EMA / RV 腿 / 攻防比值共用)**:Yahoo `close` = **只调拆股、不调分红**,
   与 TradingView 默认、IBKR `TRADES`、moomoo App 显示同一个数(2026-10 对账 SPY 2026-03-30 OHLC 逐位一致,
   EMA5/20/50 误差 0.000)。**每轮全量重拉**(一次请求即上市日起全段,`PRICE_HISTORY_START_DATE`;长周期均线要够长历史才收敛,周线 EMA365 只从 2018 起算会偏低 ~1.7%):Yahoo 历史会随新拆股整段改写,
