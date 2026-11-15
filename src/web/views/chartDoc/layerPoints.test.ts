@@ -11,6 +11,7 @@ import {
   type LayerData,
 } from './layerPoints';
 import { layerLabel } from './layerLabel';
+import { requestKey } from './useSeriesData';
 
 function pane(layers: Partial<Layer>[], expandVisibleTo?: [number, number]): Pane {
   return {
@@ -153,6 +154,24 @@ test('computeLayerData:背景色带只在日线画;竖线周 / 月线按期取�
   expect(computeLayerData(ev, { 'coreCpiRelease#d': flags }, '1M').l1.display).toEqual([
     { time: '2026-10-01', value: 1 },
   ]);
+});
+
+test('computeLayerData:成交量柱总带周末取数,周 / 月按期求和;和工作日序列同图时日线去掉周末', () => {
+  // 2026-11-13 周五、14 周六、16 下周一
+  const vol = ['2026-11-13', '2026-11-14', '2026-11-16'].map((time, i) => ({ time, value: i + 1 }));
+  const doc = {
+    v: 1 as const,
+    panes: [pane([{ series: 'btcVolume', render: { kind: 'volume' } }, { series: 'spx' }])],
+  };
+  const volLayer = doc.panes[0].layers[0];
+  expect(layerRequest(volLayer, false).weekends).toBe(true);
+  const pts = { [requestKey(layerRequest(volLayer, false))]: vol };
+
+  expect(computeLayerData(doc, pts, '1W').l1.display).toEqual([
+    { time: '2026-11-09', value: 3 },
+    { time: '2026-11-16', value: 3 },
+  ]);
+  expect(computeLayerData(doc, pts, '1D').l1.display.map((p) => p.time)).toEqual(['2026-11-13', '2026-11-16']);
 });
 
 describe('整张图都是 7×24 才保留周末', () => {

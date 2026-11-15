@@ -52,6 +52,8 @@ import { latestIso } from '../../../shared/calc/isoDate';
 /** 折线是 Line;符号柱、事件竖线是 Histogram;背景色带是 Area。拖线 / 选中高亮只对折线(见 useLineDrag) */
 export type LayerSeries = Map<string, ISeriesApi<SeriesType>>;
 type Kind = NonNullable<Layer['render']>['kind'];
+// 成交量柱半透明:单日放量的长柱满色太抢眼
+const VOLUME_ALPHA = 0.6;
 /**
  * 上次灌给某图层的数据、当时的画法和颜色:画法变了(符号柱 ↔ 事件)同一份点也要重灌,点的颜色 / 值不一样;
  * 标记图层(竖线、背景色带)的颜色逐点写在数据里(会盖过 series 的 color 选项),改色 / 改竖线透明度也得重灌(color = markColor)
@@ -93,6 +95,8 @@ const KINDS: Record<Kind, KindDef> = {
   signed: kindDef(HistogramSeries, (_layer, pts) =>
     pts.map((p) => ({ ...p, color: p.value >= 0 ? SIGNED_UP : SIGNED_DOWN })),
   ),
+  // 成交量柱:颜色走 series 选项(见 seriesOptions),点原样灌
+  volume: kindDef(HistogramSeries, (_layer, pts) => pts),
   events: kindDef(HistogramSeries, (layer, pts) => {
     const color = markColor(layer);
     return pts.map((p) => ({ time: p.time, value: 1, color }));
@@ -164,6 +168,15 @@ function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
       wickDownColor: down,
     };
   }
+  if (drawnKind(layer) === 'volume')
+    return {
+      color: withAlpha(layer.color, VOLUME_ALPHA),
+      priceScaleId: layer.scale,
+      visible: !hidden,
+      lastValueVisible: !hidden,
+      base: 0,
+      autoscaleInfoProvider,
+    };
   if (drawnKind(layer) === 'signed')
     return {
       priceScaleId: layer.scale,

@@ -28,6 +28,7 @@ import { fetchKcPrs } from '../fetchers/kcFedPrs';
 import { fetchCabinetCi } from '../fetchers/cabinetCi';
 import { fetchCflmi } from '../fetchers/chicagoLmi';
 import { fetchGex } from '../fetchers/squeezemetrics';
+import { fetchBtcVolume } from '../fetchers/binanceVolume';
 import {
   subtractAligned,
   subtractAt,
@@ -214,6 +215,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const cflmiP = fetchCflmi().catch(warnNull('芝加哥联储 CFLMI'));
   // Squeezemetrics GEX(2011 起日频,一个 CSV)
   const gexP = fetchGex().catch(warnNull('Squeezemetrics GEX'));
+  // Binance 现货 BTCUSDT 日成交额(2017-08 起,每页 1000 天,4 个并发请求)
+  const btcVolumeP = fetchBtcVolume().catch(warnNull('Binance BTC 成交额'));
   // VIX 期货持仓(TFF):波动率的 **positioning** 轴,和上面 VIX / 期限结构那组 **pricing** 轴互补。
   // 一次请求出两类(Asset Manager / Leveraged Money),别拆成两次。
   const vixCotP = fetchCftcVixNetOi('2018-01-01').catch(() => null);
@@ -334,6 +337,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     ci: ciP,
     cflmi: cflmiP,
     gex: gexP,
+    btcVolume: btcVolumeP,
     vixCot: vixCotP,
     bojGap: bojGapP,
     nakajima: nakajimaP,
@@ -386,6 +390,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const ci = await ciP;
   const cflmi = await cflmiP;
   const gex = await gexP;
+  const btcVolume = await btcVolumeP;
   const [coreCpi, corePce] = await coreInflP;
   const [
     refUtil,
@@ -586,6 +591,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   put('jpCgpiYoy', cgpi ? fromHistoryStart(monthlyAnnualizedPct(cgpi.PRCG20_2200000000, 12)) : undefined);
   put('jpCoreCoreCpiYoy', coreCoreCpi ?? undefined);
   put('gex', gex ? fromHistoryStart(gex) : undefined);
+  // BTC 系列不截 2018(K 线 2012 起),成交额从源头 2017-08 起全给
+  put('btcVolume', btcVolume ?? undefined);
   put('lmiFlowUnemp', cflmi ? fromHistoryStart(cflmi.flowRate) : undefined);
   put('lmiHiring', cflmi ? fromHistoryStart(cflmi.hiring) : undefined);
   put('lmiSeparations', cflmi ? fromHistoryStart(cflmi.separations) : undefined);

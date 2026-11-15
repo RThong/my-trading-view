@@ -586,6 +586,11 @@ describe('指标图层', () => {
     ]);
   });
 
+  test('成交量柱不能加指标(周 / 月线求和,指标按期末算会对不上)', () => {
+    const vol = setLayerRender(base, 'l1', { kind: 'volume' });
+    expect(addIndicator(vol, 'l1', 'ema')).toBe(vol);
+  });
+
   test('改周期写进 indicator.periods;清空回默认;非指标图层不动', () => {
     const doc = addIndicator(base, 'l1', 'ema');
     const id = doc.panes[0].layers[1].id;

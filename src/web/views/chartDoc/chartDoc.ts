@@ -38,13 +38,15 @@ export type Fit = { target: string; start: string; end: string; alpha: number; b
  *   opacity(0~1,缺省不透明):竖线压在线上面,满色太抢眼;颜色仍只写 #rrggbb(取色器只认这个),透明度单列
  * background:背景色带,序列是 0 / 1 标记,值为 1 的日子整格高染图层颜色(淡色,压在线下面);同样挂自己的隐形轴。
  * candle:蜡烛(涨绿跌红,图层颜色不起作用),只有注册表标了 ohlc 的序列能用;图例 / 分位 / 参考线照旧按收盘
+ * volume:成交量柱(图层颜色的单色柱、0 起),周 / 月线**按期求和**而不是取最后一天 —— 只给成交量这类流量用
  */
 export type LayerRender =
   | { kind: 'line'; baseline?: number; step?: true }
   | { kind: 'signed' }
   | { kind: 'events'; opacity?: number }
   | { kind: 'background' }
-  | { kind: 'candle' };
+  | { kind: 'candle' }
+  | { kind: 'volume' };
 /** 有绝对含义的阈值线(如「临界 4」),跟随图层所在的纵轴 */
 export type RefLine = { price: number; title: string; color?: string };
 
@@ -371,12 +373,13 @@ export function addIndicator(doc: ChartDoc, layerId: string, id: IndicatorId): C
 }
 
 /**
- * 能不能给这条线加这个指标:指标不再套指标、标记图层不加;叠加对比里被对齐的 B 腿独占一根轴(每帧按 A 的范围换算),
+ * 能不能给这条线加这个指标:指标不再套指标、标记图层和成交量柱不加;叠加对比里被对齐的 B 腿独占一根轴(每帧按 A 的范围换算),
  * 叠加类指标挂上去会让 normalize 判叠加失效、悄悄拆掉 —— 振荡类新开一格不受影响
  */
 export function canAddIndicator(l: Layer, id: IndicatorId): boolean {
-  // 标记图层(竖线、色带)的值只是 0 / 1 标志,算均线没有意义
-  if (l.indicator || isMarkLayer(l)) return false;
+  // 标记图层(竖线、色带)的值只是 0 / 1 标志,算均线没有意义;
+  // 成交量柱周 / 月线按期求和,指标却按每期最后一天算,叠在一起差一个量级(2026-11-15 用户定:不让加)
+  if (l.indicator || isMarkLayer(l) || l.render?.kind === 'volume') return false;
   return !(l.fit && INDICATORS[id].place === 'overlay');
 }
 
@@ -785,7 +788,7 @@ function isFit(x: unknown): x is Fit {
 
 function isRender(x: unknown): x is LayerRender {
   if (!isObj(x)) return false;
-  if (x.kind === 'signed' || x.kind === 'background' || x.kind === 'candle') return true;
+  if (x.kind === 'signed' || x.kind === 'background' || x.kind === 'candle' || x.kind === 'volume') return true;
   if (x.kind === 'events') return x.opacity === undefined || (isNum(x.opacity) && x.opacity > 0 && x.opacity <= 1);
 
   return (
@@ -885,10 +888,13 @@ function isLayer(x: unknown): x is Layer {
     (x.render === undefined || isRender(x.render)) &&
     (x.refLines === undefined || (Array.isArray(x.refLines) && x.refLines.every(isRefLine))) &&
     (x.percentile === undefined || isPercentile(x.percentile)) &&
-    // 标记图层(竖线、色带)的值只是 0 / 1 标志,不能同时是指标(编辑器里加不出,手写 JSON 也拒收)
+    // 标记图层(竖线、色带)的值只是 0 / 1 标志、成交量柱按期求和,都不能同时是指标(编辑器里加不出,手写 JSON 也拒收)
     (x.indicator === undefined ||
       (isIndicator(x.indicator) &&
-        !(isObj(x.render) && (x.render.kind === 'events' || x.render.kind === 'background')))) &&
+        !(
+          isObj(x.render) &&
+          (x.render.kind === 'events' || x.render.kind === 'background' || x.render.kind === 'volume')
+        ))) &&
     // 画线不能挂在标记图层上(竖线、色带挂隐形 0~1 轴,纵坐标没有意义),同 canOwnDrawings
     (x.drawings === undefined ||
       (Array.isArray(x.drawings) &&

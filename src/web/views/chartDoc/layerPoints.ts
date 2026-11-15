@@ -1,6 +1,6 @@
 // 从「文档 + 取到的序列数据」算出每个图层最终要画的点(平移后的序列)。渲染层与图例只认这里的结果,不再自己拼。
 import { useMemo } from 'react';
-import { aggregateMax, type Bar, type LinePoint } from '../../chart/core';
+import { aggregateMax, aggregateSum, isWeekend, type Bar, type LinePoint } from '../../chart/core';
 import type { Interval } from '../../hooks/interval';
 import { earliestIso } from '../../../shared/calc/isoDate';
 import { shiftBusinessDays } from '../../chart/analysis';
@@ -113,6 +113,29 @@ function periodMax(pts: LinePoint[], interval: Interval): LinePoint[] {
   return out;
 }
 
+// 成交量柱日线:整张图混了工作日序列时去掉周末,否则周末格让工作日的线留空档(同 allSevenDay 的理由)
+const weekdayed = new WeakMap<LinePoint[], LinePoint[]>();
+function weekdaysOnly(pts: LinePoint[], sevenDay: boolean): LinePoint[] {
+  if (sevenDay) return pts;
+  const hit = weekdayed.get(pts);
+  if (hit) return hit;
+
+  const out = pts.filter((p) => !isWeekend(p.time));
+  weekdayed.set(pts, out);
+  return out;
+}
+
+// 成交量柱按周期求和的结果,缓存理由同上
+const summed = new WeakMap<LinePoint[], { interval: Interval; out: LinePoint[] }>();
+function periodSum(pts: LinePoint[], interval: Interval): LinePoint[] {
+  const hit = summed.get(pts);
+  if (hit?.interval === interval) return hit.out;
+
+  const out = aggregateSum(pts, interval);
+  summed.set(pts, { interval, out });
+  return out;
+}
+
 /**
  * 整张图的线(含计算图层的第二条腿)都是 7×24 序列(BTC、GPU 租赁价这类周末也有数的):取数时保留周末。
  * 混了工作日序列才去周末 —— 共用一条时间轴,周末点会让工作日序列在周六日留空档;全是 7×24 时去掉反而丢了真实读数
@@ -133,10 +156,12 @@ export function layerRequest(l: Layer, sevenDay = false) {
     series: l.series,
     ...(l.calc && { calc: l.calc }),
     shift: l.shift ?? 0,
-    ...(isMarkLayer(l) && { daily: true as const }),
+    // 标记图层、成交量柱取不聚合的日线,自己按周期处理(取最大 / 求和),默认的「取每期最后一天」对它们不对
+    ...((isMarkLayer(l) || drawnKind(l) === 'volume') && { daily: true as const }),
     // 蜡烛图层多要一份 K 线(按 drawnKind:写了 candle 却画不了的按折线取)
     ...(drawnKind(l) === 'candle' && { bars: true as const }),
-    ...(sevenDay && { weekends: true as const }),
+    // 成交量柱总要周末:周 / 月求和缺了周末两天会少算(日线下再按整张图的口径去掉,见 computeLayerData)
+    ...((sevenDay || drawnKind(l) === 'volume') && { weekends: true as const }),
   };
 }
 
@@ -164,6 +189,8 @@ export function computeLayerData(
   // 事件竖线按周期取最大值 =「这一期里出现过就标上」。背景色带只在日线画:状态(如错月)比周还细,
   // 按期标的话错月这种每月都有一段的状态在月线下整格染满、周线下过半的周都标上,读不出东西(2026-11-07 用户定)
   const display = (l: Layer, from: string | undefined) => {
+    if (drawnKind(l) === 'volume')
+      return interval === '1D' ? weekdaysOnly(raw(l), sevenDay) : periodSum(raw(l), interval);
     if (!isMarkLayer(l)) return raw(l);
     if (drawnKind(l) === 'background' && interval !== '1D') return EMPTY;
     return clipFrom(periodMax(raw(l), interval), from);

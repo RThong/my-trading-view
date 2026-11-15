@@ -383,6 +383,16 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   // 编辑器里用 ohlc.btc 的收盘(registry 手写那条),这里登记供其它消费方用
   btc: { ...daily('加密', 'BTC', '$', ['比特币', 'bitcoin']), weekends: true },
   btcSharpe1y: { ...daily('加密', 'BTC 1Y 滚动夏普', undefined, ['比特币', 'bitcoin']), weekends: true },
+  btcVolume: {
+    ...daily('加密', 'BTC 现货日成交额 (Binance BTCUSDT)', '亿美元', [
+      '比特币',
+      'bitcoin',
+      '成交量',
+      'volume',
+      '成交额',
+    ]),
+    weekends: true,
+  },
   btcSupplyDensity: { ...daily('加密', 'BTC 供应密度 (7 日均线)', '%', ['比特币', 'bitcoin', 'urpd']), weekends: true },
   btcSupplyDensityRaw: {
     ...daily('加密', 'BTC 供应密度 (原始日值)', '%', ['比特币', 'bitcoin', 'urpd']),
@@ -481,6 +491,7 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   eqwDdSpread: 'server', // 两条各算 252 日回撤再相减
   btcSharpe1y: 'server', // 滚动一年夏普
   btcSupplyDensity: 'server', // 7 日均线
+  btcVolume: 'server', // USDT 成交额 ÷ 1e8 → 亿美元
   jpCallRate: 'server', // 日频拆借利率求月均
   jpDepositBeta: 'server', // 累计变动之比
   jpDepositDelta: 'server',

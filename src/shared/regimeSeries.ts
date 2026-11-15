@@ -72,6 +72,8 @@ export const REGIME_SERIES = [
   'qqq',
   'btc',
   'btcSharpe1y',
+  // Binance 现货 BTCUSDT 日成交额(亿美元,2017-08 起),「BTC › 现货/夏普」成交量柱。见 fetchers/binanceVolume
+  'btcVolume',
   // BTC ±5% 已实现供应密度 7 日均线(cryptoDaily 写原始日值,BRK supply_density 序列)。见 fetchers/brkSupplyDensity。
   'btcSupplyDensity',
   // 同上的原始日值:只进悬停读数、不画线(均线慢几天,原始值先过线,但单日能跳 10pp)。

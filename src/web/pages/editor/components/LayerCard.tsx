@@ -240,7 +240,11 @@ export function LayerCard({
                           size="2xs"
                           disabled={!canAddIndicator(layer, id)}
                           title={
-                            canAddIndicator(layer, id) ? undefined : '叠加对比里被对齐的线独占一根轴,叠加类指标挂不上去'
+                            canAddIndicator(layer, id)
+                              ? undefined
+                              : layer.render?.kind === 'volume'
+                                ? '成交量柱周 / 月线按期求和,指标按每期最后一天算会对不上,不能加'
+                                : '叠加对比里被对齐的线独占一根轴,叠加类指标挂不上去'
                           }
                           onClick={() => actions.addIndicator(layer.id, id)}
                         >
@@ -428,11 +432,12 @@ function PeriodsRow({ layer, sevenDay, actions }: { layer: Layer; sevenDay: bool
   );
 }
 
-// 画法:折线 / 柱状(符号柱,正绿负红、0 基线 —— 净持仓、期限结构这类看正负的量)
+// 画法:折线 / 柱状(符号柱,正绿负红、0 基线 —— 净持仓、期限结构这类看正负的量)/ 成交量柱(单色,周 / 月线求和)
 // 叠加中的线(两头)锁住:叠加只认折线(见 AnalysisPanel)
 // 蜡烛:要源里有开高低收(注册表标了 ohlc);计算图层是现算的一条值,没有 K 线
 function RenderRow({ layer, locked, actions }: { layer: Layer; locked: boolean; actions: CardActions }) {
-  const kind = layer.render?.kind === 'signed' || layer.render?.kind === 'candle' ? layer.render.kind : 'line';
+  const r = layer.render?.kind;
+  const kind = r === 'signed' || r === 'candle' || r === 'volume' ? r : 'line';
   const candleOk = canCandle(layer);
 
   return (
@@ -445,12 +450,13 @@ function RenderRow({ layer, locked, actions }: { layer: Layer; locked: boolean; 
         onChange={(e) =>
           actions.setRender(
             layer.id,
-            e.target.value === 'line' ? undefined : { kind: e.target.value as 'signed' | 'candle' },
+            e.target.value === 'line' ? undefined : { kind: e.target.value as 'signed' | 'candle' | 'volume' },
           )
         }
       >
         <NativeSelectOption value="line">折线</NativeSelectOption>
         <NativeSelectOption value="signed">柱状(正绿负红)</NativeSelectOption>
+        <NativeSelectOption value="volume">成交量柱(周 / 月线求和)</NativeSelectOption>
         {/* 画不了时把原因写在选项文字里:原生下拉的选项悬停提示多数浏览器不显示,挂在整行又会对所有图层都弹 */}
         <NativeSelectOption value="candle" disabled={!candleOk}>
           {candleOk ? '蜡烛' : layer.calc ? '蜡烛(计算图层画不了)' : '蜡烛(只有收盘,画不了)'}

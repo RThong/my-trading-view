@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import {
+  aggregateSum,
   changeStats,
   needsLogScale,
   clampPriceRange,
@@ -119,4 +120,21 @@ test('boxAutoscaleProvider:都没配 → undefined;单配同各自;两个都配�
     maxValue: 12,
   });
   expect(boxAutoscaleProvider<Info>([0, 1], [0, 0])?.(() => null)).toBeNull();
+});
+
+describe('aggregateSum', () => {
+  test('同一周 / 月的量相加,日线原样返回', () => {
+    // 2026-11-09 是周一:09、10 同一周,16 是下一周
+    const pts = [
+      { time: '2026-11-09', value: 1 },
+      { time: '2026-11-10', value: 2 },
+      { time: '2026-11-16', value: 4 },
+    ];
+    expect(aggregateSum(pts, '1W')).toEqual([
+      { time: '2026-11-09', value: 3 },
+      { time: '2026-11-16', value: 4 },
+    ]);
+    expect(aggregateSum(pts, '1M')).toEqual([{ time: '2026-11-01', value: 7 }]);
+    expect(aggregateSum(pts, '1D')).toBe(pts);
+  });
 });

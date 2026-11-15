@@ -99,6 +99,18 @@ export function aggregateMax(points: LinePoint[], interval: Interval): LinePoint
   return sortBy([...byKey.values()], (p) => p.time);
 }
 
+/** 同一周期内求和,再按时间升序。给成交量这类流量用:周量 = 这一周每天的量相加。 */
+export function aggregateSum(points: LinePoint[], interval: Interval): LinePoint[] {
+  if (interval === '1D') return points;
+  const byKey = new Map<string, LinePoint>();
+  points.forEach((p) => {
+    const key = periodKey(p.time, interval);
+    byKey.set(key, { time: key, value: (byKey.get(key)?.value ?? 0) + p.value });
+  });
+
+  return sortBy([...byKey.values()], (p) => p.time);
+}
+
 /** OHLC 按周期聚合:open=首根、close=尾根、high/low=区间极值。输入须按时间升序。 */
 export function aggregateBars(bars: Bar[], interval: Interval): Bar[] {
   if (interval === '1D') return bars;
