@@ -78,6 +78,13 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   // 不标 weekends:以前 Yahoo 外汇日期按 UTC 取,夏令时期间周一被标成周日才像「带周末」;已按交易所时区修正(fetchers/yahoo 的 exchangeDate)
   usdjpy: daily('资产', 'USD/JPY', undefined, ['日元', 'yen']),
   usdjpyRv21: daily('资产', 'USD/JPY 1 个月已实现波动率', '%', ['日元', 'yen', '波动率', 'carry']),
+  usdjpyIv1m: daily('资产', 'USD/JPY 1 个月平值隐含波动率 (DTCC 成交反推)', '%', [
+    '日元',
+    'yen',
+    '波动率',
+    '隐含',
+    'carry',
+  ]),
 
   // ── 波动率
   vix: daily('波动率', 'VIX', undefined, ['恐慌']),

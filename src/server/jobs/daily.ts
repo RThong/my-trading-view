@@ -24,6 +24,7 @@ import { updateErisSnapshot } from './erisSnapshot';
 import { updateIceCds } from './iceCdsSnapshot';
 import { updateDtccCds, type DtccCdsResult } from './dtccCdsSnapshot';
 import { updateDtccZcis, type ZcisResult } from './dtccZcisSnapshot';
+import { updateDtccFxVol, type FxVolResult } from './dtccFxVolSnapshot';
 import { updateCreditSpreads } from './creditSpreadSnapshot';
 import { updateMoveIndex, type MoveUpdateResult } from './moveSnapshot';
 import { updateIsm, type IsmResult } from './ismSnapshot';
@@ -57,6 +58,8 @@ type RunDailyJobOpts = {
   sbgCdsUpdater?: (db: Database) => Promise<DtccCdsResult>;
   /** 美元零息通胀掉期 1Y / 2Y(DTCC 成交)更新器(注入式;CLI 传 updateDtccZcis,测试省略以免联网)。 */
   zcisUpdater?: (db: Database) => Promise<ZcisResult>;
+  /** 美元/日元 1 个月平值隐含波动率(DTCC 外汇期权成交反推)更新器(注入式;CLI 传 updateDtccFxVol,测试省略以免联网)。 */
+  fxVolUpdater?: (db: Database) => Promise<FxVolResult>;
   /** ICE BofA 信用利差(FRED 只留 3 年,落库保历史)更新器(注入式;CLI 传 updateCreditSpreads,测试省略以免联网)。 */
   creditSpreadUpdater?: (db: Database) => Promise<{ total: number; succeeded: number; failures: string[] }>;
   /** MOVE 债市波动率更新器(注入式;CLI 传 updateMoveIndex,测试省略以免联网)。 */
@@ -196,6 +199,17 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   if (opts.zcisUpdater) {
     await withJobRun(opts.db, 'dtcc_zcis', async () => {
       const { written, failed } = await opts.zcisUpdater!(opts.db);
+      return failed.length
+        ? { status: 'failed', error: failed.join('; '), recordsWritten: written }
+        : { status: 'success', recordsWritten: written };
+    });
+  }
+
+  // dtcc_fx_vol 分组:美元/日元 1 个月平值隐含波动率(DTCC 外汇期权成交反推)。同 dtcc_zcis:源只留约 2 年、每轮重拉最近两周,
+  // 任一文件拉失败或筛不出成交 → failed,当天后续触发点重跑。
+  if (opts.fxVolUpdater) {
+    await withJobRun(opts.db, 'dtcc_fx_vol', async () => {
+      const { written, failed } = await opts.fxVolUpdater!(opts.db);
       return failed.length
         ? { status: 'failed', error: failed.join('; '), recordsWritten: written }
         : { status: 'success', recordsWritten: written };
@@ -356,6 +370,7 @@ const DAILY_GROUPS: GroupTable = {
   ice_cds: () => ({ iceCdsUpdater: updateIceCds }),
   sbg_cds: () => ({ sbgCdsUpdater: (db: Database) => updateDtccCds(db) }),
   dtcc_zcis: () => ({ zcisUpdater: (db: Database) => updateDtccZcis(db) }),
+  dtcc_fx_vol: () => ({ fxVolUpdater: (db: Database) => updateDtccFxVol(db) }),
   credit_spread: () => ({ creditSpreadUpdater: updateCreditSpreads }),
   move: () => ({ moveUpdater: updateMoveIndex }),
   ism: () => ({ ismUpdater: updateIsm }),
