@@ -360,7 +360,7 @@ Oracle 2031 年到期那只对 5Y 美债的利差，与 ICE CDS 在 77 天里**�
 | 全球供应链压力 GSCPI | `newyorkfed.org/medialibrary/research/interactives/data/gscpi/gscpi_interactive_data.csv` | 338KB，1997-09~2026-10，最新 1.26 | 零 | 每一列是一个发布版本（表头是 Excel 序列号），取最后一列；缺值写 `#N/A`。官方「.xlsx」下载其实是 BIFF8，见 §4.6 |
 | 回购尾部压力 / 融资压力 | FRED `SOFR99`；`RIFSPPFAAD90NB − DTB3` | SOFR99 2018 起，2025-09 以来最高 4.68（2025-09-15） | 零 | 各加一行 |
 | VIX 期限结构两端 | CBOE `VIX9D`（2011 起）、`VIX1Y`（2007 起） | 都 200，更新到 11-12 | 零 | 各加一行 |
-| BTC 永续资金费率 | `deribit.com/api/v2/public/get_funding_rate_history?instrument_name=BTC-PERPETUAL&start_timestamp=&end_timestamp=` | 每小时一点，至少 2019-06 起；单次最多 744 行要翻页 | 零 | Deribit 是小交易所，代表性有限 |
+| ❌ BTC 永续资金费率(2026-11-15 评估后不做:换 Binance U 本位 `BTCUSDT`(2019-09 起,日本 IP 可用)实做过一版又撤了。**2023 年后两端都没有择时价值**:7 日均线 < 0 之后 90 天 BTC 中位 −7.8%、原始值 < −0.01 之后 −9.5%(2019~2022 同条件是 +17.6%),2023 起 10 次 90 日新低当天费率几乎都是正的;> 0.1 之后 90 天 +3.6%,不如基准 +6.8%。换 3 日均线 / 原始值一样。参照站也说它是「同步指标、不预测方向」。改做了 BRK 的 MVRV / AVIV) | `deribit.com/api/v2/public/get_funding_rate_history?instrument_name=BTC-PERPETUAL&start_timestamp=&end_timestamp=` | 每小时一点，至少 2019-06 起；单次最多 744 行要翻页 | 零 | Deribit 是小交易所，代表性有限 |
 | 一级交易商美债分期限净头寸 | `markets.newyorkfed.org/api/pd/get/{PDPOSGSC-G7L11,G11L21,G21,PDPOSGS-B}.json` | 每周三时点，最新 2026-11-04（滞后 8 天），2013-04 起 | 零 | 11Y 以上两档 2022-01 才有（期限档重新划分过） |
 | VX 曲线每日校验探针 | `www.cboe.com/us/futures/market_statistics/settlement/csv?dt=YYYY-MM-DD` | 1.7KB；和库里 `VX:*` 精确到 4 位小数一致；旧日期（2025-06-02）只回表头 | 零 | 周度 VX 的值等于下个月度合约（占位数，别用）；同文件有 IBHY / IBIG 信用期货 |
 | 美元/日元隐含波动率 | DTCC CFTC 辖区的外汇期权成交（OpenBB `cftc/models/fx_option_trades.py`、`fx_implied_vol.py`） | 11-12 普通期权 536 笔（11~45 天到期 276 笔）；期权费、行权价、到期日齐全；有的打包成交直接报波动率 | `fflate` | 要自己反推隐含波动率、还要即期价，工作量大；部分未验 |

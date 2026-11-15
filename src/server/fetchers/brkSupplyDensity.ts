@@ -1,4 +1,6 @@
 /**
+ * BTC 链上序列(BRK 现成值):供应密度 + 估值两条 MVRV / AVIV。
+ *
  * BTC 已实现供应密度(Realized Supply Density,Glassnode 同名指标的免费复刻)的原始日值:
  * 成本价落在当日收盘价 ±5% 内的 BTC ÷ 总供应量,百分点。Murphy(@Murphychen888)的「供应集中度」= 这条的 7 日均线。
  *
@@ -56,23 +58,34 @@ async function fetchDay1(id: string): Promise<unknown> {
   });
 }
 
+/** 一条 BRK 序列的口径:序列名、源标的单位(`type`)、合法值区间。单位一变 type 跟着变,光靠区间挡不住。 */
+type Day1Spec = { id: string; type: string; min: number; max: number };
+
+const DENSITY: Day1Spec = { id: 'supply_density', type: 'Percent', min: 0, max: 100 };
+// MVRV = 现价 ÷ 全市场持仓成本(realized price);AVIV = 现价 ÷ True Market Mean(活跃投资者成本,Cointime 口径)。
+// 历史区间约 0.4~6,给宽一点只挡「单位换成百分数」这类口径漂移
+const MVRV: Day1Spec = { id: 'mvrv', type: 'Multiple', min: 0, max: 20 };
+const AVIV: Day1Spec = { id: 'aviv', type: 'Multiple', min: 0, max: 20 };
+
 /**
- * 纯函数:把 density 与 date 两条 day1 序列按下标对齐成点列,跳过 null。格式漂移直接抛,别静默写进假数。
- * density 允许比 date 短(跨日那一刻 date 先长一格),反过来没日期可对 → 抛。
+ * 纯函数:把一条 day1 序列与 date 序列按下标对齐成点列,跳过 null。格式漂移直接抛,别静默写进假数。
+ * 值序列允许比 date 短(跨日那一刻 date 先长一格),反过来没日期可对 → 抛。
  */
-export function zipDensity(density: unknown, dates: unknown): DensityPoint[] {
+function zipDay1(series: unknown, dates: unknown, spec: Day1Spec): DensityPoint[] {
   const shapeOk =
-    isDay1(density) && isDay1(dates) && density.data.length <= dates.data.length && isContiguousDays(dates.data);
-  if (!shapeOk) throw new NonRetryableError('BRK supply_density / date 序列格式异常');
+    isDay1(series) && isDay1(dates) && series.data.length <= dates.data.length && isContiguousDays(dates.data);
+  if (!shapeOk) throw new NonRetryableError(`BRK ${spec.id} / date 序列格式异常`);
+  if (series.type !== spec.type) throw new NonRetryableError(`BRK ${spec.id} 单位变了:${series.type}`);
 
-  // 单位改成比值(0~1)的话 type 会跟着变;光靠 [0,100] 区间挡不住
-  if (density.type !== 'Percent') throw new NonRetryableError(`BRK supply_density 单位变了:${density.type}`);
-
-  const points = density.data.flatMap((value, i) => (value == null ? [] : [{ date: dates.data[i] as string, value }]));
-  const bad = points.find((p) => !(typeof p.value === 'number' && p.value >= 0 && p.value <= 100));
-  if (bad) throw new NonRetryableError(`BRK supply_density ${bad.date} 越界或非数字:${bad.value}`);
+  const points = series.data.flatMap((value, i) => (value == null ? [] : [{ date: dates.data[i] as string, value }]));
+  const bad = points.find((p) => !(typeof p.value === 'number' && p.value >= spec.min && p.value <= spec.max));
+  if (bad) throw new NonRetryableError(`BRK ${spec.id} ${bad.date} 越界或非数字:${bad.value}`);
 
   return points as DensityPoint[];
+}
+
+export function zipDensity(density: unknown, dates: unknown): DensityPoint[] {
+  return zipDay1(density, dates, DENSITY);
 }
 
 /** 全段原始日值(升序)。 */
@@ -80,4 +93,29 @@ export async function fetchSupplyDensitySeries(): Promise<DensityPoint[]> {
   const [density, dates] = await Promise.all([fetchDay1('supply_density'), fetchDay1('date')]);
 
   return zipDensity(density, dates);
+}
+
+export type BtcValuation = { mvrv: DensityPoint[]; aviv: DensityPoint[] };
+
+/**
+ * 值序列尾部必须跟上 date 序列(跨日那一刻允许短一格):短得更多 / 末尾是 null = 截短或停更。
+ * 供应密度那条只挂「停更」告警,估值这两条没有单独的告警,截短直接当失败。
+ */
+function checkTail(points: DensityPoint[], dates: unknown, spec: Day1Spec): DensityPoint[] {
+  const all = (dates as SeriesData).data as string[];
+  const last = points.at(-1)?.date;
+  if (!last || last < all[all.length - 2])
+    throw new Error(`BRK ${spec.id} 尾部截短:最新 ${last},date 到 ${all.at(-1)}`);
+
+  return points;
+}
+
+/** MVRV / AVIV 全段日值(升序),一次三个请求。 */
+export async function fetchBtcValuation(): Promise<BtcValuation> {
+  const [mvrv, aviv, dates] = await Promise.all([fetchDay1(MVRV.id), fetchDay1(AVIV.id), fetchDay1('date')]);
+
+  return {
+    mvrv: checkTail(zipDay1(mvrv, dates, MVRV), dates, MVRV),
+    aviv: checkTail(zipDay1(aviv, dates, AVIV), dates, AVIV),
+  };
 }

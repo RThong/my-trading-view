@@ -1,6 +1,6 @@
 /**
  * 独立的加密(BTC/Deribit)期权抓取入口,与美股 daily job 解耦。
- * - 跑 options_crypto + BTC 现货 + GPU 算力价 + BTC 供应密度(复用 runDailyJob 的注入式参数)。
+ * - 跑 options_crypto + BTC 现货 + GPU 算力价 + BTC 链上(供应密度 + MVRV / AVIV,复用 runDailyJob 的注入式参数)。
  * - 按当前 UTC 日打戳(Deribit client.getTradingDate),BTC 24/7、含周末。
  * - 「当天成功即止」守卫按组判(见 runPendingGroups),与股票组互不影响。
  * - Deribit 公开 REST、无 OpenD 依赖,由 com.mtv.crypto 每天 JST 11/12/20/21/22 触发
@@ -13,7 +13,7 @@ import { DERIBIT_UNDERLYINGS } from '../config';
 import { defaultDeribitOptionsClient } from '../fetchers/deribitOptions';
 import { updateBtcPrice } from './btcPrice';
 import { updateComputableGpu } from './computableGpuSnapshot';
-import { updateSupplyDensity } from './supplyDensitySnapshot';
+import { updateBtcOnchain } from './supplyDensitySnapshot';
 
 const CRYPTO_GROUPS: GroupTable = {
   options_crypto: () => ({
@@ -22,7 +22,8 @@ const CRYPTO_GROUPS: GroupTable = {
   }),
   btc_price: () => ({ btcPriceUpdater: updateBtcPrice }),
   computable_gpu: () => ({ computableGpuUpdater: updateComputableGpu }),
-  btc_supply_density: () => ({ supplyDensityUpdater: updateSupplyDensity }),
+  // 组名沿用旧的:除供应密度外,同一轮还写 MVRV / AVIV(都是 BRK)
+  btc_supply_density: () => ({ supplyDensityUpdater: updateBtcOnchain }),
 };
 
 if (import.meta.main) {

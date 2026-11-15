@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
 import { getMarketSeries, insertMarketSeries } from '../storage/repository';
-import { fetchSupplyDensitySeries, zipDensity } from './brkSupplyDensity';
+import { fetchBtcValuation, fetchSupplyDensitySeries, zipDensity } from './brkSupplyDensity';
 import { NonRetryableError } from './http';
-import { updateSupplyDensity } from '../jobs/supplyDensitySnapshot';
+import { updateBtcOnchain, updateBtcValuation, updateSupplyDensity } from '../jobs/supplyDensitySnapshot';
 import { rollingMean } from '../analytics/regime';
 
 function day1<T>(data: T[], type: string) {
@@ -121,6 +121,90 @@ describe('updateSupplyDensity', () => {
     const r = await updateSupplyDensity(db, async () => series, new Date('2026-10-08T00:00:00Z'));
 
     expect(r.stale).toBe(true);
+  });
+});
+
+describe('BTC 链上估值 MVRV / AVIV', () => {
+  const real = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = real;
+  });
+
+  it('两条按下标对日期;单位不是 Multiple → NonRetryableError', async () => {
+    globalThis.fetch = (async (url: string | URL | Request) =>
+      Response.json(
+        String(url).includes('/date/')
+          ? DATES
+          : day1([null, 1.2, String(url).includes('/mvrv/') ? 0.9 : 0.7], 'Multiple'),
+      )) as typeof fetch;
+    expect(await fetchBtcValuation()).toEqual({
+      mvrv: [
+        { date: '2010-08-16', value: 1.2 },
+        { date: '2010-08-17', value: 0.9 },
+      ],
+      aviv: [
+        { date: '2010-08-16', value: 1.2 },
+        { date: '2010-08-17', value: 0.7 },
+      ],
+    });
+
+    globalThis.fetch = (async (url: string | URL | Request) =>
+      Response.json(String(url).includes('/date/') ? DATES : day1([1, 2, 3], 'Percent'))) as typeof fetch;
+    await expect(fetchBtcValuation()).rejects.toThrow(NonRetryableError);
+
+    // 短一格(跨日那一刻)放行;末尾两格都没值 = 截短 / 停更 → 抛
+    const tail = (data: (number | null)[]) => {
+      globalThis.fetch = (async (url: string | URL | Request) =>
+        Response.json(String(url).includes('/date/') ? DATES : day1(data, 'Multiple'))) as typeof fetch;
+      return fetchBtcValuation();
+    };
+    expect((await tail([1, 1.2])).mvrv.at(-1)?.date).toBe('2010-08-16');
+    await expect(tail([1.2, null, null])).rejects.toThrow('截短');
+    await expect(tail([1.2])).rejects.toThrow('截短');
+  });
+
+  it('写进 BTC_MVRV / BTC_AVIV,2012 前不写', async () => {
+    const db = new Database(':memory:');
+    migrate(db);
+    const pts = (v: number) => [
+      { date: '2011-12-31', value: 9 },
+      { date: '2012-01-01', value: v },
+    ];
+    const n = await updateBtcValuation(db, async () => ({ mvrv: pts(1.2), aviv: pts(0.8) }));
+
+    expect(n).toBe(2);
+    expect(getMarketSeries(db, 'BTC_MVRV').map((p) => p.value)).toEqual([1.2]);
+    expect(getMarketSeries(db, 'BTC_AVIV').map((p) => p.value)).toEqual([0.8]);
+  });
+
+  it('2012 起为空 / 不从 2012-01-01 开始 / 中间缺天 → 抛错、一行不写', async () => {
+    const db = new Database(':memory:');
+    migrate(db);
+    const ok = [
+      { date: '2012-01-01', value: 1 },
+      { date: '2012-01-02', value: 1 },
+    ];
+    const cases = [[], [{ date: '2012-01-02', value: 1 }], [ok[0], { date: '2012-01-03', value: 1 }]];
+    await Promise.all(
+      cases.map((bad) =>
+        expect(updateBtcValuation(db, async () => ({ mvrv: ok, aviv: bad }))).rejects.toThrow('不完整'),
+      ),
+    );
+    expect(getMarketSeries(db, 'BTC_MVRV')).toHaveLength(0);
+  });
+});
+
+describe('updateBtcOnchain', () => {
+  it('估值抛错时供应密度照写,整次仍抛出(这组记 failed)', async () => {
+    const db = new Database(':memory:');
+    migrate(db);
+    const density = async () => [{ date: '2026-10-04', value: 13 }];
+    const boom = async () => {
+      throw new NonRetryableError('BRK mvrv → 404');
+    };
+
+    await expect(updateBtcOnchain(db, density, boom)).rejects.toThrow('404');
+    expect(getMarketSeries(db, 'BTC_SUPPLY_DENSITY').map((p) => p.value)).toEqual([13]);
   });
 });
 

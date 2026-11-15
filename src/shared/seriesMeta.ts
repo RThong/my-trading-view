@@ -388,6 +388,21 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
     ...daily('加密', 'BTC 供应密度 (原始日值)', '%', ['比特币', 'bitcoin', 'urpd']),
     weekends: true,
   },
+  btcMvrv: {
+    ...daily('加密', 'BTC MVRV (现价 ÷ 全市场持仓成本)', '倍', ['比特币', 'bitcoin', 'mvrv', '链上', '估值']),
+    weekends: true,
+  },
+  btcAviv: {
+    ...daily('加密', 'BTC AVIV (现价 ÷ 活跃投资者成本)', '倍', [
+      '比特币',
+      'bitcoin',
+      'aviv',
+      'true market mean',
+      '链上',
+      '估值',
+    ]),
+    weekends: true,
+  },
 
   // ── AI 链(Computable GPU 租赁价,按 UTC 日聚合)
   gpuH100: { ...daily('AI 链', 'GPU 租赁价 H100', '$/GPU·时', ['gpu', '算力']), weekends: true },

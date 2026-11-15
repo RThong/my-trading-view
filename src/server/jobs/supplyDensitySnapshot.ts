@@ -1,7 +1,12 @@
 import type { Database } from 'bun:sqlite';
 import { openDb, migrate } from '../storage/db';
 import { insertMarketSeries } from '../storage/repository';
-import { fetchSupplyDensitySeries, type DensityPoint } from '../fetchers/brkSupplyDensity';
+import {
+  fetchBtcValuation,
+  fetchSupplyDensitySeries,
+  type BtcValuation,
+  type DensityPoint,
+} from '../fetchers/brkSupplyDensity';
 
 const SERIES_ID = 'BTC_SUPPLY_DENSITY';
 /** 与 BTC 现货那格的起点对齐(2012-01 起)。 */
@@ -34,10 +39,60 @@ export async function updateSupplyDensity(
   return { written: points.length, latest, stale };
 }
 
+/**
+ * 2012 起那段必须从 2012-01-01 开始、逐日连续:解析层会跳过 null,源回 200 + 空数组 / 截短 / 中间出 null 时
+ * 只能在这里发现。不满足就抛,让这组记 failed —— 别把断档的线当完整的写进库。
+ */
+function checkedFrom2012(id: string, points: DensityPoint[]): DensityPoint[] {
+  const kept = points.filter((p) => p.date >= START);
+  const gap = kept.find(
+    (p, i) => Date.parse(p.date) - Date.parse(i ? kept[i - 1].date : START) !== (i ? 86400_000 : 0),
+  );
+  if (!kept.length || gap) throw new Error(`BRK ${id}:2012 起不完整(${gap?.date ?? '0 个点'})`);
+
+  return kept;
+}
+
+/**
+ * BTC 链上估值 MVRV / AVIV → market_series 的 BTC_MVRV / BTC_AVIV,同样全量覆盖写、2012 起。返回写入点数。
+ */
+export async function updateBtcValuation(
+  db: Database,
+  fetchValuation: () => Promise<BtcValuation> = fetchBtcValuation,
+): Promise<number> {
+  const { mvrv, aviv } = await fetchValuation();
+  const rows = [
+    ...checkedFrom2012('BTC_MVRV', mvrv).map((p) => ({ seriesId: 'BTC_MVRV', obsDate: p.date, value: p.value })),
+    ...checkedFrom2012('BTC_AVIV', aviv).map((p) => ({ seriesId: 'BTC_AVIV', obsDate: p.date, value: p.value })),
+  ];
+  insertMarketSeries(db, rows);
+
+  return rows.length;
+}
+
+/**
+ * btc_supply_density 分组实际跑的:供应密度 + 估值两件,同一个源(BRK)。组名沿用旧的,job 历史不断。
+ * 两件互不拖累:估值序列被改名(404)时密度照写,写完再把估值的错抛出来让这组记 failed。
+ */
+export async function updateBtcOnchain(
+  db: Database,
+  fetchDensity: () => Promise<DensityPoint[]> = fetchSupplyDensitySeries,
+  fetchValuation: () => Promise<BtcValuation> = fetchBtcValuation,
+): Promise<SupplyDensityResult> {
+  const [density, valuation] = await Promise.allSettled([
+    updateSupplyDensity(db, fetchDensity),
+    updateBtcValuation(db, fetchValuation),
+  ]);
+  if (density.status === 'rejected') throw density.reason;
+  if (valuation.status === 'rejected') throw valuation.reason;
+
+  return density.value;
+}
+
 if (import.meta.main) {
   const db = openDb();
   migrate(db);
-  const r = await updateSupplyDensity(db);
+  const r = await updateBtcOnchain(db);
   db.close();
   console.log(`BTC supply density: ${r.written} 天写入,源最新 ${r.latest}${r.stale ? '(源疑似停更)' : ''}`);
 }

@@ -131,6 +131,9 @@ export function readDbBacked(
   const densityRaw = getMarketSeries(db, 'BTC_SUPPLY_DENSITY');
   put('btcSupplyDensity', rollingMean(densityRaw, 7));
   put('btcSupplyDensityRaw', densityRaw);
+  // 链上估值:库里存的就是对外值(BRK 现成比值),不派生
+  put('btcMvrv', getMarketSeries(db, 'BTC_MVRV'));
+  put('btcAviv', getMarketSeries(db, 'BTC_AVIV'));
 
   // 认沽认购比均线:日度噪音大(单日能从 0.59 跳到 0.89),读趋势看均线
   PUT_CALL_MAS.forEach(([out, sym, n]) => {
