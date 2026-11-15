@@ -200,7 +200,7 @@ several horizontal tabs:
 | AI | 算力价格 (H100/H200/B200/B300 GPU 租赁价指数) · 买方合计 (AI 链 capex/FCF 判据线) · AI CDS (AI 巨头 + Oracle + CoreWeave + SoftBank 单名 CDS，bp；ICE 结算价，之前约 2 年与软银由 DTCC 成交补) · 产业链 (15 家公司财务明细) | Computable / ICE / DTCC / SEC / TWSE |
 | 通胀 Inflation | 通胀预期 (BEI) · 通胀走势 (+ 1Y / 2Y zero-coupon inflation swaps) · 通胀来源 (RBOB YoY 等) | US Treasury (BEI) / FRED / DTCC / Yahoo |
 | 估值 Valuation | Shiller CAPE regime | Shiller |
-| BTC | 现货/夏普 (spot candles + Binance spot daily volume + 1Y rolling Sharpe) · 链上 (±5% realized supply density · MVRV · AVIV = price ÷ True Market Mean) · 期权 · IBIT | Bitstamp / Binance / BRK / Deribit / moomoo |
+| BTC | 现货/夏普 (spot candles + Binance spot daily volume + 1Y rolling Sharpe) · 链上 (±5% realized supply density · AVIV = price ÷ True Market Mean) · 期权 · IBIT | Bitstamp / Binance / BRK / Deribit / moomoo |
 | 特色指标 Featured | 攻防 — NOBL/QQQ offense-defense via ZigZag · 集中度 — S&P 500 ÷ S&P 500 Equal Weight (`^GSPC` / `^SPXEW`, realized cap concentration; read direction, not level — structural uptrend since 2023) paired with VIXEQ / VIX (implied concentration / dispersion, ≈ 1/√avg correlation, with percentile bands) | Yahoo / CBOE |
 
 Series with a trailing distribution carry P5/P95 bands + a current-percentile badge, and
