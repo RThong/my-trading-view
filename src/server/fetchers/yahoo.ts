@@ -45,11 +45,38 @@ export function exchangeDate(d: Date, tz: string | undefined): string {
 
 export type AdjBar = { date: string; adjClose: number };
 
+type Ohlc = { open: number | null; high: number | null; low: number | null; close: number };
+
+/** Yahoo 外汇代码(`JPY=X`、`EURUSD=X`…)的日 K 口径错位,要用 realignFxDaily 拼回来。 */
+export function isYahooFx(symbol: string): boolean {
+  return symbol.endsWith('=X');
+}
+
+/**
+ * Yahoo 外汇日 K 拼回正确口径(2026-11-15 用小时线核对 19 天,误差中位约 0.01%):
+ * 标 D 的那根,开盘和「收盘」都是 **D 当天伦敦 0 点那一刻**的价(2025-11 前两者完全相等,之后差几个点子),
+ * 只有最高 / 最低是 D 当天的范围;D 的真实收盘 = **下一根**的「收盘」。不修的话:收盘整条晚一天(标 D 的是 D−1 的收盘),
+ * 蜡烛实体恒为一条线(2025-11 前收 == 开、全画成涨)。
+ * 修法:收盘换成下一根的收盘(高低把它包进去),最后一根(当天还没走完)去掉。周五那根的收盘取周一 0 点的价,含周日晚开盘后约 2 小时的波动。
+ * 输入须按日期升序。
+ */
+export function realignFxDaily<T extends Ohlc>(rows: T[]): T[] {
+  return rows.slice(0, -1).map((b, i) => {
+    const close = rows[i + 1].close;
+    return {
+      ...b,
+      close,
+      high: b.high === null ? null : Math.max(b.high, close),
+      low: b.low === null ? null : Math.min(b.low, close),
+    };
+  });
+}
+
 export function createYahooFetcher(client: YahooClient = defaultYahooClient()) {
   return {
     async fetchDailyBars(symbol: string, since: Date): Promise<QuoteRow[]> {
       const result = await client.chart(symbol, { period1: since, interval: '1d' });
-      return result.quotes
+      const rows = result.quotes
         .filter((q) => q.close !== null && q.close !== undefined)
         .map((q) => ({
           symbol,
@@ -60,6 +87,8 @@ export function createYahooFetcher(client: YahooClient = defaultYahooClient()) {
           close: q.close as number,
           volume: q.volume ?? null,
         }));
+      // ponytail: 只修这个方法;两个复权方法只给 QQQ / TQQQ 回测用,外汇用不上
+      return isYahooFx(symbol) ? realignFxDaily(rows) : rows;
     },
 
     /** 复权收盘日线(回测用):adjclose 缺失的行丢弃。 */

@@ -6,18 +6,21 @@ import { earliestIso } from '../../../shared/calc/isoDate';
 import { shiftBusinessDays } from '../../chart/analysis';
 import { type BandPoint, percentileMarks } from '../../chart/percentileMarks';
 import { INDICATORS, periodsOf, type PlotSpec } from '../../chart/indicatorDefs';
+import { SIGNED_DOWN, SIGNED_UP, withAlpha } from '../../chart/palette';
 import { isMarkLayer, type ChartDoc, type Layer, type Pane, type RefLine } from './chartDoc';
 import { drawnKind, seriesDef } from './registry';
 import { requestKey } from './useSeriesData';
 
 export type LayerData = {
-  /** 画在图上的点(蜡烛图层是收盘:图例、分位、对准横轴都读它) */
-  display: LinePoint[];
+  /** 画在图上的点(蜡烛图层是收盘:图例、分位、对准横轴都读它);成交量柱的点带 color(按同图蜡烛涨跌) */
+  display: (LinePoint & { color?: string })[];
   /** 蜡烛图层的 K 线 */
   bars?: Bar[];
 };
 
 const EMPTY: LinePoint[] = [];
+// 成交量柱半透明:单日放量的长柱满色太抢眼(上色的点和不上色时的图层颜色同一个透明度)
+export const VOLUME_ALPHA = 0.6;
 
 // ── 指标图层:展开成普通子线(id = 图层 id#样名)。渲染层只画展开后的,改色 / 换轴 / 显隐的对账全部复用;
 // 图例按原图层分组(一个指标一行)。子线不进 JSON,只在内存里
@@ -190,13 +193,26 @@ export function computeLayerData(
   // 按期标的话错月这种每月都有一段的状态在月线下整格染满、周线下过半的周都标上,读不出东西(2026-11-07 用户定)
   const display = (l: Layer, from: string | undefined) => {
     if (drawnKind(l) === 'volume')
-      return interval === '1D' ? weekdaysOnly(raw(l), sevenDay) : periodSum(raw(l), interval);
+      return tint(interval === '1D' ? weekdaysOnly(raw(l), sevenDay) : periodSum(raw(l), interval));
     if (!isMarkLayer(l)) return raw(l);
     if (drawnKind(l) === 'background' && interval !== '1D') return EMPTY;
     return clipFrom(periodMax(raw(l), interval), from);
   };
   const candle = (l: Layer) =>
     drawnKind(l) === 'candle' ? { bars: bars[requestKey(layerRequest(l, sevenDay))] ?? EMPTY_BARS } : {};
+
+  // 成交量柱按同一张图里第一条蜡烛的涨跌上色(同 TradingView:收 ≥ 开为涨);周 / 月线下 K 线与量都按同一套周期键聚合,日期对得上。
+  // 图里没有蜡烛、或那天没有 K 线 → 不带 color,用图层颜色(见 useDocChart 的成交量柱选项)
+  const firstCandle = doc.panes.flatMap((p) => p.layers).find((l) => drawnKind(l) === 'candle');
+  const candleBars = firstCandle ? (bars[requestKey(layerRequest(firstCandle, sevenDay))] ?? EMPTY_BARS) : EMPTY_BARS;
+  const upByTime = new Map(candleBars.map((b) => [b.time, b.close >= b.open]));
+  const tint = (pts: LinePoint[]) =>
+    upByTime.size
+      ? pts.map((p) => {
+          const up = upByTime.get(p.time);
+          return up === undefined ? p : { ...p, color: withAlpha(up ? SIGNED_UP : SIGNED_DOWN, VOLUME_ALPHA) };
+        })
+      : pts;
 
   // 指标图层:源序列的点照给(图例取不到子线时兜底),每条子线另给一份算好的点
   const plotData = (l: Layer) => {

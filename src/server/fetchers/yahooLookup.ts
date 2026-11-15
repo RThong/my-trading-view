@@ -2,7 +2,7 @@
 // 读时现拉、不落库;日期按交易所当地日历(meta.exchangeTimezoneName,见 fetchers/yahoo 的 exchangeDate)取,非美市场不会错日。
 // close 是 Yahoo 的「只调拆股、不调分红」收盘价,与全站 price_eod 同口径(见 AGENTS.md 的 ETF 现货口径)。
 import YahooFinance from 'yahoo-finance2';
-import { exchangeDate } from './yahoo';
+import { exchangeDate, isYahooFx, realignFxDaily } from './yahoo';
 
 export type YahooSearchHit = { symbol: string; name: string; type: string; exchange: string };
 export type YahooHistory = {
@@ -79,11 +79,14 @@ export function toHistory(raw: RawChart): YahooHistory {
       ]),
   );
 
+  const points = [...byDate].map(([date, bar]) => ({ date, ...bar }));
+
   return {
     symbol: raw.meta.symbol,
     name: raw.meta.longName ?? raw.meta.shortName ?? raw.meta.symbol,
     currency: raw.meta.currency,
-    points: [...byDate].map(([date, bar]) => ({ date, ...bar })),
+    // 外汇日 K 的收盘错位一根(见 fetchers/yahoo 的 realignFxDaily)
+    points: isYahooFx(raw.meta.symbol) ? realignFxDaily(points) : points,
   };
 }
 

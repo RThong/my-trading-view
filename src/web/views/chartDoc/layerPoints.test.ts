@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { BAND_CALM, BAND_RISK } from '../../chart/palette';
+import { BAND_CALM, BAND_RISK, SIGNED_DOWN, SIGNED_UP, withAlpha } from '../../chart/palette';
 import { normalBand, type ChartDoc, type Layer, type Pane } from './chartDoc';
 import {
   allSevenDay,
@@ -9,6 +9,7 @@ import {
   layerMarks,
   layerRequest,
   type LayerData,
+  VOLUME_ALPHA,
 } from './layerPoints';
 import { layerLabel } from './layerLabel';
 import { requestKey } from './useSeriesData';
@@ -172,6 +173,33 @@ test('computeLayerData:成交量柱总带周末取数,周 / 月按期求和;和�
     { time: '2026-11-16', value: 3 },
   ]);
   expect(computeLayerData(doc, pts, '1D').l1.display.map((p) => p.time)).toEqual(['2026-11-13', '2026-11-16']);
+});
+
+test('computeLayerData:成交量柱按同图蜡烛的涨跌上色(收 ≥ 开为涨),没有 K 线的那天不带色', () => {
+  const vol = ['2026-11-12', '2026-11-13', '2026-11-16'].map((time) => ({ time, value: 1 }));
+  const doc = {
+    v: 1 as const,
+    panes: [
+      pane([
+        { series: 'btc', render: { kind: 'candle' } },
+        { series: 'btcVolume', render: { kind: 'volume' } },
+      ]),
+    ],
+  };
+  const [candleL, volL] = doc.panes[0].layers;
+  const seven = allSevenDay(doc);
+  const bars = {
+    [requestKey(layerRequest(candleL, seven))]: [
+      { time: '2026-11-12', open: 1, high: 2, low: 1, close: 2 },
+      { time: '2026-11-13', open: 2, high: 2, low: 1, close: 1 },
+    ],
+  };
+  const out = computeLayerData(doc, { [requestKey(layerRequest(volL, seven))]: vol }, '1D', bars).l2.display;
+  expect(out.map((p) => p.color)).toEqual([
+    withAlpha(SIGNED_UP, VOLUME_ALPHA),
+    withAlpha(SIGNED_DOWN, VOLUME_ALPHA),
+    undefined,
+  ]);
 });
 
 describe('整张图都是 7×24 才保留周末', () => {

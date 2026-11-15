@@ -28,9 +28,9 @@ describe('toHistory', () => {
     expect(h.points).toEqual([{ date: '2026-11-02', close: 45, open: null, high: null, low: null }]);
   });
 
-  test('按时区名逐根换算:同一条伦敦 0 点的外汇,夏令时(23:00Z)与冬令时(00:00Z)都落在当地那天', () => {
+  test('按时区名逐根换算:同一条伦敦 0 点的序列,夏令时(23:00Z)与冬令时(00:00Z)都落在当地那天', () => {
     const h = toHistory({
-      meta: { symbol: 'JPY=X', exchangeTimezoneName: 'Europe/London' },
+      meta: { symbol: '^FTSE', exchangeTimezoneName: 'Europe/London' },
       quotes: [
         { date: new Date('2026-07-05T23:00:00Z'), close: 160 },
         { date: new Date('2026-01-05T00:00:00Z'), close: 150 },
