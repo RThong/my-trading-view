@@ -1,7 +1,7 @@
 // 「能源」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
 import type { RollMismatchKind } from '../../../shared/calc/oilRoll';
-import { normalBand } from '../../views/chartDoc/chartDoc';
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
+import { ruleMarks } from '../../views/chartDoc/ruleMarks';
 
 // 背景带的颜色含义。**只有颜色、图上没有图例** —— 而红色直觉上像「涨」,第一次看极易读反。
 // 能源两个 tab 的格子都带这句(一次只 hover 一格,漏哪格哪格就没提醒)。
@@ -90,7 +90,7 @@ export const OIL_DOCS = {
             scale: 'right',
             color: '#38bdf8',
             title: 'Brent − WTI ($/桶)',
-            refLines: normalBand(1.5, 10),
+            ...ruleMarks('brentWti'),
           },
           { id: 'l2', series: 'oilRollBrentWti', scale: 'right', color: ROLL_BG, render: { kind: 'background' } },
         ],
@@ -117,7 +117,7 @@ export const OIL_DOCS = {
             scale: 'right',
             color: '#f97316',
             title: '柴油裂解 (ULSD×42 − WTI, $/桶) · 外称 取暖油 / Heating Oil / HO crack',
-            percentile: { riskTail: 'high' },
+            ...ruleMarks('dieselCrack'),
           },
           { id: 'l4', series: 'oilRollCrack', scale: 'right', color: ROLL_BG, render: { kind: 'background' } },
         ],
@@ -168,7 +168,7 @@ export const OIL_DOCS = {
             // **刻意不配 riskTail,即不染背景带。** 实测 P95 以上的 109 天里 93% 落在 5~8 月
             // (柴油同口径只有 49%)—— 夏季配方切换让这条例行走高,染红的是季节不是风险,
             // 那种告警每年都响一遍,响了等于没响。P5/P95 参考线与分位徽标照留。
-            percentile: {},
+            ...ruleMarks('rbobCrack'),
           },
           { id: 'l6', series: 'oilRollCrack', scale: 'right', color: ROLL_BG, render: { kind: 'background' } },
         ],
@@ -197,7 +197,7 @@ export const OIL_DOCS = {
             scale: 'right',
             color: '#a78bfa',
             title: '3-2-1 裂解 ((2×RBOB + ULSD)×42/3 − WTI, $/桶)',
-            percentile: { riskTail: 'high' },
+            ...ruleMarks('crack321'),
           },
           { id: 'l8', series: 'oilRollCrack', scale: 'right', color: ROLL_BG, render: { kind: 'background' } },
         ],
@@ -233,7 +233,7 @@ export const OIL_DOCS = {
             scale: 'right',
             color: '#38bdf8',
             title: '美国炼厂开工率 (% 可用产能)',
-            refLines: normalBand(85, 97),
+            ...ruleMarks('refUtil'),
           },
         ],
         desc: [
@@ -263,7 +263,7 @@ export const OIL_DOCS = {
             color: '#38bdf8',
             title: '炼厂开工率 · 季节 z (对往年同期)',
             render: { kind: 'line', baseline: 0 },
-            refLines: normalBand(-2, 2),
+            ...ruleMarks('refUtilZ5y'),
           },
         ],
         desc: [
@@ -288,7 +288,7 @@ export const OIL_DOCS = {
             scale: 'right',
             color: '#f97316',
             title: '馏分油收率 (馏分油产量 / 炼厂加工量, %)',
-            refLines: normalBand(28, 32),
+            ...ruleMarks('distYield'),
           },
         ],
         desc: [
@@ -379,8 +379,7 @@ export const OIL_DOCS = {
             color: '#f97316',
             title: '馏分油(柴油/取暖油)库存 · 季节 z',
             render: { kind: 'line', baseline: 0 },
-            refLines: normalBand(-2, 2),
-            percentile: { riskTail: 'low' },
+            ...ruleMarks('distStocksZ5y'),
           },
         ],
         desc: [
@@ -407,8 +406,7 @@ export const OIL_DOCS = {
             color: '#22c55e',
             title: '汽油总库存 · 季节 z',
             render: { kind: 'line', baseline: 0 },
-            refLines: normalBand(-2, 2),
-            percentile: { riskTail: 'low' },
+            ...ruleMarks('gasStocksZ5y'),
           },
         ],
         desc: [
@@ -434,7 +432,7 @@ export const OIL_DOCS = {
             color: '#eab308',
             title: '馏分油出口 · 季节 z',
             render: { kind: 'line', baseline: 0 },
-            refLines: normalBand(-2, 2),
+            ...ruleMarks('distExportsZ5y'),
           },
         ],
         desc: [
@@ -498,7 +496,7 @@ export const OIL_DOCS = {
             scale: 'right',
             color: '#f97316',
             title: '柴油零售加价 (零售 − ULSD 批发, $/gal)',
-            percentile: { riskTail: 'high' },
+            ...ruleMarks('dieselMarkup'),
           },
         ],
         desc: [
@@ -526,7 +524,7 @@ export const OIL_DOCS = {
             scale: 'right',
             color: '#22c55e',
             title: '汽油零售加价 (零售 − RBOB 批发, $/gal)',
-            percentile: {},
+            ...ruleMarks('gasMarkup'),
           },
         ],
         desc: [

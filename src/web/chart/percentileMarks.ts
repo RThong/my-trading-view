@@ -1,9 +1,8 @@
 // 分位标记:P5 / P95 两条线 + 风险端背景带。固定面板(regime)与图表编辑器共用这一份规则,两边画出来才一致。
+// P5 / P95 切点定义在报警规则表(扫描与画图同一套)
+import { PCTL_HI, PCTL_LO } from '../../shared/alertRules';
 import { percentile } from '../../shared/calc/stats';
 import { BAND_CALM, BAND_RISK, TRANSPARENT } from './palette';
-
-export const PCTL_LO = 5;
-export const PCTL_HI = 95;
 
 export type MarkLine = { price: number; title: string; color?: string };
 export type BandPoint = { time: string; value: number; color: string };

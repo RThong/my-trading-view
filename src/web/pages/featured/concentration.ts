@@ -2,6 +2,7 @@
 // 整个 tab 就是一份 ChartDoc(与图表编辑器同一格式,能原样导出成 JSON),序列只引注册表 id。
 import type { ChartDoc } from '../../views/chartDoc/chartDoc';
 import { BREADTH_CHECK, SIGMA_ID } from '../../views/regime/descSnippets';
+import { ruleMarks } from '../../views/chartDoc/ruleMarks';
 
 export const CONCENTRATION: ChartDoc = {
   v: 1,
@@ -43,7 +44,7 @@ export const CONCENTRATION: ChartDoc = {
           color: '#ec4899',
           title: 'VIXEQ / VIX 隐含集中度',
           // 比值均值回复、没有结构性趋势 → 分位有意义;抬升 = 集中度脆弱(风险端)。
-          percentile: { riskTail: 'high' },
+          ...ruleMarks('vixeqVix'),
         },
       ],
       desc: [
@@ -72,7 +73,7 @@ export const CONCENTRATION: ChartDoc = {
           // 穿 0 是常态(2022 大盘股杀估值时到 −6)→ 0 基线;4 = 付鹏图标的「临界值」。
           // 不套分位:临界值是有绝对含义的阈值,P5/P95 会和它抢参考线(refLines 优先,见 chart/percentileMarks)。
           render: { kind: 'line', baseline: 0 },
-          refLines: [{ price: 4, title: '临界 4', color: '#ef4444' }],
+          ...ruleMarks('eqwDdSpread'),
         },
       ],
       desc: [

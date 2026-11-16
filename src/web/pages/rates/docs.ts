@@ -2,6 +2,7 @@
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 import { FICC_TRIANGLE } from '../../views/regime/descSnippets';
 import { curveHistoryDoc } from '../curveHistory';
+import { ruleMarks } from '../../views/chartDoc/ruleMarks';
 
 // 通胀发布日竖线:CPI 黄、PCE 蓝(与 desc 里的说明对应,改色要同步改文案)。
 const RELEASE_CPI = '#facc15';
@@ -24,7 +25,7 @@ export const RATES_DOCS = {
             scale: 'right',
             color: '#22d3ee',
             title: '10Y 国债收益率',
-            percentile: {}, // 方向不单一,不设风险端,只给 P5/P95 参考
+            ...ruleMarks('dgs10'), // 方向不单一,不设风险端,只给 P5/P95 参考
           },
         ],
         desc: [
@@ -48,7 +49,7 @@ export const RATES_DOCS = {
             scale: 'right',
             color: '#f43f5e',
             title: 'MOVE (债市波动率)',
-            percentile: { riskTail: 'low' }, // MOVE 压扁=自满=风险
+            ...ruleMarks('move'), // MOVE 压扁=自满=风险
           },
         ],
         desc: [
@@ -160,7 +161,7 @@ export const RATES_DOCS = {
             scale: 'right',
             color: '#38bdf8',
             title: '5y5y 通胀远期 (T5YIFR)',
-            percentile: { riskTail: 'high' }, // 高 = 长期通胀锚在上移 = 风险
+            ...ruleMarks('t5yifr'), // 高 = 长期通胀锚在上移 = 风险
           },
         ],
         desc: [
