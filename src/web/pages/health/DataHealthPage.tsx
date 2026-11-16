@@ -2,6 +2,7 @@
 // 旁路功能:取数复用图表那套 useSeriesData(同一接口、同一份服务端缓存),判定是 shared/calc/freshness 的纯函数,
 // 不改任何现有图表 / job / 状态灯。顶栏状态灯只看「这次抓没抓成功」,这页补的是「源安静停更」:接口照常成功、数据却停在几周前。
 import { useState } from 'react';
+import { InfoTip } from '../../components/InfoTip';
 import { Checkbox } from '../../components/ui/checkbox';
 import { cn } from '../../lib/utils';
 import { type Health, seriesHealth } from '../../../shared/calc/freshness';
@@ -19,11 +20,14 @@ const STATUS: Record<Health, { text: string; cls: string; rank: number }> = {
   ok: { text: '正常', cls: 'text-green-500', rank: 5 },
 };
 const ISSUES: Health[] = ['stale', 'late', 'flat', 'empty'];
-// 页面上的读法说明(写成一个字符串:JSX 里折行会在中文句子中间多出空格)
-const NOTE =
-  '落后天数:日频按工作日算(周五的点周一看 = 0),其余按日历天;月 / 季的日期记在数据所属期的第一天,门槛已把发布滞后算进去。' +
-  '「疑似填平」= 日频末尾连续 5 个点完全相同(源停了、被前值填上的典型样子),政策利率这类阶梯序列不查。' +
-  '以打开页面时取到的数据为准(部分接口在浏览器里只取一次),跨天看请刷新页面。';
+// 读法说明:收进计数行旁边的 ⓘ(悬停看),一句一行
+const NOTE = [
+  '落后天数:日频按工作日算(周五的点周一看 = 0),其余按日历天。',
+  '月 / 季的日期记在数据所属期的第一天,门槛已把发布滞后算进去。',
+  '「疑似填平」= 日频末尾连续 5 个点完全相同(源停了、被前值填上的典型样子)。',
+  '政策利率这类本来就长期不变的阶梯序列不查填平。',
+  '以打开页面时取到的数据为准(部分接口在浏览器里只取一次),跨天看请刷新页面。',
+].join('\n');
 
 // 派生 / 同值腿(hidden)不列:它们跟着源序列走,源有问题这里已经报了
 const DEFS = REGISTRY.filter((d) => !d.hidden);
@@ -60,12 +64,12 @@ export function DataHealthPage() {
             {STATUS[s].text} {counts[s]?.length ?? 0}
           </span>
         ))}
+        <InfoTip text={NOTE} className="-ml-2" />
         <label className="ml-auto flex cursor-pointer items-center gap-1.5 text-neutral-400">
           <Checkbox checked={issuesOnly} onCheckedChange={setIssuesOnly} />
           只看异常
         </label>
       </div>
-      <p className="text-xs text-neutral-500">{NOTE}</p>
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full border-collapse">
           <thead className="sticky top-0 bg-neutral-950 text-left text-xs text-neutral-500">
