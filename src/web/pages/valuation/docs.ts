@@ -1,6 +1,7 @@
 // 「估值」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 import { RESONANCE } from '../../views/regime/descSnippets';
+import { ruleMarks } from '../../views/chartDoc/ruleMarks';
 
 export const VALUATION_DOCS = {
   // 估值:席勒 CAPE(PE10)。高=贵=未来回报低=风险(红);低=便宜=机会(绿)。
@@ -19,7 +20,7 @@ export const VALUATION_DOCS = {
             color: '#eab308',
             title: '席勒 CAPE (PE10 周期调整市盈率)',
             // 图看 1990+(含互联网泡沫),但 CAPE 结构性抬升,分位只用 2000+ 才有说服力。
-            percentile: { riskTail: 'high', since: '2000-01-01' },
+            ...ruleMarks('cape'),
           },
         ],
         desc: [

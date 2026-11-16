@@ -3,6 +3,7 @@ import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 import { curveHistoryDoc } from '../curveHistory';
 import { nextId } from '../../views/chartDoc/chartDoc';
 import type { ChartDoc } from '../../views/chartDoc/chartDoc';
+import { ruleMarks } from '../../views/chartDoc/ruleMarks';
 
 export const INFLATION_DOCS = {
   // 通胀来源(供给侧):薪资增速 + 服务黏性 + 汽油同比,外加核心 CPI / PCE 发布值。与 BEI(市场前瞻预期)并读。高=通胀压力=风险。
@@ -21,7 +22,7 @@ export const INFLATION_DOCS = {
             scale: 'right',
             color: '#f59e0b',
             title: '薪资增速 (Atlanta Fed)',
-            percentile: { riskTail: 'high' }, // 高=通胀压力=风险(红);低=缓解=绿
+            ...ruleMarks('wages'), // 高=通胀压力=风险(红);低=缓解=绿
           },
         ],
         desc: [
@@ -44,7 +45,7 @@ export const INFLATION_DOCS = {
             scale: 'right',
             color: '#8b5cf6',
             title: 'Sticky CPI (服务黏性)',
-            percentile: { riskTail: 'high' },
+            ...ruleMarks('stickyCpi'),
           },
         ],
         desc: [
@@ -68,7 +69,7 @@ export const INFLATION_DOCS = {
             color: '#fb923c',
             title: 'RBOB 汽油 YoY%',
             render: { kind: 'line', baseline: 0 }, // YoY 会穿零
-            percentile: { riskTail: 'high' },
+            ...ruleMarks('rbobYoy'),
           },
         ],
         desc: [

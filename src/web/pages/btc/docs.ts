@@ -1,5 +1,5 @@
 // 「BTC」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
-import { normalBand, type Layer, type Pane } from '../../views/chartDoc/chartDoc';
+import type { Layer, Pane } from '../../views/chartDoc/chartDoc';
 
 /**
  * 周末灰色背景带(周六 / 周日):BTC 7×24,周末成交 / 波动偏少,和工作日分开看。背景色带只在日线画。
@@ -9,6 +9,7 @@ function weekendBg(id: string): Layer {
   return { id, series: 'weekendFlag', scale: 'right', color: '#a3a3a3', title: '周末', render: { kind: 'background' } };
 }
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
+import { ruleMarks } from '../../views/chartDoc/ruleMarks';
 
 /**
  * BTC 现货蜡烛,**「现货/夏普」与「链上」两个 tab 共用同一份**(同 QQQ_SPOT_PANE 的理由:抄两遍必漂)。
@@ -87,7 +88,7 @@ export const BTC_DOCS = {
             color: '#8b5cf6',
             title: 'BTC 1Y 滚动夏普 (年化)',
             render: { kind: 'line', baseline: 0 },
-            refLines: normalBand(-2, 2.9),
+            ...ruleMarks('btcSharpe1y'),
           },
           weekendBg('wk3'),
         ],
@@ -125,10 +126,7 @@ export const BTC_DOCS = {
             color: '#14b8a6',
             title: 'BTC 已实现供应密度 (收盘价 ±5%,7 日均线,%)',
             // 配色与范围照 Murphy 原图(粉 13% 警戒 / 紫 15% 高风险,纵轴 1%~19%)。
-            refLines: [
-              { price: 13, title: '警戒 13%', color: '#ec4899' },
-              { price: 15, title: '高风险 15%', color: '#a855f7' },
-            ],
+            ...ruleMarks('btcSupplyDensity'),
           },
           // 原始日值只给悬停读数:比均线早过线几天,但单日能跳 10pp,上图就是一片毛刺。
           {
@@ -174,10 +172,7 @@ export const BTC_DOCS = {
             color: '#a855f7',
             title: 'BTC AVIV (现价 ÷ 活跃投资者成本)',
             render: { kind: 'line', baseline: 1 },
-            refLines: [
-              { price: 0.8, title: '低估 0.8', color: '#22c55e' },
-              { price: 1.9, title: '近两轮顶 1.9', color: '#ef4444' },
-            ],
+            ...ruleMarks('btcAviv'),
           },
           weekendBg('wk5'),
         ],

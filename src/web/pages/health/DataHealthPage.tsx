@@ -8,7 +8,7 @@ import { cn } from '../../lib/utils';
 import { type Health, seriesHealth } from '../../../shared/calc/freshness';
 import { REGISTRY } from '../../views/chartDoc/registry';
 import { requestKey, type SeriesRequest, useSeriesData } from '../../views/chartDoc/useSeriesData';
-import { HEALTH_OVERRIDES } from './overrides';
+import { healthOverride } from './overrides';
 
 // 状态 → 文案、颜色、排序(越靠前越要紧)
 const STATUS: Record<Health, { text: string; cls: string; rank: number }> = {
@@ -49,7 +49,7 @@ export function DataHealthPage() {
   const today = new Date().toLocaleDateString('sv-SE');
   const rows = DEFS.map((d, i) => {
     const key = requestKey(REQUESTS[i]);
-    const o = HEALTH_OVERRIDES[d.id];
+    const o = healthOverride(d.id);
     const notes = [stale.includes(key) && '源这次没拉到,沿用上次', o?.note].filter(Boolean);
     return { def: d, ...seriesHealth(points[key] ?? [], d.freq, today, o), note: notes.join(';') };
   }).sort((a, b) => STATUS[a.status].rank - STATUS[b.status].rank);

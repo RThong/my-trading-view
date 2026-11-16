@@ -1,6 +1,7 @@
 // 「数据健康」的单条例外:默认门槛按频率给(shared/calc/freshness 的 DEFAULT_LAG),这里只放不合默认的那几条。
 // 单独一张表、不往注册表加字段:健康检查是旁路功能,不动现有序列定义。
 import type { LagRule } from '../../../shared/calc/freshness';
+import type { SeriesKey } from '../../../shared/regimeSeries';
 
 export type HealthOverride = {
   /** 改门槛:发布本来就慢 / 不规律的序列 */
@@ -11,7 +12,8 @@ export type HealthOverride = {
   note?: string;
 };
 
-export const HEALTH_OVERRIDES: Record<string, HealthOverride> = {
+// 键限定为注册表里 /api/regime 的序列键:拼错编译期就报
+const HEALTH_OVERRIDES: { [K in SeriesKey]?: HealthOverride } = {
   fedTargetUpper: { flatOk: true },
   fedTargetLower: { flatOk: true },
   iorb: { flatOk: true },
@@ -34,3 +36,10 @@ export const HEALTH_OVERRIDES: Record<string, HealthOverride> = {
   jpLoanRateStock: { rule: { late: 130, stale: 160 }, note: '滞后约 2 个月发' },
   jpLoanDepositSpread: { rule: { late: 130, stale: 160 }, note: '跟存量贷款利率,滞后约 2 个月' },
 };
+
+// 查表入口:页面拿的是注册表 id(普通字符串,含曲线 / 期权等非 regime 的),放宽成按字符串查
+const BY_ID: Readonly<Record<string, HealthOverride | undefined>> = HEALTH_OVERRIDES;
+
+export function healthOverride(id: string): HealthOverride | undefined {
+  return BY_ID[id];
+}

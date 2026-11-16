@@ -4,6 +4,7 @@
 import { INDICATOR_IDS, INDICATORS, type IndicatorId } from '../../chart/indicatorDefs';
 import { LINE_DASH, type LineDash } from '../../chart/drawings';
 import { withAlpha } from '../../chart/palette';
+import type { RuleLevel } from '../../../shared/alertRules';
 
 export type ScaleSide = 'right' | 'left' | 'overlay';
 
@@ -48,15 +49,11 @@ export type LayerRender =
   | { kind: 'candle' }
   | { kind: 'volume' };
 /** 有绝对含义的阈值线(如「临界 4」),跟随图层所在的纵轴 */
-export type RefLine = { price: number; title: string; color?: string };
+export type RefLine = RuleLevel;
 
-/** 固定常态带的上下两条参考线(基本面锚,替代自指的 P5/P95;出带 = 告警,不是确诊)。同 TradingView 的两条 hline */
-export function normalBand(lo: number, hi: number): RefLine[] {
-  return [
-    { price: lo, title: '常态下限' },
-    { price: hi, title: '常态上限' },
-  ];
-}
+// 固定常态带的上下两条参考线(基本面锚,替代自指的 P5/P95;出带 = 告警,不是确诊)。同 TradingView 的两条 hline。
+// 定义在报警规则表(固定面板的阈值都从规则表来),这里转出给编辑器 / 测试用
+export { normalBand } from '../../../shared/alertRules';
 
 /** 按图层自身历史算 P5 / P95 参考线;riskTail = 哪一端是风险(背景染红 / 绿);since = 只用这天起的数据算分位 */
 export type PercentileBand = { riskTail?: 'low' | 'high'; since?: string };

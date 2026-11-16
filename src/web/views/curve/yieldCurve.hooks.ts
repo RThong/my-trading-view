@@ -4,6 +4,7 @@ import useSWR from 'swr';
 import { useServerRefresh } from '../../hooks/useServerRefresh';
 import { unique, uniqueBy } from 'remeda';
 import { getJson, SWR_OPTS } from '../../lib/http';
+import type { CurveSource } from '../chartDoc/registry';
 
 export type YPoint = { date: string; value: number };
 export type YieldCurveData = {
@@ -93,7 +94,7 @@ export function presetDates(maxDate: string, datesAsc: string[]): { label: strin
 
 // ── Hook ──────────────────────────────────────────────────────────
 
-export function useYieldCurve(source: string) {
+export function useYieldCurve(source: CurveSource) {
   const key = `/api/yield-curve?source=${source}`;
   const { data = NO_DATA, error, isLoading, mutate } = useSWR(key, getJson<YieldCurveData>, SWR_OPTS);
   useServerRefresh(key, data, mutate);

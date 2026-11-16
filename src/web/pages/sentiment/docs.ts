@@ -2,6 +2,7 @@
 import type { Pane } from '../../views/chartDoc/chartDoc';
 import { BREADTH_CHECK, SIGMA_ID, RESONANCE } from '../../views/regime/descSnippets';
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
+import { ruleMarks } from '../../views/chartDoc/ruleMarks';
 
 /**
  * QQQ 现货,**波动率与情绪两个视角共用同一份**(不抄两遍 —— 抄了就会改一处漏一处)。
@@ -52,7 +53,7 @@ export const SENTIMENT_DOCS = {
             scale: 'right',
             color: '#eab308',
             title: 'VIX',
-            percentile: { riskTail: 'low' }, // 波动率低=压扁=自满=风险(逆向,恐慌飙高=机会)
+            ...ruleMarks('vix'), // 波动率低=压扁=自满=风险(逆向,恐慌飙高=机会)
           },
         ],
         desc: [
@@ -76,7 +77,7 @@ export const SENTIMENT_DOCS = {
             scale: 'right',
             color: '#f97316',
             title: 'VXN (纳指波动率)',
-            percentile: { riskTail: 'low' },
+            ...ruleMarks('vxn'),
           },
         ],
         desc: [
@@ -98,7 +99,7 @@ export const SENTIMENT_DOCS = {
             scale: 'right',
             color: '#ec4899',
             title: '成分股波动率 VIXEQ',
-            percentile: { riskTail: 'low' },
+            ...ruleMarks('vixeq'),
           },
         ],
         desc: [
@@ -175,7 +176,7 @@ export const SENTIMENT_DOCS = {
             scale: 'right',
             color: '#f97316',
             title: 'VIX6M(6 个月隐含波动率)',
-            percentile: { riskTail: 'low' }, // 同 VIX:低 = 压扁 = 自满 = 风险
+            ...ruleMarks('vix6m'), // 同 VIX:低 = 压扁 = 自满 = 风险
           },
         ],
         desc: [
@@ -198,7 +199,7 @@ export const SENTIMENT_DOCS = {
             scale: 'right',
             color: '#38bdf8',
             title: 'CBOE SKEW(SPX 尾部偏度)',
-            percentile: { riskTail: 'high' }, // 高 = 尾部保护被抢贵
+            ...ruleMarks('skew'), // 高 = 尾部保护被抢贵
           },
         ],
         desc: [
@@ -225,7 +226,7 @@ export const SENTIMENT_DOCS = {
             // 不用 signed 柱:这条 95% 的周是净空,符号柱几乎恒红 = 零信息量。
             // 判据全在「当前净空在自身历史的哪个位置」,所以走 line + 分位带,0 线仍画出来。
             render: { kind: 'line', baseline: 0 },
-            percentile: { riskTail: 'low' }, // 极端净空 = 卖波动拥挤 = 风险端
+            ...ruleMarks('vixCotLm'), // 极端净空 = 卖波动拥挤 = 风险端
           },
         ],
         desc: [
@@ -252,7 +253,7 @@ export const SENTIMENT_DOCS = {
             color: '#2dd4bf',
             title: 'CFTC VIX 期货净持仓 · Asset Manager (% of OI)',
             render: { kind: 'line', baseline: 0 },
-            percentile: {}, // 方向不单一(信号在与上格的背离),不设风险端,只给 P5/P95 参考
+            ...ruleMarks('vixCotAm'), // 方向不单一(信号在与上格的背离),不设风险端,只给 P5/P95 参考
           },
         ],
         desc: [
@@ -335,7 +336,7 @@ export const SENTIMENT_DOCS = {
             scale: 'right',
             color: '#3b82f6',
             title: 'Fear & Greed',
-            percentile: { riskTail: 'high' }, // 高=贪婪=风险
+            ...ruleMarks('fng'), // 高=贪婪=风险
           },
         ],
         desc: [
@@ -358,7 +359,7 @@ export const SENTIMENT_DOCS = {
             scale: 'right',
             color: '#22c55e',
             title: '隐含相关性 COR1M',
-            percentile: { riskTail: 'low' }, // 低=分化/自满=风险
+            ...ruleMarks('cor1m'), // 低=分化/自满=风险
           },
         ],
         desc: [
@@ -382,7 +383,7 @@ export const SENTIMENT_DOCS = {
             scale: 'right',
             color: '#f59e0b',
             title: '隐含相关性 COR3M',
-            percentile: { riskTail: 'low' }, // 同 COR1M:低=分化/自满=风险
+            ...ruleMarks('cor3m'), // 同 COR1M:低=分化/自满=风险
           },
         ],
         desc: [
@@ -428,7 +429,7 @@ export const SENTIMENT_DOCS = {
             scale: 'right',
             color: '#a855f7',
             title: 'RXM/SPX (风险逆转相对表现)',
-            percentile: {}, // 无可靠方向,只给 P5/P95 参考 + 徽标,不染背景带
+            ...ruleMarks('rxmSpx'), // 无可靠方向,只给 P5/P95 参考 + 徽标,不染背景带
           },
         ],
         desc: [
@@ -451,7 +452,7 @@ export const SENTIMENT_DOCS = {
             scale: 'right',
             color: '#f472b6',
             title: '个股 P/C',
-            percentile: { riskTail: 'low' }, // 低=没人买保护=自满=风险(逆向,冲高常是恐慌底)
+            ...ruleMarks('pcEquity'), // 低=没人买保护=自满=风险(逆向,冲高常是恐慌底)
           },
         ],
         desc: [
@@ -473,7 +474,7 @@ export const SENTIMENT_DOCS = {
             scale: 'right',
             color: '#38bdf8',
             title: '指数 P/C',
-            percentile: {}, // 机构对冲盘,方向不单一,只给 P5/P95 参考
+            ...ruleMarks('pcIndex'), // 机构对冲盘,方向不单一,只给 P5/P95 参考
           },
         ],
         desc: [

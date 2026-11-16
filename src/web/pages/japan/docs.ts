@@ -2,6 +2,7 @@
 import type { Layer } from '../../views/chartDoc/chartDoc';
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
 import { curveHistoryDoc } from '../curveHistory';
+import { ruleMarks } from '../../views/chartDoc/ruleMarks';
 
 // 日银加息决定日竖线(「银行」四格共用)。取半透明中灰(深 / 浅两种底色上都看得见,纯浅灰在暖白底上会消失):黄 / 橙 / 红 / 青 / 紫都被线占了;10Y 格的 2Y 对照线是实心蓝灰,形状也不同(线 vs 满高竖柱)。
 function bojHikeEvents(id: string): Layer {
@@ -60,10 +61,7 @@ export const JAPAN_DOCS = {
             scale: 'right',
             color: '#f59e0b',
             title: 'USD/JPY 1 个月已实现波动率 (年化 %)',
-            refLines: [
-              { price: 4.4, title: '已实现 10 分位 4.4', color: '#22c55e' },
-              { price: 12.3, title: '已实现 90 分位 12.3', color: '#ef4444' },
-            ],
+            ...ruleMarks('usdjpyRv21'),
           },
           // 隐含叠在已实现上:两条之差 = 期权卖方收的溢价;隐含先动、已实现后跟
           {
@@ -236,7 +234,7 @@ export const JAPAN_DOCS = {
             scale: 'right',
             color: '#22d3ee',
             title: 'JGB 10Y 收益率',
-            percentile: {}, // 方向不单一,不设风险端
+            ...ruleMarks('jgb10y'), // 方向不单一,不设风险端
           },
         ],
         desc: [
@@ -259,7 +257,7 @@ export const JAPAN_DOCS = {
             scale: 'right',
             color: '#f43f5e',
             title: 'S&P/JPX JGB VIX (日债波动率)',
-            percentile: { riskTail: 'low' }, // 波动率压扁=自满=风险(同 MOVE)
+            ...ruleMarks('jgbVix'), // 波动率压扁=自满=风险(同 MOVE)
           },
         ],
         desc: [

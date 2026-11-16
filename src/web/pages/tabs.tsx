@@ -8,6 +8,7 @@ import { DocChart } from '../views/chartDoc/DocChart';
 import { assetDoc } from './assetDoc';
 import { YieldCurvePanel } from '../views/curve/YieldCurvePanel';
 import type { Interval } from '../hooks/interval';
+import type { CurveSource } from '../views/chartDoc/registry';
 
 export type TabDef = { id: string; label: string; group?: string; render: (interval: Interval) => ReactNode };
 export type Perspective = { id: string; label: string; tabs: TabDef[] };
@@ -43,7 +44,7 @@ export function regimeTab(id: string, label: string, dim: RegimeDim, group?: str
   };
 }
 
-export function curveTab(id: string, label: string, source: string): TabDef {
+export function curveTab(id: string, label: string, source: CurveSource): TabDef {
   return {
     id,
     label,

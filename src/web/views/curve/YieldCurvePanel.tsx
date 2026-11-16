@@ -6,11 +6,12 @@ import { InfoTip } from '../../components/InfoTip';
 import { Button } from '../../components/ui/button';
 import { Checkbox } from '../../components/ui/checkbox';
 import { SERIES_COLORS } from '../../chart/palette';
+import type { CurveSource } from '../chartDoc/registry';
 
 type Row = { id: number; date: string; visible: boolean };
 
 // 视图说明(按 source):某几个时间点的曲线(横轴 = 期限)。
-const VIEW_DESC: Record<string, { title: string; desc: string }> = {
+const VIEW_DESC: Partial<Record<CurveSource, { title: string; desc: string }>> = {
   treasury: {
     title: '收益曲线',
     desc: '定义:某几个时间点的美债收益率曲线(横轴 = 期限)。\n看形状:陡峭 / 平坦 / 倒挂,及随时间的移动。',
@@ -38,7 +39,7 @@ const VIEW_DESC: Record<string, { title: string; desc: string }> = {
   },
 };
 
-export function YieldCurvePanel({ source }: { source: string }) {
+export function YieldCurvePanel({ source }: { source: CurveSource }) {
   const { data, isLoading, error, datesAsc, maxDate, presets } = useYieldCurve(source);
   const [rows, setRows] = useState<Row[]>([]);
   // 按哪个 maxDate 种的预设;用户动过行之后不再重种。

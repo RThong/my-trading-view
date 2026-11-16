@@ -340,6 +340,7 @@ TradingView：Pine 把指标计算、`plot`（画）、`bgcolor`（背景）、`
 
   PaneSpec 改为引用这里的规则，保证全项目只有一份规则。约 2 小时。
   验收：前端背景色和改造前完全一致；服务端能直接 import 这些规则并调用。
+  进度（2026-11-16）：✅ `src/shared/alertRules.ts` 40 条（实际盘点固定面板是 40 处阈值：分位 31、常态带 / 自定线 11，其中 2 处两者都有），固定面板图层改写成 `...ruleMarks(id)`，改造前后 40 个图层的 percentile / refLines 逐字相同（`views/chartDoc/ruleMarks.test.ts` 守「阈值只写一份」）。逐日状态 `shared/calc/ruleState.ts`：分位按**截到当天**的扩张窗口算（背景带仍用整段，看图用），P5 / P95 进、P10 / P90 出；窗口跨度不到一年或不足 36 个点不判（`judged: false`，扫描要跳过，别当成常态）；常态带 / 自定线按原单位带 `exitPad`（初值，回家看历史切换次数再调）；`confirmDays` 预留。方向用规则名写清（哪端是风险、为什么），没另设 direction 枚举。服务端已能直接 import 并对实时数据算出状态。下一步 L4-1。
 - L3-2（P2）同源分组：规则带一个 group 字段，比如 vol、credit、funding。L4 扫描时，同组同时触发只计一次共振。约 1 小时。
 
 ### L4 监控：每日存档、变化扫描、去重、推送

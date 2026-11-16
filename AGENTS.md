@@ -232,6 +232,7 @@
 - `git push` 前 `.githooks/pre-push` 自动跑 `bun run check`,不过就拦下(`bun install` 时 `prepare` 脚本设 `core.hooksPath`,
   已设过别的值则不覆盖;临时跳过用 `--no-verify`)。⚠️ 它检查的是**工作区**,不是要推送的提交 —— 工作区不干净时会提示。
 - 注释用中文。声明式优先于命令式 `for` 循环。
+- **报警阈值只写在 `src/shared/alertRules.ts`**(分位带的风险端、常态带、警戒线):固定面板图层用 `...ruleMarks(id)` 取,别在 `docs.ts` 里手写 `percentile` / `refLines`(`views/chartDoc/ruleMarks.test.ts` 会拦)。改切点 / 含义就把规则的 `version` +1(存档按版本区分)。逐日状态(扫描用,截到当天、带滞后带)见 `shared/calc/ruleState.ts`。
 - **目录按「纯计算 / 业务」划界,业务再按视角(路由)分**:纯计算放 `web/chart`、`shared/calc`、
   `server/analytics`、`server/backtest`(允许循环);前端业务里跨视角复用的视图放 `web/views/`,
   只属于某个视角的 tab 定义 / regime 配置(`docs.ts`,每个 tab 一份 ChartDoc,与图表编辑器同一格式)/ 组件放 `web/pages/<视角>/`。业务代码禁循环由 Biome 插件
