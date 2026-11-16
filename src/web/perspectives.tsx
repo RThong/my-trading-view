@@ -7,6 +7,7 @@ import { BTC } from './pages/btc';
 import { CREDIT } from './pages/credit';
 import { EDITOR } from './pages/editor';
 import { FEATURED } from './pages/featured';
+import { HEALTH } from './pages/health';
 import { INFLATION } from './pages/inflation';
 import { JAPAN } from './pages/japan';
 import { LIQUIDITY } from './pages/liquidity';
@@ -35,4 +36,5 @@ export const PERSPECTIVES: Perspective[] = [
   AI,
   FEATURED,
   EDITOR,
+  HEALTH,
 ];
