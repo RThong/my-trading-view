@@ -3,7 +3,7 @@ import { BAND_CALM, BAND_RISK, SIGNED_DOWN, SIGNED_UP, withAlpha } from '../../c
 import { normalBand, type ChartDoc, type Layer, type Pane } from './chartDoc';
 import {
   allSevenDay,
-  canLogScale,
+  positiveScale,
   computeLayerData,
   expandIndicators,
   layerMarks,
@@ -27,24 +27,24 @@ const data: Record<string, LayerData> = {
   l2: { display: [{ time: '2026-01-02', value: -1 }] },
 };
 
-test('canLogScale:指标图层看子线算出来的值(MACD 柱有负值就不能对数),不看源序列', () => {
+test('positiveScale:指标图层看子线算出来的值(MACD 柱有负值就不能对数),不看源序列', () => {
   const macd = pane([{ series: 'SPY', indicator: { id: 'macd' } }]);
   const d = {
     l1: { display: [{ time: '2026-01-02', value: 700 }] },
     'l1#hist': { display: [{ time: '2026-01-02', value: -3 }] },
   };
-  expect(canLogScale(macd, 'right', d)).toBe(false);
+  expect(positiveScale(macd, 'right', d)).toBe(false);
   const ok = { ...d, 'l1#hist': { display: [{ time: '2026-01-02', value: 3 }] } };
-  expect(canLogScale(macd, 'right', ok)).toBe(true);
+  expect(positiveScale(macd, 'right', ok)).toBe(true);
 });
 
-test('canLogScale:隐藏的线不挡;被叠加的 A 隐藏了照样挡;下限框撑到 ≤0 也不行', () => {
-  expect(canLogScale(pane([{}, {}]), 'right', data)).toBe(false);
-  expect(canLogScale(pane([{}, { hidden: true }]), 'right', data)).toBe(true);
+test('positiveScale:隐藏的线不挡;被叠加的 A 隐藏了照样挡;下限框撑到 ≤0 也不行', () => {
+  expect(positiveScale(pane([{}, {}]), 'right', data)).toBe(false);
+  expect(positiveScale(pane([{}, { hidden: true }]), 'right', data)).toBe(true);
   const fit = { target: 'l2', start: '2026-01-01', end: '2026-02-01', alpha: 0, beta: 1, r: 1 };
-  expect(canLogScale(pane([{ fit }, { hidden: true }]), 'right', data)).toBe(false);
-  expect(canLogScale(pane([{}], [0, 20]), 'right', data)).toBe(false);
-  expect(canLogScale(pane([{}], [1, 20]), 'right', data)).toBe(true);
+  expect(positiveScale(pane([{ fit }, { hidden: true }]), 'right', data)).toBe(false);
+  expect(positiveScale(pane([{}], [0, 20]), 'right', data)).toBe(false);
+  expect(positiveScale(pane([{}], [1, 20]), 'right', data)).toBe(true);
 });
 
 test('computeLayerData:事件竖线裁到其它线最早的起点,不把时间轴往左撑', () => {

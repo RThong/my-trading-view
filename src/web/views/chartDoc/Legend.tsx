@@ -5,11 +5,11 @@ import { drawnKind } from './registry';
 import { CandleSwatch } from './CandleSwatch';
 import type { Interval } from '../../hooks/interval';
 import { shiftBusinessDays } from '../../chart/analysis';
-import { isMarkLayer, type ChartDoc, type Layer, type Pane } from './chartDoc';
+import { isMarkLayer, SCALE_MODES, scaleMode, type ChartDoc, type Layer, type Pane } from './chartDoc';
 import { changeStats, type Bar, type LinePoint } from '../../chart/core';
 import { SIGNED_DOWN, SIGNED_UP } from '../../chart/palette';
 import { layerLabel, layerUnit, shiftText } from './layerLabel';
-import { allSevenDay, canLogScale, layerMarks, plotId, plotsOf, type LayerData } from './layerPoints';
+import { allSevenDay, positiveScale, layerMarks, plotId, plotsOf, type LayerData } from './layerPoints';
 import { percentileRank } from '../../../shared/calc/stats';
 import { asOfPoint, type LegendLayout } from './useCrosshairLegend';
 
@@ -155,16 +155,17 @@ function IndicatorRow({ doc, data, hoverTime, onHidden, layer: l, pane, info }: 
 const TAG = 'rounded-sm border border-neutral-600 px-1 text-[10px] leading-4 text-neutral-300';
 
 /**
- * 线名后的状态标签:对数(按实际生效算 —— 轴上有 ≤0 的值时开了也按普通坐标画,不标)、平移几个交易日
+ * 线名后的状态标签:坐标模式(对数 / 百分比 / 起点 100,按实际生效算 —— 轴上有 ≤0 的值时开了也按普通坐标画,不标)、平移几个交易日
  * (平移原本写在线名括号里,图例改用标签、线名不再带它,别处照旧)。
  * 倒轴不标(负责人 2026-11-12 定:看轴刻度方向即可,同 TradingView)。屏幕图例与导出图片共用
  */
 function layerTags(pane: Pane, l: Layer, data: Record<string, LayerData>): { text: string; title: string }[] {
-  const log = pane.scales.find((sc) => sc.id === l.scale)?.log && canLogScale(pane, l.scale, data);
+  const mode = scaleMode(pane.scales.find((sc) => sc.id === l.scale));
+  const modeOn = mode !== 'normal' && positiveScale(pane, l.scale, data);
   const shift = l.shift ?? 0;
 
   return [
-    ...(log ? [{ text: '对数', title: '对数坐标:等比例的涨跌画成等高,纵向距离代表百分比而不是点数' }] : []),
+    ...(modeOn ? [{ text: SCALE_MODES[mode].label, title: SCALE_MODES[mode].desc }] : []),
     ...(shift !== 0
       ? [
           {

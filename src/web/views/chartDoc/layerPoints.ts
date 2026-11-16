@@ -242,10 +242,10 @@ export function useLayerData(
 }
 
 /**
- * 这根轴能不能取对数:挂在上面的图层(画出来的值)全都大于 0,且轴的下限框不把范围撑到 ≤0。
+ * 这根轴能不能用对数 / 百分比 / 起点 100 坐标:挂在上面的图层(画出来的值)全都大于 0,且轴的下限框不把范围撑到 ≤0。
  * 还没数据的图层不算阻碍;隐藏的也不算 —— 除非它是被叠加的 A,那条照样撑轴(见 useDocChart)。
  */
-export function canLogScale(pane: Pane, scaleId: string, data: Record<string, LayerData>): boolean {
+export function positiveScale(pane: Pane, scaleId: string, data: Record<string, LayerData>): boolean {
   const expand = pane.scales.find((sc) => sc.id === scaleId)?.expandVisibleTo;
   if (expand && expand[0] <= 0) return false;
 

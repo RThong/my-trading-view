@@ -28,7 +28,7 @@ import {
   setLayerRender,
   setLayerShift,
   setScaleInvert,
-  setScaleLog,
+  setScaleMode,
   setDocTitle,
   parseChartDoc,
   setStretches,
@@ -39,6 +39,7 @@ import {
   type LayerRender,
   type PaneTarget,
   type ScaleChoice,
+  type ScaleMode,
 } from '../../../views/chartDoc/chartDoc';
 
 // 存档键与「在编辑器中打开」共用(固定面板把图写进这里,编辑器挂载时读到)
@@ -129,8 +130,8 @@ export function useChartDoc() {
       edit('改指标周期', (d) => setIndicatorPeriods(d, layerId, periods)),
     setInvert: (paneId: string, scaleId: string, invert: boolean) =>
       edit(invert ? '倒轴' : '取消倒轴', (d) => setScaleInvert(d, paneId, scaleId, invert)),
-    setLog: (paneId: string, scaleId: string, log: boolean) =>
-      edit(log ? '对数坐标' : '取消对数坐标', (d) => setScaleLog(d, paneId, scaleId, log)),
+    setMode: (paneId: string, scaleId: string, mode: ScaleMode) =>
+      edit('改坐标', (d) => setScaleMode(d, paneId, scaleId, mode)),
     /** 叠加对比:先按找到的偏移平移,再挂自己的轴叠到 fit.target 上(invert = 这根轴要不要倒) */
     overlay: (layerId: string, shift: number, fit: Fit, invert: boolean) =>
       edit('叠加对比', (d) => applyLayerFit(setLayerShift(d, layerId, shift), layerId, fit, invert)),

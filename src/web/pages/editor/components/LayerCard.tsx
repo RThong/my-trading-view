@@ -10,12 +10,15 @@ import {
   fitScaleIds,
   isMarkLayer,
   isFitTarget,
+  SCALE_MODES,
+  scaleMode,
   type CalcOp,
   type ChartDoc,
   type Fit,
   type Layer,
   type Pane,
   type ScaleChoice,
+  type ScaleMode,
 } from '../../../views/chartDoc/chartDoc';
 import { canCandle, drawnKind } from '../../../views/chartDoc/registry';
 import { CandleSwatch } from '../../../views/chartDoc/CandleSwatch';
@@ -35,7 +38,7 @@ export type CardActions = Pick<
   | 'setCalc'
   | 'setRender'
   | 'setInvert'
-  | 'setLog'
+  | 'setMode'
   | 'clearFit'
   | 'addIndicator'
   | 'setPeriods'
@@ -50,6 +53,7 @@ function decodeScale(v: string): ScaleChoice {
 }
 
 const LOCKED_TITLE = '叠加中由「叠加对比」设定,先取消叠加才能改';
+const MODE_ORDER: ScaleMode[] = ['normal', 'percent', 'indexed', 'log'];
 
 function stopPropagation(e: DragEvent) {
   e.stopPropagation();
@@ -59,8 +63,8 @@ type Props = {
   doc: ChartDoc;
   layer: Layer;
   pane: Pane;
-  /** 这张卡片所挂的轴能否取对数(轴上所有图层的值都 > 0),由列表按整根轴算好传进来 */
-  canLog: boolean;
+  /** 这张卡片所挂的轴能否用对数 / 百分比 / 起点 100(轴上所有图层的值都 > 0),由列表按整根轴算好传进来 */
+  positive: boolean;
   actions: CardActions;
   faded: boolean;
   /** 在这张卡片顶上画插入提示线 */
@@ -74,7 +78,7 @@ export function LayerCard({
   doc,
   layer,
   pane,
-  canLog,
+  positive,
   actions,
   faded,
   insertMark,
@@ -88,7 +92,7 @@ export function LayerCard({
   // 叠加的两头(B、被叠的 A)都不拖、不换轴、不平移:B 的轴跟着 A 的轴走、两者得留在同一格,
   // 比例也是按点按钮时的相对位置算的,任何一头挪了就对不上
   const fixed = !!layer.fit || isFitTarget(doc, layer.id);
-  // 倒轴 / 对数是整根轴的属性:这根轴上只要挂着叠加的任一头,就锁住(和 A 共轴的第三条线也不能改)
+  // 倒轴 / 坐标模式是整根轴的属性:这根轴上只要挂着叠加的任一头,就锁住(和 A 共轴的第三条线也不能改)
   const axisLocked = pane.layers.some((l) => l.scale === layer.scale && (!!l.fit || isFitTarget(doc, l.id)));
   // 标记图层(竖线、背景色带)挂自己的隐形轴、值不画:换轴、计算、平移、倒轴对数都没意义,卡片只留颜色和删除
   const events = isMarkLayer(layer);
@@ -103,7 +107,8 @@ export function LayerCard({
         ? '左轴'
         : `独立轴 ${overlays.findIndex((s) => s.id === layer.scale) + 1}`;
   const inverted = !!scale?.invert;
-  const log = !!scale?.log;
+  const mode = scaleMode(scale);
+  const modeIneffective = mode !== 'normal' && !positive;
   // 计算只选了运算、还没选第二条时先记在卡片上:CalcRow 在弹层里,弹层一关 / 切 tab 就卸载,记在那里会丢
   const [pendingCalc, setPendingCalc] = useState<PendingCalc>();
 
@@ -265,22 +270,28 @@ export function LayerCard({
                     >
                       倒轴
                     </Toggle>
-                    <Toggle
-                      on={log}
-                      disabled={axisLocked || (!canLog && !log)}
-                      onClick={() => actions.setLog(pane.id, layer.scale, !log)}
-                      title={
-                        axisLocked
-                          ? LOCKED_TITLE
-                          : canLog
-                            ? '对数坐标:等比例的涨跌画成等高,适合跨好几个数量级的线(BTC、长历史指数)'
-                            : '这根轴上有 ≤0 的值(利率、利差常见),取不了对数'
-                      }
-                    >
-                      对数
-                    </Toggle>
                   </div>
-                  {log && !canLog && <span className="text-amber-500">这根轴上有 ≤0 的值,暂按普通坐标显示</span>}
+                  {/* 坐标模式四选一,顺序同 TradingView 价格轴右键菜单 */}
+                  <div className="flex items-center gap-1">
+                    {MODE_ORDER.map((m) => (
+                      <Toggle
+                        key={m}
+                        on={mode === m}
+                        disabled={axisLocked || (m !== 'normal' && !positive && mode !== m)}
+                        onClick={() => actions.setMode(pane.id, layer.scale, m)}
+                        title={
+                          axisLocked
+                            ? LOCKED_TITLE
+                            : m !== 'normal' && !positive
+                              ? '这根轴上有 ≤0 的值(利率、利差常见),用不了:对数取不了,百分比拿第一个点当分母会爆掉或画反'
+                              : SCALE_MODES[m].desc
+                        }
+                      >
+                        {SCALE_MODES[m].label}
+                      </Toggle>
+                    ))}
+                  </div>
+                  {modeIneffective && <span className="text-amber-500">这根轴上有 ≤0 的值,暂按普通坐标显示</span>}
                 </TabsContent>
               </Tabs>
             </PopoverContent>
@@ -300,8 +311,8 @@ export function LayerCard({
         hidden={!!layer.hidden}
         shift={layer.shift ?? 0}
         inverted={inverted}
-        log={log}
-        logIneffective={log && !canLog}
+        mode={mode}
+        modeIneffective={modeIneffective}
       />
       {layer.fit && <FitRow fit={layer.fit} inverted={inverted} onClear={() => actions.clearFit(layer.id)} />}
     </li>
@@ -315,30 +326,30 @@ function StateBadges({
   hidden,
   shift,
   inverted,
-  log,
-  logIneffective,
+  mode,
+  modeIneffective,
 }: {
   hidden: boolean;
   shift: number;
   inverted: boolean;
-  log: boolean;
-  logIneffective: boolean;
+  mode: ScaleMode;
+  modeIneffective: boolean;
 }) {
   const badge = 'shrink-0 rounded bg-neutral-800 px-1 text-[10px] leading-4 text-neutral-400';
-  if (!hidden && shift === 0 && !inverted && !log) return null;
+  if (!hidden && shift === 0 && !inverted && mode === 'normal') return null;
 
   return (
     <div className="mt-1 flex gap-1 pl-5">
       {hidden && <span className={badge}>隐藏</span>}
       {shift !== 0 && <span className={badge}>{`平移 ${shift > 0 ? '+' : ''}${shift}`}</span>}
       {inverted && <span className={badge}>倒轴</span>}
-      {log && (
+      {mode !== 'normal' && (
         <span
           // cn 而不是字符串拼接:两个文字色类并存时 CSS 里灰色排在后面,会盖掉警告色
-          className={cn(badge, logIneffective && 'text-amber-500')}
-          title={logIneffective ? '这根轴上有 ≤0 的值,暂按普通坐标显示' : undefined}
+          className={cn(badge, modeIneffective && 'text-amber-500')}
+          title={modeIneffective ? '这根轴上有 ≤0 的值,暂按普通坐标显示' : undefined}
         >
-          对数
+          {SCALE_MODES[mode].label}
         </span>
       )}
     </div>
