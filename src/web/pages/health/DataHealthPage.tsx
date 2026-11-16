@@ -51,7 +51,8 @@ export function DataHealthPage() {
     const key = requestKey(REQUESTS[i]);
     const o = healthOverride(d.id);
     const notes = [stale.includes(key) && '源这次没拉到,沿用上次', o?.note].filter(Boolean);
-    return { def: d, ...seriesHealth(points[key] ?? [], d.freq, today, o), note: notes.join(';') };
+    const health = seriesHealth(points[key] ?? [], d.freq, today, o);
+    return { def: d, ...health, ...(o?.skip && { status: 'unknown' as const }), note: notes.join(';') };
   }).sort((a, b) => STATUS[a.status].rank - STATUS[b.status].rank);
   const counts = Object.groupBy(rows, (r) => r.status);
   const shown = issuesOnly ? rows.filter((r) => ISSUES.includes(r.status)) : rows;

@@ -8,6 +8,8 @@ export type HealthOverride = {
   rule?: LagRule;
   /** 本来就会好几天不变的阶梯序列(政策利率、按月填的派生量、标记序列):跳过「末尾 5 点相同」检查 */
   flatOk?: true;
+  /** 已知结构性缺口(换源才能修):照常显示最新日期,状态记「不判」 */
+  skip?: true;
   /** 写在备注列的说明(为什么放宽 / 已知停更原因) */
   note?: string;
 };
@@ -35,6 +37,14 @@ const HEALTH_OVERRIDES: { [K in SeriesKey]?: HealthOverride } = {
   // BOJ 存量贷款约定利率滞后约 2 个月才发(AGENTS.md「日本银行 统计 API」)
   jpLoanRateStock: { rule: { late: 130, stale: 160 }, note: '滞后约 2 个月发' },
   jpLoanDepositSpread: { rule: { late: 130, stale: 160 }, note: '跟存量贷款利率,滞后约 2 个月' },
+  // KW 源(联储理事会)每周更新一次,周二前后补到上周五 → 更新前常落后 5~6 个工作日
+  tp10Kw: { rule: { late: 7, stale: 12 }, note: '源每周更新一次' },
+  expShort10Kw: { rule: { late: 7, stale: 12 }, note: '源每周更新一次' },
+  // HLW 季频、日期记季初,发布再滞后一个多季度 → 新一期出来前常落后 230~250 天
+  rstarHlwCurrent: { rule: { late: 260, stale: 330 }, note: '日期记季初,发布滞后一个多季度' },
+  lProxyHlwT5yifr: { rule: { late: 260, stale: 330 }, note: '跟 HLW r*' },
+  // aiChain KNOWN_GAPS['ORCL.cogs']:2011 后不报标准营业成本科目,库里只剩 2011 年前的旧行
+  'fund:ORCL:gm': { skip: true, note: '已知缺口:2011 后不报标准营业成本,毛利率算不出' },
 };
 
 // 查表入口:页面拿的是注册表 id(普通字符串,含曲线 / 期权等非 regime 的),放宽成按字符串查
