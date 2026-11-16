@@ -14,8 +14,14 @@ export type Scale = {
   side: ScaleSide;
   /** 倒轴(上下颠倒)。是轴的属性:挂在这根轴上的图层一起倒 */
   invert?: true;
-  /** 对数坐标。轴上有 ≤0 的值时渲染层按普通坐标画(对数画不了) */
+  /**
+   * 坐标模式三选一(都不写 = 普通,同 TradingView 价格轴右键的 Regular / Percent / Indexed to 100 / Logarithmic):
+   * 对数 / 百分比(可视区第一个点 = 0%)/ 起点 = 100(可视区第一个点 = 100)。
+   * 轴上有 ≤0 的值时渲染层按普通坐标画:对数取不了;百分比要拿第一个点当分母,≤0 时数字爆掉或方向画反
+   */
   log?: true;
+  percent?: true;
+  indexed?: true;
   /**
    * 自动缩放的上限框 [lo, hi]:轴最多显示到这么宽,一个尖刺不至于把日常波动压扁。只夹轴不改数据;
    * 挂在轴上而不是图层上:同轴的线要一起夹,只夹一条的话别的线照样把轴撑开
@@ -463,43 +469,60 @@ export function setLayerShift(doc: ChartDoc, layerId: string, shift: number): Ch
   return setLayerField(doc, layerId, 'shift', n || undefined);
 }
 
-/** 按固定字段顺序重建一根轴(id、side、invert、log、clampVisibleTo、expandVisibleTo):先开哪个开关都一样,复制出去的 JSON 再导入文本原样不变。 */
+/** 按固定字段顺序重建一根轴(id、side、invert、坐标模式、clampVisibleTo、expandVisibleTo):先开哪个开关都一样,复制出去的 JSON 再导入文本原样不变。 */
 function canonicalScale(sc: Scale): Scale {
   return {
     id: sc.id,
     side: sc.side,
     ...(sc.invert ? { invert: true as const } : {}),
     ...(sc.log ? { log: true as const } : {}),
+    ...(sc.percent ? { percent: true as const } : {}),
+    ...(sc.indexed ? { indexed: true as const } : {}),
     ...(sc.clampVisibleTo ? { clampVisibleTo: [sc.clampVisibleTo[0], sc.clampVisibleTo[1]] } : {}),
     ...(sc.expandVisibleTo ? { expandVisibleTo: [sc.expandVisibleTo[0], sc.expandVisibleTo[1]] } : {}),
   };
 }
 
-/** 轴的开关型属性(倒轴 / 对数),作用于整根轴;关掉时删字段。 */
-function setScaleFlag(doc: ChartDoc, paneId: string, scaleId: string, flag: 'invert' | 'log', on: boolean): ChartDoc {
+/** 改一根轴(作用于整根轴),改完按固定字段顺序重建。 */
+function updateScale(doc: ChartDoc, paneId: string, scaleId: string, f: (sc: Scale) => Scale): ChartDoc {
   return {
     ...doc,
     panes: doc.panes.map((p) =>
-      p.id !== paneId
-        ? p
-        : {
-            ...p,
-            scales: p.scales.map((sc) => {
-              if (sc.id !== scaleId) return sc;
-              const { [flag]: _old, ...rest } = sc;
-              return canonicalScale(on ? { ...rest, [flag]: true as const } : rest);
-            }),
-          },
+      p.id !== paneId ? p : { ...p, scales: p.scales.map((sc) => (sc.id === scaleId ? canonicalScale(f(sc)) : sc)) },
     ),
   };
 }
 
 export function setScaleInvert(doc: ChartDoc, paneId: string, scaleId: string, on: boolean) {
-  return setScaleFlag(doc, paneId, scaleId, 'invert', on);
+  return updateScale(doc, paneId, scaleId, ({ invert: _old, ...rest }) => (on ? { ...rest, invert: true } : rest));
 }
 
-export function setScaleLog(doc: ChartDoc, paneId: string, scaleId: string, on: boolean) {
-  return setScaleFlag(doc, paneId, scaleId, 'log', on);
+export type ScaleMode = 'normal' | 'log' | 'percent' | 'indexed';
+const MODE_FLAGS = ['log', 'percent', 'indexed'] as const;
+
+/** 坐标模式的名字与说明(编辑器的坐标切换、图例标签共用) */
+export const SCALE_MODES: Record<ScaleMode, { label: string; desc: string }> = {
+  normal: { label: '普通', desc: '普通坐标:纵轴就是原值' },
+  percent: {
+    label: '百分比',
+    desc: '百分比坐标:屏幕最左边那个点 = 0%,纵轴读「此后涨跌了多少」,拖动图表基准跟着变(同 TradingView);适合比较几个标的的收益',
+  },
+  indexed: {
+    label: '起点 100',
+    desc: '起点 = 100:屏幕最左边那个点 = 100,其余按比例换算(同百分比,只是 +7% 写成 107)',
+  },
+  log: { label: '对数', desc: '对数坐标:等比例的涨跌画成等高,适合跨好几个数量级的线(BTC、长历史指数)' },
+};
+
+export function scaleMode(sc: Scale | undefined): ScaleMode {
+  return MODE_FLAGS.find((f) => sc?.[f]) ?? 'normal';
+}
+
+/** 设坐标模式:对数 / 百分比 / 起点 100 三个字段互斥,先全清再设一个 */
+export function setScaleMode(doc: ChartDoc, paneId: string, scaleId: string, mode: ScaleMode) {
+  return updateScale(doc, paneId, scaleId, ({ log: _l, percent: _p, indexed: _i, ...rest }) =>
+    mode === 'normal' ? rest : { ...rest, [mode]: true },
+  );
 }
 
 /** 是否有别的图层按它换算(它是某条线的 fit.target)。 */
@@ -540,8 +563,8 @@ export function applyLayerFit(doc: ChartDoc, layerId: string, fit: Fit, invert: 
     ),
   });
 
-  // B 的轴只能是线性:B 轴范围按线性比例从 A 推出来(B 原来那根轴若开着对数,这里关掉)
-  return setScaleLog(setScaleInvert(withFit, pane.id, scaleId, invert), pane.id, scaleId, false);
+  // B 的轴只能是普通坐标:B 轴范围按线性比例从 A 推出来(B 原来那根轴若开着对数 / 百分比,这里关掉)
+  return setScaleMode(setScaleInvert(withFit, pane.id, scaleId, invert), pane.id, scaleId, 'normal');
 }
 
 /** 取消叠加:去掉 fit 并改挂一根新独立轴(见 detachFit)。 */
@@ -737,7 +760,8 @@ function isScale(x: unknown): x is Scale {
     isStr(x.id) &&
     (x.id === 'right' || x.id === 'left' ? x.side === x.id : x.side === 'overlay') &&
     (x.invert === undefined || x.invert === true) &&
-    (x.log === undefined || x.log === true) &&
+    MODE_FLAGS.every((f) => x[f] === undefined || x[f] === true) &&
+    MODE_FLAGS.filter((f) => x[f]).length <= 1 &&
     (x.clampVisibleTo === undefined || isRange(x.clampVisibleTo, false)) &&
     (x.expandVisibleTo === undefined || isRange(x.expandVisibleTo, true))
   );

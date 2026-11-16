@@ -11,7 +11,7 @@ import {
   type OverlayResult,
   type Segment,
 } from '../../../chart/analysis';
-import { isFitTarget, type ChartDoc, type Layer } from '../../../views/chartDoc/chartDoc';
+import { isFitTarget, SCALE_MODES, scaleMode, type ChartDoc, type Layer } from '../../../views/chartDoc/chartDoc';
 import { drawnKind } from '../../../views/chartDoc/registry';
 import { baseLabel } from '../../../views/chartDoc/layerLabel';
 import type { ChartDocActions } from '../hooks/useChartDoc';
@@ -78,10 +78,11 @@ export function AnalysisPanel({ doc, points, visibleRange, pair, onPair, actions
   const bPts = b && points[requestKey(rawRequest(b))];
   // B 已是别的线的叠加目标时不能再叠它(会把那条线的换算静默冲掉);A 自己在叠加中也不能当基准
   const bIsTarget = !!b && isFitTarget(doc, b.id);
-  // A 的轴是对数时对不上:B 轴只能按线性比例跟着 A 的范围走
+  // A 的轴是对数 / 百分比 / 起点 100 时对不上:B 轴只能按原值线性比例跟着 A 的范围走
   const aScale = a && doc.panes.find((p) => p.layers.includes(a))?.scales.find((sc) => sc.id === a.scale);
+  const aModeOn = scaleMode(aScale) !== 'normal';
   const canOverlay =
-    !!a && !!b && !!aPts?.length && !!bPts?.length && !!visibleRange && !a.fit && !bIsTarget && !aScale?.log;
+    !!a && !!b && !!aPts?.length && !!bPts?.length && !!visibleRange && !a.fit && !bIsTarget && !aModeOn;
 
   if (series.length < 2) {
     return (
@@ -169,10 +170,10 @@ export function AnalysisPanel({ doc, points, visibleRange, pair, onPair, actions
         </Button>
         {shown && <OverlayNote shown={shown} a={name(a)} b={name(b)} />}
         {/* 按钮点不了的原因留在面板上(不收进说明浮层):不说就不知道为什么是灰的 */}
-        {(a?.fit || aScale?.log || bIsTarget) && (
+        {(a?.fit || aModeOn || bIsTarget) && (
           <p className="text-[11px] leading-snug text-amber-500">
             {a?.fit && 'A 自己已叠加在别的线上,不能当基准。'}
-            {aScale?.log && 'A 的轴是对数坐标,对不上线性比例,先关掉对数。'}
+            {aModeOn && `A 的轴开着「${SCALE_MODES[scaleMode(aScale)].label}」,对不上线性比例,先切回普通坐标。`}
             {bIsTarget &&
               `${name(b)} 是 ${series
                 .filter((l) => l.fit?.target === b?.id)

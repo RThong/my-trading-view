@@ -44,7 +44,7 @@ type Drag =
       x0: number;
       y0: number;
       ps: IPriceScaleApi;
-      /** 对数独立轴不挪上下(见 shiftRange 的说明) */
+      /** 非普通坐标(对数 / 百分比 / 起点 100)的独立轴不挪上下(见 shiftRange 的说明) */
       start: Range | null;
       perPx: number;
       logical0: { from: number; to: number } | null;
@@ -203,7 +203,8 @@ export function useLineDrag(
       const p0 = series.coordinateToPrice(0);
       const p1 = series.coordinateToPrice(PROBE_PX);
       const range = ps.getVisibleRange();
-      const linear = ps.options().mode !== PriceScaleMode.Logarithmic;
+      // 只有普通坐标能上下挪:百分比 / 起点 100 的 getVisibleRange 给的是 % / 指数点,和按价格算的 perPx 单位对不上
+      const linear = ps.options().mode === PriceScaleMode.Normal;
       chart.applyOptions({ handleScroll: { pressedMouseMove: false } });
       drag = {
         kind: 'overlay',

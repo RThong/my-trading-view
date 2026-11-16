@@ -10,7 +10,8 @@ import {
   isMarkLayer,
   setLayerShift,
   setScaleInvert,
-  setScaleLog,
+  setScaleMode,
+  scaleMode,
   moveLayer,
   nextColor,
   nextId,
@@ -295,13 +296,24 @@ describe('平移 / 倒轴', () => {
     expect(parseChartDoc(raw)).toBeNull();
   });
 
-  test('setScaleLog 与倒轴互不影响,往返解析保留', () => {
-    const d = setScaleLog(setScaleInvert(twoOnMain(), 'p1', 'right', true), 'p1', 'right', true);
+  test('setScaleMode 与倒轴互不影响,往返解析保留', () => {
+    const d = setScaleMode(setScaleInvert(twoOnMain(), 'p1', 'right', true), 'p1', 'right', 'log');
     expect(d.panes[0].scales).toEqual([{ id: 'right', side: 'right', invert: true, log: true }]);
-    expect(setScaleLog(d, 'p1', 'right', false).panes[0].scales).toEqual([
+    expect(setScaleMode(d, 'p1', 'right', 'normal').panes[0].scales).toEqual([
       { id: 'right', side: 'right', invert: true },
     ]);
     expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
+  });
+
+  test('坐标模式三选一:切到百分比会清掉对数;导入时同开两个就拒收', () => {
+    const d = setScaleMode(setScaleMode(twoOnMain(), 'p1', 'right', 'log'), 'p1', 'right', 'percent');
+    expect(d.panes[0].scales).toEqual([{ id: 'right', side: 'right', percent: true }]);
+    expect(scaleMode(d.panes[0].scales[0])).toBe('percent');
+    expect(scaleMode(undefined)).toBe('normal');
+    expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
+    const both = JSON.parse(JSON.stringify(d));
+    both.panes[0].scales[0].log = true;
+    expect(parseChartDoc(both)).toBeNull();
   });
 
   test('轴的范围框:往返解析保留;须是两个有限数,上限框 lo < hi、下限框 lo ≤ hi', () => {
@@ -381,9 +393,9 @@ describe('叠加', () => {
     expect(back.panes[0].layers.find((l) => l.id === 'l3')?.scale).not.toBe('right');
   });
 
-  test('applyLayerFit:B 原来那根轴的对数会被关掉(B 轴按线性比例跟 A 走)', () => {
+  test('applyLayerFit:B 原来那根轴的对数 / 百分比会被关掉(B 轴按线性比例跟 A 走)', () => {
     const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: 2, r: 0.9 };
-    const base = setScaleLog(setLayerScale(twoOnMain(), 'l2', 'left'), 'p1', 'left', true);
+    const base = setScaleMode(setLayerScale(twoOnMain(), 'l2', 'left'), 'p1', 'left', 'percent');
     const d = applyLayerFit(base, 'l2', fit, false);
     expect(d.panes[0].scales.find((sc) => sc.id === 'left')).toEqual({ id: 'left', side: 'left' });
   });
@@ -430,7 +442,7 @@ describe('叠加', () => {
   });
 
   test('先开对数再开倒轴:复制出去再导入,JSON 文本原样不变', () => {
-    const d = setScaleInvert(setScaleLog(twoOnMain(), 'p1', 'right', true), 'p1', 'right', true);
+    const d = setScaleInvert(setScaleMode(twoOnMain(), 'p1', 'right', 'log'), 'p1', 'right', true);
     const text = JSON.stringify(d);
     expect(JSON.stringify(parseChartDoc(JSON.parse(text)))).toBe(text);
   });

@@ -277,7 +277,7 @@ TradingView
   5. ~~`events`：事件竖线，做成图层画法 `render: { kind: 'events' }`（日期仍取注册表序列）~~ ✅ 编辑器能画；发布日 / 决议日序列不进下拉，只在 ChartDoc JSON 里写（理由同第 7 项）；`docToPaneSpecs` 转成格子的 `events`
   6. ~~`clamp/expandVisibleTo`：做成纵轴（Scale）的属性~~ ✅ `Scale.clampVisibleTo` / `expandVisibleTo`，编辑器能画、`docToPaneSpecs` 照传；不做 UI 入口（编辑器里拖轴即可，预设范围是固定面板的需求）
   7. ~~背景色带（按状态给背景上色）~~、两条线之间填色。~~背景色带 = 图层画法 `render: { kind: 'background' }` + 一条 0/1 序列；PaneSpec 的 `rollMismatch` 改由服务端发两条 0/1 序列~~ ✅ 服务端发 `oilRollCrack` / `oilRollBrentWti`（按 WTI 交易日推到期日；改前逐日对过 4 格错月日集合全等），固定面板改读它们；编辑器能画，但标记序列不进下拉，只在 ChartDoc JSON 里写（2026-11-06 定：事件 / 状态不由用户从搜索里拼，以后走类似 Pine 的定义）。两条线之间填色未做
-  8. 变换：均线、同比、Z-score、起点 = 100（期数按各序列自身频率算）。做成图层上的参数（如 `transform: { ma: 20 }`），不做成被引用序列的属性。**未做**；已有的指标图层（EMA / 布林带 / MACD / RSI，`chart/indicatorDefs`）能对任意序列叠 EMA，覆盖了一部分「均线」，同比 / Z-score / 起点 = 100 没有
+  8. ~~变换~~ ✅ 2026-11-16 改为纵轴模式（Scale 的 `percent` / `indexed`，见本文 §4.1 与 `docs/chart-editor-design.md` §4「纵轴属性」）。原文：变换：均线、同比、Z-score、起点 = 100（期数按各序列自身频率算）。做成图层上的参数（如 `transform: { ma: 20 }`），不做成被引用序列的属性。**未做**；已有的指标图层（EMA / 布林带 / MACD / RSI，`chart/indicatorDefs`）能对任意序列叠 EMA，覆盖了一部分「均线」，同比 / Z-score / 起点 = 100 没有
   9. ~~图层 `hidden`：默认隐藏（对应 PaneSpec `overlays[].hidden`）~~ ✅ 编辑器图例行有眼睛按钮切换；`docToPaneSpecs` 遇到会报错，等叠加线支持后转给 overlay
 
   ~~现状：ChartDoc 只有一种图层——折线序列（`chartDoc.ts` 的 `Layer`；相关性 study 图层已在 60aa49f 删除），以上全部缺。~~
@@ -488,7 +488,7 @@ TradingView
 - 阶段三：从某项变化一键生成分析图（约半天）
 
 **看图 / 编辑器（L2）**（2026-11-16 用户定方向）
-- L2-1 第 8 项 图层变换 → **只做「起点 = 100 / 百分比」，做成纵轴模式**（同 TradingView 价格轴右键的 Indexed to 100 / Percent，lightweight-charts 原生 `PriceScaleMode.IndexedTo100` / `Percentage`），与对数、倒轴并列，约 1~2 小时。同比（TV 靠 ROC 指标）、Z-score（TV 无内置）不做，后端已发大部分同比，真遇到需要再说；均线用 EMA 指标图层
+- ~~L2-1 第 8 项 图层变换~~ ✅ 2026-11-16 **只做「起点 = 100 / 百分比」，做成纵轴模式**（编辑器 ⚙ 纵轴：普通 / 百分比 / 起点 100 / 对数 四选一，轴上有 ≤0 的值时禁用）（同 TradingView 价格轴右键的 Indexed to 100 / Percent，lightweight-charts 原生 `PriceScaleMode.IndexedTo100` / `Percentage`），与对数、倒轴并列，约 1~2 小时。同比（TV 靠 ROC 指标）、Z-score（TV 无内置）不做，后端已发大部分同比，真遇到需要再说；均线用 EMA 指标图层
 - L2-2 「我的图表」命名保存 + URL 带 ChartDoc → **扩成「自定义页面」**：编辑器以外的现有固定 tab 都改成可完全自定义，一页 = 若干 ChartDoc + 页面说明等独立内容，比现在的固定 tab 灵活；多图布局（一屏并排几张独立的图）也并进这里，以独立页面放多张图的形式做。动手前要定：内置图在代码里更新后，用户改过的那份跟不跟。URL 带图仍是 L2-6 的前置
 - L2-1 第 7 项剩下的 两条线之间填色 → **放到类似 Pine 的定义里做**（TV 也只在 Pine 的 `fill()` 里有，图表界面没有入口；按条件换色更是脚本才能做），不单独做
 - L2-5 剩下的 图表叙述；画线逐条置顶 / 置底 → 独立、小，随时可插

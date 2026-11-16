@@ -33,11 +33,20 @@ import {
 import { BACKGROUND_ALPHA, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, withAlpha } from '../../chart/palette';
 import type { Interval } from '../../hooks/interval';
 import { chartThemeOptions, getTheme, useTheme } from '../../hooks/theme';
-import { isMarkLayer, liveScaleIds, markColor, type ChartDoc, type Layer, type Pane } from './chartDoc';
+import {
+  isMarkLayer,
+  liveScaleIds,
+  markColor,
+  scaleMode,
+  type ChartDoc,
+  type Layer,
+  type Pane,
+  type ScaleMode,
+} from './chartDoc';
 import { drawnKind } from './registry';
 import {
   allSevenDay,
-  canLogScale,
+  positiveScale,
   expandIndicators,
   isPlotLayer,
   layerMarks,
@@ -62,6 +71,14 @@ type Fed = { src: unknown[]; kind: Kind; color: string };
 
 // 原样自动缩放。轴上去掉范围框时也要显式写回它:lw-charts 合并选项会跳过 undefined,不写就沿用旧框
 const PASS_AUTOSCALE: AutoscaleInfoProvider = (base) => base();
+
+// 坐标模式 → lw-charts 的轴模式(百分比 / 起点 100 的基准 = 可视区第一个点,lw 原生行为,同 TradingView)
+const LW_SCALE_MODE: Record<ScaleMode, PriceScaleMode> = {
+  normal: PriceScaleMode.Normal,
+  log: PriceScaleMode.Logarithmic,
+  percent: PriceScaleMode.Percentage,
+  indexed: PriceScaleMode.IndexedTo100,
+};
 
 type KindDef = {
   def: SeriesDefinition<SeriesType>;
@@ -377,7 +394,8 @@ export function useDocChart(
         const ps = api.priceScale(id);
         const cur = ps.options();
         const invertScale = !!sc?.invert;
-        const mode = sc?.log && canLogScale(pane, id, data) ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal;
+        const m = scaleMode(sc);
+        const mode = m !== 'normal' && positiveScale(pane, id, data) ? LW_SCALE_MODE[m] : PriceScaleMode.Normal;
         // 只写真变了的那一项:哪怕写回同样的 mode,lw-charts 也会按数据重算显示范围,
         // 把用户手动拖好的纵轴缩放冲掉(实测:加一格时主图纵轴被重置)
         if (cur.invertScale !== invertScale) ps.applyOptions({ invertScale });

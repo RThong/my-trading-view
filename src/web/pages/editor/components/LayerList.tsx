@@ -1,7 +1,7 @@
 import { type DragEvent, useState } from 'react';
 import type { ChartDoc, PaneTarget } from '../../../views/chartDoc/chartDoc';
 import { LayerCard, type CardActions } from './LayerCard';
-import { canLogScale, type LayerData } from '../../../views/chartDoc/layerPoints';
+import { positiveScale, type LayerData } from '../../../views/chartDoc/layerPoints';
 import type { ChartDocActions } from '../hooks/useChartDoc';
 
 type Props = {
@@ -97,7 +97,7 @@ export function LayerList({ doc, data, actions }: Props) {
                 doc={doc}
                 layer={l}
                 pane={pane}
-                canLog={canLogScale(pane, l.scale, data)}
+                positive={positiveScale(pane, l.scale, data)}
                 actions={actions}
                 faded={dragging === l.id}
                 insertMark={overCard === l.id && dragging !== l.id}
