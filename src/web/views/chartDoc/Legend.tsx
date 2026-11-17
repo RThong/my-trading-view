@@ -88,8 +88,13 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
         return (
           <div
             key={pane.id}
-            className="pointer-events-none absolute z-10 flex max-w-xl flex-col gap-0.5 rounded bg-neutral-950/70 px-1.5 py-1 text-xs"
-            style={{ top: (layout.tops[i] ?? 0) + 4, left: layout.left + 8 }}
+            className="pointer-events-none absolute z-10 flex max-w-xl flex-col overflow-hidden gap-0.5 rounded bg-neutral-950/70 px-1.5 py-1 text-xs"
+            // 宽度不超出绘图区(窄屏时不压到价格轴 / 侧栏):放不下时线名截断、读数照常显示
+            style={{
+              top: (layout.tops[i] ?? 0) + 4,
+              left: layout.left + 8,
+              ...(layout.width > 0 && { maxWidth: Math.min(MAX_WIDTH, layout.width - 16) }),
+            }}
           >
             {/* 第 1 格顶上放十字线日期,没有十字线时是数据最后一天 */}
             {i === 0 && <span className="text-neutral-500">{hoverTime ?? latestTime(doc, data) ?? '最新'}</span>}
@@ -125,6 +130,18 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
   );
 }
 
+// 同 Tailwind max-w-xl:宽屏时图例也不铺太开
+const MAX_WIDTH = 576;
+
+/** 线名:放不下就截断成「…」,悬停看全名(读数、涨跌不截);至少留 3 个字宽,不至于整个名字缩没了只剩读数 */
+function NameText({ text }: { text: string }) {
+  return (
+    <span className="min-w-[3em] truncate text-neutral-400" title={text}>
+      {text}
+    </span>
+  );
+}
+
 type RowProps = Omit<Props, 'layout'> & { layer: Layer; pane: Pane; info: ReactNode };
 
 function LayerRow(props: RowProps) {
@@ -135,9 +152,9 @@ function LayerRow(props: RowProps) {
 function IndicatorRow({ doc, data, hoverTime, onHidden, layer: l, pane, info }: RowProps) {
   const plots = plotsOf(l, allSevenDay(doc));
   return (
-    <span className="group pointer-events-auto flex items-center gap-1.5 whitespace-nowrap">
+    <span className="group pointer-events-auto flex min-w-0 items-center gap-1.5 whitespace-nowrap">
       <span className="h-0.5 w-3 rounded" style={{ background: plots[0]?.color }} />
-      <span className="text-neutral-400">{layerLabel(doc, l, { withShift: false })}</span>
+      <NameText text={layerLabel(doc, l, { withShift: false })} />
       <LayerTags pane={pane} layer={l} data={data} />
       {info}
       {plots.map((p) => {
@@ -242,13 +259,13 @@ function SeriesRow({ doc, interval, data, hoverTime, onHidden, layer: l, pane, i
   const num = (v: number) => <span style={{ color: tone }}>{fmtValue(v)}</span>;
 
   return (
-    <span className="group pointer-events-auto flex items-center gap-1.5 whitespace-nowrap">
+    <span className="group pointer-events-auto flex min-w-0 items-center gap-1.5 whitespace-nowrap">
       {drawnKind(l) === 'candle' ? (
         <CandleSwatch className="h-2.5 w-3" />
       ) : (
         <span className="h-0.5 w-3 rounded" style={{ background: l.color }} />
       )}
-      <span className="text-neutral-400">{layerLabel(doc, l, { withShift: false })}</span>
+      <NameText text={layerLabel(doc, l, { withShift: false })} />
       <LayerTags pane={pane} layer={l} data={data} />
       {info}
       {/* 标记图层(竖线、背景色带)的值无意义,只给名字 */}
