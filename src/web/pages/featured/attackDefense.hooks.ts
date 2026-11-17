@@ -5,7 +5,7 @@ import { zigzagRegimes, type Regime } from '../../chart/zigzag';
 import type { Spec } from '../../chart/paneChart.types';
 import { getJson, SWR_OPTS } from '../../lib/http';
 
-/** /api/price/:underlying 的一行(开高低可能缺,只用收盘) */
+/** Yahoo 日线(/api/yahoo/history/:symbol 的 points)的一根(开高低可能缺,只用收盘) */
 export type PriceBar = { date: string; open: number | null; high: number | null; low: number | null; close: number };
 
 // 参数均按 2018-01~2026-09 实测选定:以 QQQ ≥10% 回撤(16 次)为靶,量「接住几次 / 滞后 / 假警报」。
@@ -63,10 +63,14 @@ const STRIP: Record<Regime, string> = {
 export const RATIO_COLOR: Record<Theme, string> = { dark: '#d4d4d8', light: '#57534e' };
 export const MA_COLOR = '#f59e0b';
 
+async function getBars(url: string): Promise<PriceBar[]> {
+  return (await getJson<{ points: PriceBar[] }>(url)).points;
+}
+
 /** 攻防数据层:拉 QQQ + NOBL,算 NOBL/QQQ 比值 + ZigZag 攻防 regime 分区 + 快线。 */
 export function useAttackDefenseData() {
-  const qq = useSWR<PriceBar[]>('/api/price/QQQ', getJson, SWR_OPTS);
-  const nb = useSWR<PriceBar[]>('/api/price/NOBL', getJson, SWR_OPTS);
+  const qq = useSWR('/api/yahoo/history/QQQ', getBars, SWR_OPTS);
+  const nb = useSWR('/api/yahoo/history/NOBL', getBars, SWR_OPTS);
   // QQQ 截到 NOBL 上市日:现货拉到了上市日(QQQ 1999、NOBL 2013),不截的话比值格前 14 年只有蜡烛没有比值。
   const nobleStart = nb.data?.[0]?.date;
   const qqq = (qq.data ?? []).filter((b) => !nobleStart || b.date >= nobleStart);

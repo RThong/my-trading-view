@@ -309,7 +309,7 @@ describe('365 年线:整张图都是 7×24 才自动带(混了工作日序列会
   });
 });
 
-test('成交量指标:按 K 线的量画、涨跌上色,周线按期求和;子线挂自己的隐形轴、画成量柱;只有 yh: 能加', () => {
+test('成交量指标:按 K 线的量画、涨跌上色,周线按期求和;子线挂自己的隐形轴、画成量柱;只有走 Yahoo 日线的能加(yh: 与固定 ETF)', () => {
   const doc: ChartDoc = {
     v: 1,
     panes: [
@@ -322,7 +322,8 @@ test('成交量指标:按 K 线的量画、涨跌上色,周线按期求和;子�
   const [, vol] = doc.panes[0].layers;
   expect(layerRequest(vol)).toMatchObject({ bars: true });
   expect(canAddIndicator(doc.panes[0].layers[0], 'volume')).toBe(true);
-  expect(canAddIndicator({ ...doc.panes[0].layers[0], series: 'SPY' }, 'volume')).toBe(false);
+  expect(canAddIndicator({ ...doc.panes[0].layers[0], series: 'SPY' }, 'volume')).toBe(true);
+  expect(canAddIndicator({ ...doc.panes[0].layers[0], series: 'btc' }, 'volume')).toBe(false);
   // 画线不挂成交量(它画在底部一条的隐形轴上,值和位置都不是价格)
   expect(canOwnDrawings(vol)).toBe(false);
 

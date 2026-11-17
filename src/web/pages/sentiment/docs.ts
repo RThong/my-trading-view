@@ -23,7 +23,7 @@ const QQQ_SPOT_PANE: Pane = {
       scale: 'right',
       color: '#38bdf8',
       title: 'QQQ (纳指 100 现货)',
-      render: { kind: 'candle' }, // ETF 现货 K 线(/api/price/QQQ,上市日起)
+      render: { kind: 'candle' }, // ETF 现货 K 线(Yahoo QQQ,上市日起)
     },
   ],
   desc: [

@@ -35,9 +35,15 @@ const regime: RegimeData = {
     ],
   },
 };
-const endpoints = { '/api/price/SPY': [{ date: '2026-10-30', open: 750, close: 755.7 }] };
+// ETF 走 Yahoo 日线(/api/yahoo/history 的形状)
+function spyHistory(points: Record<string, number | string | null>[]) {
+  return {
+    SPY: { symbol: 'SPY', name: 'SPDR S&P 500', points } as never,
+  };
+}
+const yahoo = spyHistory([{ date: '2026-10-30', open: 750, close: 755.7 }]);
 const curves = { real: { series: { '10Y': [{ date: '2026-10-30', value: 1.92 }] } } };
-const src = { regime, endpoints, curves };
+const src = { regime, yahoo, curves };
 
 describe('seriesBars', () => {
   test('标了 ohlc 的才有 K 线:BTC 取 ohlc、去周末;缺开高低用收盘补(同服务端 toOhlc);只有收盘的序列为空', () => {
@@ -48,7 +54,7 @@ describe('seriesBars', () => {
     ]);
     const spy = {
       ...src,
-      endpoints: { '/api/price/SPY': [{ date: '2026-10-30', open: 750, high: 760, low: 749, close: 755.7 }] },
+      yahoo: spyHistory([{ date: '2026-10-30', open: 750, high: 760, low: 749, close: 755.7 }]),
     };
     expect(seriesBars(seriesDef('SPY')!, spy, '1D')).toEqual([
       { time: '2026-10-30', open: 750, high: 760, low: 749, close: 755.7 },
@@ -57,7 +63,7 @@ describe('seriesBars', () => {
     // 开高低为 null:补成一字线(不能 Number(null) = 0,那会是一根拉到 0 的 K 线)
     const nulls = {
       ...src,
-      endpoints: { '/api/price/SPY': [{ date: '2026-10-30', open: null, high: null, low: null, close: 755.7 }] },
+      yahoo: spyHistory([{ date: '2026-10-30', open: null, high: null, low: null, close: 755.7 }]),
     };
     expect(seriesBars(seriesDef('SPY')!, nulls, '1D')).toEqual([
       { time: '2026-10-30', open: 755.7, high: 755.7, low: 755.7, close: 755.7 },
@@ -129,7 +135,7 @@ describe('seriesPoints', () => {
     expect(kept).toContain('2026-10-30');
   });
 
-  test('price 源取收盘', () => {
+  test('ETF 走 Yahoo 日线、取收盘', () => {
     expect(seriesPoints(seriesDef('SPY')!, src, '1D')).toEqual([{ time: '2026-10-30', value: 755.7 }]);
   });
 
@@ -164,7 +170,6 @@ describe('seriesPoints', () => {
     const skew = seriesDef('opt:SPY:skew')!;
     expect(skew.source).toEqual({ kind: 'endpoint', url: '/api/options/25delta/SPY?days=3650', field: 'skew' });
     const more = {
-      ...endpoints,
       '/api/options/25delta/SPY?days=3650': [{ date: '2026-10-30', callIv: 12, putIv: 17, skew: 5 }],
       '/api/series/VX%3A2026-11-18': null,
     };
