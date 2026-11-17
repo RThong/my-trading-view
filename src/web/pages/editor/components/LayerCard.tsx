@@ -1,4 +1,4 @@
-import { type DragEvent, type ReactNode, useState } from 'react';
+import { type DragEvent, useState } from 'react';
 import { CircleAlert, GripVertical, Settings2, X } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { cn } from '../../../lib/utils';
@@ -28,6 +28,7 @@ import { INDICATOR_IDS, INDICATORS, periodsOf } from '../../../chart/indicatorDe
 import { allSevenDay, plotsOf } from '../../../views/chartDoc/layerPoints';
 import { SeriesSelect } from './SeriesSelect';
 import type { ChartDocActions } from '../hooks/useChartDoc';
+import { LOCKED_TITLE, NOT_POSITIVE_NOTE, ScaleControls } from './ScaleControls';
 
 export type CardActions = Pick<
   ChartDocActions,
@@ -51,9 +52,6 @@ function encodeScale(scaleId: string) {
 function decodeScale(v: string): ScaleChoice {
   return v === 'right' || v === 'left' ? v : v === 'new' ? 'newOverlay' : { overlay: v.slice(3) };
 }
-
-const LOCKED_TITLE = '叠加中由「叠加对比」设定,先取消叠加才能改';
-const MODE_ORDER: ScaleMode[] = ['normal', 'percent', 'indexed', 'log'];
 
 function stopPropagation(e: DragEvent) {
   e.stopPropagation();
@@ -92,14 +90,13 @@ export function LayerCard({
   // 叠加的两头(B、被叠的 A)都不拖、不换轴、不平移:B 的轴跟着 A 的轴走、两者得留在同一格,
   // 比例也是按点按钮时的相对位置算的,任何一头挪了就对不上
   const fixed = !!layer.fit || isFitTarget(doc, layer.id);
-  // 倒轴 / 坐标模式是整根轴的属性:这根轴上只要挂着叠加的任一头,就锁住(和 A 共轴的第三条线也不能改)
-  const axisLocked = pane.layers.some((l) => l.scale === layer.scale && (!!l.fit || isFitTarget(doc, l.id)));
   // 标记图层(竖线、背景色带)挂自己的隐形轴、值不画:换轴、计算、平移、倒轴对数都没意义,卡片只留颜色和删除
   const events = isMarkLayer(layer);
   // 同格里和它挂同一根轴的其它线:同一根轴只有一套刻度,拖线 = 挪这根轴,会一起动。标记图层不挂在这根轴上,不算
   const sharers = events
     ? []
     : pane.layers.filter((l) => l.id !== layer.id && l.scale === layer.scale && !isMarkLayer(l));
+  const onOverlay = layer.scale !== 'right' && layer.scale !== 'left';
   const scaleName =
     layer.scale === 'right'
       ? '右轴'
@@ -208,10 +205,12 @@ export function LayerCard({
               onDrop={stopPropagation}
               onDragEnd={stopPropagation}
             >
-              <Tabs defaultValue="data">
+              {/* key:撤销等把线在独立轴 / 左右轴之间换了时,「纵轴」页会出现 / 消失,重挂一次免得停在已不存在的页上 */}
+              <Tabs key={onOverlay ? 'overlay' : 'side'} defaultValue="data">
                 <TabsList variant="line">
                   <TabsTrigger value="data">数据</TabsTrigger>
-                  <TabsTrigger value="axis">纵轴</TabsTrigger>
+                  {/* 左右轴在图上该轴刻度上右键改(同 TradingView);只有独立轴没有刻度可点,才在这里留一页 */}
+                  {onOverlay && <TabsTrigger value="axis">纵轴</TabsTrigger>}
                   {/* 指标是对一条序列算的,指标自己不再套指标 */}
                   {!layer.indicator && !isMarkLayer(layer) && <TabsTrigger value="indicator">指标</TabsTrigger>}
                 </TabsList>
@@ -259,40 +258,12 @@ export function LayerCard({
                     </div>
                   </TabsContent>
                 )}
-                <TabsContent value="axis" className="flex flex-col gap-2 text-xs">
-                  <p className="text-neutral-500">{scaleName}的属性:这根轴上的线一起变</p>
-                  <div className="flex items-center gap-2">
-                    <Toggle
-                      on={inverted}
-                      disabled={axisLocked}
-                      onClick={() => actions.setInvert(pane.id, layer.scale, !inverted)}
-                      title={axisLocked ? LOCKED_TITLE : '倒轴:整根轴上下颠倒,挂在这根轴上的线一起倒'}
-                    >
-                      倒轴
-                    </Toggle>
-                  </div>
-                  {/* 坐标模式四选一,顺序同 TradingView 价格轴右键菜单 */}
-                  <div className="flex items-center gap-1">
-                    {MODE_ORDER.map((m) => (
-                      <Toggle
-                        key={m}
-                        on={mode === m}
-                        disabled={axisLocked || (m !== 'normal' && !positive && mode !== m)}
-                        onClick={() => actions.setMode(pane.id, layer.scale, m)}
-                        title={
-                          axisLocked
-                            ? LOCKED_TITLE
-                            : m !== 'normal' && !positive
-                              ? '这根轴上有 ≤0 的值(利率、利差常见),用不了:对数取不了,百分比拿第一个点当分母会爆掉或画反'
-                              : SCALE_MODES[m].desc
-                        }
-                      >
-                        {SCALE_MODES[m].label}
-                      </Toggle>
-                    ))}
-                  </div>
-                  {modeIneffective && <span className="text-amber-500">这根轴上有 ≤0 的值,暂按普通坐标显示</span>}
-                </TabsContent>
+                {onOverlay && (
+                  <TabsContent value="axis" className="flex flex-col gap-2 text-xs">
+                    <p className="text-neutral-500">{scaleName}的属性:这根轴上的线一起变</p>
+                    <ScaleControls doc={doc} pane={pane} scaleId={layer.scale} positive={positive} actions={actions} />
+                  </TabsContent>
+                )}
               </Tabs>
             </PopoverContent>
           </Popover>
@@ -347,7 +318,7 @@ function StateBadges({
         <span
           // cn 而不是字符串拼接:两个文字色类并存时 CSS 里灰色排在后面,会盖掉警告色
           className={cn(badge, modeIneffective && 'text-amber-500')}
-          title={modeIneffective ? '这根轴上有 ≤0 的值,暂按普通坐标显示' : undefined}
+          title={modeIneffective ? NOT_POSITIVE_NOTE : undefined}
         >
           {SCALE_MODES[mode].label}
         </span>
@@ -523,34 +494,6 @@ function FitRow({ fit, inverted, onClear }: { fit: Fit; inverted: boolean; onCle
         取消叠加
       </Button>
     </div>
-  );
-}
-
-function Toggle({
-  on,
-  onClick,
-  title,
-  disabled,
-  children,
-}: {
-  on: boolean;
-  onClick: () => void;
-  title: string;
-  disabled?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <Button
-      variant="outline"
-      size="2xs"
-      onClick={onClick}
-      title={title}
-      disabled={disabled}
-      aria-pressed={on}
-      className={on ? 'border-sky-600 bg-sky-600/20 text-sky-300 hover:bg-sky-600/30' : 'text-neutral-500'}
-    >
-      {children}
-    </Button>
   );
 }
 
