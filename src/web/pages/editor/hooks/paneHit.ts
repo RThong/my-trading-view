@@ -32,3 +32,24 @@ export function paneAt(
 
   return at && { index, api: panes[index], ...at };
 }
+
+/** 鼠标落在哪一格的左 / 右纵轴刻度上(不显示的轴宽度为 0,点不中);不在任何一根轴上 → undefined */
+export function axisAt(
+  el: HTMLElement,
+  chart: IChartApi,
+  e: At,
+): { index: number; side: 'left' | 'right' } | undefined {
+  const box = el.getBoundingClientRect();
+  const side =
+    e.clientX >= box.left && e.clientX < plotLeft(el, chart)
+      ? 'left'
+      : e.clientX > box.right - chart.priceScale('right').width() && e.clientX <= box.right
+        ? 'right'
+        : undefined;
+  const index = chart.panes().findIndex((p) => {
+    const r = p.getHTMLElement()?.getBoundingClientRect();
+    return r && e.clientY >= r.top && e.clientY <= r.bottom;
+  });
+
+  return side && index >= 0 ? { index, side } : undefined;
+}

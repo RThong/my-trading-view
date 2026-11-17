@@ -310,6 +310,9 @@ describe('平移 / 倒轴', () => {
     expect(d.panes[0].scales).toEqual([{ id: 'right', side: 'right', percent: true }]);
     expect(scaleMode(d.panes[0].scales[0])).toBe('percent');
     expect(scaleMode(undefined)).toBe('normal');
+    // 值没变原样返回(点已勾着的选项不多记一步撤销)
+    expect(setScaleMode(d, 'p1', 'right', 'percent')).toBe(d);
+    expect(setScaleInvert(d, 'p1', 'right', false)).toBe(d);
     expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
     const both = JSON.parse(JSON.stringify(d));
     both.panes[0].scales[0].log = true;

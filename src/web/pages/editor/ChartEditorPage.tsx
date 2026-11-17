@@ -15,6 +15,7 @@ import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
 import { Textarea } from '../../components/ui/textarea';
 import { AnalysisPanel, pairRequests, resolvePair } from './components/AnalysisPanel';
+import { AxisMenu } from './components/AxisMenu';
 import { allDrawings, type ChartDoc, EMPTY_DOC, parseChartDoc } from '../../views/chartDoc/chartDoc';
 import { DrawingBar, DrawingToolbar } from './components/DrawingToolbar';
 import { InlineTextEditor } from './components/InlineTextEditor';
@@ -38,6 +39,7 @@ import { useEditorShortcuts } from './hooks/useEditorShortcuts';
 import { useSnapshot } from './hooks/useSnapshot';
 import { ChartTitle } from './components/ChartTitle';
 import { useVisibleRange } from './hooks/useVisibleRange';
+import { useAxisMenu } from './hooks/useAxisMenu';
 
 // 图表编辑页:空白图上自己挑序列、分格叠放、把一条线叠到另一条上看劈叉。只负责组装 ——
 // 状态见 useChartDoc,取数见 views/chartDoc/useSeriesData,各图层最终数据见 layerPoints,渲染见 useDocChart。
@@ -75,6 +77,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
     runPlugins(p, c, plugins.settings),
   );
   useFitSync(chartRef, seriesRef, doc);
+  const axisMenu = useAxisMenu(containerRef, chartRef, doc);
   useBaseBand(chartRef, doc, data);
   usePercentileBand(chartRef, doc, data);
 
@@ -150,6 +153,16 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
             canLogFit={drawing.canLogFit}
           />
           <InlineTextEditor editing={drawing.editing} onCommit={drawing.commitText} />
+          {axisMenu.at && (
+            <AxisMenu
+              at={axisMenu.at}
+              doc={doc}
+              data={data}
+              actions={actions}
+              onClose={axisMenu.close}
+              chartEl={containerRef}
+            />
+          )}
           {status.length > 0 && (
             <div className="pointer-events-none absolute right-16 top-1 z-10 rounded bg-neutral-950/80 px-2 py-0.5 text-xs text-amber-400">
               {status.join(' · ')}

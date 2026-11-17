@@ -489,6 +489,10 @@ function canonicalScale(sc: Scale): Scale {
 
 /** 改一根轴(作用于整根轴),改完按固定字段顺序重建。 */
 function updateScale(doc: ChartDoc, paneId: string, scaleId: string, f: (sc: Scale) => Scale): ChartDoc {
+  // 值没变就原样返回:点已勾着的选项不该多记一步撤销
+  const cur = doc.panes.find((p) => p.id === paneId)?.scales.find((sc) => sc.id === scaleId);
+  if (!cur || JSON.stringify(canonicalScale(f(cur))) === JSON.stringify(canonicalScale(cur))) return doc;
+
   return {
     ...doc,
     panes: doc.panes.map((p) =>
