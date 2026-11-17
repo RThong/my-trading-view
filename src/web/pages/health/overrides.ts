@@ -14,6 +14,10 @@ export type HealthOverride = {
   note?: string;
 };
 
+// 门槛按 2026-11-17 全量库回测定:过去两年每个工作日当「今天」按规则判一遍,看各序列误报多少天。
+// 日本连休(新年 12-31~1-3、黄金周、秋分前后)常连停 3 个工作日,默认「落后 2 个算偏晚」两年误报 10 天
+const JP_DAILY: HealthOverride = { rule: { late: 4, stale: 7 }, note: '日本连休常连停 3 个工作日' };
+
 // 键限定为注册表里 /api/regime 的序列键:拼错编译期就报
 const HEALTH_OVERRIDES: { [K in SeriesKey]?: HealthOverride } = {
   fedTargetUpper: { flatOk: true },
@@ -27,7 +31,15 @@ const HEALTH_OVERRIDES: { [K in SeriesKey]?: HealthOverride } = {
   oilRollCrack: { flatOk: true },
   oilRollBrentWti: { flatOk: true },
   // 拆借月均 − 存款挂牌:两腿都按月,日线上一个月内不变
-  jpCallMinusDeposit: { flatOk: true },
+  jpCallMinusDeposit: { flatOk: true, ...JP_DAILY },
+  // 日本市场的日频序列(曲线那几档见下方 PATTERNS)
+  jgbVix: JP_DAILY,
+  mufg: JP_DAILY,
+  jp2yMinusDeposit: JP_DAILY,
+  jp2yMinusCall: JP_DAILY,
+  // DTCC 通胀掉期:一天不足 3 笔不出点,美国假日前后常连缺 2~3 天(两年回测最长 3)
+  zcis1y: { rule: { late: 4, stale: 7 }, note: '成交少的日子不出点' },
+  zcis2y: { rule: { late: 4, stale: 7 }, note: '成交少的日子不出点' },
   // 中島上智的模型估计:发布 2~4 个月一次、不规律(判停更看 GitHub commit,见 AGENTS.md)
   jpTp10Nakajima: { rule: { late: 70, stale: 110 }, note: '2~4 个月发一次' },
   jpExpShort10Nakajima: { rule: { late: 70, stale: 110 }, note: '2~4 个月发一次' },
@@ -47,9 +59,24 @@ const HEALTH_OVERRIDES: { [K in SeriesKey]?: HealthOverride } = {
   'fund:ORCL:gm': { skip: true, note: '已知缺口:2011 后不报标准营业成本,毛利率算不出' },
 };
 
+// 曲线 / CDS 这类非 regime 的 id 编译期查不了拼写,改由 overrides.test 核对每条规则至少对上一条注册表 id
+export const PATTERNS: [RegExp, HealthOverride][] = [
+  [/^jgb\d+y$/, JP_DAILY],
+  // ICE BofA 利差只到 0.01、短端美债在两次议息之间常连 5 天同一个数:真实的不变,不是源停了
+  [/^credit:/, { flatOk: true }],
+  [/^ust(1m|3m)$/, { flatOk: true }],
+  // DTCC 成交披露:有成交才有点。2026 下半年最长隔 2 个工作日,更早一年最长隔过 11 天
+  [/^cds:SoftBank \(JPY\)$/, { rule: { late: 4, stale: 8 }, note: '成交稀,有成交才有点' }],
+];
+
 // 查表入口:页面拿的是注册表 id(普通字符串,含曲线 / 期权等非 regime 的),放宽成按字符串查
 const BY_ID: Readonly<Record<string, HealthOverride | undefined>> = HEALTH_OVERRIDES;
 
+/** 规则表与逐条表合并,逐条的优先。 */
 export function healthOverride(id: string): HealthOverride | undefined {
-  return BY_ID[id];
+  const matched = PATTERNS.filter(([re]) => re.test(id)).map(([, o]) => o);
+  const own = BY_ID[id];
+  if (!matched.length) return own;
+
+  return Object.assign({}, ...matched, own);
 }
