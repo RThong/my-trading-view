@@ -175,7 +175,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     vix3m: cboeSeries('VIX3M'),
     vix6m: cboeSeries('VIX6M'),
     // VIX(即期期限结构价差的近端腿,也直接对外发 vix)/ VXN / SKEW:原先由 vrp_inputs 组写库,
-    // 2026-11-17 起改现拉,与 /api/price、/api/vrp 共用 live/market 的缓存(与库里逐日相等)
+    // 2026-11-17 起改现拉,与 /api/vrp 共用 live/market 的缓存(与库里逐日相等)
     vixSpot: track(['vix', 'vixSpot'], volIndex('VIX', FRESH)),
     vxn: track(['vxn'], volIndex('VXN', FRESH)),
     skew: track(['skew'], volIndex('SKEW', FRESH)),
@@ -230,7 +230,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const gexP = fetchGex().catch(warnNull('Squeezemetrics GEX'));
   // Binance 现货 BTCUSDT 日成交额(2017-08 起,每页 1000 天,4 个并发请求)
   const btcVolumeP = fetchBtcVolume().catch(warnNull('Binance BTC 成交额'));
-  // QQQ / BTC 现货与 BRK 链上:原先由 job 落库,改现拉(live/market 自带缓存,与 /api/price、/api/vrp 共用一份)
+  // QQQ / BTC 现货与 BRK 链上:原先由 job 落库,改现拉(live/market 自带缓存,与 /api/vrp 共用一份)
   const qqqBarsP = track(['qqq'], spotBars('QQQ', FRESH)).catch(warnNull('Yahoo QQQ'));
   const btcBarsP = track(['btc', 'weekendFlag'], spotBars('BTC', FRESH)).catch(warnNull('BTC 现货'));
   const btcClosedP = track(['btcSharpe1y'], closedBars('BTC', FRESH)).catch(warnNull('BTC 现货(已收盘)'));

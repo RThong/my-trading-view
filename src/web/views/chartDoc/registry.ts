@@ -1,6 +1,6 @@
 // 序列注册表:编辑器能挑的序列 = 服务端所有对外的时间序列 + 任意 Yahoo 代码(id 为 `yh:<代码>`,动态生成定义)。
 //   · /api/regime:SERIES_META 生成(id = 序列名)+ 基本面 fund:*(aiChain 名单生成)
-//   · /api/price(现货,服务端读时现拉)、/api/yield-curve(各曲线各期限)、/api/options/25delta、/api/vrp
+//   · /api/yield-curve(各曲线各期限)、/api/options/25delta、/api/vrp
 //   · /api/series(库里 market_series 有、但别的接口没发的,id 为 `db:<series_id>`;VX 各月合约按需列)
 // 取数复用现有接口(见 useSeriesData)。这里的 id 就是 ChartDoc 里图层引用的那个 id —— 改名等于让旧 JSON 失效。
 import {
@@ -40,7 +40,7 @@ export type SeriesSource =
   | { kind: 'regimeOhlc'; key: string }
   /** /api/yield-curve?source=<curve> 的某个期限(利率页各曲线同一份;ai_cds 的「期限」是公司名) */
   | { kind: 'curve'; curve: CurveSource; tenor: string }
-  /** 返回 `[{ date, <field> }]` 的接口取某一字段:/api/price(close)、25Δ、VRP、/api/series 都是这个形状 */
+  /** 返回 `[{ date, <field> }]` 的接口取某一字段:25Δ、VRP、/api/series 都是这个形状 */
   | { kind: 'endpoint'; url: string; field: string }
   /** /api/yahoo/history/:symbol(任意 Yahoo 代码的日线收盘,读时现拉) */
   | { kind: 'yahoo'; symbol: string };
@@ -108,7 +108,8 @@ function endpoint(url: string, field: string): SeriesSource {
   return { kind: 'endpoint', url, field };
 }
 
-// ── /api/price 现货(与期权页蜡烛同一份,各自从上市日起)与 BTC 蜡烛
+// ── ETF 现货:走 Yahoo 日线接口(/api/yahoo/history,与 yh: 代码同一条路;上市日起、带成交量)与 BTC 蜡烛
+// close 只调拆股、不调分红,与服务端算 VRP 用的(server/live/market)同源同值。美股交易时段最新一根是盘中的
 function price(id: string, symbol: string, label: string, aliases: string[]): SeriesDef {
   return {
     id,
@@ -116,16 +117,15 @@ function price(id: string, symbol: string, label: string, aliases: string[]): Se
     category: '资产',
     freq: '日',
     unit: '$',
-    source: endpoint(`/api/price/${symbol}`, 'close'),
+    source: { kind: 'yahoo', symbol },
     aliases,
-    // /api/price 给的是整根日 K
     ohlc: true,
   };
 }
 
 const MANUAL: SeriesDef[] = [
   price('SPY', 'SPY', 'SPY 标普 500', ['标普', 's&p']),
-  // id 沿用 regime 的 qqq(已有文档引用它);数据改走 /api/price:同一份收盘,但从 1999 上市日起(regime 那份截到 2018)
+  // id 沿用 regime 的 qqq(已有文档引用它);数据走 Yahoo:同一份收盘,但从 1999 上市日起(regime 那份截到 2018)
   price('qqq', 'QQQ', 'QQQ 纳指 100', ['纳指', 'nasdaq']),
   price('GLD', 'GLD', 'GLD 黄金', ['黄金', 'gold']),
   price('IBIT', 'IBIT', 'IBIT 比特币 ETF', ['比特币', 'bitcoin']),
@@ -499,7 +499,7 @@ export function yahooId(symbol: string) {
 }
 
 // 库里已有的 Yahoo 代码 → 库里那条的 id。搜索结果遇到它们直接给库里那条(有库兜底、带中文别名),不再并列一条 yh:。
-// /api/price 的几只按代码自动对上;下面是代码与 id 不同名的。
+// 走 Yahoo、代码与 id 同名的(SPY / GLD 等 ETF)按代码自动对上;下面是代码与 id 不同名的。
 const YAHOO_IN_LIBRARY: Record<string, string> = {
   QQQ: 'qqq',
   'DX-Y.NYB': 'usd',
@@ -535,7 +535,7 @@ const YAHOO_IN_LIBRARY: Record<string, string> = {
 export function libraryIdForYahoo(symbol: string): string | undefined {
   const s = symbol.toUpperCase();
   const src = BY_ID.get(s)?.source;
-  const id = YAHOO_IN_LIBRARY[s] ?? (src?.kind === 'endpoint' && src.url === `/api/price/${s}` ? s : undefined);
+  const id = YAHOO_IN_LIBRARY[s] ?? (src?.kind === 'yahoo' && src.symbol === s ? s : undefined);
   return id && BY_ID.has(id) ? id : undefined;
 }
 
@@ -646,8 +646,7 @@ export function canCandle(l: Pick<Layer, 'series' | 'calc'>): boolean {
 }
 
 /**
- * 这个图层的源有没有成交量:目前只有 Yahoo 任意代码(yh:)的日 K 带量。固定 ETF 走 /api/price(现拉 Yahoo),目前没带量
- * (ROADMAP:回家把能现拉的落库源换成现拉,换完 ETF 也走 Yahoo、自然有量);外汇这类 Yahoo 给 0 的代码有资格但画不出柱
+ * 这个图层的源有没有成交量:走 Yahoo 日线的(yh: 任意代码与固定 ETF)带量;外汇这类 Yahoo 给 0 的代码有资格但画不出柱
  */
 export function canVolume(l: Pick<Layer, 'series' | 'calc'>): boolean {
   return seriesDef(l.series)?.source.kind === 'yahoo' && !l.calc;

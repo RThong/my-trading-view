@@ -1,6 +1,6 @@
 // 图表编辑器的「任意 Yahoo 代码」:按关键字搜代码 + 取某代码的历史日线(收盘 + 开高低 + 成交量,蜡烛图层 / 成交量指标用)。
 // 读时现拉、不落库;日期按交易所当地日历(meta.exchangeTimezoneName,见 fetchers/yahoo 的 exchangeDate)取,非美市场不会错日。
-// close 是 Yahoo 的「只调拆股、不调分红」收盘价,与全站 ETF 现货(/api/price)同口径(见 AGENTS.md 的 ETF 现货口径)。
+// close 是 Yahoo 的「只调拆股、不调分红」收盘价,与服务端 ETF 现货(server/live/market)同口径(见 AGENTS.md 的 ETF 现货口径)。
 import YahooFinance from 'yahoo-finance2';
 import { exchangeDate, isYahooFx, realignFxDaily } from './yahoo';
 

@@ -4,7 +4,7 @@
 import { ivIndexByUnderlying } from '../../shared/marketCatalog';
 import type { ChartDoc, Layer, Pane } from '../views/chartDoc/chartDoc';
 
-// 标的 → 现货 K 线的注册表 id(/api/price 的 ETF 按代码;BTC 走 Bitstamp 的 btc;VIX 收盘在 regime、K 线从 Yahoo ^VIX 取)
+// 标的 → 现货 K 线的注册表 id(ETF 按代码,走 Yahoo;BTC 走 Bitstamp 的 btc;VIX 收盘在 regime、K 线从 Yahoo ^VIX 取)
 const SPOT: Record<string, string> = { QQQ: 'qqq', '.VIX': 'vix', BTC: 'btc' };
 // 期权 / VRP 序列 id 里的标的名(注册表不带 VIX 前面的点)
 function optKey(underlying: string) {

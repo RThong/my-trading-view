@@ -1,5 +1,5 @@
 // 注册表的取数层(图表编辑器与固定面板的计算格共用):按注册表把各序列统一成 { time, value }[],再按 Header 的周期聚合。
-// 只读复用现有接口与数据 hook(/api/regime 的 useRegimeData、/api/yield-curve,以及 /api/price、25Δ、VRP、/api/series),保证同一序列和旧图表数字一致;
+// 只读复用现有接口与数据 hook(/api/regime 的 useRegimeData、/api/yield-curve,以及 25Δ、VRP、/api/series),保证同一序列和旧图表数字一致;
 // 任意 Yahoo 代码走 /api/yahoo/history。
 import { useMemo } from 'react';
 import useSWR from 'swr';
@@ -66,7 +66,7 @@ function parseKey(key: string): SeriesRequest {
   };
 }
 
-/** 「URL + 字段」型的源(/api/price 现货、25Δ、VRP、/api/series):URL → 行;取不到的为 null(单个失败不连累其它)。 */
+/** 「URL + 字段」型的源(25Δ、VRP、/api/series):URL → 行;取不到的为 null(单个失败不连累其它)。 */
 type EndpointRow = { date: string } & Record<string, number | string | null>;
 type EndpointData = Record<string, EndpointRow[] | null>;
 const NO_ENDPOINT: EndpointData = {};

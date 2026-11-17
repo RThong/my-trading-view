@@ -23,7 +23,7 @@ function rows(r: Row[]): P[] {
   return r.map((x) => ({ time: x.date, value: x.value }));
 }
 async function price(s: string): Promise<P[]> {
-  return (await get<{ date: string; close: number }[]>(`/api/price/${s}`)).map((x) => ({
+  return (await get<{ points: { date: string; close: number }[] }>(`/api/yahoo/history/${s}`)).points.map((x) => ({
     time: x.date,
     value: x.close,
   }));
