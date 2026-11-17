@@ -25,7 +25,7 @@ describe('toHistory', () => {
       meta: { symbol: 'BHP.AX', exchangeTimezoneName: 'Australia/Sydney' },
       quotes: [{ date: new Date('2026-11-01T23:00:00Z'), close: 45 }],
     });
-    expect(h.points).toEqual([{ date: '2026-11-02', close: 45, open: null, high: null, low: null }]);
+    expect(h.points).toEqual([{ date: '2026-11-02', close: 45, open: null, high: null, low: null, volume: null }]);
   });
 
   test('按时区名逐根换算:同一条伦敦 0 点的序列,夏令时(23:00Z)与冬令时(00:00Z)都落在当地那天', () => {
@@ -44,15 +44,21 @@ describe('toHistory', () => {
       meta: { symbol: 'CL=F' },
       quotes: [{ date: new Date('2020-04-20T04:00:00Z'), close: -37.63 }],
     });
-    expect(h.points).toEqual([{ date: '2020-04-20', close: -37.63, open: null, high: null, low: null }]);
+    expect(h.points).toEqual([{ date: '2020-04-20', close: -37.63, open: null, high: null, low: null, volume: null }]);
   });
 
-  test('开高低一起给;缺的 / 0 占位记 null', () => {
+  test('开高低、成交量一起给;缺的 / 0 占位记 null', () => {
     const h = toHistory({
       meta: { symbol: '^GSPC' },
-      quotes: [{ date: new Date('2026-11-05T14:30:00Z'), open: 6800, high: 6850, low: 0, close: 6820 }],
+      quotes: [
+        { date: new Date('2026-11-05T14:30:00Z'), open: 6800, high: 6850, low: 0, close: 6820, volume: 3.2e9 },
+        { date: new Date('2026-11-06T14:30:00Z'), open: 6820, high: 6830, low: 6790, close: 6810, volume: 0 },
+      ],
     });
-    expect(h.points).toEqual([{ date: '2026-11-05', close: 6820, open: 6800, high: 6850, low: null }]);
+    expect(h.points).toEqual([
+      { date: '2026-11-05', close: 6820, open: 6800, high: 6850, low: null, volume: 3.2e9 },
+      { date: '2026-11-06', close: 6810, open: 6820, high: 6830, low: 6790, volume: null },
+    ]);
   });
 
   test('丢掉空值 / 0,同日保留后一根', () => {
@@ -71,8 +77,8 @@ describe('toHistory', () => {
       name: 'Gold Dec 26',
       currency: 'USD',
       points: [
-        { date: '2026-10-29', close: 3900, open: null, high: null, low: null },
-        { date: '2026-10-31', close: 3899, open: null, high: null, low: null },
+        { date: '2026-10-29', close: 3900, open: null, high: null, low: null, volume: null },
+        { date: '2026-10-31', close: 3899, open: null, high: null, low: null, volume: null },
       ],
     });
   });

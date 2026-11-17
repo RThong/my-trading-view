@@ -97,7 +97,14 @@ async function getEndpoints([, ...urls]: string[]): Promise<EndpointData> {
 type YahooHistory = {
   symbol: string;
   name: string;
-  points: { date: string; close: number; open?: number | null; high?: number | null; low?: number | null }[];
+  points: {
+    date: string;
+    close: number;
+    open?: number | null;
+    high?: number | null;
+    low?: number | null;
+    volume?: number | null;
+  }[];
 };
 /** 代码 → 日线;取不到的为 null(单个代码失败不连累其它代码) */
 type YahooData = Record<string, YahooHistory | null>;
@@ -235,21 +242,31 @@ export function calcPoints(
 /**
  * 一根日 K。收盘必须是数,否则这天不要(同点数据);开高低缺(null / 不是数)就用收盘补成一字线 ——
  * 同服务端 toOhlc 的口径:有收盘的日子就有一根,蜡烛不会比收盘点少几天、更不会整条空白(只给收盘的 Yahoo 代码画成一排一字线)。
- * null 不能直接 Number():Number(null) = 0,会造出一根 0 价 K 线把轴压扁
+ * null 不能直接 Number():Number(null) = 0,会造出一根 0 价 K 线把轴压扁。成交量缺就不带(不当 0:那天不是没成交)
  */
-function toBar(time: string, o: unknown, h: unknown, l: unknown, c: unknown): Bar[] {
-  const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+function toBar(time: string, o: unknown, h: unknown, l: unknown, c: unknown, v?: unknown): Bar[] {
+  const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : undefined);
   const close = num(c);
   if (close === undefined) return [];
+  const volume = num(v);
 
-  return [{ time, open: num(o) ?? close, high: num(h) ?? close, low: num(l) ?? close, close }];
+  return [
+    {
+      time,
+      open: num(o) ?? close,
+      high: num(h) ?? close,
+      low: num(l) ?? close,
+      close,
+      ...(volume !== undefined && { volume }),
+    },
+  ];
 }
 
 function fromRegimeOhlc(src: { key: string }, data: SourceData) {
   return data.regime.ohlc?.[src.key] ?? [];
 }
 function fromYahoo(symbol: string, data: SourceData) {
-  return (data.yahoo?.[symbol]?.points ?? []).flatMap((p) => toBar(p.date, p.open, p.high, p.low, p.close));
+  return (data.yahoo?.[symbol]?.points ?? []).flatMap((p) => toBar(p.date, p.open, p.high, p.low, p.close, p.volume));
 }
 
 /** 按数据源种类取整根日 K(只有注册表标了 ohlc 的序列才有)。 */

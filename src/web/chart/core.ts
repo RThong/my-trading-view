@@ -4,7 +4,8 @@ import { sortBy } from 'remeda';
 import type { Interval } from '../hooks/interval';
 
 export type LinePoint = { time: string; value: number };
-export type Bar = { time: string; open: number; high: number; low: number; close: number };
+/** volume:有成交量的源(Yahoo)才带,周 / 月线按期求和 */
+export type Bar = { time: string; open: number; high: number; low: number; close: number; volume?: number };
 
 /** 竖线处相对前一根/点的变化。prev 无(第一根)→ null;prev=0 → 有 delta 无 pct(除零)。
  *  pct 用 |prev| 做分母,保证符号跟随 delta(本盘有会穿零的序列:skew / VRP / V1−V3)。 */
@@ -111,18 +112,19 @@ export function aggregateSum(points: LinePoint[], interval: Interval): LinePoint
   return sortBy([...byKey.values()], (p) => p.time);
 }
 
-/** OHLC 按周期聚合:open=首根、close=尾根、high/low=区间极值。输入须按时间升序。 */
+/** OHLC 按周期聚合:open=首根、close=尾根、high/low=区间极值、成交量求和(有量的才带)。输入须按时间升序。 */
 export function aggregateBars(bars: Bar[], interval: Interval): Bar[] {
   if (interval === '1D') return bars;
   const byKey = new Map<string, Bar>();
   for (const b of bars) {
     const key = periodKey(b.time, interval);
     const cur = byKey.get(key);
-    if (!cur) byKey.set(key, { time: key, open: b.open, high: b.high, low: b.low, close: b.close });
+    if (!cur) byKey.set(key, { ...b, time: key });
     else {
       cur.high = Math.max(cur.high, b.high);
       cur.low = Math.min(cur.low, b.low);
       cur.close = b.close; // 升序输入 → 最后一根即收盘
+      if (b.volume !== undefined) cur.volume = (cur.volume ?? 0) + b.volume;
     }
   }
   return sortBy([...byKey.values()], (b) => b.time);
@@ -237,4 +239,13 @@ export const FULL_HEIGHT_AREA = {
 /** 色块 / 竖线的隐形轴上下不留白 */
 export function fullHeightScale(s: ISeriesApi<SeriesType>) {
   s.priceScale().applyOptions({ scaleMargins: { top: 0, bottom: 0 } });
+}
+
+/**
+ * 成交量指标的隐形轴只占格子底部这一截(同 TradingView 的 Volume:叠在主图底部,不挤 K 线的高度、不出刻度)。
+ * 柱子从 0 起(base 0),自动缩放后最高的柱顶到这一截的上沿
+ */
+export const VOLUME_STRIP_TOP = 0.8;
+export function volumeStripScale(s: ISeriesApi<SeriesType>) {
+  s.priceScale().applyOptions({ scaleMargins: { top: VOLUME_STRIP_TOP, bottom: 0 } });
 }

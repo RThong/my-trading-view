@@ -4,6 +4,7 @@
 import { INDICATOR_IDS, INDICATORS, type IndicatorId } from '../../chart/indicatorDefs';
 import { LINE_DASH, type LineDash } from '../../chart/drawings';
 import { withAlpha } from '../../chart/palette';
+import { canVolume } from './registry';
 import type { RuleLevel } from '../../../shared/alertRules';
 
 export type ScaleSide = 'right' | 'left' | 'overlay';
@@ -380,13 +381,14 @@ export function addIndicator(doc: ChartDoc, layerId: string, id: IndicatorId): C
 }
 
 /**
- * 能不能给这条线加这个指标:指标不再套指标、标记图层和成交量柱不加;叠加对比里被对齐的 B 腿独占一根轴(每帧按 A 的范围换算),
+ * 能不能给这条线加这个指标:指标不再套指标、标记图层和成交量柱不加;成交量只给源里有量的(见 canVolume);叠加对比里被对齐的 B 腿独占一根轴(每帧按 A 的范围换算),
  * 叠加类指标挂上去会让 normalize 判叠加失效、悄悄拆掉 —— 振荡类新开一格不受影响
  */
 export function canAddIndicator(l: Layer, id: IndicatorId): boolean {
   // 标记图层(竖线、色带)的值只是 0 / 1 标志,算均线没有意义;
   // 成交量柱周 / 月线按期求和,指标却按每期最后一天算,叠在一起差一个量级(2026-11-15 用户定:不让加)
   if (l.indicator || isMarkLayer(l) || l.render?.kind === 'volume') return false;
+  if (id === 'volume' && !canVolume(l)) return false;
   return !(l.fit && INDICATORS[id].place === 'overlay');
 }
 
@@ -438,6 +440,14 @@ export function markColor(l: Layer): string {
 /** 标记图层(事件竖线、背景色带):值不画、挂自己的隐形轴、不算「一条线」(编辑器与固定面板共用这个判断) */
 export function isMarkLayer(l: Layer): boolean {
   return l.render?.kind === 'events' || l.render?.kind === 'background';
+}
+
+/**
+ * 真画在它挂的那根轴上的图层(改这根轴的坐标 / 倒轴会影响到它):标记图层挂自己的隐形轴;
+ * 成交量指标文档里记着源线的轴,实际画在自己的隐形轴上(只占底部一条)。都不算
+ */
+export function onItsScale(l: Layer): boolean {
+  return !isMarkLayer(l) && l.indicator?.id !== 'volume';
 }
 
 /**
@@ -687,9 +697,12 @@ export function allDrawings(doc: ChartDoc): { drawing: Drawing; layer: Layer; pa
   );
 }
 
-/** 画线可以挂的图层:看得见的普通线 / 柱 / 蜡烛 / 指标(竖线、色带挂隐形轴,没有能读的纵坐标) */
+/**
+ * 画线可以挂的图层:看得见的普通线 / 柱 / 蜡烛 / 指标。竖线、色带挂隐形轴,没有能读的纵坐标;
+ * 成交量画在底部一条的隐形轴上,挂上去的话画线按成交量的单位存值、按那一窄条换算位置(见 onItsScale)
+ */
 export function canOwnDrawings(l: Layer): boolean {
-  return !l.hidden && !isMarkLayer(l);
+  return !l.hidden && onItsScale(l);
 }
 
 /**
@@ -924,7 +937,8 @@ function isLayer(x: unknown): x is Layer {
           isObj(x.render) &&
           (x.render.kind === 'events' || x.render.kind === 'background' || x.render.kind === 'volume')
         ))) &&
-    // 画线不能挂在标记图层上(竖线、色带挂隐形 0~1 轴,纵坐标没有意义),同 canOwnDrawings
+    // 画线不能挂在标记图层上(竖线、色带挂隐形 0~1 轴,纵坐标没有意义)。成交量不在这里拦(canOwnDrawings 拦的是新画):
+    // 导入校验不过 = 整张图载不回来,挂在成交量上的旧画线照常载入、照常画,只是不能再往上新加
     (x.drawings === undefined ||
       (Array.isArray(x.drawings) &&
         x.drawings.every(isDrawing) &&

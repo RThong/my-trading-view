@@ -9,6 +9,7 @@ import {
   canAddIndicator,
   fitScaleIds,
   isMarkLayer,
+  onItsScale,
   isFitTarget,
   SCALE_MODES,
   scaleMode,
@@ -93,9 +94,9 @@ export function LayerCard({
   // 标记图层(竖线、背景色带)挂自己的隐形轴、值不画:换轴、计算、平移、倒轴对数都没意义,卡片只留颜色和删除
   const events = isMarkLayer(layer);
   // 同格里和它挂同一根轴的其它线:同一根轴只有一套刻度,拖线 = 挪这根轴,会一起动。标记图层不挂在这根轴上,不算
-  const sharers = events
-    ? []
-    : pane.layers.filter((l) => l.id !== layer.id && l.scale === layer.scale && !isMarkLayer(l));
+  const sharers = onItsScale(layer)
+    ? pane.layers.filter((l) => l.id !== layer.id && l.scale === layer.scale && onItsScale(l))
+    : [];
   const onOverlay = layer.scale !== 'right' && layer.scale !== 'left';
   const scaleName =
     layer.scale === 'right'
@@ -155,7 +156,8 @@ export function LayerCard({
             text={`和 ${sharers.map((l) => baseLabel(doc, l.id)).join('、')} 共用${scaleName},拖动会一起动;要单独拖,把纵轴改成别的轴`}
           />
         )}
-        {!fixed && !events && (
+        {/* 成交量指标挂自己的隐形轴(只占底部一条),换轴没有意义 */}
+        {!fixed && !events && layer.indicator?.id !== 'volume' && (
           <NativeSelect
             size="xs"
             className="shrink-0"

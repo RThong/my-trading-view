@@ -645,6 +645,14 @@ export function canCandle(l: Pick<Layer, 'series' | 'calc'>): boolean {
   return !!seriesDef(l.series)?.ohlc && !l.calc;
 }
 
+/**
+ * 这个图层的源有没有成交量:目前只有 Yahoo 任意代码(yh:)的日 K 带量。固定 ETF 走库里的 price_eod,没存量
+ * (ROADMAP:回家把能现拉的落库源换成现拉,换完 ETF 也走 Yahoo、自然有量);外汇这类 Yahoo 给 0 的代码有资格但画不出柱
+ */
+export function canVolume(l: Pick<Layer, 'series' | 'calc'>): boolean {
+  return seriesDef(l.series)?.source.kind === 'yahoo' && !l.calc;
+}
+
 /** 实际按哪种画法画:写了蜡烛却画不了(JSON 里给只有收盘的序列写了 candle)就按折线画,别留一块空白 */
 export function drawnKind(l: Layer): NonNullable<Layer['render']>['kind'] {
   const kind = l.render?.kind ?? 'line';

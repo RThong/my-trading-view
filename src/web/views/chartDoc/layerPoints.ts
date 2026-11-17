@@ -5,8 +5,8 @@ import type { Interval } from '../../hooks/interval';
 import { earliestIso } from '../../../shared/calc/isoDate';
 import { shiftBusinessDays } from '../../chart/analysis';
 import { type BandPoint, percentileMarks } from '../../chart/percentileMarks';
-import { INDICATORS, periodsOf, type PlotSpec } from '../../chart/indicatorDefs';
-import { SIGNED_DOWN, SIGNED_UP, withAlpha } from '../../chart/palette';
+import { INDICATORS, periodsOf, type PlotPoint, type PlotSpec } from '../../chart/indicatorDefs';
+import { volumeColor } from '../../chart/palette';
 import { isMarkLayer, type ChartDoc, type Layer, type Pane, type RefLine } from './chartDoc';
 import { drawnKind, seriesDef } from './registry';
 import { requestKey } from './useSeriesData';
@@ -19,8 +19,6 @@ export type LayerData = {
 };
 
 const EMPTY: LinePoint[] = [];
-// 成交量柱半透明:单日放量的长柱满色太抢眼(上色的点和不上色时的图层颜色同一个透明度)
-export const VOLUME_ALPHA = 0.6;
 
 // ── 指标图层:展开成普通子线(id = 图层 id#样名)。渲染层只画展开后的,改色 / 换轴 / 显隐的对账全部复用;
 // 图例按原图层分组(一个指标一行)。子线不进 JSON,只在内存里
@@ -31,6 +29,11 @@ export function plotId(l: Layer, p: PlotSpec): string {
 /** 渲染用文档里的指标子线(id 带 #;用户的图层 id 由 nextId 生成,不含 #) */
 export function isPlotLayer(l: Layer): boolean {
   return l.id.includes('#');
+}
+
+/** 成交量指标的柱子(挂自己的隐形轴、只占底部一条、压在线下面) */
+export function isVolumePlot(l: Layer): boolean {
+  return isPlotLayer(l) && l.render?.kind === 'volume';
 }
 
 /**
@@ -48,10 +51,11 @@ function expandLayer(l: Layer, sevenDay: boolean): Layer[] {
   return plotsOf(l, sevenDay).map((p) => ({
     id: plotId(l, p),
     series: l.series,
-    scale: l.scale,
+    // 成交量柱挂自己的隐形轴(id 同子线 id,不和别的线共轴):只占格子底部一条,见 useDocChart 的 VOLUME_STRIP
+    scale: p.kind === 'volume' ? plotId(l, p) : l.scale,
     color: p.color,
     title: p.title,
-    ...(p.kind === 'signed' && { render: { kind: 'signed' as const } }),
+    ...(p.kind !== 'line' && { render: { kind: p.kind } }),
     ...(p.refLines && { refLines: p.refLines }),
     ...(l.hidden && { hidden: true as const }),
   }));
@@ -76,16 +80,22 @@ export function expandIndicators(doc: ChartDoc): ChartDoc {
 
 // 指标结果按「源序列的点 × 指标签名」缓存:同一条现货上同时有 EMA 和布林带(期权页就是)各存各的,
 // 切眼睛、改色时不重算、子线不重灌
-const computed = new WeakMap<LinePoint[], Map<string, LinePoint[][]>>();
-function indicatorPoints(l: Layer, pts: LinePoint[], daily: boolean, sevenDay: boolean): LinePoint[][] {
+// 按 K 线算的(成交量)按 K 线数组缓存
+const computed = new WeakMap<LinePoint[] | Bar[], Map<string, PlotPoint[][]>>();
+function indicatorPoints(l: Layer, pts: LinePoint[], bars: Bar[], daily: boolean, sevenDay: boolean): PlotPoint[][] {
   const { id, periods } = l.indicator!;
+  const def = INDICATORS[id];
+  const input = 'fromBars' in def ? bars : pts;
   const sig = JSON.stringify([id, periods, sevenDay, daily]);
-  const bySig = computed.get(pts) ?? new Map<string, LinePoint[][]>();
-  computed.set(pts, bySig);
+  const bySig = computed.get(input) ?? new Map<string, PlotPoint[][]>();
+  computed.set(input, bySig);
   const hit = bySig.get(sig);
   if (hit) return hit;
 
-  const out = INDICATORS[id].compute(pts, periodsOf(id, periods, sevenDay), { daily, autoYear: sevenDay && !periods });
+  const out =
+    'fromBars' in def
+      ? def.fromBars(bars)
+      : def.compute(pts, periodsOf(id, periods, sevenDay), { daily, autoYear: sevenDay && !periods });
   bySig.set(sig, out);
   return out;
 }
@@ -161,8 +171,10 @@ export function layerRequest(l: Layer, sevenDay = false) {
     shift: l.shift ?? 0,
     // 标记图层、成交量柱取不聚合的日线,自己按周期处理(取最大 / 求和),默认的「取每期最后一天」对它们不对
     ...((isMarkLayer(l) || drawnKind(l) === 'volume') && { daily: true as const }),
-    // 蜡烛图层多要一份 K 线(按 drawnKind:写了 candle 却画不了的按折线取)
-    ...(drawnKind(l) === 'candle' && { bars: true as const }),
+    // 蜡烛图层多要一份 K 线(按 drawnKind:写了 candle 却画不了的按折线取);按 K 线算的指标(成交量)也要
+    ...((drawnKind(l) === 'candle' || (l.indicator && 'fromBars' in INDICATORS[l.indicator.id])) && {
+      bars: true as const,
+    }),
     // 成交量柱总要周末:周 / 月求和缺了周末两天会少算(日线下再按整张图的口径去掉,见 computeLayerData)
     ...((sevenDay || drawnKind(l) === 'volume') && { weekends: true as const }),
   };
@@ -198,8 +210,8 @@ export function computeLayerData(
     if (drawnKind(l) === 'background' && interval !== '1D') return EMPTY;
     return clipFrom(periodMax(raw(l), interval), from);
   };
-  const candle = (l: Layer) =>
-    drawnKind(l) === 'candle' ? { bars: bars[requestKey(layerRequest(l, sevenDay))] ?? EMPTY_BARS } : {};
+  const layerBars = (l: Layer) => bars[requestKey(layerRequest(l, sevenDay))] ?? EMPTY_BARS;
+  const candle = (l: Layer) => (drawnKind(l) === 'candle' ? { bars: layerBars(l) } : {});
 
   // 成交量柱按同一张图里第一条蜡烛的涨跌上色(同 TradingView:收 ≥ 开为涨);周 / 月线下 K 线与量都按同一套周期键聚合,日期对得上。
   // 图里没有蜡烛、或那天没有 K 线 → 不带 color,用图层颜色(见 useDocChart 的成交量柱选项)
@@ -210,13 +222,13 @@ export function computeLayerData(
     upByTime.size
       ? pts.map((p) => {
           const up = upByTime.get(p.time);
-          return up === undefined ? p : { ...p, color: withAlpha(up ? SIGNED_UP : SIGNED_DOWN, VOLUME_ALPHA) };
+          return up === undefined ? p : { ...p, color: volumeColor(up) };
         })
       : pts;
 
   // 指标图层:源序列的点照给(图例取不到子线时兜底),每条子线另给一份算好的点
   const plotData = (l: Layer) => {
-    const out = indicatorPoints(l, raw(l), interval === '1D', sevenDay);
+    const out = indicatorPoints(l, raw(l), layerBars(l), interval === '1D', sevenDay);
     return plotsOf(l, sevenDay).map((p, i) => [plotId(l, p), { display: out[i] ?? EMPTY }] as const);
   };
 
