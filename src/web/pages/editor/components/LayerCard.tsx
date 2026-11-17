@@ -7,6 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../../../components/ui/
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../components/ui/tabs';
 import {
   canAddIndicator,
+  hasIndicator,
   fitScaleIds,
   isMarkLayer,
   onItsScale,
@@ -21,15 +22,15 @@ import {
   type ScaleChoice,
   type ScaleMode,
 } from '../../../views/chartDoc/chartDoc';
-import { canCandle, drawnKind } from '../../../views/chartDoc/registry';
+import { canCandle, canVolume, drawnKind } from '../../../views/chartDoc/registry';
 import { CandleSwatch } from '../../../views/chartDoc/CandleSwatch';
 import { baseLabel, layerLabel } from '../../../views/chartDoc/layerLabel';
 import { NumberField } from './NumberField';
-import { INDICATOR_IDS, INDICATORS, periodsOf } from '../../../chart/indicatorDefs';
+import { INDICATOR_IDS, INDICATORS, type IndicatorId, periodsOf } from '../../../chart/indicatorDefs';
 import { allSevenDay, plotsOf } from '../../../views/chartDoc/layerPoints';
 import { SeriesSelect } from './SeriesSelect';
 import type { ChartDocActions } from '../hooks/useChartDoc';
-import { LOCKED_TITLE, NOT_POSITIVE_NOTE, ScaleControls } from './ScaleControls';
+import { ACTIVE, LOCKED_TITLE, NOT_POSITIVE_NOTE, ScaleControls } from './ScaleControls';
 
 export type CardActions = Pick<
   ChartDocActions,
@@ -43,6 +44,7 @@ export type CardActions = Pick<
   | 'setMode'
   | 'clearFit'
   | 'addIndicator'
+  | 'removeIndicator'
   | 'setPeriods'
 >;
 
@@ -52,6 +54,14 @@ function encodeScale(scaleId: string) {
 }
 function decodeScale(v: string): ScaleChoice {
   return v === 'right' || v === 'left' ? v : v === 'new' ? 'newOverlay' : { overlay: v.slice(3) };
+}
+
+/** 这条线加不了这个指标的原因(能加、或已加上可以去掉 = undefined),按钮置灰时悬停显示 */
+function indicatorBlocked(doc: ChartDoc, layer: Layer, id: IndicatorId): string | undefined {
+  if (hasIndicator(doc, layer, id) || canAddIndicator(layer, id)) return undefined;
+  if (layer.render?.kind === 'volume') return '成交量柱周 / 月线按期求和,指标按每期最后一天算会对不上,不能加';
+  if (id === 'volume' && !canVolume(layer)) return '只有 Yahoo 任意代码(yh:)带成交量;内置 ETF 的数据在库里没存成交量';
+  return '叠加对比里被对齐的线独占一根轴,叠加类指标挂不上去';
 }
 
 function stopPropagation(e: DragEvent) {
@@ -236,7 +246,7 @@ export function LayerCard({
                 {!layer.indicator && !isMarkLayer(layer) && (
                   <TabsContent value="indicator" className="flex flex-col gap-2 text-xs">
                     <p className="text-neutral-500">
-                      对这条线算指标,加成新的一层(叠加类放在同一格,振荡类在下方新开一格)
+                      对这条线算指标,加成新的一层(叠加类放在同一格,振荡类在下方新开一格);已加的高亮,再点一下去掉
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {INDICATOR_IDS.map((id) => (
@@ -244,15 +254,20 @@ export function LayerCard({
                           key={id}
                           variant="outline"
                           size="2xs"
-                          disabled={!canAddIndicator(layer, id)}
+                          disabled={!!indicatorBlocked(doc, layer, id)}
                           title={
-                            canAddIndicator(layer, id)
-                              ? undefined
-                              : layer.render?.kind === 'volume'
-                                ? '成交量柱周 / 月线按期求和,指标按每期最后一天算会对不上,不能加'
-                                : '叠加对比里被对齐的线独占一根轴,叠加类指标挂不上去'
+                            hasIndicator(doc, layer, id)
+                              ? '已加上,再点一下去掉(改参数去那一层的「数据」页)'
+                              : indicatorBlocked(doc, layer, id)
                           }
-                          onClick={() => actions.addIndicator(layer.id, id)}
+                          aria-pressed={hasIndicator(doc, layer, id)}
+                          // 已加的高亮,同纵轴坐标按钮的选中样式;再点一下去掉
+                          className={hasIndicator(doc, layer, id) ? ACTIVE : undefined}
+                          onClick={() =>
+                            hasIndicator(doc, layer, id)
+                              ? actions.removeIndicator(layer.id, id)
+                              : actions.addIndicator(layer.id, id)
+                          }
                         >
                           {INDICATORS[id].label}
                         </Button>

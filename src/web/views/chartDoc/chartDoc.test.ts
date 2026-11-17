@@ -27,6 +27,8 @@ import {
   type ChartDoc,
   type Layer,
   addIndicator,
+  hasIndicator,
+  removeIndicator,
   setIndicatorPeriods,
   findLayer,
   addDrawing,
@@ -949,4 +951,23 @@ test('画线:日期超出 0000–9999 年(外推太远)的不写进文档', () =
   expect(addDrawing(base, id, { id: 'd1', kind: 'vline', time: '-000282-08-01' })).toBe(base);
   const doc = addDrawing(base, id, { id: 'd1', kind: 'vline', time: '2026-01-05' });
   expect(updateDrawing(doc, { id: 'd1', kind: 'vline', time: '+01702-01-01' })).toBe(doc);
+});
+
+test('同一条线同一个指标只加一层(振荡类在别的格也算);别的线、平移过的线各自能加', () => {
+  const base = twoOnMain();
+  const rsi = addIndicator(base, 'l1', 'rsi');
+  expect(hasIndicator(rsi, rsi.panes[0].layers[0], 'rsi')).toBe(true);
+  expect(addIndicator(rsi, 'l1', 'rsi')).toBe(rsi);
+  expect(hasIndicator(rsi, rsi.panes[0].layers[1], 'rsi')).toBe(false);
+  expect(hasIndicator(rsi, { ...rsi.panes[0].layers[0], shift: 5 }, 'rsi')).toBe(false);
+  expect(addIndicator(rsi, 'l1', 'ema')).not.toBe(rsi);
+});
+
+test('再点一下去掉:删掉这条线的这个指标(振荡类那一格空了一并收掉),别的指标不动', () => {
+  const both = addIndicator(addIndicator(twoOnMain(), 'l1', 'rsi'), 'l1', 'ema');
+  const off = removeIndicator(both, 'l1', 'rsi');
+  expect(off.panes).toHaveLength(1);
+  expect(hasIndicator(off, off.panes[0].layers[0], 'rsi')).toBe(false);
+  expect(hasIndicator(off, off.panes[0].layers[0], 'ema')).toBe(true);
+  expect(removeIndicator(off, 'l1', 'macd')).toBe(off);
 });

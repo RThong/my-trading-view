@@ -20,6 +20,7 @@ import {
   removeLayer,
   removeSeries,
   addIndicator,
+  removeIndicator,
   setIndicatorPeriods,
   setLayerCalc,
   setLayerColor,
@@ -126,6 +127,7 @@ export function useChartDoc() {
       edit('改画法', (d) => setLayerRender(d, layerId, render)),
     setCalc: (layerId: string, calc: Calc | undefined) => edit('改计算', (d) => setLayerCalc(d, layerId, calc)),
     addIndicator: (layerId: string, id: IndicatorId) => edit('加指标', (d) => addIndicator(d, layerId, id)),
+    removeIndicator: (layerId: string, id: IndicatorId) => edit('去掉指标', (d) => removeIndicator(d, layerId, id)),
     setPeriods: (layerId: string, periods: number[] | undefined) =>
       edit('改指标周期', (d) => setIndicatorPeriods(d, layerId, periods)),
     setInvert: (paneId: string, scaleId: string, invert: boolean) =>
