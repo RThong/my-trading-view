@@ -6,10 +6,20 @@ import { fmtDate, type LinePoint } from '../../chart/core';
 import type { ChartDoc } from './chartDoc';
 
 /** 各格绘图区顶边 + 绘图区左边(开了左轴时要让开刻度),相对图表容器的像素。 */
-export type LegendLayout = { tops: number[]; left: number };
+export type LegendLayout = {
+  tops: number[];
+  left: number;
+  /** 绘图区宽(不含两侧刻度):图例不超出它、不压到价格轴和侧栏 */
+  width: number;
+};
 
 function sameLayout(a: LegendLayout, b: LegendLayout) {
-  return a.left === b.left && a.tops.length === b.tops.length && a.tops.every((x, i) => x === b.tops[i]);
+  return (
+    a.left === b.left &&
+    a.width === b.width &&
+    a.tops.length === b.tops.length &&
+    a.tops.every((x, i) => x === b.tops[i])
+  );
 }
 
 export function useCrosshairLegend(
@@ -18,7 +28,7 @@ export function useCrosshairLegend(
   doc: ChartDoc,
 ) {
   const [hoverTime, setHoverTime] = useState<string | null>(null);
-  const [layout, setLayout] = useState<LegendLayout>({ tops: [], left: 0 });
+  const [layout, setLayout] = useState<LegendLayout>({ tops: [], left: 0, width: 0 });
 
   // 十字线日期
   useEffect(() => {
@@ -49,6 +59,7 @@ export function useCrosshairLegend(
         const next = {
           tops: chart.panes().map((p) => (p.getHTMLElement()?.getBoundingClientRect().top ?? base) - base),
           left: chart.priceScale('left').width(),
+          width: chart.timeScale().width(),
         };
         setLayout((prev) => (sameLayout(prev, next) ? prev : next));
       });
