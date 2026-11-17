@@ -14,6 +14,8 @@ import type { ChartDocActions } from '../hooks/useChartDoc';
 
 export type ScaleActions = Pick<ChartDocActions, 'setInvert' | 'setMode'>;
 
+/** 开关按钮选中时的样式(纵轴坐标按钮、指标页已加的指标共用) */
+export const ACTIVE = 'border-sky-600 bg-sky-600/20 text-sky-300 hover:bg-sky-600/30';
 export const LOCKED_TITLE = '叠加中由「叠加对比」设定,先取消叠加才能改';
 const NOT_POSITIVE = '这根轴上有 ≤0 的值(利率、利差常见),用不了:对数取不了,百分比拿第一个点当分母会爆掉或画反';
 export const NOT_POSITIVE_NOTE = '这根轴上有 ≤0 的值,暂按普通坐标显示';
@@ -99,7 +101,7 @@ function Toggle({ item, children }: { item: ScaleItem; children: ReactNode }) {
       title={item.title}
       disabled={item.disabled}
       aria-pressed={item.on}
-      className={item.on ? 'border-sky-600 bg-sky-600/20 text-sky-300 hover:bg-sky-600/30' : 'text-neutral-500'}
+      className={item.on ? ACTIVE : 'text-neutral-500'}
     >
       {children}
     </Button>

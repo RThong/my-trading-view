@@ -351,7 +351,7 @@ export function addLayer(doc: ChartDoc, series: string, color: string, render?: 
  */
 export function addIndicator(doc: ChartDoc, layerId: string, id: IndicatorId): ChartDoc {
   const src = findLayer(doc, layerId);
-  if (!src || !canAddIndicator(src.layer, id)) return doc;
+  if (!src || !canAddIndicator(src.layer, id) || hasIndicator(doc, src.layer, id)) return doc;
 
   const layer: Layer = {
     id: nextId(doc, 'l'),
@@ -390,6 +390,25 @@ export function canAddIndicator(l: Layer, id: IndicatorId): boolean {
   if (l.indicator || isMarkLayer(l) || l.render?.kind === 'volume') return false;
   if (id === 'volume' && !canVolume(l)) return false;
   return !(l.fit && INDICATORS[id].place === 'overlay');
+}
+
+/**
+ * 这条线已经加过这个指标了(按源序列 + 计算 + 平移认,振荡类在别的格也算):不再加第二层。
+ * EMA / RSI 一层就能写多个周期,改参数去那一层的「数据」页;布林带、MACD、成交量参数固定,两层就是画两遍一样的
+ */
+export function hasIndicator(doc: ChartDoc, l: Layer, id: IndicatorId): boolean {
+  return indicatorLayersOf(doc, l, id).length > 0;
+}
+
+function indicatorLayersOf(doc: ChartDoc, l: Layer, id: IndicatorId): Layer[] {
+  const key = (x: Layer) => JSON.stringify([x.series, x.calc ?? null, x.shift ?? 0]);
+  return doc.panes.flatMap((p) => p.layers.filter((o) => o.indicator?.id === id && key(o) === key(l)));
+}
+
+/** 去掉这条线的这个指标(指标页上再点一下已加的那项;旧存档里重复的几层一并去掉) */
+export function removeIndicator(doc: ChartDoc, layerId: string, id: IndicatorId): ChartDoc {
+  const src = findLayer(doc, layerId)?.layer;
+  return src ? indicatorLayersOf(doc, src, id).reduce((d, l) => removeLayer(d, l.id), doc) : doc;
 }
 
 /** 改指标的周期(EMA / RSI);undefined = 回到默认那组;周期非法(重复等)不改 */
