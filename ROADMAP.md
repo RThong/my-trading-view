@@ -305,6 +305,7 @@ TradingView
   - 工具：`search_series(query)` 搜注册表 → `get_series(id, from, to)` 取数 → `overlay(a, b, from, to)` 跑 `bestOverlay`（找偏移 + 自动选基准段 + 定比例），返回带 `shift` / `fit` 的 ChartDoc → `render_chart(doc)` 返回 PNG + 编辑器链接（点开可接着改）。
   - 已具备：叠加结果可序列化（图层的 `shift`、`fit` 存了基准段与 alpha / beta / r，渲染时不重算）；`chart/analysis.ts` 是纯函数，只引一个类型，搬到服务端即可跑。
   - 前置：① `chartDoc.ts` / `chart/analysis.ts` / `registry.ts` 搬到 `src/shared/`，服务端补一份按 id 取数（同 L1-1）；② URL 带 ChartDoc（L2-2）；③ 服务端出 PNG（Playwright 打开链接截图）；④ 包 MCP。③ + ④ 约 1 天。
+  - 进度（2026-11-17）：✅ ②③ 做完 —— `bun run render-chart doc.json out.png`（出图页 `/render#doc=…` + Playwright 无界面截，同编辑器「导出图片」一套代码；见设计文档「命令行出图」）。只在本机 Claude Code 里用的话到这里就够了，不需要 MCP。剩 ①（服务端搜序列 / 叠加）和 ④（包 MCP），等要在没有命令行的客户端（Claude Desktop 普通聊天、网页版）里出图再做。
   - 为何这次 MCP 值得：之前判 MCP 冗余（moomoo 自建 MCP 建过又删）是因为 Claude Code 有 Bash；这里的使用方是没有 Bash 的外部客户端。只在 Claude Code 内用的话，①②③ 加 curl 就够，不必包 MCP。
 - L2-7（P2）浅色主题下的数据线配色。明暗切换 2026-11-09 已做（暖白底，`hooks/theme.ts`），但画布上的序列色（ChartDoc 里写死的 color、`chart/palette.ts` 类别色、EMA 等指标色）只对深色底 `#0a0a0a` 校验过，亮黄 / 亮绿 / 青（`#fde047` `#facc15` `#a3e635` `#fbbf24` `#22d3ee` `#e9c444`，约 16 处，在利率 / 日本 / 通胀页与指标里）在暖白底上对比度 < 1.7:1，线很淡。做法：在渲染层按主题给序列色加一层映射（浅色时把过亮的色压暗），ChartDoc 里存的颜色不改；改完对暖白底跑一遍 dataviz 的 palette 校验。约 2 小时。
 - 边界：非时间轴的图不进 ChartDoc，包括 `YieldCurvePanel`（横轴是期限）、期权微笑和期限结构、`PolicyPathPanel`、各种表格。等真出现第二种横轴的需求再扩展。
@@ -493,7 +494,7 @@ TradingView
 - L2-1 第 7 项剩下的 两条线之间填色 → **放到类似 Pine 的定义里做**（TV 也只在 Pine 的 `fill()` 里有，图表界面没有入口；按条件换色更是脚本才能做），不单独做
 - L2-5 剩下的 图表叙述；画线逐条置顶 / 置底 → 独立、小，随时可插
 - L2-7 浅色主题序列色 → **不单独修**，并入以后的配色整体设计
-- L2-6 MCP 出图 → 往后放（约 1 天以上，前置 L2-2 的 URL）
+- L2-6 MCP 出图 → 往后放；✅ 2026-11-17 已有命令行出图（`bun run render-chart`），剩服务端搜序列 / 叠加和包 MCP，等要在没有命令行的客户端里用再做
 
 **判断与复盘（L5 / L6，按需挑）**
 - L5-1 视角读法入口（先在知识库写框架页）· L5-2 流动性阶梯（前置 L4-1）· L5-4 事件日历（先找未来日程的免费源）
