@@ -1,5 +1,5 @@
 /**
- * Bitstamp BTC/USD 日 OHLC —— BTC 现货日线的主源(全段,见 jobs/btcPrice 为什么选它)。
+ * Bitstamp BTC/USD 日 OHLC —— BTC 现货日线的唯一源(全段,读时现拉,见 live/market 为什么选它)。
  * 现货、原生 UTC 0 点切日;2011-08 开市至今连续(2012 起实测零缺口、含周末),
  * 免 key 公开 REST,是免费源里回溯最长的那个(Yahoo BTC-USD 只到 2014-09)。
  *
@@ -55,8 +55,7 @@ export async function fetchBitstampBtcDaily(startDate: string, endDate: string):
   const bars = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
 
   // 完整性校验:首尾各补一个哨兵,一次把「头缺 / 中间缺 / 尾巴被截」三种洞都查掉。
-  // 带洞就整次抛(调用方降级 Yahoo,下次重来)—— 调用方从库里**最新**那天续抓,
-  // 带洞的结果一旦落库,最新日期就越过了洞,那个洞就再也没人补。
+  // 带洞就整次抛(调用方沿用上一份完整结果,下次重来)—— 别把带洞的整段当完整的发出去。
   const marks = [startDate, ...bars.map((b) => b.date), endDate];
   const holes = marks.slice(1).filter((d, i) => dayGap(marks[i], d) > MAX_GAP_DAYS);
   if (holes.length > 0) {

@@ -15,7 +15,7 @@
 #     实测踩过(2026-08-04):这里曾 `exit 1`,OpenD 连崩三天 → MOVE / AI CDS / eris /
 #     VX 也停了三天,而 MOVE 是快照型、漏一天永久缺一格。
 #     ⚠ 期权组照旧会失败(快照型,当天不记就永久丢),本脚本救不了。
-#       VRP 输入不受影响:ETF 现货只走 Yahoo、不连 OpenD(见 vrpInputs.ts)。
+#       VRP 不受影响:ETF 现货读时现拉 Yahoo、不连 OpenD(见 live/market.ts)。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

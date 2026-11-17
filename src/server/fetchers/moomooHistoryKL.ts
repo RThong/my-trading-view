@@ -1,6 +1,6 @@
 /**
  * moomoo 行情侧的小工具:US 交易日历(fetchUsTradingDates)+ 日线 OHLC 类型 Bar(全站单一真源)。
- * ⚠️ ETF 现货日线**不走 moomoo**(主源且唯一源 Yahoo close,见 jobs/vrpInputs),试过的坑:
+ * ⚠️ ETF 现货日线**不走 moomoo**(主源且唯一源 Yahoo close,见 live/market),试过的坑:
  *   - 前复权(rehab=1)每次除息整段改写历史,增量入库拼出两套基准(2026-09 实测 SPY 06-22 前后差 0.25%,09-16 单日毛刺);
  *   - 不复权(rehab=0)连拆股都不调(USO 2020-04-29 合股:2.13 → 18.00),不能回填;
  *   - 高 / 低价偶含场外离谱成交(QQQ 2019-12-03 低 193.78,实际 ~199.2)。

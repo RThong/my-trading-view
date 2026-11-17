@@ -66,6 +66,8 @@ import {
   shouldCache,
 } from './regimePolicy';
 import { toOhlc, readDbBacked, readSecSeries } from './regimeDb';
+import { btcSupplyDensity, btcValuation, closedBars, spotBars, volIndex, type Live } from '../live/market';
+import { rollingSharpe } from '../analytics/sharpe';
 import type { OhlcBar } from './regimeKeys';
 
 // stale-while-revalidate(见 swrCache):有旧值先回、过期后台刷新,单个慢源(EIA 偶发卡 40s)不再拖住整页。
@@ -116,6 +118,16 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     fetchCboeIndexAsQuotes({ cboeSymbol: sym, storedSymbol: sym }).then((rows) =>
       rows.map((r) => ({ date: r.tradeDate, value: r.close })),
     );
+  // regime 自己缓存 6h:live/market 的 1h 缓存不能再叠一层,每次刷新都要求重拉(并发合并),
+  // VIX 也才能和每次现拉的 VIX3M / VIXEQ 同频(否则内连接丢当天那根)
+  const FRESH = { fresh: true };
+  // live/market 这次没拉到新的、回的是上一份 → 对应的对外键标「沿用上次」,整份结果只短缓存(见 complete)
+  const liveStale: string[] = [];
+  const track = <T>(keys: SeriesKey[], p: Promise<Live<T>>): Promise<T> =>
+    p.then((r) => {
+      if (r.stale) liveStale.push(...keys);
+      return r.value;
+    });
 
   // 并行拉全部原始源。key 为内部名,后面映射到对外序列名。
   const src = {
@@ -162,11 +174,11 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     // 2161 日)两者相关 0.876、**9.5% 的交易日符号相反**,互相替代会读反。
     vix3m: cboeSeries('VIX3M'),
     vix6m: cboeSeries('VIX6M'),
-    // 即期期限结构价差的近端腿。**刻意不复用库里那条 VIX**:库里的由 daily job 维护
-    // (vrpInputs 拓的,同样是 CBOE 收盘价 —— 数值完全相同),但 job 没跑那天它会停在昨天,
-    // 而远端腿是实时的 → 内连接会把当天那根整根丢掉,恰好是最该看的一根。
-    // 两腿同源同频才永远齐;代价只是多一次 HTTP。
-    vixSpot: cboeSeries('VIX'),
+    // VIX(即期期限结构价差的近端腿,也直接对外发 vix)/ VXN / SKEW:原先由 vrp_inputs 组写库,
+    // 2026-11-17 起改现拉,与 /api/price、/api/vrp 共用 live/market 的缓存(与库里逐日相等)
+    vixSpot: track(['vix', 'vixSpot'], volIndex('VIX', FRESH)),
+    vxn: track(['vxn'], volIndex('VXN', FRESH)),
+    skew: track(['skew'], volIndex('SKEW', FRESH)),
     rxm: cboeSeries('RXM'),
     spx: cboeSeries('SPX'),
     fng: fetchFearGreed(),
@@ -218,6 +230,14 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const gexP = fetchGex().catch(warnNull('Squeezemetrics GEX'));
   // Binance 现货 BTCUSDT 日成交额(2017-08 起,每页 1000 天,4 个并发请求)
   const btcVolumeP = fetchBtcVolume().catch(warnNull('Binance BTC 成交额'));
+  // QQQ / BTC 现货与 BRK 链上:原先由 job 落库,改现拉(live/market 自带缓存,与 /api/price、/api/vrp 共用一份)
+  const qqqBarsP = track(['qqq'], spotBars('QQQ', FRESH)).catch(warnNull('Yahoo QQQ'));
+  const btcBarsP = track(['btc', 'weekendFlag'], spotBars('BTC', FRESH)).catch(warnNull('BTC 现货'));
+  const btcClosedP = track(['btcSharpe1y'], closedBars('BTC', FRESH)).catch(warnNull('BTC 现货(已收盘)'));
+  const densityP = track(['btcSupplyDensity', 'btcSupplyDensityRaw'], btcSupplyDensity(FRESH)).catch(
+    warnNull('BRK 供应密度'),
+  );
+  const valuationP = track(['btcMvrv', 'btcAviv'], btcValuation(FRESH)).catch(warnNull('BRK 链上估值'));
   // VIX 期货持仓(TFF):波动率的 **positioning** 轴,和上面 VIX / 期限结构那组 **pricing** 轴互补。
   // 一次请求出两类(Asset Manager / Leveraged Money),别拆成两次。
   const vixCotP = fetchCftcVixNetOi('2018-01-01').catch(() => null);
@@ -339,6 +359,11 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     cflmi: cflmiP,
     gex: gexP,
     btcVolume: btcVolumeP,
+    qqqBars: qqqBarsP,
+    btcBars: btcBarsP,
+    btcClosed: btcClosedP,
+    density: densityP,
+    valuation: valuationP,
     vixCot: vixCotP,
     bojGap: bojGapP,
     nakajima: nakajimaP,
@@ -392,6 +417,13 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const cflmi = await cflmiP;
   const gex = await gexP;
   const btcVolume = await btcVolumeP;
+  const [qqqBars, btcBars, btcClosed, densityRaw, valuation] = await Promise.all([
+    qqqBarsP,
+    btcBarsP,
+    btcClosedP,
+    densityP,
+    valuationP,
+  ]);
   const [coreCpi, corePce] = await coreInflP;
   const [
     refUtil,
@@ -451,9 +483,12 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     iorb: 'iorb',
     vix3m: 'vix3m',
     rxm: 'rxm',
-    // 现拉的 CBOE VIX(与库里那条 vix 同值,但当天收盘一出就有,不等 daily job):VIX − VIX3M、VIXEQ / VIX
-    // 这类与现拉腿内连接的计算要用它,否则 job 没跑时当天那根会被整根丢掉(见上面 src.vixSpot 的注释)
+    // 现拉的 CBOE VIX:VIX − VIX3M、VIXEQ / VIX 这类内连接的近端腿(同频要求见上面 FRESH 的注释);
+    // 对外的 vix 也是同一条
     vixSpot: 'vixSpot',
+    vix: 'vixSpot',
+    vxn: 'vxn',
+    skew: 'skew',
   };
   // 空数组归 unavailable 由 put 统一兜(见其注释),这里直接传。
   // Object.entries 会把 key 拓宽回 string,这里断言回来 —— 真正的校验发生在上面的对象字面量。
@@ -664,6 +699,46 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     if (b?.length) ohlc[key] = toOhlc(b.map((x) => ({ ...x, date: x.tradeDate })));
   });
 
+  // QQQ 现货:波动率与情绪两个视角的价格参照 —— 那些指标只有对着价格才读得出「背离还是同步」。
+  // close 进 series 管存在性,OHLC 进 ohlc 画蜡烛。截到 HISTORY_START_DATE:ETF 拉到了上市日(给 K 线均线收敛用),
+  // 这两个视角的其它序列多从 2018 起,不截会把整张图的时间轴拉回 1999。
+  const qqq2018 = (qqqBars ?? []).filter((b) => b.date >= HISTORY_START_DATE);
+  put(
+    'qqq',
+    qqq2018.map((b) => ({ date: b.date, value: b.close })),
+  );
+  if (qqq2018.length) ohlc.qqq = toOhlc(qqq2018);
+
+  // BTC:现货蜡烛 + 1Y 滚动夏普。窗口 365 而非 252 —— crypto 每天都有数据点,「一年」就是 365 个点;
+  // 年化同走 √365(与 VRP 的 BTC 腿同口径,见 analytics/vrp)。蜡烛带上当天盘中那根(看盘要);夏普只用已收盘的。
+  // 不走 put:close 再塞一份进 series 是 ~196KB 的纯冗余,存在性直接由 ohlc 判。
+  if (btcBars?.length) ohlc.btc = toOhlc(btcBars);
+  else unavailable.push('btc');
+  put(
+    'btcSharpe1y',
+    btcClosed
+      ? rollingSharpe(
+          btcClosed.map((b) => ({ date: b.date, value: b.close })),
+          365,
+          365,
+        )
+      : undefined,
+  );
+  // 周末标记(周六 / 周日 = 1,其余 0),日期取 BTC 日线自己的:BTC 各格画灰色背景带
+  put(
+    'weekendFlag',
+    (btcBars ?? []).map((b) => ({
+      date: b.date,
+      value: [0, 6].includes(new Date(`${b.date}T00:00:00Z`).getUTCDay()) ? 1 : 0,
+    })),
+  );
+  // 供应密度:对外发 7 日均线 —— 原始值单日能跳 10pp,Murphy 原图那条就是 7 日均线
+  put('btcSupplyDensity', densityRaw ? rollingMean(densityRaw, 7) : undefined);
+  put('btcSupplyDensityRaw', densityRaw ?? undefined);
+  // 链上估值:BRK 现成比值,不派生
+  put('btcMvrv', valuation?.mvrv);
+  put('btcAviv', valuation?.aviv);
+
   // 派生:分量齐才算,缺则整条进 unavailable。净流动性只出周三点、RRP 单位换算,均见 netLiquidityWeekly。
   put(
     'netLiquidity',
@@ -757,12 +832,10 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
 
   const { sofrLive, fallback: sofrFallback } = resolveSofr(raw.sofr, prev?.sofrLive);
 
-  // VIX / VXN 已在库里(market_series,daily job 维护)→ 直接读,不外拉。
   const db = openDb();
   try {
     const dbBacked = readDbBacked(db, raw.move ?? [], sofrLive, raw.hyOas ?? []);
     Object.assign(series, dbBacked.series);
-    Object.assign(ohlc, dbBacked.ohlc);
     unavailable.push(...dbBacked.unavailable);
 
     const spotTerm = nearMinusFar({ near: raw.vixSpot ?? [], far: raw.vix3m ?? [] });
@@ -788,11 +861,13 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 没配 key 时 EIA 那 14 条恒缺 —— 与 SEC/GPU 同属「必然缺」,不能让它把缓存永久关掉。
   // 配了 key 才缺则是真失败(网络/源结构变了),照旧挡住缓存等下次重试。
   const complete =
-    shouldCache(unavailable, { hasEiaKey: Boolean(eiaKey), hasEstatKey: Boolean(estatKey) }) && !jgbVix?.degraded;
+    shouldCache(unavailable, { hasEiaKey: Boolean(eiaKey), hasEstatKey: Boolean(estatKey) }) &&
+    !jgbVix?.degraded &&
+    !liveStale.length;
   const filled = complete ? fresh : fillFromPrev(fresh, prev?.body);
   // 加息次数是库读派生量、不经 fillFromPrev,但基准沿用了上一份 SOFR → 同样标「沿用上次」。
   // JGB VIX 单源降级时历史沿用了上一份,同样标「沿用上次」
-  const extraFallback = [...sofrFallback, ...(jgb.usedPrev ? ['jgbVix'] : [])];
+  const extraFallback = [...sofrFallback, ...(jgb.usedPrev ? ['jgbVix'] : []), ...liveStale];
   const body = extraFallback.length ? { ...filled, fallback: [...(filled.fallback ?? []), ...extraFallback] } : filled;
 
   // 全部源都打(按耗时降序),一行:定位慢源要看到每一个,不只最慢几个。

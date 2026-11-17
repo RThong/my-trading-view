@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
-import { openDb } from '../storage/db';
-import { getMarketSeries, getPriceBars } from '../storage/repository';
+import { closedBars, volIndex } from '../live/market';
 import { realizedVol, computeVrp } from '../analytics/vrp';
 import { vrpRecipes } from '../../shared/marketCatalog';
 
@@ -8,21 +7,21 @@ import { vrpRecipes } from '../../shared/marketCatalog';
 // periodsPerYear:美股 ETF/指数一律 252(USO 是 NYSE 时段 ETF,也 252);只有 BTC(24/7)用 365。
 const RECIPE = vrpRecipes();
 
-export const vrpRoute = new Hono().get('/:underlying', (c) => {
+export const vrpRoute = new Hono().get('/:underlying', async (c) => {
   const u = c.req.param('underlying').toUpperCase();
   const r = RECIPE[u];
   if (!r) return c.json({ error: `no VRP recipe for: ${u}` }, 400);
 
-  const db = openDb();
   try {
-    const iv = getMarketSeries(db, r.iv); // 隐含腿:波动率指数
+    // 隐含腿:波动率指数;RV 腿:标的现货 close,只用已收盘的 bar(BTC 当天盘中那根会把短窗 RV 拉低)
+    const [iv, bars] = await Promise.all([volIndex(r.iv), closedBars(r.spot)]);
     const rv = realizedVol(
-      getPriceBars(db, r.spot, { closedOnly: true }).map((b) => ({ date: b.date, value: b.close })),
+      bars.value.map((b) => ({ date: b.date, value: b.close })),
       r.window,
       r.periodsPerYear,
-    ); // RV 腿:标的现货 close,只用已收盘的 bar(BTC 当天盘中那根会把短窗 RV 拉低)
-    return c.json(computeVrp(iv, rv));
-  } finally {
-    db.close();
+    );
+    return c.json(computeVrp(iv.value, rv));
+  } catch (e) {
+    return c.json({ error: `VRP 取数失败: ${(e as Error).message}` }, 502);
   }
 });

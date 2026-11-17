@@ -93,77 +93,7 @@ export function getEarliestMarketDate(db: Database, seriesId: string): string | 
   return row?.d ?? null;
 }
 
-// ── price_eod(标的日 OHLC:现货蜡烛图 + VRP 的 RV 腿来源)──────────────────────
-
-export type PriceEodRow = {
-  underlying: string;
-  obsDate: string;
-  open: number | null;
-  high: number | null;
-  low: number | null;
-  close: number;
-  source: string;
-};
-
-export function insertPriceEod(db: Database, rows: PriceEodRow[]): void {
-  bulkUpsert(
-    db,
-    `
-    INSERT INTO price_eod (underlying, obs_date, open, high, low, close, source, fetched_at)
-    VALUES ($u, $d, $o, $h, $l, $c, $src, $f)
-    ON CONFLICT(underlying, obs_date) DO UPDATE SET
-      open=excluded.open, high=excluded.high, low=excluded.low, close=excluded.close,
-      source=excluded.source, fetched_at=excluded.fetched_at
-  `,
-    rows,
-    (r, f) => ({
-      $u: r.underlying,
-      $d: r.obsDate,
-      $o: r.open,
-      $h: r.high,
-      $l: r.low,
-      $c: r.close,
-      $src: r.source,
-      $f: f,
-    }),
-  );
-}
-
-/**
- * 现货蜡烛图用:OHLC bars,升序。
- * closedOnly:只要「抓取时那天已过完」的 bar(fetched_at 已到 obs_date 的次日 UTC)。
- * BTC 当天那根是盘中快照(见 jobs/btcPrice,下次运行才覆盖成收盘值),算 RV / 夏普时混进去,
- * 最后一个收益只有几小时的波动,短窗口 RV 系统性偏低(2026-10-21 实测 RV7 12.7 vs 19.0)。
- * 按 fetched_at 判而不按「早于今天」:停机几天时盘中值会留到下次运行,按日期判会把它当收盘值。
- * 代价:ETF 若在美股收盘后、同一 UTC 日内手动抓,当天那根要等下次运行才算进来(daily 定时都在次日 UTC)。
- */
-export function getPriceBars(
-  db: Database,
-  underlying: string,
-  opts?: { closedOnly?: boolean },
-): Array<{ date: string; open: number | null; high: number | null; low: number | null; close: number }> {
-  return db
-    .query(`
-    SELECT obs_date AS date, open, high, low, close FROM price_eod
-    WHERE underlying = $u AND ($closed = 0 OR fetched_at >= date(obs_date, '+1 day'))
-    ORDER BY obs_date ASC
-  `)
-    .all({ $u: underlying, $closed: opts?.closedOnly ? 1 : 0 }) as Array<{
-    date: string;
-    open: number | null;
-    high: number | null;
-    low: number | null;
-    close: number;
-  }>;
-}
-
-/** 已存最新的一天;给了 source 则只看该来源的行(BTC 用它跳过 Yahoo 降级写进来的行,见 jobs/btcPrice)。 */
-export function getLatestPriceDate(db: Database, underlying: string, source?: string): string | null {
-  const row = db
-    .query(`SELECT MAX(obs_date) AS d FROM price_eod WHERE underlying = $u AND ($s IS NULL OR source = $s)`)
-    .get({ $u: underlying, $s: source ?? null }) as { d: string | null };
-  return row?.d ?? null;
-}
+// price_eod 表(2026-11-17 前的 ETF / VIX / BTC 现货)已改读时现拉(server/live/market),旧行留在库里、不再读写。
 
 // ── job_run ───────────────────────────────────────────────────────────────────
 

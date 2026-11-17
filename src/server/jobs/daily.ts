@@ -8,17 +8,14 @@ import {
   startJobRun,
   finishJobRun,
   getTodaySucceededJobs,
-  getLatestPriceDate,
   getLatestMarketDate,
   type FinishParams,
 } from '../storage/repository';
-import { priceLegUnderlyings } from '../../shared/marketCatalog';
 import { lastClosedTradingDate } from './tradingCalendar';
 import { OPTIONS_UNDERLYINGS } from '../config';
 import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
 import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
 import { createCboeOptionsClient } from '../fetchers/cboeOptions';
-import { updateVrpInputs } from './vrpInputs';
 import { updateVxTermStructure } from './vxTermStructure';
 import { updateErisSnapshot } from './erisSnapshot';
 import { updateIceCds, ingestArchivedIce } from './iceCdsSnapshot';
@@ -31,7 +28,6 @@ import { updateCreditSpreads } from './creditSpreadSnapshot';
 import { updateMoveIndex, type MoveUpdateResult } from './moveSnapshot';
 import { updateIsm, type IsmResult } from './ismSnapshot';
 import { updatePutCall, PUT_CALL_SERIES, type PutCallResult } from './putCallSnapshot';
-import type { SupplyDensityResult } from './supplyDensitySnapshot';
 
 // 认沽认购比的新鲜度探针:三条同一页同一时刻写,看个股那条就够
 const PUT_CALL_PROBE = PUT_CALL_SERIES.equity;
@@ -48,12 +44,8 @@ type RunDailyJobOpts = {
   /** Deribit 加密期权标的(如 ['BTC'])。需配合 cryptoOptionsClient 使用。 */
   cryptoOptionsUnderlyings?: string[];
   cryptoOptionsClient?: OptionsChainClient;
-  /** VRP 输入序列更新器(注入式;CLI 传 updateVrpInputs,测试省略以免联网)。 */
-  vrpInputsUpdater?: (db: Database) => Promise<{ total: number; succeeded: number; failures: string[] }>;
   /** VX 期限结构(VX1/VX3)更新器(注入式;CLI 传 updateVxTermStructure,测试省略以免联网)。 */
   vxUpdater?: (db: Database) => Promise<{ total: number }>;
-  /** BTC 现货日 bar 更新器(注入式;cryptoDaily 传 updateBtcPrice,测试省略以免联网)。返回写入行数。 */
-  btcPriceUpdater?: (db: Database) => Promise<number>;
   /** Eris SOFR OIS 曲线更新器(注入式;CLI 传 updateErisSnapshot,测试省略以免联网)。 */
   erisUpdater?: (db: Database) => Promise<{ total: number }>;
   /** ICE 单名 CDS(AI 巨头 + 甲骨文)更新器(注入式;CLI 传 updateIceCds,测试省略以免联网)。 */
@@ -74,8 +66,6 @@ type RunDailyJobOpts = {
   putCallUpdater?: (db: Database) => Promise<PutCallResult>;
   /** Computable GPU Index(H100/H200/B200/B300 算力租赁价)更新器(注入式;cryptoDaily 传 updateComputableGpu,测试省略以免联网)。 */
   computableGpuUpdater?: (db: Database) => Promise<{ total: number; missing: string[]; errors: string[] }>;
-  /** BTC ±5% 已实现供应密度(BRK supply_density 序列)更新器(注入式;cryptoDaily 传 updateSupplyDensity,测试省略以免联网)。 */
-  supplyDensityUpdater?: (db: Database) => Promise<SupplyDensityResult>;
 };
 
 /** 包一次 job_run:开跑 → 按 fn 结果落终态;fn 抛异常记 failed。所有分组共用,免去 4 处重复 try/catch。 */
@@ -155,16 +145,6 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       opts.cryptoOptionsUnderlyings,
       opts.cryptoOptionsClient,
     );
-  }
-
-  // vrp_inputs 分组:各 VRP 配方的隐含腿(VIX/VXN/GVZ/OVX/VXTLT/BITVX/DVOL,增量)+ VVIX/SKEW,与 ETF 现货 RV 腿
-  // (SPY/QQQ/GLD/USO/TLT/IBIT/NOBL,Yahoo 每轮全量重拉;BTC 现货在 crypto job)。
-  // 每源独立容错:全成功 → success,部分源失败 → partial,全失败 → failed。
-  if (opts.vrpInputsUpdater) {
-    await withJobRun(opts.db, 'vrp_inputs', async () => {
-      const { total, succeeded, failures } = await opts.vrpInputsUpdater!(opts.db);
-      return threeState(total, succeeded, failures);
-    });
   }
 
   // vx_term_structure 分组:增量更新 VX1/VX3 期货序列(单一 CBOE 源,成功/失败两态)。
@@ -304,29 +284,6 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       return threeState(written, fetched.length, failed);
     });
   }
-
-  // btc_price 分组:BTC 现货日 bar(Bitstamp 主源 / Yahoo 降级;成功/失败两态)。
-  if (opts.btcPriceUpdater) {
-    await withJobRun(opts.db, 'btc_price', async () => {
-      const total = await opts.btcPriceUpdater!(opts.db);
-      return { status: 'success', recordsWritten: total };
-    });
-  }
-
-  // btc_supply_density 分组:BTC ±5% 已实现供应密度(BRK 现成序列,一次请求全段覆盖写)。
-  // 停更(源最新日期 >3 天不前进)只挂告警文案、仍记 success:停更不会自愈,记 failed 也不会让它好起来。
-  if (opts.supplyDensityUpdater) {
-    await withJobRun(opts.db, 'btc_supply_density', async () => {
-      const { written, latest, stale } = await opts.supplyDensityUpdater!(opts.db);
-      if (!written) return { status: 'failed', error: 'BRK supply_density 2012 起一个点都没有' };
-
-      return {
-        status: 'success',
-        recordsWritten: written,
-        ...(stale && { error: `告警:BRK supply_density 疑似停更(源最新 ${latest})` }),
-      };
-    });
-  }
 }
 
 /** 组名(= job_run.job_name)→ 该组在 runDailyJob 里的注入参数。函数形式:没轮到的组不构造客户端。 */
@@ -346,14 +303,13 @@ export function pendingGroups(groups: string[], succeededToday: string[], force:
  * 守卫放行跳过还要求数据**真到了上一交易日**,只看「当天 success 过」不够:数据源会晚发布。
  * 2026-10-20 实测:美东 20:08 跑,Yahoo 长历史日线与 CBOE 都还没有 10-19 那根,两组照样报 success
  * → 当天其余触发点全被跳过,面板停在上周五。
- * 探针 = ETF 现货 + VIX(都是 vrp_inputs 写进 price_eod)+ VX1(vx_term_structure 写进 market_series,
- * 它是另一条 CBOE 链路,ETF/VIX 到了不代表 VX 期货结算到了)+ Cboe 认沽认购比(put_call,日统计页晚于收盘才发)。
- * 节假日 lastClosedTradingDate 不认交易所假日 → 恒判滞后 → 这三组当天每个触发点多跑一遍(几十秒,接受)。
+ * 探针 = VX1(vx_term_structure 写进 market_series)+ Cboe 认沽认购比(put_call,日统计页晚于收盘才发)。
+ * (ETF 现货与 VIX 原先也是探针,2026-11-17 起改读时现拉、不再落库,没有要补跑的组了。)
+ * 节假日 lastClosedTradingDate 不认交易所假日 → 恒判滞后 → 这两组当天每个触发点多跑一遍(几十秒,接受)。
  * VX 期货结算偶尔比 VIX 晚一天:那天同理多跑几遍,直到 VX1 到位。
  */
 export function staleFreshnessProbes(db: Database, lastClosed = lastClosedTradingDate()): string[] {
   const latest: [string, string | null][] = [
-    ...[...priceLegUnderlyings(), 'VIX'].map((u): [string, string | null] => [u, getLatestPriceDate(db, u)]),
     ['VX1', getLatestMarketDate(db, 'VX1')],
     [PUT_CALL_PROBE, getLatestMarketDate(db, PUT_CALL_PROBE)],
   ];
@@ -361,12 +317,12 @@ export function staleFreshnessProbes(db: Database, lastClosed = lastClosedTradin
   return latest.filter(([, d]) => (d ?? '') < lastClosed).map(([name]) => name);
 }
 
-// 不是 price_eod 的探针 → 写它的那一组;其余(ETF / VIX)归 vrp_inputs
+// 滞后探针 → 写它的那一组
 const PROBE_GROUP: Record<string, string> = { VX1: 'vx_term_structure', [PUT_CALL_PROBE]: 'put_call' };
 
 /** 滞后探针 → 写它的那一组(见 staleFreshnessProbes)。 */
 export function groupsForStaleProbes(stale: string[]): string[] {
-  return [...new Set(stale.map((p) => PROBE_GROUP[p] ?? 'vrp_inputs'))];
+  return [...new Set(stale.map((p) => PROBE_GROUP[p]))];
 }
 
 /** daily / cryptoDaily 两个 CLI 共用:挑出今天还没成功的组(加上 force)跑一轮,全绿就跳过。返回本轮跑的组。 */
@@ -384,7 +340,6 @@ export async function runPendingGroups(db: Database, table: GroupTable, force: s
 
 const DAILY_GROUPS: GroupTable = {
   options: () => ({ optionsUnderlyings: OPTIONS_UNDERLYINGS, optionsClient: defaultMoomooOptionsClient() }),
-  vrp_inputs: () => ({ vrpInputsUpdater: updateVrpInputs }),
   vx_term_structure: () => ({ vxUpdater: updateVxTermStructure }),
   eris_snapshot: () => ({ erisUpdater: updateErisSnapshot }),
   options_cboe: () => ({ cboeOptionsClient: createCboeOptionsClient(), archiveRuns: syncedArchiveRuns }),

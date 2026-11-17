@@ -1,16 +1,16 @@
 import type { Database } from 'bun:sqlite';
 import { gunzipSync } from 'node:zlib';
 import { openDb, migrate } from '../storage/db';
-import { getPriceBars } from '../storage/repository';
+import { closedBars } from '../live/market';
 import { OPTIONS_UNDERLYINGS } from '../config';
 import type { OptionContract } from './optionsSnapshot';
 
 /**
  * 切换 CBOE 主源前的验收(见 docs/options-cboe-switch.md)。只读。
  *   bun run src/server/jobs/compareOptionsSources.ts
- * 只看最近 WINDOW 个并行日,逐标的。并行日 = 并行开始(首个 `@cboe` 日)以来 SPY 日线(price_eod)有收盘的交易日 ——
+ * 只看最近 WINDOW 个并行日,逐标的。并行日 = 并行开始(首个 `@cboe` 日)以来 SPY 日线有收盘的交易日 ——
  * 交易日要取自独立的源:只认 CBOE 有数据的日子,它整轮失败那天会从「并行日」里消失;认 moomoo 的,OpenD 挂了(常态)
- * 又会和 CBOE 同时缺而查不出。SPY 日线由 vrp_inputs 走 Yahoo 写,不依赖任何一边。
+ * 又会和 CBOE 同时缺而查不出。SPY 日线现拉 Yahoo(见 live/market),不依赖任何一边。
  *  · 每天都要有 CBOE 的行(缺一天 = ❌,抓取有问题)
  *  · ETF / TLT:skew 与 moomoo 差的**中位数**在线内(个别日子超线不卡 —— 翼上流动性薄的标的单日会跳);
  *    moomoo 个别天没数只标注;窗口里一天都对照不上 = 无法验收,判失败
@@ -64,7 +64,8 @@ function vixCheck(db: Database, date: string): { ok: boolean; line: string } {
   };
 }
 
-export function compareOptionsSources(db: Database): { lines: string[]; pass: boolean } {
+/** spyDays:SPY 已收盘的交易日(升序),由调用方现拉传入,本函数只读库。 */
+export function compareOptionsSources(db: Database, spyDays: string[]): { lines: string[]; pass: boolean } {
   const all = db
     .query(`SELECT underlying, snapshot_date, skew FROM option_snapshot_25delta WHERE snapshot_date >= '2026-11-13'`)
     .all() as Row[];
@@ -74,10 +75,7 @@ export function compareOptionsSources(db: Database): { lines: string[]; pass: bo
       .filter((r) => r.underlying.endsWith('@cboe'))
       .map((r) => r.snapshot_date)
       .sort()[0] ?? '9999';
-  const days = getPriceBars(db, 'SPY', { closedOnly: true })
-    .map((b) => b.date)
-    .filter((d) => d >= start)
-    .slice(-WINDOW);
+  const days = spyDays.filter((d) => d >= start).slice(-WINDOW);
 
   const perUnderlying = OPTIONS_UNDERLYINGS.map((u) => {
     const missing = days.filter((d) => !skew.has(`${u}@cboe|${d}`));
@@ -118,7 +116,10 @@ export function compareOptionsSources(db: Database): { lines: string[]; pass: bo
 if (import.meta.main) {
   const db = openDb();
   migrate(db);
-  const r = compareOptionsSources(db);
+  const r = compareOptionsSources(
+    db,
+    (await closedBars('SPY')).value.map((b) => b.date),
+  );
   db.close();
   r.lines.forEach((l) => {
     console.log(l);
