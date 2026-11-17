@@ -30,12 +30,18 @@ export type AlertRule = {
   levels?: RuleLevel[];
   /**
    * 滞后带:从越线区间回到「常态」要越过切点多少才算(防贴线来回切换)。
-   * 分位规则按分位点数(默认 5:P5 进、P10 才出);levels 规则按原单位(默认 0,初值见各条,回家看历史切换次数再调)
+   * 分位规则按分位点数(默认 5:P5 进、P10 才出);levels 规则按原单位(默认 0,各条见下)。
+   * 2026-11-17 用全量库校准:全段历史按不同宽度逐日重放,数「回到常态 5 个点内又反弹回去」的来回抖;
+   * 分位默认 5 合适(再宽非常态天数涨 30~50%),levels 里偏窄的几条加宽到约一个单点波动
    */
   exitPad?: number;
   /** 常态区间的下标(区间从低到高编号 0..切点数);默认:两个切点 = 1(中间),其余 = 0(最低那段) */
   neutral?: number;
-  /** 连续几天落在新区间才算切换(默认 1 = 当天就切) */
+  /**
+   * 连续几天落在新区间才算切换(默认 1 = 当天就切)。2026-11-17 校准:加宽滞后带后仍来回抖 ≥7 次的
+   * (认沽认购比、VIX 期货持仓、零售加价、出口季节 z 等本身跳得厉害)设 2 —— 抖动降到 0~5 次、
+   * 非常态天数不增反减(只冒一个点就回去的假越线被滤掉),代价是进入晚一个点(日频 1 天、周频 1 周)
+   */
   confirmDays?: number;
 };
 
@@ -97,16 +103,28 @@ export const ALERT_RULES = [
   pctl('vxn', 'vol', 'VXN 纳指波动率分位(低 = 自满)', one('vxn'), 'low'),
   pctl('vixeq', 'vol', '成分股波动率 VIXEQ 分位(低 = 自满)', one('vixeq'), 'low'),
   pctl('vix6m', 'vol', 'VIX6M 分位(低 = 自满)', one('vix6m'), 'low'),
-  pctl('skew', 'vol', 'SKEW 分位(高 = 尾部保护被抢贵)', one('skew'), 'high'),
-  pctl('vixCotLm', 'vol', 'VIX 期货杠杆资金净持仓分位(极端净空 = 卖波动拥挤)', one('vixCotLm'), 'low'),
-  pctl('vixCotAm', 'vol', 'VIX 期货资管净持仓分位(方向不定)', one('vixCotAm')),
+  pctl('skew', 'vol', 'SKEW 分位(高 = 尾部保护被抢贵)', one('skew'), 'high', { version: 2, confirmDays: 2 }),
+  pctl('vixCotLm', 'vol', 'VIX 期货杠杆资金净持仓分位(极端净空 = 卖波动拥挤)', one('vixCotLm'), 'low', {
+    version: 2,
+    confirmDays: 2,
+  }),
+  pctl('vixCotAm', 'vol', 'VIX 期货资管净持仓分位(方向不定)', one('vixCotAm'), undefined, {
+    version: 2,
+    confirmDays: 2,
+  }),
   // 情绪
   pctl('fng', 'sentiment', 'CNN Fear & Greed 分位(高 = 贪婪)', one('fng'), 'high'),
-  pctl('cor1m', 'sentiment', '隐含相关性 COR1M 分位(低 = 压扁)', one('cor1m'), 'low'),
+  pctl('cor1m', 'sentiment', '隐含相关性 COR1M 分位(低 = 压扁)', one('cor1m'), 'low', { version: 2, confirmDays: 2 }),
   pctl('cor3m', 'sentiment', '隐含相关性 COR3M 分位(低 = 压扁)', one('cor3m'), 'low'),
   pctl('rxmSpx', 'sentiment', 'RXM/SPX 风险逆转相对表现分位(方向不定)', ratio('rxm', 'spx')),
-  pctl('pcEquity', 'sentiment', '个股认沽认购比分位(低 = 看涨拥挤)', one('pcEquity'), 'low'),
-  pctl('pcIndex', 'sentiment', '指数认沽认购比分位(方向不定)', one('pcIndex')),
+  pctl('pcEquity', 'sentiment', '个股认沽认购比分位(低 = 看涨拥挤)', one('pcEquity'), 'low', {
+    version: 2,
+    confirmDays: 2,
+  }),
+  pctl('pcIndex', 'sentiment', '指数认沽认购比分位(方向不定)', one('pcIndex'), undefined, {
+    version: 2,
+    confirmDays: 2,
+  }),
   // 日本
   lvl(
     'usdjpyRv21',
@@ -117,35 +135,49 @@ export const ALERT_RULES = [
       { price: 4.4, title: '已实现 10 分位 4.4', color: '#22c55e' },
       { price: 12.3, title: '已实现 90 分位 12.3', color: '#ef4444' },
     ],
-    0.3,
+    0.6,
+    { version: 2 },
   ),
   pctl('jgb10y', 'jgbVol', 'JGB 10Y 收益率分位(方向不定)', one('jgb10y')),
-  pctl('jgbVix', 'jgbVol', 'JGB VIX 日债波动率分位(低 = 压扁)', one('jgbVix'), 'low'),
+  pctl('jgbVix', 'jgbVol', 'JGB VIX 日债波动率分位(低 = 压扁)', one('jgbVix'), 'low', { version: 2, confirmDays: 2 }),
   // 利率
   pctl('dgs10', 'ratesVol', '美债 10Y 收益率分位(方向不定)', one('dgs10')),
-  pctl('move', 'ratesVol', 'MOVE 债市波动率分位(低 = 压扁)', one('move'), 'low'),
+  pctl('move', 'ratesVol', 'MOVE 债市波动率分位(低 = 压扁)', one('move'), 'low', { version: 2, confirmDays: 2 }),
   pctl('t5yifr', 'ratesDecomp', '5y5y 通胀远期分位(高 = 通胀预期上移)', one('t5yifr'), 'high'),
   // 通胀
   pctl('wages', 'inflSource', '薪资增速分位(高 = 工资通胀压力)', one('wages'), 'high'),
   pctl('stickyCpi', 'inflSource', 'Sticky CPI 分位(高 = 服务通胀黏)', one('stickyCpi'), 'high'),
   pctl('rbobYoy', 'inflSource', 'RBOB 汽油同比分位(高 = 能源通胀)', one('rbobYoy'), 'high'),
   // 能源
-  lvl('brentWti', 'oil', 'Brent − WTI 常态带 1.5 ~ 10 $/桶', minus('brent', 'wti'), normalBand(1.5, 10), 0.3),
+  lvl('brentWti', 'oil', 'Brent − WTI 常态带 1.5 ~ 10 $/桶', minus('brent', 'wti'), normalBand(1.5, 10), 0.9, {
+    version: 2,
+  }),
   pctl('dieselCrack', 'oil', '柴油裂解分位(高 = 馏分油紧)', one('dieselCrack'), 'high'),
   pctl('rbobCrack', 'oil', '汽油裂解分位(不设风险端:P95 以上九成落在 5~8 月,是季节不是风险)', one('rbobCrack')),
-  pctl('crack321', 'oil', '3-2-1 裂解分位(高 = 成品油紧)', one('crack321'), 'high'),
+  pctl('crack321', 'oil', '3-2-1 裂解分位(高 = 成品油紧)', one('crack321'), 'high', { version: 2, confirmDays: 2 }),
   lvl('refUtil', 'refinery', '炼厂开工率常态带 85 ~ 97%', one('refUtil'), normalBand(85, 97), 1),
   lvl('refUtilZ5y', 'refinery', '炼厂开工率季节 z 常态带 ±2', one('refUtilZ5y'), normalBand(-2, 2), 0.25),
-  lvl('distYield', 'refinery', '馏分油收率常态带 28 ~ 32%', one('distYield'), normalBand(28, 32), 0.3),
+  lvl('distYield', 'refinery', '馏分油收率常态带 28 ~ 32%', one('distYield'), normalBand(28, 32), 0.8, {
+    version: 2,
+  }),
   pctl('distStocksZ5y', 'refinery', '馏分油库存季节 z 分位(低 = 库存紧)', one('distStocksZ5y'), 'low', {
     levels: normalBand(-2, 2),
   }),
   pctl('gasStocksZ5y', 'refinery', '汽油库存季节 z 分位(低 = 库存紧)', one('gasStocksZ5y'), 'low', {
     levels: normalBand(-2, 2),
   }),
-  lvl('distExportsZ5y', 'refinery', '馏分油出口季节 z 常态带 ±2', one('distExportsZ5y'), normalBand(-2, 2), 0.25),
-  pctl('dieselMarkup', 'pump', '柴油零售加价分位(高 = 零售端挤压)', minus('dieselRetail', 'ulsd'), 'high'),
-  pctl('gasMarkup', 'pump', '汽油零售加价分位(方向不定)', minus('gasRetail', 'rbob')),
+  lvl('distExportsZ5y', 'refinery', '馏分油出口季节 z 常态带 ±2', one('distExportsZ5y'), normalBand(-2, 2), 0.25, {
+    version: 2,
+    confirmDays: 2,
+  }),
+  pctl('dieselMarkup', 'pump', '柴油零售加价分位(高 = 零售端挤压)', minus('dieselRetail', 'ulsd'), 'high', {
+    version: 2,
+    confirmDays: 2,
+  }),
+  pctl('gasMarkup', 'pump', '汽油零售加价分位(方向不定)', minus('gasRetail', 'rbob'), undefined, {
+    version: 2,
+    confirmDays: 2,
+  }),
   // BTC
   lvl('btcSharpe1y', 'btc', 'BTC 1Y 滚动夏普常态带 −2 ~ 2.9', one('btcSharpe1y'), normalBand(-2, 2.9), 0.2),
   lvl(
@@ -170,11 +202,15 @@ export const ALERT_RULES = [
       { price: 1.9, title: '近两轮顶 1.9', color: '#ef4444' },
     ],
     0.05,
+    { version: 2, confirmDays: 2 },
   ),
   // 估值
   pctl('cape', 'valuation', '席勒 CAPE 分位(2000 年起;高 = 贵)', one('cape'), 'high', { since: '2000-01-01' }),
   // 特色指标 · 集中度
-  pctl('vixeqVix', 'concentration', 'VIXEQ / VIX 隐含集中度分位(高 = 集中)', ratio('vixeq', 'vixSpot'), 'high'),
+  pctl('vixeqVix', 'concentration', 'VIXEQ / VIX 隐含集中度分位(高 = 集中)', ratio('vixeq', 'vixSpot'), 'high', {
+    version: 2,
+    confirmDays: 2,
+  }),
   lvl(
     'eqwDdSpread',
     'concentration',
