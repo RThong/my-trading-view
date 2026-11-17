@@ -66,7 +66,7 @@ function parseKey(key: string): SeriesRequest {
   };
 }
 
-/** 「URL + 字段」型的源(price_eod 现货、25Δ、VRP、/api/series):URL → 行;取不到的为 null(单个失败不连累其它)。 */
+/** 「URL + 字段」型的源(/api/price 现货、25Δ、VRP、/api/series):URL → 行;取不到的为 null(单个失败不连累其它)。 */
 type EndpointRow = { date: string } & Record<string, number | string | null>;
 type EndpointData = Record<string, EndpointRow[] | null>;
 const NO_ENDPOINT: EndpointData = {};
