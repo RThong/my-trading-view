@@ -122,7 +122,7 @@ src/
 │   ├── fetchers/            moomoo · deribit · cboe(Index/Vx) · fred · yahoo · eris · iceCds · jpxJgbVix · mofJgb · cftcCot · capeShiller · cnnFearGreed
 │   ├── analytics/           vrp · termStructure · regime · rateCurves · sec6kText (all pure, read-time compute)
 │   ├── storage/             bun:sqlite schema, migrations, repository
-│   └── jobs/                daily orchestrator + optionsSnapshot / vrpInputs / vxTermStructure / cryptoDaily / erisSnapshot / iceCdsSnapshot / btcPrice / tradingCalendar
+│   └── jobs/                daily orchestrator + optionsSnapshot / vxTermStructure / cryptoDaily / erisSnapshot / iceCdsSnapshot / tradingCalendar
 └── web/
     ├── App.tsx              shell only (vertical perspectives × horizontal tabs, keep-alive)
     ├── perspectives.tsx     assembles the rail from pages/* (order only)

@@ -1,8 +1,7 @@
 import { describe, test, expect, beforeEach } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
-import { getOptions25Delta, getJobHealth, insertPriceEod, insertMarketSeries } from '../storage/repository';
-import { priceLegUnderlyings } from '../../shared/marketCatalog';
+import { getOptions25Delta, getJobHealth, insertMarketSeries } from '../storage/repository';
 import { runDailyJob, staleFreshnessProbes, pendingGroups, groupsForStaleProbes, runPendingGroups } from './daily';
 import type { OptionsChainClient, OptionChainSnapshot } from './optionsSnapshot';
 
@@ -156,31 +155,6 @@ describe('daily job (options-only)', () => {
     expect(h?.error).toContain('未前进');
   });
 
-  test('btc_supply_density: 正常 / 停更挂告警仍 success / 一个点都没有 failed', async () => {
-    const run = async (r: { written: number; latest: string | undefined; stale: boolean }) => {
-      await runDailyJob({ db, supplyDensityUpdater: async () => r });
-      const h = getJobHealth(db).find((h) => h.name === 'btc_supply_density')!;
-      const { n } = db
-        .query('SELECT records_written AS n FROM job_run WHERE job_name = $j ORDER BY run_id DESC LIMIT 1')
-        .get({ $j: 'btc_supply_density' }) as { n: number | null };
-      return { status: h.status, error: h.error, n };
-    };
-
-    expect(await run({ written: 5418, latest: '2026-10-31', stale: false })).toEqual({
-      status: 'success',
-      error: null,
-      n: 5418,
-    });
-
-    const stale = await run({ written: 5418, latest: '2026-10-20', stale: true });
-    expect(stale).toMatchObject({ status: 'success', n: 5418 }); // 停更不会自愈,记 failed 只会让守卫白重跑
-    expect(stale.error).toContain('疑似停更(源最新 2026-10-20)');
-
-    const empty = await run({ written: 0, latest: undefined, stale: true });
-    expect(empty.status).toBe('failed');
-    expect(empty.error).toContain('一个点都没有');
-  });
-
   test('vx_term_structure: updater 抛错记 failed', async () => {
     await runDailyJob({
       db,
@@ -197,15 +171,11 @@ describe('daily job (options-only)', () => {
 // 守卫只看「当天 success 过」会被数据源晚发布坑:过早那次 success 但没拿到上一交易日那根,
 // 当天其余触发点全被跳过(2026-10-20 实测)。探针滞后时守卫不放行。
 describe('staleFreshnessProbes', () => {
-  const put = (db: Database, underlying: string, obsDate: string) =>
-    insertPriceEod(db, [{ underlying, obsDate, open: null, high: null, low: null, close: 1, source: 'test' }]);
   const putVx1 = (db: Database, obsDate: string) => insertMarketSeries(db, [{ seriesId: 'VX1', obsDate, value: 20 }]);
   const putPc = (db: Database, obsDate: string) =>
     insertMarketSeries(db, [{ seriesId: 'CBOE_PC_EQUITY', obsDate, value: 0.6 }]);
-  const allPrice = () => [...priceLegUnderlyings(), 'VIX'];
   const upTo = (date: string) => {
     const db = freshDb();
-    for (const u of allPrice()) put(db, u, date);
     putVx1(db, date);
     putPc(db, date);
     return db;
@@ -213,46 +183,36 @@ describe('staleFreshnessProbes', () => {
 
   test('全部到上一交易日 → 空;旧行不影响(看的是最新一天)', () => {
     const db = upTo('2026-10-19');
-    put(db, 'QQQ', '2026-10-16');
+    putVx1(db, '2026-10-16');
     expect(staleFreshnessProbes(db, '2026-10-19')).toEqual([]);
   });
 
-  test('只有一条滞后 → 只列它(ETF / VX1 各一例)', () => {
-    const db = upTo('2026-10-16');
-    for (const u of allPrice().filter((u) => u !== 'IBIT')) put(db, u, '2026-10-19');
-    putVx1(db, '2026-10-19');
-    putPc(db, '2026-10-19');
-    expect(staleFreshnessProbes(db, '2026-10-19')).toEqual(['IBIT']);
-
-    const vxLate = upTo('2026-10-19');
-    expect(staleFreshnessProbes(vxLate, '2026-10-20')).toContain('VX1');
-    for (const u of allPrice()) put(vxLate, u, '2026-10-20');
-    putPc(vxLate, '2026-10-20');
-    expect(staleFreshnessProbes(vxLate, '2026-10-20')).toEqual(['VX1']); // ETF/VIX 到了不代表 VX 到了
+  test('只有一条滞后 → 只列它', () => {
+    const db = upTo('2026-10-19');
+    putPc(db, '2026-10-20');
+    expect(staleFreshnessProbes(db, '2026-10-20')).toEqual(['VX1']);
   });
 
   test('全部滞后 / 空库 → 全列', () => {
-    expect(staleFreshnessProbes(upTo('2026-10-19'), '2026-10-20')).toEqual([...allPrice(), 'VX1', 'CBOE_PC_EQUITY']);
-    expect(staleFreshnessProbes(freshDb(), '2026-10-19')).toEqual([...allPrice(), 'VX1', 'CBOE_PC_EQUITY']);
+    expect(staleFreshnessProbes(upTo('2026-10-19'), '2026-10-20')).toEqual(['VX1', 'CBOE_PC_EQUITY']);
+    expect(staleFreshnessProbes(freshDb(), '2026-10-19')).toEqual(['VX1', 'CBOE_PC_EQUITY']);
   });
 });
 
 // 守卫按组判:一组失败只重跑它自己,已成功的组(尤其期权快照)不被后续触发点覆盖。
 describe('按组的成功即止守卫', () => {
   test('pendingGroups:剔掉今天已成功的;force 的不论成败都跑', () => {
-    const groups = ['options', 'vrp_inputs', 'computable_gpu'];
+    const groups = ['options', 'vx_term_structure', 'computable_gpu'];
     expect(pendingGroups(groups, [])).toEqual(groups);
-    expect(pendingGroups(groups, ['options', 'vrp_inputs'])).toEqual(['computable_gpu']);
+    expect(pendingGroups(groups, ['options', 'vx_term_structure'])).toEqual(['computable_gpu']);
     expect(pendingGroups(groups, groups)).toEqual([]);
-    expect(pendingGroups(groups, groups, ['vrp_inputs'])).toEqual(['vrp_inputs']);
+    expect(pendingGroups(groups, groups, ['vx_term_structure'])).toEqual(['vx_term_structure']);
   });
 
-  test('groupsForStaleProbes:VX1 → vx_term_structure,ETF / VIX → vrp_inputs(去重)', () => {
+  test('groupsForStaleProbes:VX1 → vx_term_structure,认沽认购比 → put_call', () => {
     expect(groupsForStaleProbes([])).toEqual([]);
-    expect(groupsForStaleProbes(['SPY', 'VIX'])).toEqual(['vrp_inputs']);
     expect(groupsForStaleProbes(['VX1'])).toEqual(['vx_term_structure']);
-    expect(groupsForStaleProbes(['QQQ', 'VX1'])).toEqual(['vrp_inputs', 'vx_term_structure']);
-    expect(groupsForStaleProbes(['CBOE_PC_EQUITY'])).toEqual(['put_call']);
+    expect(groupsForStaleProbes(['VX1', 'CBOE_PC_EQUITY'])).toEqual(['vx_term_structure', 'put_call']);
   });
 
   test('runPendingGroups:失败的组下一轮单独重跑,成功的组不再跑;全绿后整轮跳过', async () => {

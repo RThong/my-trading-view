@@ -1,11 +1,12 @@
 /**
  * 回测 v1 CLI:QQQ 基准 + TQQQ 轮动腿(A/B/C 消融)+ 现金减仓保险基准。
- * 抓 QQQ/TQQQ 复权价(内存,不落库)+ 读库里 VX1/VX3 算 spread → 对齐 → 打印对比表。
+ * 抓 QQQ/TQQQ 复权价与 VXN(内存,不落库)+ 读库里 VX1/VX3 算 spread → 对齐 → 打印对比表。
  *   bun run src/server/backtest/run.ts
  */
 import { mapToObj } from 'remeda';
 import { openDb } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
+import { volIndex } from '../live/market';
 import { computeSpread } from '../analytics/termStructure';
 import { createYahooFetcher } from '../fetchers/yahoo';
 import { HISTORY_START_DATE } from '../config';
@@ -34,8 +35,9 @@ function pad(s: string, n: number) {
 async function main() {
   const db = openDb();
   const spreadRows = computeSpread(getMarketSeries(db, 'VX1'), getMarketSeries(db, 'VX3'));
-  const vxnMap = new Map(getMarketSeries(db, 'VXN').map((r) => [r.date, r.value]));
   db.close();
+  // VXN 2026-11-17 起不再落库,现拉 CBOE
+  const vxnMap = new Map((await volIndex('VXN')).value.map((r) => [r.date, r.value]));
 
   const yahoo = createYahooFetcher();
   const since = new Date(HISTORY_START_DATE);

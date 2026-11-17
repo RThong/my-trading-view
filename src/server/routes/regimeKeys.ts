@@ -12,12 +12,6 @@ export type OhlcBar = { time: string; open: number; high: number; low: number; c
  * B300 长期允许缺),两个改动合起来会把「GPU 不可用」这个状态缓存住并卡满 6h。
  */
 export const JOB_WRITTEN_SERIES = [
-  // VIX/VXN 同样是 daily job 写库、同样该重读 —— 它们历史非空,所以症状比 GPU 轻
-  // (不是"整格不可用",只是最新一点最长滞后 6h),但性质一模一样,别再漏第二次。
-  ['vix', 'VIX'],
-  ['vxn', 'VXN'],
-  // SKEW 同理(daily 的 vrp_inputs 组写库)。
-  ['skew', 'SKEW'],
   ['gpuH100', 'CGI_H100'],
   ['gpuH200', 'CGI_H200'],
   ['gpuB200', 'CGI_B200'],
@@ -60,14 +54,6 @@ export const OIS_HIKE_HORIZONS = [
 /** 这一批的 key 全集:缓存命中时要先把旧条目按 key 剔掉,再塞新读到的。 */
 export const DB_BACKED_KEYS: ReadonlySet<string> = new Set<string>([
   ...JOB_WRITTEN_SERIES.map(([out]) => out),
-  'qqq',
-  'btc',
-  'btcSharpe1y',
-  'btcSupplyDensity',
-  'btcSupplyDensityRaw',
-  'btcMvrv',
-  'btcAviv',
-  'weekendFlag',
   'vxTermSpread',
   'move',
   'hyOas',

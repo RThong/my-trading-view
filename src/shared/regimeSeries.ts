@@ -78,7 +78,7 @@ export const REGIME_SERIES = [
   'btcSupplyDensity',
   // 同上的原始日值:只进悬停读数、不画线(均线慢几天,原始值先过线,但单日能跳 10pp)。
   'btcSupplyDensityRaw',
-  // BTC 链上估值(BRK 现成值,cryptoDaily 的 btc_supply_density 组一并写):现价 ÷ 全市场持仓成本 / ÷ 活跃投资者成本
+  // BTC 链上估值(BRK 现成值,读时现拉,见 server/live/market):现价 ÷ 全市场持仓成本 / ÷ 活跃投资者成本
   'btcMvrv',
   'btcAviv',
   // 周末标记(0/1,日期同 BTC 日线):BTC 各格的灰色背景带

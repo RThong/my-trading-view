@@ -173,17 +173,17 @@ test('fillFromPrev:没有上一份 → 原样返回', () => {
 test('mergeDbRead:剔掉缓存里的库读 key,外部源 key 保留,本次读库结果覆盖', () => {
   const p = (value: number) => [{ date: '2026-10-16', value }];
   const cached = {
-    series: { cor1m: p(2.8), move: p(80), 'fund:NVDA:gm': p(70), qqq: p(500) },
+    series: { cor1m: p(2.8), move: p(80), 'fund:NVDA:gm': p(70), pcEquity: p(0.6) },
     ohlc: { usd: [], btc: [] },
     unavailable: ['refUtil', 'fund:AMD:gm', 'gpuB300'],
   };
   const sec = { series: { 'fund:MU:gm': p(40) }, unavailable: ['fund:NVDA:gm'] };
-  const job = { series: { move: p(81) }, ohlc: {}, unavailable: ['qqq'] };
+  const job = { series: { move: p(81) }, unavailable: ['pcEquity'] };
 
   const out = mergeDbRead(cached, [sec, job]);
-  expect(out.series).toEqual({ cor1m: p(2.8), 'fund:MU:gm': p(40), move: p(81) }); // 旧 NVDA / qqq 不冒充
-  expect(Object.keys(out.ohlc ?? {})).toEqual(['usd']); // btc 是库读的
-  expect(out.unavailable).toEqual(['refUtil', 'fund:NVDA:gm', 'qqq']);
+  expect(out.series).toEqual({ cor1m: p(2.8), 'fund:MU:gm': p(40), move: p(81) }); // 旧 NVDA / pcEquity 不冒充
+  expect(Object.keys(out.ohlc ?? {})).toEqual(['usd', 'btc']); // 蜡烛都是现拉的(btc 2026-11-17 起),原样保留
+  expect(out.unavailable).toEqual(['refUtil', 'fund:NVDA:gm', 'pcEquity']);
 });
 
 test('resolveSofr:现拉到 → 用现拉;没拉到且有上一份 → 用上一份并把四条加息次数标 fallback;都没有 → 空', () => {

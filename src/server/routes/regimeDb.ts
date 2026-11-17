@@ -3,9 +3,7 @@ import { preferLive, rollingMean, type Point } from '../analytics/regime';
 import { OIS_INPUT_TENORS, hikesByTenor } from '../../shared/calc/policyPath';
 import type { SeriesKey } from '../../shared/regimeSeries';
 import { nearMinusFar } from '../analytics/termStructure';
-import { rollingSharpe } from '../analytics/sharpe';
-import { getMarketSeries, getPriceBars, getSecLag } from '../storage/repository';
-import { HISTORY_START_DATE } from '../config';
+import { getMarketSeries, getSecLag } from '../storage/repository';
 import { cdsPriceToSpreadBp } from '../analytics/rateCurves';
 import {
   BUYER_FCF_SERIES,
@@ -27,7 +25,8 @@ import {
 } from '../../shared/aiChain';
 import { type OhlcBar, JOB_WRITTEN_SERIES, OIS_HIKE_HORIZONS, PUT_CALL_MAS } from './regimeKeys';
 
-// /api/regime 里读库的那部分:daily job 写进 market_series / price_eod 的序列、SEC 基本面、Eris OIS 派生的加息次数。
+// /api/regime 里读库的那部分:daily job 写进 market_series 的序列、SEC 基本面、Eris OIS 派生的加息次数。
+// (QQQ / BTC 现货、BRK 链上、VIX / VXN / SKEW 2026-11-17 起改现拉,在路由文件的 fetchFresh 里。)
 // 现拉外部源在路由文件的 fetchFresh 里;这里只碰本地 SQLite。
 
 /** 库里的日 bar → 蜡烛点。OHLC 三项可空(部分源只给收盘),缺则退化成十字线(open=high=low=close)。 */
@@ -75,7 +74,7 @@ export function cdxSpreadPct(db: Database, index: 'IG' | 'HY', coupon: number): 
 }
 
 /**
- * 读**全部来自本地库**的东西:market_series 的直读几条、price_eod 的蜡烛、以及由它们派生的量。
+ * 读**全部来自本地库**的东西:market_series 的直读几条、以及由它们派生的量。
  * 主路径与缓存命中路径共用这一个函数 —— 上一版只覆盖了 market_series 的成对映射,
  * 结果 qqq / ohlc.btc / btcSharpe1y / vxTermSpread 四组照旧不重读,注释却写着"凡是 job 写的都重读"。
  * 抽成一处就不会再出现"框架比实现宽"这种事:加一条只改这里,两条路径同时生效。
@@ -91,11 +90,9 @@ export function readDbBacked(
 ): {
   series: Record<string, Point[]>;
   unavailable: string[];
-  ohlc: Record<string, OhlcBar[]>;
 } {
   const series: Record<string, Point[]> = {};
   const unavailable: string[] = [];
-  const ohlc: Record<string, OhlcBar[]> = {};
   const put = (name: SeriesKey, value: Point[] | undefined) => {
     if (value?.length) series[name] = value;
     else unavailable.push(name);
@@ -104,41 +101,6 @@ export function readDbBacked(
   JOB_WRITTEN_SERIES.forEach(([out, sym]) => {
     put(out, getMarketSeries(db, sym));
   });
-
-  // QQQ 现货:波动率与情绪两个视角的价格参照 —— 那些指标只有对着价格才读得出「背离还是同步」。
-  // 同 DXY 的处理:close 进 series 管存在性,OHLC 进 ohlc 画蜡烛。
-  // 截到 HISTORY_START_DATE:price_eod 的 ETF 拉到了上市日(给 K 线均线收敛用),这两个视角的其它序列
-  // 多从 2018 起,不截会把整张图的时间轴拉回 1999。
-  const qqqBars = getPriceBars(db, 'QQQ').filter((b) => b.date >= HISTORY_START_DATE);
-  put(
-    'qqq',
-    qqqBars.map((b) => ({ date: b.date, value: b.close })),
-  );
-  if (qqqBars.length) ohlc.qqq = toOhlc(qqqBars);
-
-  // BTC:现货蜡烛 + 1Y 滚动夏普。窗口 365 而非 252 —— crypto 每天都有数据点,
-  // 「一年」就是 365 个点;年化同走 √365(与 VRP 的 BTC 腿同口径,见 analytics/vrp)。
-  // 蜡烛带上当天盘中那根(看盘要);夏普只用已收盘的,盘中那根的收益只有几小时,混进去是偏差。
-  const btcBars = getPriceBars(db, 'BTC');
-  const btcClose = getPriceBars(db, 'BTC', { closedOnly: true }).map((b) => ({ date: b.date, value: b.close }));
-  // 这里**不走 put**(与 qqq 的写法刻意不同):BTC 点数是它们的两倍多,
-  // 把 close 再塞一份进 series 是 ~196KB 的纯冗余 —— 蜡烛只读 ohlc,那份 series 唯一作用是判存在性。
-  // 存在性直接由 ohlc 判,语义不变、payload 省掉。
-  if (btcBars.length) ohlc.btc = toOhlc(btcBars);
-  else unavailable.push('btc');
-  put('btcSharpe1y', rollingSharpe(btcClose, 365, 365));
-  // 供应密度:库里存原始日值,对外发 7 日均线 —— 原始值单日能跳 10pp,Murphy 原图那条就是 7 日均线。
-  const densityRaw = getMarketSeries(db, 'BTC_SUPPLY_DENSITY');
-  put('btcSupplyDensity', rollingMean(densityRaw, 7));
-  put('btcSupplyDensityRaw', densityRaw);
-  // 链上估值:库里存的就是对外值(BRK 现成比值),不派生
-  put('btcMvrv', getMarketSeries(db, 'BTC_MVRV'));
-  put('btcAviv', getMarketSeries(db, 'BTC_AVIV'));
-  // 周末标记(周六 / 周日 = 1,其余 0),日期取 BTC 日线自己的:BTC 各格画灰色背景带,周末成交 / 波动偏少,一眼分得出
-  put(
-    'weekendFlag',
-    btcBars.map((b) => ({ date: b.date, value: [0, 6].includes(new Date(`${b.date}T00:00:00Z`).getUTCDay()) ? 1 : 0 })),
-  );
 
   // 认沽认购比均线:日度噪音大(单日能从 0.59 跳到 0.89),读趋势看均线
   PUT_CALL_MAS.forEach(([out, sym, n]) => {
@@ -173,7 +135,7 @@ export function readDbBacked(
     );
   });
 
-  return { series, unavailable, ohlc };
+  return { series, unavailable };
 }
 
 /** 库里 Eris 各档按日拼成整条曲线(期限 → 百分点)。插入顺序跟 1D 的日期升序走。 */
