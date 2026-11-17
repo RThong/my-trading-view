@@ -1,3 +1,5 @@
 // 图表显示粒度(日/周/月/季/年)。原在 useChartData 里,该 hook 随非期权面板一并删除,
 // Interval 类型被 Header / App 与各图表共用,故单拎出来。
 export type Interval = '1D' | '1W' | '1M' | '1Q' | '1Y';
+/** 全部周期(出图链接 / 命令行校验参数用) */
+export const INTERVALS: readonly Interval[] = ['1D', '1W', '1M', '1Q', '1Y'];

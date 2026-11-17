@@ -5,7 +5,10 @@
 // 主图的在标题和图表之间单独一条,副图的在各自格子顶部。
 import type { IChartApi } from 'lightweight-charts';
 import { SIGNED_DOWN, SIGNED_UP } from '../../chart/palette';
-import type { SnapshotLegendItem } from '../../views/chartDoc/Legend';
+import { latestTime, snapshotLegend, type SnapshotLegendItem } from '../../views/chartDoc/Legend';
+import type { ChartDoc } from '../../views/chartDoc/chartDoc';
+import type { LayerData } from '../../views/chartDoc/layerPoints';
+import type { Interval } from '../../hooks/interval';
 import { flowLayout } from '../../chart/flowLayout';
 
 const HEADER = 36;
@@ -215,6 +218,34 @@ function framed(card: HTMLCanvasElement, scale: number): HTMLCanvasElement {
   ctx.drawImage(card, pad, pad, w, h);
 
   return out;
+}
+
+/**
+ * 一份 ChartDoc 导出成的整张图(图例取文档里的线、落款写周期和数据截至哪天)。
+ * 编辑器的「导出图片」和命令行出图(RenderPage)共用,两边出来的图一模一样
+ */
+export function docSnapshot(
+  chart: IChartApi,
+  origin: HTMLElement,
+  doc: ChartDoc,
+  data: Record<string, LayerData>,
+  layout: { tops: number[]; left: number },
+  interval: Interval,
+  ink: string,
+): HTMLCanvasElement {
+  const latest = latestTime(doc, data);
+  // 导出日(本地时区):落款写数据截至哪天,没数据才写导出日
+  const today = new Date().toLocaleDateString('sv-SE');
+
+  return snapshotCanvas({
+    chart,
+    origin,
+    legend: snapshotLegend(doc, data),
+    layout,
+    title: doc.title,
+    ink,
+    footer: `${interval} · ${latest ? `截至 ${latest}` : `导出于 ${today}`}`,
+  });
 }
 
 function pngBlob(canvas: HTMLCanvasElement): Promise<Blob> {

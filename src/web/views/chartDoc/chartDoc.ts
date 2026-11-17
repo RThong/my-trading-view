@@ -818,7 +818,7 @@ function isColor(x: unknown): x is string {
 }
 
 // 只看外形会放过 2026-99-01 这种不存在的日期:按 UTC 解析再格式化回来,一致才算真日期
-function isDate(x: unknown): x is string {
+export function isDate(x: unknown): x is string {
   return (
     typeof x === 'string' &&
     /^\d{4}-\d{2}-\d{2}$/.test(x) &&

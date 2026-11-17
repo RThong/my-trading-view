@@ -3,11 +3,11 @@ import { type RefObject, useEffect, useState } from 'react';
 import type { IChartApi } from 'lightweight-charts';
 import type { Interval } from '../../../hooks/interval';
 import type { ChartDoc } from '../../../views/chartDoc/chartDoc';
-import { latestTime, snapshotLegend } from '../../../views/chartDoc/Legend';
+import { snapshotLegend } from '../../../views/chartDoc/Legend';
 import type { LayerData } from '../../../views/chartDoc/layerPoints';
 import type { LegendLayout } from '../../../views/chartDoc/useCrosshairLegend';
 import { CHART_CHROME, useTheme } from '../../../hooks/theme';
-import { copyPng, downloadPng, snapshotCanvas } from '../snapshot';
+import { copyPng, docSnapshot, downloadPng } from '../snapshot';
 
 export type SnapshotMessage = { text: string; error?: true };
 export type SnapshotActions = { download: () => void; copy: () => void; message: SnapshotMessage | null };
@@ -35,8 +35,6 @@ export function useSnapshot(
   const fail = (what: string) => (e: unknown) =>
     setMessage({ text: `${what}失败:${e instanceof Error ? e.message : String(e)}`, error: true });
 
-  // 导出日(本地时区):落款写数据截至哪天,没数据才写导出日
-  const today = () => new Date().toLocaleDateString('sv-SE');
   // 文件名同 TradingView(「AAPL_2026-11-13_17-57-11.png」,2026-11-13 演示页实测):名字_日期_本地时分秒,
   // 同一天导出多张不重名。名字用标题,没标题用图上第一条线(对应 TV 的代码)
   const fileName = () => {
@@ -48,18 +46,7 @@ export function useSnapshot(
   const make = () => {
     const chart = chartRef.current;
     const origin = container.current;
-    if (!chart || !origin) return null;
-    const latest = latestTime(doc, data);
-
-    return snapshotCanvas({
-      chart,
-      origin,
-      legend: snapshotLegend(doc, data),
-      layout,
-      title: doc.title,
-      ink: CHART_CHROME[theme].ink,
-      footer: `${interval} · ${latest ? `截至 ${latest}` : `导出于 ${today()}`}`,
-    });
+    return chart && origin ? docSnapshot(chart, origin, doc, data, layout, interval, CHART_CHROME[theme].ink) : null;
   };
 
   return {
