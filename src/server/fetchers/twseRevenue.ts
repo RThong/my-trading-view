@@ -10,7 +10,7 @@ import type { TwseKind } from '../../shared/aiChain';
  *
  * ⚠️ **快照型源,不可回填**。端点只给最新一个月;历史页(mops 的 t21sc03)有反爬,
  * 实测返回「FOR SECURITY REASONS, THIS PAGE CAN NOT BE ACCESSED」。
- * 所以序列只能一个月一个月往前攒。
+ * 缺月与历史改由台积电交给 SEC 的营收公告 6-K 补(fetchers/tsmcRevenue6k,见 jobs/twseRevenue)。
  *
  * 一次调用能拿到**三个月**的营收(而不是一个):当月、上月、去年当月都在同一条记录里。
  * 首次接入就有三个点,之后每月自然续上。这是快照源里少见的便宜事,别浪费。
