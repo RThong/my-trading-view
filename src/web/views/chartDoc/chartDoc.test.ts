@@ -406,21 +406,33 @@ describe('叠加', () => {
     expect(applyLayerFit(d, 'l1', { ...fit, target: 'l3' }, false)).toBe(d);
   });
 
-  test('取消叠加 / 删掉换算目标 → 改挂独立轴', () => {
+  test('取消叠加 / 删掉换算目标 → B 留在原来的轴,倒轴也不动', () => {
     const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: -2, r: -0.9 };
     const d = applyLayerFit(twoOnMain(), 'l2', fit, true);
     expect(d.panes[0].layers[1]).toMatchObject({ scale: 'left' });
     const c = clearLayerFit(d, 'l2');
     expect(c.panes).toHaveLength(1);
-    // 取消叠加后改挂本格一根新独立轴;叠加时用的左轴没人用了被回收,倒轴跟着没
-    expect(c.panes[0].scales.some((sc) => sc.id === 'left')).toBe(false);
-    expect(c.panes[0].layers[1]).toMatchObject({ id: 'l2', scale: 's1' });
-    expect(c.panes[0].scales).toContainEqual({ id: 's1', side: 'overlay' });
+    expect(c.panes[0].layers[1]).toMatchObject({ id: 'l2', scale: 'left' });
+    expect(c.panes[0].scales).toContainEqual({ id: 'left', side: 'left', invert: true });
+    expect(c.panes[0].scales.some((sc) => sc.side === 'overlay')).toBe(false);
     expect('fit' in c.panes[0].layers[1]).toBe(false);
     const e = removeLayer(d, 'l1');
     expect(e.panes).toHaveLength(1);
-    expect(e.panes[0].layers[0]).toMatchObject({ id: 'l2', scale: 's1' });
+    expect(e.panes[0].layers[0]).toMatchObject({ id: 'l2', scale: 'left' });
     expect('fit' in e.panes[0].layers[0]).toBe(false);
+  });
+
+  test('叠加关系失效时 B 和别的线共轴 → 改挂独立轴', () => {
+    const fit = { target: 'l1', start: '2018-01-01', end: '2021-12-31', alpha: 1, beta: 2, r: 0.9 };
+    const d = applyLayerFit(twoOnMain(), 'l2', fit, false);
+    // 导入一份 A、B 同挂左轴的文档(界面上做不出来),normalize 会解除叠加并把 B 挪走
+    const bad = JSON.parse(JSON.stringify(d));
+    bad.panes[0].layers[0].scale = 'left';
+    const n = parseChartDoc(bad);
+    expect(n).not.toBeNull();
+    const l2 = n!.panes[0].layers.find((l) => l.id === 'l2')!;
+    expect('fit' in l2).toBe(false);
+    expect(n!.panes[0].scales.find((sc) => sc.id === l2.scale)?.side).toBe('overlay');
   });
 
   test('parseChartDoc 拒绝不存在的日期、旧版的派生层', () => {

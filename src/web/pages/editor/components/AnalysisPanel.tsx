@@ -119,8 +119,17 @@ export function AnalysisPanel({ doc, points, visibleRange, pair, onPair, actions
     );
   };
   // 除了图层 id 还要核对是哪两条序列:清空 / 删线后 id 会被新线复用,不核对会把上一对的结果挂到新的一对上
+  // 叠上了的结果只在叠加还在时显示:取消叠加后它说的那层关系已不在图上;没叠上的说明(为什么没叠)照旧留着
   const shown =
-    result && a && b && result.a === a.id && result.b === b.id && result.key === pairKey(a, b) ? result : null;
+    result &&
+    a &&
+    b &&
+    result.a === a.id &&
+    result.b === b.id &&
+    result.key === pairKey(a, b) &&
+    (result.res.kind !== 'ok' || !!b.fit)
+      ? result
+      : null;
 
   return (
     <Section open={open} onToggle={() => setOpen((v) => !v)}>

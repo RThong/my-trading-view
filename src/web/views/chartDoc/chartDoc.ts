@@ -214,15 +214,16 @@ function pruneRefs(doc: ChartDoc): ChartDoc {
 }
 
 /**
- * 去掉这些图层的 fit,并各自改挂本格一根新独立轴。取消叠加(或叠加目标没了)后它按原始数值画,
- * 和 target 单位不同,还挂在 target 的轴上会把那根轴撑歪;独立轴自己缩放,位置也不跳格。
+ * 去掉这些图层的 fit。叠加时挂的那根轴只有它自己就原样留着(轴、倒轴、格都不动,只是不再跟 A 的范围同步);
+ * 和别的线共轴(pruneRefs 收拾的异常情况)才改挂本格一根新独立轴,免得原值把那根轴撑歪。
  */
 function detachFit(doc: ChartDoc, ids: ReadonlySet<string>): ChartDoc {
   if (ids.size === 0) return doc;
 
+  const shared = (p: Pane, l: Layer) => p.layers.some((o) => o.id !== l.id && o.scale === l.scale);
+  const moving = doc.panes.flatMap((p) => p.layers.filter((l) => ids.has(l.id) && shared(p, l)).map((l) => l.id));
   const base = Number(nextId(doc, 's').slice(1));
-  const order = [...ids];
-  const scaleOf = (id: string) => `s${base + order.indexOf(id)}`;
+  const scaleOf = (id: string) => `s${base + moving.indexOf(id)}`;
 
   return {
     ...doc,
@@ -231,11 +232,14 @@ function detachFit(doc: ChartDoc, ids: ReadonlySet<string>): ChartDoc {
       if (hit.length === 0) return p;
       return {
         ...p,
-        scales: [...p.scales, ...hit.map((l) => ({ id: scaleOf(l.id), side: 'overlay' as const }))],
+        scales: [
+          ...p.scales,
+          ...hit.filter((l) => moving.includes(l.id)).map((l) => ({ id: scaleOf(l.id), side: 'overlay' as const })),
+        ],
         layers: p.layers.map((l) => {
           if (!ids.has(l.id)) return l;
           const { fit: _drop, ...rest } = l;
-          return { ...rest, scale: scaleOf(l.id) };
+          return moving.includes(l.id) ? { ...rest, scale: scaleOf(l.id) } : rest;
         }),
       };
     }),
@@ -402,7 +406,7 @@ export function removeLayer(doc: ChartDoc, layerId: string): ChartDoc {
   });
 }
 
-/** 拿掉某条序列的全部图层(下拉框取消勾选)。叠在它们上的线由 normalize 改挂独立轴。 */
+/** 拿掉某条序列的全部图层(下拉框取消勾选)。叠在它们上的线由 normalize 解除叠加(独占的轴原样留着,和别的线共轴才改挂独立轴,见 detachFit)。 */
 export function removeSeries(doc: ChartDoc, series: string): ChartDoc {
   return normalize({
     ...doc,
@@ -567,7 +571,7 @@ export function applyLayerFit(doc: ChartDoc, layerId: string, fit: Fit, invert: 
   return setScaleMode(setScaleInvert(withFit, pane.id, scaleId, invert), pane.id, scaleId, 'normal');
 }
 
-/** 取消叠加:去掉 fit 并改挂一根新独立轴(见 detachFit)。 */
+/** 取消叠加:只去掉 fit,轴和格原样留着(见 detachFit)。 */
 export function clearLayerFit(doc: ChartDoc, layerId: string): ChartDoc {
   const l = findLayer(doc, layerId)?.layer;
   return l?.fit ? normalize(detachFit(doc, new Set([layerId]))) : doc;
