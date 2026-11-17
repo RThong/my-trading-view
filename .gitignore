@@ -26,3 +26,6 @@ docs/superpowers/
 
 # 服务端 swrCache 的快照(regime / yield-curve 现拉结果,重启后先回这份)
 data/cache/
+
+# Actions 快照存档(私有仓库 market-snapshots 的本地浅克隆)
+data/market-snapshots/

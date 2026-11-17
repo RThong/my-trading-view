@@ -68,3 +68,17 @@ test('两个端点同时挂:抛出的错误同时带上单名和 CDX 的原因',
 
   await expect(run).rejects.toThrow('单名:ICE CDS 下载失败:403;CDX:ICE CDX 下载失败:403');
 });
+
+test('清算日不像日期(端点改版):不写库,单名记缺失(daily 判 failed、当天重跑)', async () => {
+  const db = memDb();
+  const r = await updateIceCds(
+    db,
+    async () => ({ date: '13/11/2026', points: [{ ticker: 'ORCLE', price: 95 }] }),
+    async () => ({ date: '', points: [] }),
+  );
+
+  expect(getMarketSeries(db, 'ICE_CDS_ORCLE')).toEqual([]);
+  expect(r.total).toBe(0);
+  expect(r.missing).toContain('单名清算日不合法:13/11/2026');
+  expect(r.missing).toContain('CDX_IG(清算日不合法:空)');
+});

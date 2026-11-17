@@ -109,6 +109,11 @@
   `cdn-api.cboe.com/api/global/delayed_quotes/options/{代码}.json`(免 key、无文档,指数前加 `_`),一个文件 = 全部到期日、
   带 IV / 希腊值 / OI / 全市场最优买卖价,7 个标的一轮约 5 秒、不用 OpenD。交易日取文件里最后一笔成交的日期。
   与 moomoo 逐合约对比:不分红 ETF IV 差 ≤ 0.2pp、OI 全同。
+  ⚠️ **daily 触发点全落在 VIX 期权夜盘**:夜里这个文件的 VIX 报价 / IV 跟着夜盘走(最后成交仍停在 16:15 前,别拿成交时间判)。
+  所以另有 **GitHub Actions 存档**(私有仓库 `RThong/market-snapshots`,`fetch.sh` 在 22:00 / 23:30 UTC 抓 7 个标的的链 + ICE CDS / CDX,
+  每次压成无历史提交强推、只留 14 天):本机 `options_cboe` / `ice_cds` 先 `git fetch` 浅克隆到 `data/market-snapshots/`(gitignored)
+  再写库(`fetchers/snapshotArchive` + `jobs/cboeArchive`),已覆盖的「标的 | 交易日」本机不再抓;拉不到存档就照旧自己抓。
+  也补本机关机 / 没网那几天(14 天内)。
   ⏰ **待办:2026-11-21 前后(并行满 5 个交易日)验收并切成主源,按 `docs/options-cboe-switch.md` 逐步做**
   (验收脚本 `bun run src/server/jobs/compareOptionsSources.ts`;重点看工作日夜里 VIX 是否仍是收盘报价、USO 偏差)。
 - **put delta 为负、call delta 为正**(已用真实链核实)。25Δ 选取依赖这个符号约定。

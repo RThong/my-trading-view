@@ -102,6 +102,8 @@ type RunOpts = {
   /** 交易日只认 client 给的(取不到就整轮失败、不写库),不回退本地推算 —— 本地推算不认交易所假日,
    *  假日前后会把数据写到错误日期。CBOE 用(它的交易日来自文件里的成交时间);moomoo 维持回退。 */
   strictTradingDate?: boolean;
+  /** 已从别处(Actions 存档)写好的 `落库键|交易日`:这些标的当天不再抓、不覆盖(存档是收盘后抓的,本机抓的 VIX 是夜盘报价)。 */
+  covered?: Set<string>;
 };
 
 export type OptionsSnapshotResult = {
@@ -145,7 +147,7 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
 
   // 每个标的独立处理,成功一个就立刻落库:某个标的失败(抓取出错、超时、缺 delta 等)只记下来,
   // 不影响其它标的;也不会因为后面的标的卡住 / 进程被杀,把前面已拿到的数据一起丢掉(快照型补不回来)。
-  for (const u of opts.underlyings) {
+  for (const u of opts.underlyings.filter((x) => !opts.covered?.has(`${key(x)}|${snapshotDate}`))) {
     try {
       const chain = await opts.client.fetchChain(u, TARGET_DTE);
       const sel = select25Delta(chain);

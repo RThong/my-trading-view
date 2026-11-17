@@ -21,7 +21,9 @@ import { createCboeOptionsClient } from '../fetchers/cboeOptions';
 import { updateVrpInputs } from './vrpInputs';
 import { updateVxTermStructure } from './vxTermStructure';
 import { updateErisSnapshot } from './erisSnapshot';
-import { updateIceCds } from './iceCdsSnapshot';
+import { updateIceCds, ingestArchivedIce } from './iceCdsSnapshot';
+import { ingestArchivedOptions } from './cboeArchive';
+import { syncedArchiveRuns, type ArchiveRun } from '../fetchers/snapshotArchive';
 import { updateDtccCds, type DtccCdsResult } from './dtccCdsSnapshot';
 import { updateDtccZcis, type ZcisResult } from './dtccZcisSnapshot';
 import { updateDtccFxVol, type FxVolResult } from './dtccFxVolSnapshot';
@@ -38,6 +40,8 @@ type RunDailyJobOpts = {
   db: Database;
   /** CBOE 延迟期权链(并行试跑,注入式;CLI 传 createCboeOptionsClient,测试省略以免联网)。 */
   cboeOptionsClient?: OptionsChainClient;
+  /** Actions 快照存档(注入式;CLI 传 syncedArchiveRuns,测试省略以免联网)。期权 / ICE 两组先把存档写进库,再自己抓。 */
+  archiveRuns?: () => ArchiveRun[];
   /** moomoo 期权标的(如 ['SPY', '.VIX'])。需配合 optionsClient 使用。 */
   optionsUnderlyings?: string[];
   optionsClient?: OptionsChainClient;
@@ -99,8 +103,14 @@ async function runOptionsGroup(
   underlyings: string[],
   client: OptionsChainClient,
   storeKey?: (u: string) => string,
+  covered?: () => Promise<Set<string>>,
 ): Promise<void> {
   await withJobRun(db, jobName, async () => {
+    // 存档写坏了(文件损坏等)不挡本机自己抓
+    const done = await covered?.().catch((err: Error) => {
+      console.warn(`快照存档写入失败(本轮照旧自己抓):${err.message}`);
+      return new Set<string>();
+    });
     // CBOE 的交易日来自文件里的成交时间,取不到就整轮失败,不回退本地推算(不认假日)
     const strictTradingDate = source === 'cboe';
     const { rows, failures } = await runOptionsSnapshot({
@@ -110,6 +120,7 @@ async function runOptionsGroup(
       client,
       storeKey,
       strictTradingDate,
+      covered: done,
     });
     return threeState(rows.length, rows.length, failures); // rows==0 即无成功 → failed
   });
@@ -123,13 +134,17 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   // 并行试跑:CBOE 延迟期权链,同一批标的,落库键带 `@cboe` 后缀(不覆盖 moomoo、不上图)。
   // 对照几个交易日、确认能接上后再切成主源(见 docs/data-sources-candidates.md §1.4)
   if (opts.cboeOptionsClient) {
+    const key = (u: string) => `${u}@cboe`;
+    const runs = opts.archiveRuns;
     await runOptionsGroup(
       opts.db,
       'options_cboe',
       'cboe',
       OPTIONS_UNDERLYINGS,
       opts.cboeOptionsClient,
-      (u) => `${u}@cboe`,
+      key,
+      // async:runs() 同步抛的错也变成 rejected,由 runOptionsGroup 的 catch 兜住,不挡本机自己抓
+      runs && (async () => ingestArchivedOptions(opts.db, runs(), OPTIONS_UNDERLYINGS, key)),
     );
   }
   if (opts.cryptoOptionsUnderlyings?.length && opts.cryptoOptionsClient) {
@@ -172,6 +187,12 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   // 默认展示的 core 标的或任一 CDX 缺 → failed(数据源可能改 ticker / 端点挂了),让当天后续触发重试并在状态板告警。
   if (opts.iceCdsUpdater) {
     await withJobRun(opts.db, 'ice_cds', async () => {
+      // 先补存档里本机没抓到的那几天;存档写坏了不挡本机自己抓
+      try {
+        if (opts.archiveRuns) ingestArchivedIce(opts.db, opts.archiveRuns());
+      } catch (err) {
+        console.warn(`ICE 快照存档写入失败(本轮照旧自己抓):${(err as Error).message}`);
+      }
       const { total, missing } = await opts.iceCdsUpdater!(opts.db);
       return missing.length
         ? {
@@ -366,8 +387,8 @@ const DAILY_GROUPS: GroupTable = {
   vrp_inputs: () => ({ vrpInputsUpdater: updateVrpInputs }),
   vx_term_structure: () => ({ vxUpdater: updateVxTermStructure }),
   eris_snapshot: () => ({ erisUpdater: updateErisSnapshot }),
-  options_cboe: () => ({ cboeOptionsClient: createCboeOptionsClient() }),
-  ice_cds: () => ({ iceCdsUpdater: updateIceCds }),
+  options_cboe: () => ({ cboeOptionsClient: createCboeOptionsClient(), archiveRuns: syncedArchiveRuns }),
+  ice_cds: () => ({ iceCdsUpdater: updateIceCds, archiveRuns: syncedArchiveRuns }),
   sbg_cds: () => ({ sbgCdsUpdater: (db: Database) => updateDtccCds(db) }),
   dtcc_zcis: () => ({ zcisUpdater: (db: Database) => updateDtccZcis(db) }),
   dtcc_fx_vol: () => ({ fxVolUpdater: (db: Database) => updateDtccFxVol(db) }),
