@@ -2,7 +2,7 @@
 // 点菜单外、按 Esc、滚轮都收起(同 TradingView)
 import { type RefObject, useEffect, useRef } from 'react';
 import { Check } from 'lucide-react';
-import { isMarkLayer, type ChartDoc } from '../../../views/chartDoc/chartDoc';
+import { onItsScale, type ChartDoc } from '../../../views/chartDoc/chartDoc';
 import { baseLabel } from '../../../views/chartDoc/layerLabel';
 import { positiveScale, type LayerData } from '../../../views/chartDoc/layerPoints';
 import type { AxisMenuAt } from '../hooks/useAxisMenu';
@@ -63,7 +63,7 @@ export function AxisMenu({ at, doc, data, actions, onClose, chartEl }: Props) {
   const pane = doc.panes[index];
   if (!pane) return null;
 
-  const names = pane.layers.filter((l) => l.scale === at.scaleId && !isMarkLayer(l)).map((l) => baseLabel(doc, l.id));
+  const names = pane.layers.filter((l) => l.scale === at.scaleId && onItsScale(l)).map((l) => baseLabel(doc, l.id));
   // 选完就收起(同 TradingView)
   const { invert, modes, ineffective } = scaleItems(doc, pane, at.scaleId, positiveScale(pane, at.scaleId, data), {
     setMode: (...args) => {

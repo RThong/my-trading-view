@@ -1,18 +1,21 @@
 // 内置指标表(同 TradingView 的内置指标:脚本 = 这里的一行,ChartDoc 里只存 id + 参数,计算不进 JSON)。
 // 输入是一条序列画在图上的点(当收盘价用),所以对任何线都能算;按图上的点算 = 周线就用周 K 算(同 TradingView)。
 // 口径照旧:ema / bollinger / macd / rsi 已与 moomoo 逐位对账(见 ./indicators)。
+// 例外:成交量(volume)的输入是 K 线(要成交量和涨跌),只对带成交量的 K 线序列能加(见 chartDoc 的 canAddIndicator)。
 import { needsLogScale, type Bar, type LinePoint } from './core';
+import { volumeColor } from './palette';
 import { bollinger, ema, macd, rsi } from './indicators';
 
-export type IndicatorId = 'ema' | 'bb' | 'macd' | 'rsi';
-export const INDICATOR_IDS: readonly IndicatorId[] = ['ema', 'bb', 'macd', 'rsi'];
+export type IndicatorId = 'ema' | 'bb' | 'macd' | 'rsi' | 'volume';
+export const INDICATOR_IDS: readonly IndicatorId[] = ['ema', 'bb', 'macd', 'rsi', 'volume'];
 
 /** 一个指标画的一样东西:一条线,或一组柱(MACD 柱)。fillTo = 与另一条之间填色(布林带 2σ 通道) */
 export type PlotSpec = {
   key: string;
   title: string;
   color: string;
-  kind: 'line' | 'signed';
+  /** volume = 成交量柱:挂自己的隐形轴、只占格子底部一条(同 TradingView 的 Volume),画在线和蜡烛下面 */
+  kind: 'line' | 'signed' | 'volume';
   fillTo?: { key: string; color: string };
   /** 挂在这条上的水平参考线(RSI 30/50/70):一组只挂一条,挂多条会在同一格重复画 */
   refLines?: { price: number; title: string }[];
@@ -26,7 +29,10 @@ export type IndicatorCtx = {
   autoYear: boolean;
 };
 
-type Def = {
+/** 带颜色的点(成交量柱按涨跌逐根上色) */
+export type PlotPoint = LinePoint & { color?: string };
+
+type Base = {
   label: string;
   /** 默认画在哪:叠在源线那格(overlay),或新开一格(pane)。之后可以像普通图层一样挪格换轴 */
   place: 'overlay' | 'pane';
@@ -34,8 +40,14 @@ type Def = {
   periods?: number[];
   /** 画哪几样(与数据无关,先于数据定下 → 渲染层可以先建好 series) */
   plots: (periods: number[]) => PlotSpec[];
+};
+type CloseDef = Base & {
   /** 按 plots 的顺序给每样的点 */
   compute: (pts: LinePoint[], periods: number[], ctx: IndicatorCtx) => LinePoint[][];
+};
+type BarsDef = Base & {
+  /** 输入是 K 线(要开收和成交量)而不是一条线;周 / 月线是聚合好的 K 线(量已按期求和) */
+  fromBars: (bars: Bar[]) => PlotPoint[][];
 };
 
 // 周期与配色照用户常用行情 App(moomoo):5 橙、20 蓝、50 红、144 粉、169 紫、200 黄、365 绿
@@ -66,7 +78,7 @@ function emaColor(n: number, i: number) {
   return EMA_COLORS[n] ?? EXTRA_COLORS[i % EXTRA_COLORS.length];
 }
 
-export const INDICATORS: Record<IndicatorId, Def> = {
+export const INDICATORS: Record<Exclude<IndicatorId, 'volume'>, CloseDef> & Record<'volume', BarsDef> = {
   ema: {
     label: 'EMA',
     place: 'overlay',
@@ -149,6 +161,17 @@ export const INDICATORS: Record<IndicatorId, Def> = {
       }));
     },
     compute: (pts, periods) => periods.map((n) => rsi(closes(pts), n)),
+  },
+  volume: {
+    label: '成交量',
+    place: 'overlay',
+    plots: () => [{ key: 'vol', title: '', color: '#71717a', kind: 'volume' }],
+    // 没量的那根(Yahoo 缺值)不画,不当 0
+    fromBars: (bars) => [
+      bars.flatMap((b) =>
+        b.volume === undefined ? [] : [{ time: b.time, value: b.volume, color: volumeColor(b.close >= b.open) }],
+      ),
+    ],
   },
 };
 

@@ -28,9 +28,10 @@ import {
   REF_LINE,
   boxAutoscaleProvider,
   fullHeightScale,
+  volumeStripScale,
   type LinePoint,
 } from '../../chart/core';
-import { BACKGROUND_ALPHA, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, withAlpha } from '../../chart/palette';
+import { BACKGROUND_ALPHA, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, VOLUME_ALPHA, withAlpha } from '../../chart/palette';
 import type { Interval } from '../../hooks/interval';
 import { chartThemeOptions, getTheme, useTheme } from '../../hooks/theme';
 import {
@@ -49,11 +50,11 @@ import {
   positiveScale,
   expandIndicators,
   isPlotLayer,
+  isVolumePlot,
   layerMarks,
   plotId,
   plotsOf,
   type LayerData,
-  VOLUME_ALPHA,
 } from './layerPoints';
 import { BandFillPrimitive } from '../../chart/bandFill';
 import { DayBandPrimitive } from '../../chart/dayBand';
@@ -187,6 +188,8 @@ function seriesOptions(layer: Layer, pane: Pane, fitTargets: Set<string>) {
     return {
       color: withAlpha(layer.color, VOLUME_ALPHA),
       priceScaleId: layer.scale,
+      // 成交量指标的最新值标签按 K / M 缩写(同 TradingView 右轴上的 592.41K)
+      ...(isVolumePlot(layer) && { priceFormat: { type: 'volume' as const } }),
       visible: !hidden,
       lastValueVisible: !hidden,
       base: 0,
@@ -227,6 +230,7 @@ function createLayerSeries(chart: IChartApi, layer: Layer, opts: object, paneInd
     paneIndex,
   );
   if (isMarkLayer(layer)) fullHeightScale(s);
+  if (isVolumePlot(layer)) volumeStripScale(s);
   return s;
 }
 
@@ -546,14 +550,16 @@ function reconcile(chart: IChartApi, series: LayerSeries, fed: Map<string, Fed>,
       if (existing.getPane().paneIndex() !== paneIndex) existing.moveToPane(paneIndex);
       existing.applyOptions(opts);
       if (isMarkLayer(layer)) fullHeightScale(existing);
+      if (isVolumePlot(layer)) volumeStripScale(existing);
     });
 
     // 层次同 TradingView:卡片列表最上面那条画在最上层(lw-charts 里序号越大越靠上)。
-    // 标记图层(背景色带、竖线)一律压在线下面;指标的子线一律压在普通线 / 蜡烛上面(均线从 K 线实体前面过,
+    // 标记图层(背景色带、竖线)和成交量指标的柱子一律压在线下面;指标的子线一律压在普通线 / 蜡烛上面(均线从 K 线实体前面过,
     // 同旧期权页与 TradingView;布林带填色是挂在线上的 bottom 图元,照旧在最底下)。从底层往上逐个归位
-    const marks = pane.layers.filter(isMarkLayer).toReversed();
-    const lines = pane.layers.filter((l) => !isMarkLayer(l) && !isPlotLayer(l)).toReversed();
-    const plots = pane.layers.filter(isPlotLayer).toReversed();
+    const below = (l: Layer) => isMarkLayer(l) || isVolumePlot(l);
+    const marks = pane.layers.filter(below).toReversed();
+    const lines = pane.layers.filter((l) => !below(l) && !isPlotLayer(l)).toReversed();
+    const plots = pane.layers.filter((l) => !below(l) && isPlotLayer(l)).toReversed();
     [...marks, ...lines, ...plots].forEach((layer, order) => {
       const s = series.get(layer.id);
       if (s && s.seriesOrder() !== order) s.setSeriesOrder(order);

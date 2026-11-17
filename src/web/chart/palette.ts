@@ -88,3 +88,10 @@ export const BAND_CALM = 'rgba(34,197,94,0.45)';
 /** 符号柱:正绿负红(固定面板与图表编辑器共用) */
 export const SIGNED_UP = '#22c55e';
 export const SIGNED_DOWN = '#ef4444';
+
+// 成交量柱半透明:单日放量的长柱满色太抢眼(上色的点和不上色时的图层颜色同一个透明度)
+export const VOLUME_ALPHA = 0.6;
+/** 成交量柱按 K 线涨跌上色(同 TradingView:收 ≥ 开为涨) */
+export function volumeColor(up: boolean): string {
+  return withAlpha(up ? SIGNED_UP : SIGNED_DOWN, VOLUME_ALPHA);
+}

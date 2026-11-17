@@ -22,6 +22,9 @@ export function fmtValue(v: number | undefined): string {
   return v.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+// 成交量按 K / M / B 缩写、留两位(同 TradingView 图例里的 592.41K)
+const VOLUME_FMT = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 });
+
 /** 配了分位的线:当前读数在分位窗口里的排名(0~100);没配分位、没数据为 undefined */
 function pctlRank(l: Layer, pts: LinePoint[] | undefined, value: number | undefined): number | undefined {
   if (!l.percentile || !pts || value === undefined) return undefined;
@@ -142,7 +145,7 @@ function IndicatorRow({ doc, data, hoverTime, onHidden, layer: l, pane, info }: 
         // 没数(如周线下的 365 年线)不占位
         return v === undefined ? null : (
           <span key={p.key} className="tabular-nums" style={{ color: p.color }}>
-            {p.title} {fmtValue(v)}
+            {p.title} {p.kind === 'volume' ? VOLUME_FMT.format(v) : fmtValue(v)}
           </span>
         );
       })}

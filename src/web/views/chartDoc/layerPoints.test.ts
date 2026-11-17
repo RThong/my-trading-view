@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { BAND_CALM, BAND_RISK, SIGNED_DOWN, SIGNED_UP, withAlpha } from '../../chart/palette';
-import { normalBand, type ChartDoc, type Layer, type Pane } from './chartDoc';
+import { BAND_CALM, BAND_RISK, SIGNED_DOWN, SIGNED_UP, VOLUME_ALPHA, withAlpha } from '../../chart/palette';
+import { aggregateBars } from '../../chart/core';
+import { canAddIndicator, canOwnDrawings, normalBand, type ChartDoc, type Layer, type Pane } from './chartDoc';
 import {
   allSevenDay,
   positiveScale,
@@ -9,7 +10,6 @@ import {
   layerMarks,
   layerRequest,
   type LayerData,
-  VOLUME_ALPHA,
 } from './layerPoints';
 import { layerLabel } from './layerLabel';
 import { requestKey } from './useSeriesData';
@@ -307,4 +307,39 @@ describe('365 年线:整张图都是 7×24 才自动带(混了工作日序列会
     expect(titles(btcOnly)).toContain('EMA365');
     expect(titles(mixed)).not.toContain('EMA365');
   });
+});
+
+test('成交量指标:按 K 线的量画、涨跌上色,周线按期求和;子线挂自己的隐形轴、画成量柱;只有 yh: 能加', () => {
+  const doc: ChartDoc = {
+    v: 1,
+    panes: [
+      pane([
+        { series: 'yh:SPY', render: { kind: 'candle' } },
+        { series: 'yh:SPY', indicator: { id: 'volume' } },
+      ]),
+    ],
+  };
+  const [, vol] = doc.panes[0].layers;
+  expect(layerRequest(vol)).toMatchObject({ bars: true });
+  expect(canAddIndicator(doc.panes[0].layers[0], 'volume')).toBe(true);
+  expect(canAddIndicator({ ...doc.panes[0].layers[0], series: 'SPY' }, 'volume')).toBe(false);
+  // 画线不挂成交量(它画在底部一条的隐形轴上,值和位置都不是价格)
+  expect(canOwnDrawings(vol)).toBe(false);
+
+  const child = expandIndicators(doc).panes[0].layers[1];
+  expect(child).toMatchObject({ id: 'l2#vol', scale: 'l2#vol', render: { kind: 'volume' } });
+
+  // 周一涨(量 100)、周二跌(量 50)、周三缺量:日线两根带色,缺量那根不画
+  const daily = [
+    { time: '2026-11-02', open: 1, high: 2, low: 1, close: 2, volume: 100 },
+    { time: '2026-11-03', open: 2, high: 2, low: 1, close: 1, volume: 50 },
+    { time: '2026-11-04', open: 1, high: 1, low: 1, close: 1 },
+  ];
+  const key = requestKey(layerRequest(vol));
+  const d = computeLayerData(doc, {}, '1D', { [key]: daily });
+  expect(d['l2#vol'].display).toEqual([
+    { time: '2026-11-02', value: 100, color: withAlpha(SIGNED_UP, VOLUME_ALPHA) },
+    { time: '2026-11-03', value: 50, color: withAlpha(SIGNED_DOWN, VOLUME_ALPHA) },
+  ]);
+  expect(aggregateBars(daily, '1W')[0].volume).toBe(150);
 });

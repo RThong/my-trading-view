@@ -1,4 +1,4 @@
-// 图表编辑器的「任意 Yahoo 代码」:按关键字搜代码 + 取某代码的历史日线(收盘 + 开高低,蜡烛图层用)。
+// 图表编辑器的「任意 Yahoo 代码」:按关键字搜代码 + 取某代码的历史日线(收盘 + 开高低 + 成交量,蜡烛图层 / 成交量指标用)。
 // 读时现拉、不落库;日期按交易所当地日历(meta.exchangeTimezoneName,见 fetchers/yahoo 的 exchangeDate)取,非美市场不会错日。
 // close 是 Yahoo 的「只调拆股、不调分红」收盘价,与全站 price_eod 同口径(见 AGENTS.md 的 ETF 现货口径)。
 import YahooFinance from 'yahoo-finance2';
@@ -9,8 +9,16 @@ export type YahooHistory = {
   symbol: string;
   name: string;
   currency?: string;
-  /** open / high / low 缺的那天为 null(指数偶有只给收盘的行),前端画蜡烛时跳过那一根 */
-  points: { date: string; close: number; open: number | null; high: number | null; low: number | null }[];
+  /** open / high / low 缺的那天为 null(指数偶有只给收盘的行),前端画蜡烛时跳过那一根;
+   *  volume 缺 / 0 为 null(外汇、部分指数 Yahoo 全给 0,不是真没成交) */
+  points: {
+    date: string;
+    close: number;
+    open: number | null;
+    high: number | null;
+    low: number | null;
+    volume: number | null;
+  }[];
 };
 
 type RawSearch = {
@@ -26,7 +34,14 @@ type RawSearch = {
 type RawChart = {
   /** exchangeTimezoneName:交易所时区名(如 Europe/London),日期按它逐根换算 */
   meta: { symbol: string; shortName?: string; longName?: string; currency?: string; exchangeTimezoneName?: string };
-  quotes: { date: Date; open?: number | null; high?: number | null; low?: number | null; close: number | null }[];
+  quotes: {
+    date: Date;
+    open?: number | null;
+    high?: number | null;
+    low?: number | null;
+    close: number | null;
+    volume?: number | null;
+  }[];
 };
 
 export type YahooLookupClient = {
@@ -66,7 +81,7 @@ export function toHistory(raw: RawChart): YahooHistory {
   // 日期按交易所当地日历取:澳股夏令时 10:00 开盘 = 前一天 23:00Z,按 UTC 取会整体错一天(周一的点标成周日)。
   // 不用 meta.gmtoffset:那是「现在」的时差,夏令时一换,历史上另一半年照样错
   const tz = raw.meta.exchangeTimezoneName;
-  // 开高低:有限数才要,缺的给 null(0 也当缺:Yahoo 用 0 占位)
+  // 开高低、成交量:有限数才要,缺的给 null(0 也当缺:Yahoo 用 0 占位)
   const price = (v: number | null | undefined) => (typeof v === 'number' && Number.isFinite(v) && v !== 0 ? v : null);
   // 同一天可能出现两根(盘中快照 + 收盘),Map 按日期保留后一根
   const byDate = new Map(
@@ -75,7 +90,13 @@ export function toHistory(raw: RawChart): YahooHistory {
       .filter((q) => typeof q.close === 'number' && Number.isFinite(q.close) && q.close !== 0)
       .map((q) => [
         exchangeDate(q.date, tz),
-        { close: q.close as number, open: price(q.open), high: price(q.high), low: price(q.low) },
+        {
+          close: q.close as number,
+          open: price(q.open),
+          high: price(q.high),
+          low: price(q.low),
+          volume: price(q.volume),
+        },
       ]),
   );
 
