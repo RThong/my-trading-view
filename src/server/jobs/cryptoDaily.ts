@@ -12,11 +12,15 @@ import { runPendingGroups, type GroupTable } from './daily';
 import { DERIBIT_UNDERLYINGS } from '../config';
 import { defaultDeribitOptionsClient } from '../fetchers/deribitOptions';
 import { updateComputableGpu } from './computableGpuSnapshot';
+import { archiveRuns } from '../fetchers/snapshotArchive';
 
 const CRYPTO_GROUPS: GroupTable = {
   options_crypto: () => ({
     cryptoOptionsUnderlyings: DERIBIT_UNDERLYINGS,
     cryptoOptionsClient: defaultDeribitOptionsClient(),
+    // 只读不同步:launchd 和 daily 同一时刻触发,两个进程同时在存档目录里 fetch / reset / gc --prune=now 会弄坏仓库。
+    // 同步交给 daily;这里读到的若是上一轮的旧存档也无妨,14 天窗口里下次会补上
+    archiveRuns: () => archiveRuns(),
   }),
   computable_gpu: () => ({ computableGpuUpdater: updateComputableGpu }),
 };

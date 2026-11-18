@@ -20,12 +20,13 @@ import { updateVxTermStructure } from './vxTermStructure';
 import { updateErisSnapshot } from './erisSnapshot';
 import { updateIceCds, ingestArchivedIce } from './iceCdsSnapshot';
 import { ingestArchivedOptions } from './cboeArchive';
+import { ingestArchivedDeribit } from './deribitArchive';
 import { syncedArchiveRuns, type ArchiveRun } from '../fetchers/snapshotArchive';
 import { updateDtccCds, type DtccCdsResult } from './dtccCdsSnapshot';
 import { updateDtccZcis, type ZcisResult } from './dtccZcisSnapshot';
 import { updateDtccFxVol, type FxVolResult } from './dtccFxVolSnapshot';
 import { updateCreditSpreads } from './creditSpreadSnapshot';
-import { updateMoveIndex, type MoveUpdateResult } from './moveSnapshot';
+import { updateMoveIndex, ingestArchivedMove, type MoveUpdateResult } from './moveSnapshot';
 import { updateIsm, type IsmResult } from './ismSnapshot';
 import { updatePutCall, PUT_CALL_SERIES, type PutCallResult } from './putCallSnapshot';
 
@@ -36,7 +37,7 @@ type RunDailyJobOpts = {
   db: Database;
   /** CBOE 延迟期权链(并行试跑,注入式;CLI 传 createCboeOptionsClient,测试省略以免联网)。 */
   cboeOptionsClient?: OptionsChainClient;
-  /** Actions 快照存档(注入式;CLI 传 syncedArchiveRuns,测试省略以免联网)。期权 / ICE 两组先把存档写进库,再自己抓。 */
+  /** Actions 快照存档(注入式;CLI 传 syncedArchiveRuns,测试省略以免联网)。CBOE / Deribit 期权、ICE、MOVE 先把存档写进库,再自己抓。 */
   archiveRuns?: () => ArchiveRun[];
   /** moomoo 期权标的(如 ['SPY', '.VIX'])。需配合 optionsClient 使用。 */
   optionsUnderlyings?: string[];
@@ -138,12 +139,16 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
     );
   }
   if (opts.cryptoOptionsUnderlyings?.length && opts.cryptoOptionsClient) {
+    const underlyings = opts.cryptoOptionsUnderlyings;
+    const runs = opts.archiveRuns;
     await runOptionsGroup(
       opts.db,
       'options_crypto',
       'deribit',
-      opts.cryptoOptionsUnderlyings,
+      underlyings,
       opts.cryptoOptionsClient,
+      undefined,
+      runs && (async () => ingestArchivedDeribit(opts.db, runs(), underlyings)),
     );
   }
 
@@ -231,6 +236,12 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
   // 会让这组当天每个触发点都重跑,而冻结不会自愈,重跑无用。
   if (opts.moveUpdater) {
     await withJobRun(opts.db, 'move', async () => {
+      // 先补存档里本机没抓到的那几天;存档写坏了不挡本机自己抓
+      try {
+        if (opts.archiveRuns) ingestArchivedMove(opts.db, opts.archiveRuns());
+      } catch (err) {
+        console.warn(`MOVE 快照存档写入失败(本轮照旧自己抓):${(err as Error).message}`);
+      }
       const { total, metaDate, gotMetaPoint, stalled } = await opts.moveUpdater!(opts.db);
       if (!gotMetaPoint) {
         return {
@@ -348,7 +359,7 @@ const DAILY_GROUPS: GroupTable = {
   dtcc_zcis: () => ({ zcisUpdater: (db: Database) => updateDtccZcis(db) }),
   dtcc_fx_vol: () => ({ fxVolUpdater: (db: Database) => updateDtccFxVol(db) }),
   credit_spread: () => ({ creditSpreadUpdater: updateCreditSpreads }),
-  move: () => ({ moveUpdater: updateMoveIndex }),
+  move: () => ({ moveUpdater: updateMoveIndex, archiveRuns: syncedArchiveRuns }),
   ism: () => ({ ismUpdater: updateIsm }),
   put_call: () => ({ putCallUpdater: updatePutCall }),
 };

@@ -104,6 +104,8 @@ type RunOpts = {
   strictTradingDate?: boolean;
   /** 已从别处(Actions 存档)写好的 `落库键|交易日`:这些标的当天不再抓、不覆盖(存档是收盘后抓的,本机抓的 VIX 是夜盘报价)。 */
   covered?: Set<string>;
+  /** 写进 fetched_at 的抓取时刻;重放存档时传存档那一刻,缺省 = 现在。 */
+  fetchedAt?: Date;
 };
 
 export type OptionsSnapshotResult = {
@@ -162,8 +164,8 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
         skew: sel.skew * 100,
       };
 
-      insertOptions25Delta(opts.db, [row]);
-      insertOptionChainRaw(opts.db, [toRaw(u, chain)]);
+      insertOptions25Delta(opts.db, [row], opts.fetchedAt);
+      insertOptionChainRaw(opts.db, [toRaw(u, chain)], opts.fetchedAt);
       rows.push(row);
 
       if (!secondExpiry.has(u) || !opts.client.fetchMonthlyChain) continue;
@@ -172,7 +174,7 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
       // 快照型,当天没抓到就永久缺一格。重跑会把第一档也重抓一遍,触发点都在收盘后,覆盖写的是同一份收盘数据。
       try {
         const monthly = await opts.client.fetchMonthlyChain(u, SECOND_EXPIRY_MIN_DTE, chain.underlyingPrice);
-        insertOptionChainRaw(opts.db, [toRaw(u, monthly)]);
+        insertOptionChainRaw(opts.db, [toRaw(u, monthly)], opts.fetchedAt);
       } catch (err) {
         failures.push(`${u} 第二档: ${(err as Error).message}`);
       }
