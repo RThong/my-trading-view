@@ -19,5 +19,5 @@
       "@web/*": ["./src/web/*"]
     }
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "scripts/**/*.ts", "biome-plugins/**/*.ts", "vite.config.ts"]
 }
