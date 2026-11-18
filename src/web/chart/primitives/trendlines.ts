@@ -1,0 +1,149 @@
+// 手绘趋势线的图元(lw 线级插件 ISeriesPrimitive):把锚点投影成像素,画线、选中加粗、端点手柄、画线中的预览。
+// 纯计算(命中、序列化)见 chart/trendlines,交互见 trendlines.hooks。
+import type {
+  Time,
+  Logical,
+  IChartApi,
+  ISeriesApi,
+  SeriesType,
+  ISeriesPrimitive,
+  IPrimitivePaneView,
+  IPrimitivePaneRenderer,
+  SeriesAttachedParameter,
+} from 'lightweight-charts';
+import type { CanvasRenderingTarget2D } from 'fancy-canvas';
+import type { Anchor, TrendLine } from '../trendlines';
+
+const COLOR = '#eab308';
+// 选中不换色(同 TradingView;亮黄在暖白底上几乎看不见):靠加粗 + 手柄表示选中
+const COLOR_SELECTED = COLOR;
+
+// 已投影到像素的线段;端点任一不在可视区(投影 null)则整条不画,置 null。
+type Seg = { x1: number; y1: number; x2: number; y2: number } | null;
+
+class TrendLinePaneRenderer implements IPrimitivePaneRenderer {
+  constructor(
+    private readonly segs: Seg[],
+    private readonly selected: number | null,
+    private readonly preview: Seg, // 画线中随光标的橡皮筋段(虚线)
+    private readonly handles: Array<{ x: number; y: number }>, // 选中线两端点手柄(可点击调整)
+  ) {}
+
+  draw(target: CanvasRenderingTarget2D): void {
+    // media space:坐标即 CSS 像素,与 priceToCoordinate/timeToCoordinate 返回值同系,无需 pixelRatio 换算。
+    // biome-ignore lint/correctness/useHookAtTopLevel: useMediaCoordinateSpace 是 canvas 方法,不是 React hook
+    target.useMediaCoordinateSpace((scope: { context: CanvasRenderingContext2D }) => {
+      const ctx = scope.context;
+      this.segs.forEach((seg, i) => {
+        if (!seg) return;
+        ctx.lineWidth = i === this.selected ? 3 : 2;
+        ctx.strokeStyle = i === this.selected ? COLOR_SELECTED : COLOR;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(seg.x1, seg.y1);
+        ctx.lineTo(seg.x2, seg.y2);
+        ctx.stroke();
+      });
+      // 预览段:虚线
+      if (this.preview) {
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = COLOR;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(this.preview.x1, this.preview.y1);
+        ctx.lineTo(this.preview.x2, this.preview.y2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      // 选中线的端点手柄:实心小圆(点击可抓起调整)
+      for (const h of this.handles) {
+        ctx.fillStyle = COLOR_SELECTED;
+        ctx.beginPath();
+        ctx.arc(h.x, h.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+}
+
+class TrendLinePaneView implements IPrimitivePaneView {
+  constructor(
+    private readonly chart: IChartApi,
+    private readonly series: ISeriesApi<SeriesType>,
+    private readonly lines: TrendLine[],
+    private readonly selected: number | null,
+    private readonly preview: TrendLine | null,
+    private readonly handlesIndex: number | null, // 显示端点手柄的线(hover/选中)
+  ) {}
+
+  private px(anchor: Anchor): { x: number; y: number } | null {
+    const x = this.chart.timeScale().logicalToCoordinate(anchor.logical as Logical);
+    const y = this.series.priceToCoordinate(anchor.price);
+    if (x == null || y == null) return null;
+    return { x, y };
+  }
+
+  private project(ln: TrendLine): Seg {
+    const a = this.px(ln.a);
+    const b = this.px(ln.b);
+    if (!a || !b) return null;
+    return { x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+  }
+
+  // 每次重画都实时投影锚点(logical,price)→ 像素,故平移/缩放线自动跟随。
+  renderer(): IPrimitivePaneRenderer {
+    const segs = this.lines.map((ln) => this.project(ln));
+    const previewSeg = this.preview ? this.project(this.preview) : null;
+    // hover/选中线的两端点手柄
+    const handles: Array<{ x: number; y: number }> = [];
+    const hi = this.handlesIndex;
+    if (hi != null && this.lines[hi]) {
+      for (const h of [this.px(this.lines[hi].a), this.px(this.lines[hi].b)]) if (h) handles.push(h);
+    }
+    return new TrendLinePaneRenderer(segs, this.selected, previewSeg, handles);
+  }
+}
+
+// 挂到某 pane 主 series 的趋势线图元:持有该 pane 的线 + 选中索引;setLines 后请求重画。
+export class TrendLinePrimitive implements ISeriesPrimitive<Time> {
+  private lines: TrendLine[] = [];
+  private selected: number | null = null;
+  private preview: TrendLine | null = null;
+  private handlesIndex: number | null = null;
+  private requestUpdate?: () => void;
+
+  constructor(
+    private readonly chart: IChartApi,
+    private readonly series: ISeriesApi<SeriesType>,
+  ) {}
+
+  attached(param: SeriesAttachedParameter<Time>): void {
+    this.requestUpdate = param.requestUpdate;
+  }
+
+  detached(): void {
+    this.requestUpdate = undefined;
+  }
+
+  setLines(lines: TrendLine[], selected: number | null): void {
+    this.lines = lines;
+    this.selected = selected;
+    this.requestUpdate?.();
+  }
+
+  // 画线中:预览橡皮筋段;null 即清除。
+  setPreview(preview: TrendLine | null): void {
+    this.preview = preview;
+    this.requestUpdate?.();
+  }
+
+  // 显示端点手柄的线(hover 或选中);null 不显示。
+  setHandles(index: number | null): void {
+    this.handlesIndex = index;
+    this.requestUpdate?.();
+  }
+
+  paneViews(): IPrimitivePaneView[] {
+    return [new TrendLinePaneView(this.chart, this.series, this.lines, this.selected, this.preview, this.handlesIndex)];
+  }
+}
