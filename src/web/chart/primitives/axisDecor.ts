@@ -42,8 +42,11 @@ export function fmtTick(v: number): string {
  * 否则刻度字会被单位字样的底色压掉半截
  */
 export function unitPriceFormat(unit: AxisUnit | undefined, inHead?: (price: number) => boolean): PriceFormat {
-  if (!unit) return { type: 'price', precision: 2, minMove: 0.01 };
-  const formatter = (p: number) => fmtTick(p / unit.div);
+  if (!unit && !inHead) return { type: 'price', precision: 2, minMove: 0.01 };
+  // 没单位、但轴顶有单位那一行(多出来的轴带单位):照图表库默认的两位小数写(负号同它用 U+2212),只把那一行里的刻度去掉
+  const formatter = unit
+    ? (p: number) => fmtTick(p / unit.div)
+    : (p: number) => `${p < 0 ? '\u2212' : ''}${Math.abs(p).toFixed(2)}`;
 
   return {
     type: 'custom',
@@ -159,11 +162,19 @@ export type AxisDecor = {
   bg: string;
 };
 
+/** 百分比 / 起点 100:刻度走换算后的数,不出单位 */
+function isRelative(series: ISeriesApi<SeriesType>): boolean {
+  const mode = series.priceScale().options().mode;
+  return mode === PriceScaleMode.Percentage || mode === PriceScaleMode.IndexedTo100;
+}
+
+/** lineTop:轴线从哪儿起画(轴顶有单位那一行时从它下面起,字在线顶上,同研报图) */
 function drawStrip(
   ctx: CanvasRenderingContext2D,
   { series, color, unit, tag }: Strip,
   x: number,
   height: number,
+  lineTop: number,
   fontSize: number,
   chart: IChartApi | undefined,
 ): void {
@@ -171,7 +182,7 @@ function drawStrip(
   const bottom = series.coordinateToPrice(height);
   if (top === null || bottom === null) return;
   const mode = series.priceScale().options().mode;
-  const relative = mode === PriceScaleMode.Percentage || mode === PriceScaleMode.IndexedTo100;
+  const relative = isRelative(series);
   // 基准用这条线自己可视区第一根:图表库在百分比 / 起点 100 下把每条线各按自己的第一根换算(轴上几条线起点不同也一样),
   // priceToCoordinate 用的也是它。别换成「整根轴最早的那根」—— 2026-11-18 试过,刻度和色块整体错位
   const space = axisSpace(mode, relative ? visibleEnd(series, chart, 'from') : undefined, unit);
@@ -187,7 +198,7 @@ function drawStrip(
   ctx.strokeStyle = color;
   // 轴线:用这条线的颜色贯穿整格高(同研报图)
   ctx.beginPath();
-  ctx.moveTo(x + 0.5, 0);
+  ctx.moveTo(x + 0.5, lineTop);
   ctx.lineTo(x + 0.5, height);
   ctx.stroke();
   ticks.forEach((v) => {
@@ -198,9 +209,10 @@ function drawStrip(
     ctx.lineTo(x + 4, y);
     ctx.stroke();
     if (tagY !== null && Math.abs(y - tagY) < tagHalf + fontSize / 2) return;
+    // 有单位那一行时,字的上半截会伸进那一行的刻度不写字(同原生轴的 inHead)
+    if (lineTop && y < HEAD_H + fontSize / 2) return;
     ctx.fillText(space.text(v), x + 7, y);
   });
-  if (unit && !relative) ctx.fillText(unit.label, x + 7, HEAD_H / 2);
   if (tagY === null || last === undefined || tag === undefined || tagY < 0 || tagY > height) return;
 
   ctx.fillStyle = tag;
@@ -215,6 +227,48 @@ function drawStrip(
   ctx.fillText(text, x + 5, tagY);
 }
 
+/** 轴顶一行里一个单位字样:x = 左端(轴画布坐标,可以伸出画布 —— 右轴伸进图表区是负数,左轴伸进图表区是超过轴宽) */
+type HeadItem = { text: string; color: string; x: number; w: number };
+// 相邻两个单位字样之间至少隔开
+const HEAD_GAP = 6;
+
+/**
+ * 右轴轴顶一行的单位字样排位:从最外侧往里排,每个尽量写在自己那根轴的刻度上方(want = 左端),
+ * 太长就往里(左)挪、不压外侧那个;最里面的放不下就伸进图表区顶上(x < 0)。right = 最外侧可用的右端
+ */
+export function layoutHeads(items: { want: number; w: number }[], right: number): number[] {
+  return items.reduceRight<{ xs: number[]; limit: number }>(
+    ({ xs, limit }, { want, w }) => {
+      const x = Math.min(want, limit - w);
+      return { xs: [x, ...xs], limit: x - HEAD_GAP };
+    },
+    { xs: [], limit: right },
+  ).xs;
+}
+
+/** 这根纵轴(含多出来的几根)轴顶要写的单位字样,排好位置。width = 这根纵轴画布的宽 */
+function headItems(ctx: CanvasRenderingContext2D, decor: AxisDecor, width: number): HeadItem[] {
+  const { side, head, strips, slots } = decor;
+  ctx.font = decor.font;
+  const measure = (text: string) => ctx.measureText(text).width;
+  // 左轴只有原生一根:靠内侧(右)对齐,太长就往图表区那边(右)伸,不往画布外伸
+  if (side === 'left')
+    return head ? [{ ...head, x: Math.max(2, width - 8 - measure(head.text)), w: measure(head.text) }] : [];
+
+  const wanted = [
+    ...(head ? [{ ...head, want: 8 }] : []),
+    ...strips.flatMap((s, k) =>
+      s.unit && !isRelative(s.series)
+        ? [{ text: s.unit.label, color: s.color, want: width - (slots - k) * STRIP_W + 7 }]
+        : [],
+    ),
+  ].map((it) => ({ ...it, w: measure(it.text) }));
+  const xs = layoutHeads(wanted, width - 2);
+
+  return wanted.map(({ text, color, w }, i) => ({ text, color, w, x: xs[i] }));
+}
+
+/** 纵轴画布:单位那一行(垫底色,压住轴顶那截原生刻度短线和边线)+ 多出来的几根轴 */
 class Renderer implements IPrimitivePaneRenderer {
   constructor(
     private readonly decor: AxisDecor,
@@ -222,22 +276,56 @@ class Renderer implements IPrimitivePaneRenderer {
   ) {}
 
   draw(target: Parameters<IPrimitivePaneRenderer['draw']>[0]): void {
-    const { side, head, strips, slots, font, fontSize, bg } = this.decor;
+    const { strips, slots, fontSize, bg } = this.decor;
     // biome-ignore lint/correctness/useHookAtTopLevel: useMediaCoordinateSpace 是 canvas 方法,不是 React hook
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize: { width, height } }) => {
-      ctx.font = font;
+      const heads = headItems(ctx, this.decor, width);
+
       ctx.textBaseline = 'middle';
-      // 轴自己的单位:写在轴顶靠内侧(右轴的刻度靠左、左轴的靠右,同原生刻度的对齐)
-      if (head) {
-        ctx.fillStyle = bg;
-        ctx.fillRect(0, 0, width - slots * STRIP_W, HEAD_H);
-        ctx.fillStyle = head.color;
-        ctx.textAlign = side === 'right' ? 'left' : 'right';
-        ctx.fillText(head.text, side === 'right' ? 8 : width - 8, HEAD_H / 2);
-      }
       ctx.textAlign = 'left';
+      if (heads.length) {
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, width, HEAD_H);
+      }
+      heads.forEach((h) => {
+        ctx.fillStyle = h.color;
+        ctx.fillText(h.text, h.x, HEAD_H / 2);
+      });
+      // 有单位那一行时所有轴线都从它下面起:字太长会伸到旁边轴的上方,不能被那根轴线穿过。
+      // 轴画在单位字样之后:最新值色块到了轴顶时压在字上面(同原生轴的最新值标签)
+      const lineTop = heads.length ? HEAD_H : 0;
       strips.forEach((s, k) => {
-        drawStrip(ctx, s, width - (slots - k) * STRIP_W, height, fontSize, this.chart);
+        drawStrip(ctx, s, width - (slots - k) * STRIP_W, height, lineTop, fontSize, this.chart);
+      });
+    });
+  }
+}
+
+/** 图表区画布:单位字样伸出纵轴的那截(垫底色,压住底下的线),接着纵轴画布上那一截画 */
+class SpillRenderer implements IPrimitivePaneRenderer {
+  constructor(
+    private readonly decor: AxisDecor,
+    private readonly axisWidth: number,
+  ) {}
+
+  draw(target: Parameters<IPrimitivePaneRenderer['draw']>[0]): void {
+    const { side, bg } = this.decor;
+    const aw = this.axisWidth;
+    // biome-ignore lint/correctness/useHookAtTopLevel: useMediaCoordinateSpace 是 canvas 方法,不是 React hook
+    target.useMediaCoordinateSpace(({ context: ctx, mediaSize: { width } }) => {
+      // 轴画布坐标 → 图表区坐标:右轴在图表区右边(x + 图表区宽),左轴在左边(x − 轴宽)
+      const shift = side === 'right' ? width : -aw;
+      const spilled = headItems(ctx, this.decor, aw)
+        .map((h) => ({ ...h, x: h.x + shift }))
+        .filter((h) => (side === 'right' ? h.x < width : h.x + h.w > 0));
+
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      spilled.forEach((h) => {
+        ctx.fillStyle = bg;
+        ctx.fillRect(h.x - 3, 0, h.w + 6, HEAD_H);
+        ctx.fillStyle = h.color;
+        ctx.fillText(h.text, h.x, HEAD_H / 2);
       });
     });
   }
@@ -259,6 +347,17 @@ export class AxisDecorPrimitive implements ISeriesPrimitive<Time> {
   setDecor(decor: AxisDecor): void {
     this.decor = decor;
     this.param?.requestUpdate();
+  }
+
+  // 单位字样比纵轴宽时伸进图表区的那截;top:压在线上面(垫了底色)
+  paneViews(): IPrimitivePaneView[] {
+    const decor = this.decor;
+    const series = this.param?.series;
+    const chart = this.param?.chart;
+    if (!decor || !series || !chart) return [];
+    const axisWidth = chart.priceScale(decor.side, series.getPane().paneIndex()).width();
+
+    return [{ zOrder: () => 'top', renderer: () => new SpillRenderer(decor, axisWidth) }];
   }
 
   priceAxisPaneViews(): IPrimitivePaneView[] {

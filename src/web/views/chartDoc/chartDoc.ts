@@ -156,8 +156,14 @@ export type Pane = {
   desc?: string;
 };
 
-/** title:整张图的标题(导出图片时写在顶上);没有就不写这个字段 */
-export type ChartDoc = { v: 1; title?: string; panes: Pane[] };
+/** 价格轴上下留白(占格高的百分数)。同 TradingView 的 Margins:整张图所有值轴共用一个值 */
+export type Margins = { top: number; bottom: number };
+/** TradingView 的默认值与上限(官方演示页实测)。lw-charts 自己的默认是上 20% / 下 10% */
+export const DEFAULT_MARGINS: Margins = { top: 10, bottom: 8 };
+export const MAX_MARGIN = 25;
+
+/** title:整张图的标题(导出图片时写在顶上);没有就不写这个字段。margins:等于默认就不写 */
+export type ChartDoc = { v: 1; title?: string; margins?: Margins; panes: Pane[] };
 
 /** 图层挂轴的选择:内置左右轴、新开一根独立轴,或挂到本格已有的某根独立轴。 */
 export type ScaleChoice = 'right' | 'left' | 'newOverlay' | { overlay: string };
@@ -289,7 +295,7 @@ export function normalize(doc: ChartDoc): ChartDoc {
       return { ...p, layers, scales: [...declared, ...missing] };
     });
 
-  return { v: 1, ...(doc.title ? { title: doc.title } : {}), panes };
+  return { v: 1, ...(doc.title ? { title: doc.title } : {}), ...(doc.margins ? { margins: doc.margins } : {}), panes };
 }
 
 function mapLayer(doc: ChartDoc, layerId: string, fn: (l: Layer, p: Pane) => Partial<Layer>): ChartDoc {
@@ -796,6 +802,29 @@ export function setDocTitle(doc: ChartDoc, title: string): ChartDoc {
   return t ? { ...rest, title: t } : rest;
 }
 
+/** 合法的留白:0 ~ MAX_MARGIN 的有限数 */
+function isMargin(n: unknown): n is number {
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= MAX_MARGIN;
+}
+
+/** 校验 + 规整:不合法、或等于默认都返回 undefined(不写字段) */
+function canonicalMargins(m: unknown): Margins | undefined {
+  if (!isObj(m) || !isMargin(m.top) || !isMargin(m.bottom)) return undefined;
+  if (m.top === DEFAULT_MARGINS.top && m.bottom === DEFAULT_MARGINS.bottom) return undefined;
+
+  return { top: m.top, bottom: m.bottom };
+}
+
+/** 改上下留白:取整、夹到 0 ~ MAX_MARGIN(同 TradingView);等于默认就删掉字段;没变返回原文档(不记撤销步) */
+export function setDocMargins(doc: ChartDoc, m: Margins): ChartDoc {
+  const clamp = (n: number) => Math.min(MAX_MARGIN, Math.max(0, Math.round(n)));
+  const next = canonicalMargins({ top: clamp(m.top), bottom: clamp(m.bottom) });
+  if (JSON.stringify(next) === JSON.stringify(doc.margins)) return doc;
+  const { margins: _, ...rest } = doc;
+
+  return next ? { ...rest, margins: next } : rest;
+}
+
 /** 文档里还没用到的第一个调色板颜色;全用过了就按图层数轮转。 */
 export function nextColor(doc: ChartDoc, palette: readonly string[]): string {
   const used = new Set(doc.panes.flatMap((p) => p.layers.map((l) => l.color)));
@@ -1168,5 +1197,8 @@ export function parseChartDoc(x: unknown): ChartDoc | null {
     ...(p.desc !== undefined ? { desc: p.desc } : {}),
   }));
 
-  return normalize({ v: 1, ...(x.title ? { title: x.title } : {}), panes });
+  // 留白不合法只丢这一项(回默认),不整张拒收:理由同 dropBadDrawings
+  const margins = canonicalMargins(x.margins);
+
+  return normalize({ v: 1, ...(x.title ? { title: x.title } : {}), ...(margins ? { margins } : {}), panes });
 }

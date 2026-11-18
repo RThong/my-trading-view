@@ -1,18 +1,21 @@
-// 纵轴右键弹出的菜单(TradingView 价格轴菜单的样式:一列选项、勾选标在左边):倒轴开关 + 坐标模式单选,顶上一行写清是哪根轴、挂着哪几条线。
+// 纵轴右键弹出的菜单(TradingView 价格轴菜单的样式:一列选项、勾选标在左边):倒轴开关 + 坐标模式单选 + 整图上下留白,
+// 顶上一行写清是哪根轴、挂着哪几条线。
 // 点菜单外、按 Esc、滚轮都收起(同 TradingView)
 import { type RefObject, useEffect, useRef } from 'react';
 import { Check } from 'lucide-react';
-import { onItsScale, type ChartDoc, scaleName } from '../../../views/chartDoc/chartDoc';
+import { DEFAULT_MARGINS, MAX_MARGIN, onItsScale, type ChartDoc, scaleName } from '../../../views/chartDoc/chartDoc';
 import { baseLabel } from '../../../views/chartDoc/layerLabel';
 import { positiveScale, type LayerData } from '../../../views/chartDoc/layerPoints';
 import type { AxisMenuAt } from '../hooks/useAxisMenu';
+import type { ChartDocActions } from '../hooks/useChartDoc';
+import { NumberField } from './NumberField';
 import { NOT_POSITIVE_NOTE, type ScaleActions, type ScaleItem, scaleItems } from './ScaleControls';
 
 type Props = {
   at: AxisMenuAt;
   doc: ChartDoc;
   data: Record<string, LayerData>;
-  actions: ScaleActions;
+  actions: ScaleActions & Pick<ChartDocActions, 'setMargins'>;
   onClose: () => void;
   /** 图表画布容器:菜单开着时点在它里面只关菜单 */
   chartEl: RefObject<HTMLElement | null>;
@@ -29,7 +32,12 @@ export function AxisMenu({ at, doc, data, actions, onClose, chartEl }: Props) {
   useEffect(() => {
     // 焦点移进菜单:按 Esc 时目标在 [role=menu] 里,画线那边(notOurs)不再拿它去退工具 / 取消选中
     ref.current?.focus({ preventScroll: true });
-    const close = () => closeRef.current();
+    // 先让菜单里的输入框失焦再关:留白输入框靠失焦提交,菜单直接卸载的话 onBlur 不会触发、打的值就丢了
+    const close = () => {
+      const el = document.activeElement;
+      if (el instanceof HTMLElement && ref.current?.contains(el)) el.blur();
+      closeRef.current();
+    };
     // 菜单开着时点图表区只关菜单,这一下不再传给选线 / 画线(否则顺带取消了选中)。点浮条、侧栏等别处照常(它们要靠按下获得焦点 / 响应)
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
@@ -63,6 +71,7 @@ export function AxisMenu({ at, doc, data, actions, onClose, chartEl }: Props) {
   const pane = doc.panes[index];
   if (!pane) return null;
 
+  const margins = doc.margins ?? DEFAULT_MARGINS;
   const names = pane.layers.filter((l) => l.scale === at.scaleId && onItsScale(l)).map((l) => baseLabel(doc, l.id));
   // 选完就收起(同 TradingView)
   const { invert, modes, ineffective } = scaleItems(doc, pane, at.scaleId, positiveScale(pane, at.scaleId, data), {
@@ -101,6 +110,21 @@ export function AxisMenu({ at, doc, data, actions, onClose, chartEl }: Props) {
         <Item key={it.key} item={it} role="menuitemradio" />
       ))}
       {ineffective && <div className="px-3 py-1 text-xs text-amber-500">{NOT_POSITIVE_NOTE}</div>}
+      <Separator />
+      {/* TV 放在图表设置里;这里没有设置页,挂在轴菜单上。改完不收起,回车即见效 */}
+      <div
+        className="flex h-8 items-center gap-1 px-3 text-neutral-200"
+        title={`整张图所有价格轴共用(同 TradingView 的 Margins),0~${MAX_MARGIN}%`}
+      >
+        <span className="mr-auto">上下留白 %</span>上
+        <NumberField value={margins.top} onCommit={(top) => actions.setMargins({ ...margins, top })} className="w-8" />
+        下
+        <NumberField
+          value={margins.bottom}
+          onCommit={(bottom) => actions.setMargins({ ...margins, bottom })}
+          className="w-8"
+        />
+      </div>
     </div>
   );
 }
