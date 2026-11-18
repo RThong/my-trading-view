@@ -14,6 +14,7 @@ import {
   isFitTarget,
   SCALE_MODES,
   scaleMode,
+  scaleName,
   type CalcOp,
   type ChartDoc,
   type Fit,
@@ -28,6 +29,7 @@ import { baseLabel, layerLabel } from '../../../views/chartDoc/layerLabel';
 import { NumberField } from './NumberField';
 import { INDICATOR_IDS, INDICATORS, type IndicatorId, periodsOf } from '../../../chart/indicatorDefs';
 import { allSevenDay, plotsOf } from '../../../views/chartDoc/layerPoints';
+import { stripsDrawable } from '../../../views/chartDoc/useAxisDecor';
 import { SeriesSelect } from './SeriesSelect';
 import type { ChartDocActions } from '../hooks/useChartDoc';
 import { ACTIVE, LOCKED_TITLE, NOT_POSITIVE_NOTE, ScaleControls } from './ScaleControls';
@@ -42,6 +44,7 @@ export type CardActions = Pick<
   | 'setRender'
   | 'setInvert'
   | 'setMode'
+  | 'setShow'
   | 'clearFit'
   | 'addIndicator'
   | 'removeIndicator'
@@ -108,12 +111,9 @@ export function LayerCard({
     ? pane.layers.filter((l) => l.id !== layer.id && l.scale === layer.scale && onItsScale(l))
     : [];
   const onOverlay = layer.scale !== 'right' && layer.scale !== 'left';
-  const scaleName =
-    layer.scale === 'right'
-      ? '右轴'
-      : layer.scale === 'left'
-        ? '左轴'
-        : `独立轴 ${overlays.findIndex((s) => s.id === layer.scale) + 1}`;
+  const axisName = scaleName(pane, layer.scale);
+  // 独立轴的刻度真画出来了(勾了显示刻度、且这一格右轴有线可挂,见 useAxisDecor):这时同左右轴,在轴上右键改
+  const drawn = !!scale?.show && stripsDrawable(doc, pane.id);
   const inverted = !!scale?.invert;
   const mode = scaleMode(scale);
   const modeIneffective = mode !== 'normal' && !positive;
@@ -163,7 +163,7 @@ export function LayerCard({
         </span>
         {sharers.length > 0 && (
           <Tip
-            text={`和 ${sharers.map((l) => baseLabel(doc, l.id)).join('、')} 共用${scaleName},拖动会一起动;要单独拖,把纵轴改成别的轴`}
+            text={`和 ${sharers.map((l) => baseLabel(doc, l.id)).join('、')} 共用${axisName},拖动会一起动;要单独拖,把纵轴改成别的轴`}
           />
         )}
         {/* 成交量指标挂自己的隐形轴(只占底部一条),换轴没有意义 */}
@@ -277,8 +277,35 @@ export function LayerCard({
                 )}
                 {onOverlay && (
                   <TabsContent value="axis" className="flex flex-col gap-2 text-xs">
-                    <p className="text-neutral-500">{scaleName}的属性:这根轴上的线一起变</p>
-                    <ScaleControls doc={doc} pane={pane} scaleId={layer.scale} positive={positive} actions={actions} />
+                    <p className="text-neutral-500">{axisName}的属性:这根轴上的线一起变</p>
+                    <div>
+                      <Button
+                        variant="outline"
+                        size="2xs"
+                        aria-pressed={!!scale?.show}
+                        className={scale?.show ? ACTIVE : 'text-neutral-500'}
+                        title="在右轴外侧画出这根轴的刻度(同研报图的第 3、4 根纵轴),能拖动缩放、右键改坐标"
+                        onClick={() => actions.setShow(pane.id, layer.scale, !scale?.show)}
+                      >
+                        显示刻度
+                      </Button>
+                    </div>
+                    {/* 多出来的轴挂在右轴的线上画:这一格右轴没有线就画不出(见 useAxisDecor) */}
+                    {scale?.show && !drawn && (
+                      <p className="text-amber-500">这一格右轴没有线,刻度画不出来:先把一条线挂到右轴</p>
+                    )}
+                    {/* 刻度画出来了就同左右轴:在轴上右键改;没画出来的隐形轴点不到,只能在这里改 */}
+                    {drawn ? (
+                      <p className="text-neutral-500">坐标(百分比 / 对数等)和倒轴:在图上这根轴的刻度上右键改</p>
+                    ) : (
+                      <ScaleControls
+                        doc={doc}
+                        pane={pane}
+                        scaleId={layer.scale}
+                        positive={positive}
+                        actions={actions}
+                      />
+                    )}
                   </TabsContent>
                 )}
               </Tabs>

@@ -34,6 +34,9 @@ export const CHART_OPTIONS = {
   // lw 默认把悬停的那条 series 挪到最上层画:鼠标碰到竖线 / 柱状图层,它就盖住 K 线。
   // TradingView 悬停不改层级(2026-11-10 演示页读像素实测),层级只按图层顺序
   hoveredSeriesOnTop: false,
+  // lw 默认把贴着格子上下边的刻度也画出来,字被切掉半截(拖轴、对数轴时常见);只留整行放得下的
+  rightPriceScale: { entireTextOnly: true },
+  leftPriceScale: { entireTextOnly: true },
 };
 
 /**

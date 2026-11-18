@@ -11,6 +11,7 @@ import {
   setLayerShift,
   setScaleInvert,
   setScaleMode,
+  setScaleShow,
   scaleMode,
   moveLayer,
   nextColor,
@@ -970,4 +971,32 @@ test('再点一下去掉:删掉这条线的这个指标(振荡类那一格空了
   expect(hasIndicator(off, off.panes[0].layers[0], 'rsi')).toBe(false);
   expect(hasIndicator(off, off.panes[0].layers[0], 'ema')).toBe(true);
   expect(removeIndicator(off, 'l1', 'macd')).toBe(off);
+});
+
+test('独立轴显示刻度:只认独立轴;导入时左右轴写 show 拒收', () => {
+  const doc = {
+    v: 1 as const,
+    panes: [
+      {
+        id: 'p1',
+        stretch: 1,
+        scales: [
+          { id: 'right', side: 'right' as const },
+          { id: 's1', side: 'overlay' as const },
+        ],
+        layers: [
+          { id: 'l1', series: 'SPY', scale: 'right', color: '#111111' },
+          { id: 'l2', series: 'TLT', scale: 's1', color: '#222222' },
+        ],
+      },
+    ],
+  };
+  const on = setScaleShow(doc, 'p1', 's1', true);
+  expect(on.panes[0].scales[1]).toEqual({ id: 's1', side: 'overlay', show: true });
+  expect(setScaleShow(doc, 'p1', 'right', true)).toBe(doc);
+  expect(setScaleShow(on, 'p1', 's1', false).panes[0].scales[1]).toEqual({ id: 's1', side: 'overlay' });
+  expect(parseChartDoc(JSON.parse(JSON.stringify(on)))).toEqual(on);
+  const bad = JSON.parse(JSON.stringify(doc));
+  bad.panes[0].scales[0].show = true;
+  expect(parseChartDoc(bad)).toBeNull();
 });

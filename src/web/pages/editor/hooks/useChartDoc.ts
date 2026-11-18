@@ -29,6 +29,7 @@ import {
   setLayerRender,
   setLayerShift,
   setScaleInvert,
+  setScaleShow,
   setScaleMode,
   setDocTitle,
   parseChartDoc,
@@ -130,6 +131,8 @@ export function useChartDoc() {
     removeIndicator: (layerId: string, id: IndicatorId) => edit('去掉指标', (d) => removeIndicator(d, layerId, id)),
     setPeriods: (layerId: string, periods: number[] | undefined) =>
       edit('改指标周期', (d) => setIndicatorPeriods(d, layerId, periods)),
+    setShow: (paneId: string, scaleId: string, show: boolean) =>
+      edit(show ? '显示刻度' : '隐藏刻度', (d) => setScaleShow(d, paneId, scaleId, show)),
     setInvert: (paneId: string, scaleId: string, invert: boolean) =>
       edit(invert ? '倒轴' : '取消倒轴', (d) => setScaleInvert(d, paneId, scaleId, invert)),
     setMode: (paneId: string, scaleId: string, mode: ScaleMode) =>

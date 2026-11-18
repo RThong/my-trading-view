@@ -9,6 +9,7 @@ import { allSevenDay, layerRequest, useLayerData } from './layerPoints';
 import { Legend } from './Legend';
 import { useCrosshairLegend } from './useCrosshairLegend';
 import { useDocChart } from './useDocChart';
+import { useAxisDecor } from './useAxisDecor';
 import { usePercentileBand } from './usePercentileBand';
 import { requestKey, useSeriesData } from './useSeriesData';
 
@@ -37,11 +38,12 @@ export function DocChart({ doc: builtin, interval, notes = [], caption, fit = FI
   const requests = layers.map((l) => layerRequest(l, sevenDay));
   const { points, bars, isLoading, error, missing, stale } = useSeriesData(requests, interval);
   const data = useLayerData(doc, points, interval, bars);
-  const { chartRef } = useDocChart(containerRef, doc, data, {
+  const { chartRef, seriesRef } = useDocChart(containerRef, doc, data, {
     onStretches: (s) => setDoc((d) => setStretches(d, s)),
     interval,
     fit,
   });
+  useAxisDecor(containerRef, chartRef, seriesRef, doc, data);
   const { hoverTime, layout } = useCrosshairLegend(containerRef, chartRef, doc);
   usePercentileBand(chartRef, doc, data);
 
