@@ -4,6 +4,7 @@ import {
   channelOffset,
   hitCursor,
   hitShapes,
+  pointToSegmentDistance,
   RECT_EDGES,
   rayEnd,
   rectHandleAt,
@@ -11,6 +12,21 @@ import {
   textSize,
   timeAxis,
 } from './drawings';
+
+describe('pointToSegmentDistance', () => {
+  test('点落在线段上 → 距离 0', () => {
+    expect(pointToSegmentDistance(5, 0, 0, 0, 10, 0)).toBeCloseTo(0, 5);
+  });
+  test('点在线段正上方 → 垂直距离', () => {
+    expect(pointToSegmentDistance(5, 3, 0, 0, 10, 0)).toBeCloseTo(3, 5);
+  });
+  test('垂足落在段外(点在端点左侧)→ 到最近端点距离', () => {
+    expect(pointToSegmentDistance(-4, 0, 0, 0, 10, 0)).toBeCloseTo(4, 5);
+  });
+  test('退化线段(两端点重合)→ 到该点距离', () => {
+    expect(pointToSegmentDistance(3, 4, 0, 0, 0, 0)).toBeCloseTo(5, 5);
+  });
+});
 
 describe('timeAxis', () => {
   // 周线:每周一根(7 天一根)

@@ -74,6 +74,14 @@ function daily(category: SeriesCategory, label: string, unit?: string, aliases?:
 export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   // ── 资产
   qqq: daily('资产', 'QQQ 纳指 100', '$', ['纳指', 'nasdaq']),
+  noblQqq: daily('资产', 'NOBL / QQQ 攻防比值', undefined, ['攻防', '红利贵族', 'nobl']),
+  noblQqqMa35: daily('资产', 'NOBL / QQQ 35 日均线', undefined, ['攻防']),
+  adZigDefense: { ...daily('资产', '攻防慢线:防守(已确认)'), hidden: true },
+  adZigOffense: { ...daily('资产', '攻防慢线:进攻(已确认)'), hidden: true },
+  adZigDefensePending: { ...daily('资产', '攻防慢线:防守(末段待定)'), hidden: true },
+  adZigOffensePending: { ...daily('资产', '攻防慢线:进攻(末段待定)'), hidden: true },
+  adFastDefense: { ...daily('资产', '攻防快线:防守'), hidden: true },
+  adFastOffense: { ...daily('资产', '攻防快线:进攻'), hidden: true },
   usd: daily('资产', '美元指数 DXY', undefined, ['dxy', '美元']),
   // 不标 weekends:以前 Yahoo 外汇日期按 UTC 取,夏令时期间周一被标成周日才像「带周末」;已按交易所时区修正(fetchers/yahoo 的 exchangeDate)
   usdjpy: daily('资产', 'USD/JPY', undefined, ['日元', 'yen']),

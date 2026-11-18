@@ -130,7 +130,7 @@ L0 数据         采集 · 调度 · 存储 · 新鲜度
 | 规则与渲染分离（同一份规则供多处消费） | 有（`shared/alertRules.ts`） | 无 | 有（Pine → plot / alert） | ~~缺，L3-1~~ ✅ 已完成 |
 | 方向语义 + 滞回 / 确认 | 有（方向写在规则名；`ruleState` 带滞后带与确认天数） | 部分（收复缓冲 2pp） | 有（收盘确认） | ~~缺，L3-1~~ ✅ 已完成（滞后带 / 确认天数 2026-11-17 已用全量库校准） |
 | 规则版本号 | 有（每条规则 `version`） | 无 | 部分（脚本有版本） | ~~缺，L3-1~~ ✅ 已完成 |
-| 用户自写规则（脚本） | 无 | 无（只有 A–H 计算器） | 有（Pine） | 后话，先不做 |
+| 用户自写规则（脚本） | 无 | 无（只有 A–H 计算器） | 有（Pine） | 后话，先不做；首个用例定为攻防（替换它的 8 条服务端序列，见 L2-3 固定面板迁移条） |
 
 **L4 监控**
 
@@ -292,7 +292,7 @@ TradingView
      进度（2026-11-06）：编辑器已能画 refLines、baseline、step、percentile（P5/P95 线 + riskTail 背景带）、desc（图例 ⓘ）、events、signed、hidden、纵轴范围框；还缺变换（均线 / 同比 / Z-score）。蜡烛已做。`docToPaneSpecs` 支持一格多线（第一条线是主线，其余转成 overlays）与竖线透明度（`render.events.opacity`），已用「利率 · 加息定价」格端到端对过（主线 + 3 叠加 + 2 竖线，画法字段逐一相等）。背景色带已做（`render: { kind: 'background' }`）。
      口径（2026-11-07 定）：分位阈值统一按图上的点算（周 / 月线是聚合点），同 TradingView 指标默认「跟随图表周期」；以前固定面板按原始日频算（相当于 `timeframe = "D"`），已不再这样。背景色带（错月）只在日线画。要按日频的话再加参数（如 `percentile.tf`）。
   2026-11-07 续：期限走势 6 个 tab（美债 / OIS / 实际 / BEI / 日债 / AI CDS，`pages/curveHistory` 按注册表同族生成，`TenorHistoryPanel` 已删）与基本面 2 个 tab（买方合计、产业链，`ai/fundamentals` 的 `fundDoc` 按名单现算，SEC 三条提示由 `views/regime/FundChart` 外层给）也已迁成 ChartDoc，旧 `RegimeChart` / `PaneSpec` 已删。图例里隐藏的线收成一行小字（名字 + 读数，点一下显示），ⓘ 挂在第一条线名后面。
-  2026-11-08 续：指标图层上线（`Layer.indicator`，内置 EMA / 布林带 / MACD / RSI 在 `chart/indicatorDefs`，同 TradingView 指标实例只存 id + 参数），期权 / 现货 8 个 tab 迁成 ChartDoc（`pages/assetDoc`，EMA / 布林带默认隐藏、不占 MACD / RSI 格、初始窗口对准共同时段），`AssetChart` / `priceIndicators` / `oscillator` 已删。仍是旧引擎 `PaneChartView` 的只剩攻防 1 个（ZigZag 攻防分区 + 均线滞回，带状态，等「类 Pine」时再迁）。横轴不是时间的 8 个（收益曲线类、加息定价）不进 ChartDoc。
+  2026-11-08 续：指标图层上线（`Layer.indicator`，内置 EMA / 布林带 / MACD / RSI 在 `chart/indicatorDefs`，同 TradingView 指标实例只存 id + 参数），期权 / 现货 8 个 tab 迁成 ChartDoc（`pages/assetDoc`，EMA / 布林带默认隐藏、不占 MACD / RSI 格、初始窗口对准共同时段），`AssetChart` / `priceIndicators` / `oscillator` 已删。攻防 2026-11-18 也迁了：ZigZag 分区与均线滞回改由服务端算成 0/1 标记序列（`shared/calc/attackDefense`），ChartDoc 用背景色带画（`background` 加了 `opacity` / `strip`），旧引擎 `PaneChartView` / `paneChart.*` / `trendlines*` 随之删掉。**这是过渡方案（2026-11-18 用户定）**：一个指标被拆成服务端 8 条序列（`noblQqq` / `noblQqqMa35` / `adZig*` 四条 / `adFast*` 两条）再用 8 个图层拼回来，图例多出 6 行背景名、改规则要动服务端 + 序列表 + ChartDoc 三处。等做「类 Pine」脚本指标时，攻防作为**第一个用例**改写成一个脚本（plot 比值 / 均线 + 按天 bgcolor 慢线 + 底部细带快线，参数 10% / 35 日 / ±2% 成脚本参数，图例一行），届时删掉这 8 条服务端序列与 `background` 的 `opacity` / `strip`；在那之前不再往这套拼法上加功能（如把 6 层并成按正负取色的 3 层）。横轴不是时间的 8 个（收益曲线类、加息定价）不进 ChartDoc。
   验收：~~任意 regime 格右上角有「编辑」入口~~ ✅ 改为每个 ChartDoc tab 右下角（价格轴与时间轴交汇的方格）有「在编辑器中打开」，点开后编辑器内容和原 tab 一致（含显隐、格高），修改不影响原 tab。
 - ~~**L2-4（P1）ChartDoc 校验测试**~~ ✅ 已完成（`views/regime/docs.test.ts`：内置 ChartDoc 逐个过 JSON 往返 + 序列都在注册表）。存成 JSON 会丢掉编译期的拼写检查，要用一个测试补回来：遍历所有内置 ChartDoc，检查每个 series 都在注册表里。注册表 id 一旦用过就不再改名；真要改，在 parseChartDoc 里按 v 做迁移。约 30 分钟。
 - L2-5（P2）编辑器补「标、记」：标题和叙述、竖线事件、导出 PNG（lightweight-charts 自带 `takeScreenshot()`）。约半天。
@@ -300,7 +300,7 @@ TradingView
   - 画线后续 ✅ 2026-11-09 ~ 11-13：磁吸、射线 / 水平射线、平行通道、测量尺、文字、气泡标注、矩形、回归通道、颜色 + 线型（线宽定不做）、锁定、撤销 / 重做。
   - 标题 + 导出图片 ✅ 2026-11-13（窗口框样式、横排图例、文件名带时间戳，同 TradingView）。
   - **还没做**：图表叙述（标题下一段说明，导出时带上）；画线逐条置顶 / 置底（现在一律压在 K 线上）；改挂到别的线（设计文档没排）。
-  手动画线（现在只在旧引擎里，`chart/trendlines.hooks.ts`）在编辑器里重新做，按设计约定存用户覆盖层、锚点用 `{ time, price }`；旧引擎的画线存档不迁。
+  手动画线已在编辑器里重新做（锚点用 `{ time, price }`）；旧引擎连同它的画线 2026-11-18 删掉，存档不迁。
 - **L2-6（P2）MCP 出图：自然语言叠加**。外部（Claude Desktop、claude.ai、知识库会话）说一句「把黄金和 10Y 实际利率叠一起，看近 5 年」，直接拿到叠好的清晰图。
   - 分工：自然语言理解和选序列由**客户端大模型**做；本项目 MCP 只做确定性计算（取数 → 叠加 → 出图），同样输入永远同样输出，符合 §0.5 分工。
   - 工具：`search_series(query)` 搜注册表 → `get_series(id, from, to)` 取数 → `overlay(a, b, from, to)` 跑 `bestOverlay`（找偏移 + 自动选基准段 + 定比例），返回带 `shift` / `fit` 的 ChartDoc → `render_chart(doc)` 返回 PNG + 编辑器链接（点开可接着改）。

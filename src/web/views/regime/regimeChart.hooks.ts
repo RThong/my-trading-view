@@ -60,6 +60,7 @@ export type RegimeDim =
   | 'jpTermPremium'
   | 'valuation'
   | 'concentration'
+  | 'attackDefense'
   | 'oil'
   | 'refinery'
   | 'pump'

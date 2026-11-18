@@ -51,6 +51,7 @@ import {
 } from '../analytics/regime';
 import type { RegimeSeries, FundSeries, SeriesKey, RegimeOhlcKey } from '../../shared/regimeSeries';
 import { rollMismatchFlags } from '../../shared/calc/oilRoll';
+import { attackDefenseSeries } from '../../shared/calc/attackDefense';
 import { nearMinusFar } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
 import { getSecLatestFiled } from '../storage/repository';
@@ -121,6 +122,17 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // regime 自己缓存 6h:live/market 的 1h 缓存不能再叠一层,每次刷新都要求重拉(并发合并),
   // VIX 也才能和每次现拉的 VIX3M / VIXEQ 同频(否则内连接丢当天那根)
   const FRESH = { fresh: true };
+  // 攻防那组序列两条腿(QQQ / NOBL)任一沿用上次,整组都标沿用上次
+  const AD_KEYS: SeriesKey[] = [
+    'noblQqq',
+    'noblQqqMa35',
+    'adZigDefense',
+    'adZigOffense',
+    'adZigDefensePending',
+    'adZigOffensePending',
+    'adFastDefense',
+    'adFastOffense',
+  ];
   // live/market 这次没拉到新的、回的是上一份 → 对应的对外键标「沿用上次」,整份结果只短缓存(见 complete)
   const liveStale: string[] = [];
   const track = <T>(keys: SeriesKey[], p: Promise<Live<T>>): Promise<T> =>
@@ -231,7 +243,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // Binance 现货 BTCUSDT 日成交额(2017-08 起,每页 1000 天,4 个并发请求)
   const btcVolumeP = fetchBtcVolume().catch(warnNull('Binance BTC 成交额'));
   // QQQ / BTC 现货与 BRK 链上:原先由 job 落库,改现拉(live/market 自带缓存,与 /api/vrp 共用一份)
-  const qqqBarsP = track(['qqq'], spotBars('QQQ', FRESH)).catch(warnNull('Yahoo QQQ'));
+  const qqqBarsP = track(['qqq', ...AD_KEYS], spotBars('QQQ', FRESH)).catch(warnNull('Yahoo QQQ'));
+  // NOBL(标普红利贵族):只做攻防比值的防守腿
+  const noblBarsP = track(AD_KEYS, spotBars('NOBL', FRESH)).catch(warnNull('Yahoo NOBL'));
   const btcBarsP = track(['btc', 'weekendFlag'], spotBars('BTC', FRESH)).catch(warnNull('BTC 现货'));
   const btcClosedP = track(['btcSharpe1y'], closedBars('BTC', FRESH)).catch(warnNull('BTC 现货(已收盘)'));
   const densityP = track(['btcSupplyDensity', 'btcSupplyDensityRaw'], btcSupplyDensity(FRESH)).catch(
@@ -360,6 +374,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     gex: gexP,
     btcVolume: btcVolumeP,
     qqqBars: qqqBarsP,
+    noblBars: noblBarsP,
     btcBars: btcBarsP,
     btcClosed: btcClosedP,
     density: densityP,
@@ -417,8 +432,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const cflmi = await cflmiP;
   const gex = await gexP;
   const btcVolume = await btcVolumeP;
-  const [qqqBars, btcBars, btcClosed, densityRaw, valuation] = await Promise.all([
+  const [qqqBars, noblBars, btcBars, btcClosed, densityRaw, valuation] = await Promise.all([
     qqqBarsP,
+    noblBarsP,
     btcBarsP,
     btcClosedP,
     densityP,
@@ -708,6 +724,19 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     qqq2018.map((b) => ({ date: b.date, value: b.close })),
   );
   if (qqq2018.length) ohlc.qqq = toOhlc(qqq2018);
+
+  // 攻防:NOBL / QQQ 从 NOBL 上市(2013)起全段算 —— ZigZag 的拐点要靠前面的走势确认,截到 2018 会改掉开头几段
+  const close = (bars: { date: string; close: number }[] | null) =>
+    (bars ?? []).map((b) => ({ date: b.date, value: b.close }));
+  const ad = noblBars?.length && qqqBars?.length ? attackDefenseSeries(close(noblBars), close(qqqBars)) : null;
+  put('noblQqq', ad?.ratio);
+  put('noblQqqMa35', ad?.ma);
+  put('adZigDefense', ad?.zigDefense);
+  put('adZigOffense', ad?.zigOffense);
+  put('adZigDefensePending', ad?.zigDefensePending);
+  put('adZigOffensePending', ad?.zigOffensePending);
+  put('adFastDefense', ad?.fastDefense);
+  put('adFastOffense', ad?.fastOffense);
 
   // BTC:现货蜡烛 + 1Y 滚动夏普。窗口 365 而非 252 —— crypto 每天都有数据点,「一年」就是 365 个点;
   // 年化同走 √365(与 VRP 的 BTC 腿同口径,见 analytics/vrp)。蜡烛带上当天盘中那根(看盘要);夏普只用已收盘的。

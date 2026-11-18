@@ -158,7 +158,7 @@ export function clampPriceRange(
 /**
  * 造 lightweight-charts 的 `autoscaleInfoProvider` 回调:把自动算出的范围夹进 `box`。
  *
- * **抽成纯函数只为可测** —— 原本这段内联在 `paneChart.hooks` 的建图流程里,而那层要跑起来
+ * **抽成纯函数只为可测** —— 原本这段内联在建图流程里,而那层要跑起来
  * 得有真的 chart 实例。变异检验实测:把 null 守卫删掉、或把整个 clamp 分支短路成 `if (false)`,
  * 全套测试都照样绿。夹轴的语义(求交 / 倒挂退回 / null 守卫)不该靠「没人动它」来保证。
  *
