@@ -15,7 +15,7 @@ import { useStable } from '../hooks/useStable';
 import { CHART_OPTIONS, REF_LINE, boxAutoscaleProvider, changeStats, needsLogScale } from './core';
 import type { PaneDef, Spec, LegendCell, AnySeries } from './paneChart.types';
 import { useTrendlines } from './trendlines.hooks';
-import { BandFillPrimitive } from './bandFill';
+import { BandFillPrimitive } from './primitives/bandFill';
 
 /**
  * 蜡烛价格轴切对数(PriceScaleMode.Logarithmic = 1,不引枚举:这层已经在用字面量配色/配轴了)。

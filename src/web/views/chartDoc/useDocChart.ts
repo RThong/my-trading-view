@@ -56,8 +56,8 @@ import {
   plotsOf,
   type LayerData,
 } from './layerPoints';
-import { BandFillPrimitive } from '../../chart/bandFill';
-import { DayBandPrimitive } from '../../chart/dayBand';
+import { BandFillPrimitive } from '../../chart/primitives/bandFill';
+import { DayBandPrimitive } from '../../chart/primitives/dayBand';
 import { commonRange } from './useSeriesData';
 import { latestIso } from '../../../shared/calc/isoDate';
 
@@ -449,7 +449,7 @@ export function useDocChart(
     return () => window.removeEventListener('pointerup', onUp);
   }, []);
 
-  // 布林带通道填色:挂在声明了 fillTo 的那条子线上(lw-charts 没有原生线间填充,见 chart/bandFill)。
+  // 布林带通道填色:挂在声明了 fillTo 的那条子线上(lw-charts 没有原生线间填充,见 chart/primitives/bandFill)。
   // 隐藏的图层不填;子线被删了重建(换画法)时旧图元跟着旧 series 没了,重新挂
   const fillsRef = useRef(new Map<string, { s: ISeriesApi<SeriesType>; prim: BandFillPrimitive }>());
   useEffect(() => {
@@ -488,7 +488,7 @@ export function useDocChart(
     });
   }, [doc, data]);
 
-  // 背景色带的色块:挂在背景层的 series 上,按标记日整根 K 线宽度画(见 chart/dayBand)。
+  // 背景色带的色块:挂在背景层的 series 上,按标记日整根 K 线宽度画(见 chart/primitives/dayBand)。
   // 背景层被删 / 换画法重建时旧图元跟着旧 series 没了,重新挂;周 / 月线下背景层没有点,色块自然为空
   const bandsRef = useRef(new Map<string, { s: ISeriesApi<SeriesType>; prim: DayBandPrimitive }>());
   useEffect(() => {
