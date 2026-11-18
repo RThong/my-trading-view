@@ -65,6 +65,7 @@ export async function ingestArchivedOptions(
         client: { ...client, getTradingDate: async () => date },
         storeKey,
         strictTradingDate: true,
+        fetchedAt: run.fetchedAt,
       });
       rows.forEach((r) => {
         covered.add(`${r.underlying}|${r.snapshotDate}`);

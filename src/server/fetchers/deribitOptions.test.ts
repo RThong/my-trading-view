@@ -59,7 +59,7 @@ describe('重试的覆盖面(A3 的不变式)', () => {
     }) as typeof fetch;
 
     try {
-      const snap = await defaultDeribitOptionsClient(1).fetchChain('BTC', 30); // 重试间隔 1ms,别真等 1.5s
+      const snap = await defaultDeribitOptionsClient({ retryDelayMs: 1 }).fetchChain('BTC', 30); // 重试间隔 1ms,别真等 1.5s
 
       expect(calls.get('instruments')).toBe(2); // 单点调用:重试一次后成功
       expect(calls.get('tickerA')).toBe(1); // 逐合约:失败也只打一次

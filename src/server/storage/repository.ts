@@ -36,11 +36,18 @@ export type MacroRow = {
 export type MarketSeriesRow = { seriesId: string; obsDate: string; value: number };
 
 /** 批量 upsert 骨架:空跳过、prepare 一次、同批共用一个 fetched_at、单事务逐行写。
- *  各表只提供 SQL 与「行 → 具名参数」绑定;重复的事务/时间戳样板收敛在此。 */
-function bulkUpsert<T>(db: Database, sql: string, rows: T[], bind: (row: T, fetched: string) => NamedParams): void {
+ *  各表只提供 SQL 与「行 → 具名参数」绑定;重复的事务/时间戳样板收敛在此。
+ *  fetchedAt 缺省 = 现在;重放存档时传存档的抓取时刻(否则每次重写都把它挪到入库那一刻)。 */
+function bulkUpsert<T>(
+  db: Database,
+  sql: string,
+  rows: T[],
+  bind: (row: T, fetched: string) => NamedParams,
+  fetchedAt: Date = new Date(),
+): void {
   if (rows.length === 0) return;
   const stmt = db.prepare<unknown, [NamedParams]>(sql);
-  const fetched = new Date().toISOString();
+  const fetched = fetchedAt.toISOString();
   db.transaction((batch: T[]) => {
     batch.forEach((r) => {
       stmt.run(bind(r, fetched)); // 逐行写库
@@ -134,7 +141,7 @@ export function getTodaySucceededJobs(db: Database): string[] {
   return rows.map((r) => r.job_name);
 }
 
-export function insertOptions25Delta(db: Database, rows: Options25DeltaRow[]): void {
+export function insertOptions25Delta(db: Database, rows: Options25DeltaRow[], fetchedAt?: Date): void {
   bulkUpsert(
     db,
     `
@@ -147,6 +154,7 @@ export function insertOptions25Delta(db: Database, rows: Options25DeltaRow[]): v
   `,
     rows,
     (r, f) => ({ $u: r.underlying, $src: r.source, $d: r.snapshotDate, $c: r.callIv, $p: r.putIv, $s: r.skew, $f: f }),
+    fetchedAt,
   );
 }
 
@@ -188,7 +196,7 @@ export type OptionChainRawRow = {
   chainJsonGz: Uint8Array;
 };
 
-export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[]): void {
+export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[], fetchedAt?: Date): void {
   bulkUpsert(
     db,
     `
@@ -211,6 +219,7 @@ export function insertOptionChainRaw(db: Database, rows: OptionChainRawRow[]): v
       $gz: r.chainJsonGz,
       $f: f,
     }),
+    fetchedAt,
   );
 }
 

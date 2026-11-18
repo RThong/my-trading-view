@@ -23,9 +23,11 @@ export function isRetryableStatus(status: number) {
   return status === 429 || status >= 500;
 }
 
+type Fetch = (url: string) => Promise<Response>;
+
 /** 裸调用,不重试。逐合约的 ticker 走这个 —— 那一层由 mapLimit 的 allSettled 兜着。 */
-async function get(path: string): Promise<any> {
-  const res = await fetchWithTimeout(`${BASE}/${path}`);
+async function get(doFetch: Fetch, path: string): Promise<any> {
+  const res = await doFetch(`${BASE}/${path}`);
   if (!res.ok) {
     const msg = `Deribit ${path} → HTTP ${res.status}`;
     throw isRetryableStatus(res.status) ? new Error(msg) : new NonRetryableError(msg);
@@ -47,8 +49,8 @@ async function get(path: string): Promise<any> {
  * 而给上百次调用各加「1.5s + 一整轮 15s 超时」会让 Deribit 抽风时单链墙钟翻倍
  * (~300s → ~630s),而 crypto job 一天 5 个触发点、没有互斥锁。
  */
-function getRetried(path: string, delayMs?: number): Promise<any> {
-  return withRetry(() => get(path), delayMs);
+function getRetried(doFetch: Fetch, path: string, delayMs?: number): Promise<any> {
+  return withRetry(() => get(doFetch, path), delayMs);
 }
 
 /**
@@ -71,8 +73,8 @@ type Instrument = {
   expiration_timestamp: number;
 };
 
-async function tickerToContract(inst: Instrument): Promise<OptionContract | null> {
-  const t = await get(`ticker?instrument_name=${inst.instrument_name}`);
+async function tickerToContract(doFetch: Fetch, inst: Instrument): Promise<OptionContract | null> {
+  const t = await get(doFetch, `ticker?instrument_name=${inst.instrument_name}`);
   if (typeof t?.mark_iv !== 'number') return null;
   const g = t.greeks ?? {};
   return {
@@ -95,26 +97,36 @@ async function tickerToContract(inst: Instrument): Promise<OptionContract | null
   };
 }
 
-/** retryDelayMs 只为测试留口:验证「重试确实发生」的测试不该真等 1.5s。生产用默认值。 */
-export function defaultDeribitOptionsClient(retryDelayMs?: number): OptionsChainClient {
+/**
+ * fetch / now 注入:重放 Actions 存档时(见 jobs/deribitArchive)不联网、按抓取时刻选到期日、打戳。
+ * retryDelayMs 只为测试留口:验证「重试确实发生」的测试不该真等 1.5s。生产用默认值。
+ */
+export function defaultDeribitOptionsClient(
+  deps: { fetch?: Fetch; now?: () => Date; retryDelayMs?: number } = {},
+): OptionsChainClient {
+  const doFetch = deps.fetch ?? ((url: string) => fetchWithTimeout(url));
+  const now = deps.now ?? (() => new Date());
+  const retryDelayMs = deps.retryDelayMs;
+
   return {
     async fetchChain(symbol, targetDte): Promise<OptionChainSnapshot> {
       const currency = symbol.toUpperCase(); // 'BTC' / 'ETH'
       const all: Instrument[] = await getRetried(
+        doFetch,
         `get_instruments?currency=${currency}&kind=option&expired=false`,
         retryDelayMs,
       );
       if (all.length === 0) throw new Error(`Deribit: ${currency} 无期权`);
 
       // 选到期日最接近(今天 + targetDte)的那个
-      const target = Date.now() + targetDte * 86400_000;
+      const target = now().getTime() + targetDte * 86400_000;
       const expiries = [...new Set(all.map((i) => i.expiration_timestamp))];
       const bestExp = firstBy(expiries, (t) => Math.abs(t - target))!;
       const inExp = all.filter((i) => i.expiration_timestamp === bestExp);
 
       const withType = await mapLimit(inExp, TICKER_CONCURRENCY, async (i) => ({
         type: i.option_type,
-        c: await tickerToContract(i),
+        c: await tickerToContract(doFetch, i),
       }));
       const calls = withType.filter((r) => r.type === 'call' && r.c).map((r) => r.c!);
       const puts = withType.filter((r) => r.type === 'put' && r.c).map((r) => r.c!);
@@ -123,7 +135,7 @@ export function defaultDeribitOptionsClient(retryDelayMs?: number): OptionsChain
       // 别让现货请求失败丢掉已经抓到的整条链。
       let spot: number | null = null;
       try {
-        const idx = await getRetried(`get_index_price?index_name=${currency.toLowerCase()}_usd`, retryDelayMs);
+        const idx = await getRetried(doFetch, `get_index_price?index_name=${currency.toLowerCase()}_usd`, retryDelayMs);
         if (typeof idx?.index_price === 'number') spot = idx.index_price;
       } catch {
         // 现货失败,spot 保持 null
@@ -139,7 +151,7 @@ export function defaultDeribitOptionsClient(retryDelayMs?: number): OptionsChain
     },
     // BTC 24/7:按当前 UTC 日打戳(不跳周末、不认假期),区别于美股的 lastClosedTradingDate。
     async getTradingDate(): Promise<string> {
-      return new Date().toISOString().slice(0, 10);
+      return now().toISOString().slice(0, 10);
     },
   };
 }

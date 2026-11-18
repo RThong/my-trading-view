@@ -110,10 +110,10 @@
   带 IV / 希腊值 / OI / 全市场最优买卖价,7 个标的一轮约 5 秒、不用 OpenD。交易日取文件里最后一笔成交的日期。
   与 moomoo 逐合约对比:不分红 ETF IV 差 ≤ 0.2pp、OI 全同。
   ⚠️ **daily 触发点全落在 VIX 期权夜盘**:夜里这个文件的 VIX 报价 / IV 跟着夜盘走(最后成交仍停在 16:15 前,别拿成交时间判)。
-  所以另有 **GitHub Actions 存档**(私有仓库 `RThong/market-snapshots`,`fetch.sh` 收盘后、夜盘前定时(见其 `snapshot.yml`)抓 7 个标的的链 + ICE CDS / CDX,
+  所以另有 **GitHub Actions 存档**(私有仓库 `RThong/market-snapshots`,`fetch.sh` 收盘后、夜盘前定时(见其 `snapshot.yml`)抓 7 个标的的链 + ICE CDS / CDX + MOVE(Yahoo chart 原文)+ Deribit BTC 期权链(周末只抓它),
   数据在 **`data` 分支**、每轮压成无历史提交强推、只留 14 天;⚠️ 别强推回 `main` —— 机器人令牌强推 `main` 后定时任务一次都没触发过):
-  本机 `options_cboe` / `ice_cds` 先 `git fetch` 只拉 `data` 分支、浅克隆到 `data/market-snapshots/`(gitignored,里面没有脚本;改 `fetch.sh` 另克隆 `main`)
-  再写库(`fetchers/snapshotArchive` + `jobs/cboeArchive`),已覆盖的「标的 | 交易日」本机不再抓;拉不到存档就照旧自己抓。
+  本机 `options_cboe` / `ice_cds` / `move` / `options_crypto` 先 `git fetch` 只拉 `data` 分支、浅克隆到 `data/market-snapshots/`(gitignored,里面没有脚本;改 `fetch.sh` 另克隆 `main`)
+  再写库(`fetchers/snapshotArchive` + `jobs/cboeArchive` / `deribitArchive`,ICE / MOVE 在各自 job 里),已覆盖的「标的 | 交易日」本机不再抓;拉不到存档就照旧自己抓。
   也补本机关机 / 没网那几天(14 天内)。
   ⏰ **待办:2026-11-21 前后(并行满 5 个交易日)验收并切成主源,按 `docs/options-cboe-switch.md` 逐步做**
   (验收脚本 `bun run src/server/jobs/compareOptionsSources.ts`;重点看工作日夜里 VIX 是否仍是收盘报价、USO 偏差)。
@@ -167,6 +167,8 @@
   且 BTC 抓取时刻随电脑开机浮动(UTC 02~11 点),Deribit「约 30 天」那档 DTE 在 17~44 天间跳(只挂约 4 周内周度 + 月末)。
   2026-11 实测:同标签日 IV 变化相关 0.05,按抓取时刻对齐(取 IBIT 收盘后第一份 BTC)升到 0.43、skew 水平 0.66。
   两者在 BTC 页分两格、不叠图,故不改标签;要对比时按抓取时刻对齐。
+  **2026-11-18 起**有 Actions 存档(UTC 22:07,美东收盘后)的日子,存档那份会盖掉本机同一 UTC 日抓的(`jobs/deribitArchive`,用同一个 client 重放、算法不变)
+  → 这些天 BTC 标 D ≈ IBIT 标 D,抓取时刻也固定了;存档缺的天仍是本机那份(时刻照旧浮动)。
 
 ### 其它数据源
 

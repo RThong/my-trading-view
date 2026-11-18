@@ -1,7 +1,8 @@
 import type { Database } from 'bun:sqlite';
 import { openDb, migrate } from '../storage/db';
 import { insertMarketSeries } from '../storage/repository';
-import { fetchMoveSeries, type MetaPoint, type MovePoint } from '../fetchers/moveIndex';
+import { fetchMoveSeries, metaPoint, type MetaPoint, type MovePoint } from '../fetchers/moveIndex';
+import { readArchived, type ArchiveRun } from '../fetchers/snapshotArchive';
 import { HISTORY_START_DATE } from '../config';
 import { nyParts } from './tradingCalendar';
 
@@ -51,6 +52,31 @@ export function isCloseSnapshot(at: number, now: number = Date.now()): boolean {
   const current = nyParts(new Date(now));
 
   return meta.date < current.date || current.hour >= CLOSE_HOUR_ET;
+}
+
+/**
+ * 把 Actions 存档(见 fetchers/snapshotArchive)里的 MOVE 补进库:本机没开 / 没网的那几天靠它。
+ * 存档是 Yahoo chart 接口原文,只取 meta 那一格;收盘与否按**抓取时刻**判(同 isCloseSnapshot),盘中值不写。
+ * 同日重写值不变,每轮把 14 天存档都重写一遍即可。
+ */
+export function ingestArchivedMove(db: Database, runs: ArchiveRun[]): number {
+  const rows = runs.flatMap((run) => {
+    if (!run.names.has('move')) return [];
+    // 一份坏文件只跳过它,不挡后面的轮次
+    try {
+      const meta = JSON.parse(readArchived(run, 'move')).chart.result[0].meta;
+      const at = run.fetchedAt.getTime();
+      const p = metaPoint(meta, at);
+
+      return p && isCloseSnapshot(p.at, at) ? [{ seriesId: 'MOVE', obsDate: p.date, value: p.value }] : [];
+    } catch (err) {
+      console.warn(`MOVE 存档 ${run.dir} 读取失败,跳过:${(err as Error).message}`);
+      return [];
+    }
+  });
+
+  insertMarketSeries(db, rows);
+  return rows.length;
 }
 
 /**

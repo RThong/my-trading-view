@@ -76,7 +76,8 @@ export function readArchived(run: ArchiveRun, name: string): string {
 }
 
 let synced: ArchiveRun[] | null = null;
-/** 一个进程只同步一次(期权、ICE 两组共用);同步失败就用本地已有的那份,并把原因打进日志。 */
+/** 一个进程只同步一次(daily 的期权、ICE、MOVE 几组共用);同步失败就用本地已有的那份,并把原因打进日志。
+ *  只给 daily 用:cryptoDaily 同一时刻触发,两个进程并发同步会弄坏仓库,它只读(archiveRuns)。 */
 export function syncedArchiveRuns(): ArchiveRun[] {
   if (!synced) {
     const err = syncArchive();
