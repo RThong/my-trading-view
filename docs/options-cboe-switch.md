@@ -59,13 +59,15 @@ bun run src/server/jobs/compareOptionsSources.ts
 (两条硬线都会判过),但隔 1 分钟再拉,1540 个合约里 192 个买卖价变了、指数现价 23.48 ≠ 周一收盘 22.91 —— 报价与 IV 都是夜盘的,
 **上面两条硬线拦不住它**。`prev_day_close` 也对不上周一最后成交(674 个里只 71 个相等),含义未定。
 → 用户选的不是下面两条,而是 **GitHub Actions 存档**(手机是 Pixel,快捷指令那条不成立):私有仓库 `RThong/market-snapshots`
-的 `fetch.sh` 在 22:00 / 23:30 UTC(美东收盘后、夜盘前)抓 7 个标的的链 + ICE CDS / CDX,只留 14 天;
+的 `fetch.sh` 在美东收盘后、夜盘前定时(见其 `snapshot.yml`)抓 7 个标的的链 + ICE CDS / CDX,只留 14 天;
 本机 `options_cboe` 先把存档写进库(`jobs/cboeArchive`,抓取时刻晚于交易日次日 00:15 UTC 的 VIX 不收),
 已覆盖的「标的 | 交易日」本机不再抓。⚠️ **`compareOptionsSources.ts` 的 VIX 两条硬线(最后成交 ≤ 16:15:59、价差 ≤ 30%)已失效**,
 夜盘报价照样判过,它的 ✅ 不能信 —— 切换当天先把这项改成「存档里有那天可用的 `_VIX.json.gz`」(抓取时刻在交易日 21:30 ~ 次日 00:15 UTC,
 见 `jobs/cboeArchive` 的 `archiveUsable`;同一天只认最早那份、本机不覆盖,所以有它 = 库里那天的 VIX 是存档写的),再跑验收。
 **切换时验收 VIX 改看:库里那天的 VIX 行是存档写的**(本机日志无「存档 … 失败」、
-`data/market-snapshots/data/` 里有那天 22:00Z 前后的 `_VIX.json.gz`)。
+`data/market-snapshots/data/` 里有那天能用的 `_VIX.json.gz`)。
+⚠️ **切主源前要补**:存档里没有那天能用的 VIX 时,本机 fallback 照样实抓、把夜盘 VIX 当收盘写进库(`daily.ts` 的 `runOptionsGroup` →
+`optionsSnapshot` 不拦)。试跑期带 `@cboe` 后缀、不上图,影响有限;切成主源前改成「VIX 缺可用存档且现在已进夜盘 → 记缺失 / partial,其余标的照抓」。
 
 以下是原定的决策框架(用户 2026-11-14 定),留作背景 ——
 
