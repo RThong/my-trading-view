@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 /**
  * 服务端回的是旧数据(`refreshing`:缓存过期、后台刷新中)或不完整的(`partial`:有源没拉到、等重试)时,
- * 定时再取一次;状态变了(拿到新数据)间隔跟着变,两者都不成立即停。见 server/routes/swrCache。
+ * 定时再取一次;状态变了(拿到新数据)间隔跟着变,两者都不成立即停。见 server/swrCache。
  *
  * ⚠️ 不用 SWR 的 `refreshInterval: (data) => …`:swr 2.4 只在**挂载那一刻**算一次间隔(源码 Polling 段的
  * effect 依赖里没有 data),那时数据还没到 → 0 → 永不轮询。正好是「服务端重启后刷新页面」这个最该轮询的场景。

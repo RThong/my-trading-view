@@ -13,7 +13,7 @@ export type RegimeData = {
   unavailable: string[];
   /** 本次现拉失败、服务端用上一份成功数据顶上的序列(面板标「沿用上次」)。 */
   fallback?: string[];
-  /** 服务端缓存过期、后台刷新中(见 server/routes/swrCache):先给的是旧数据。 */
+  /** 服务端缓存过期、后台刷新中(见 server/swrCache):先给的是旧数据。 */
   refreshing?: boolean;
   /** 服务端缓存值不完整(有源没拉到,等重试)。 */
   partial?: boolean;

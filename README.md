@@ -118,11 +118,12 @@ src/
 ├── server/
 │   ├── index.ts             Hono app, exports AppType
 │   ├── config.ts            option/price whitelists (derived from marketCatalog)
+│   ├── swrCache.ts          stale-while-revalidate cache + disk snapshot (regime / yieldCurve routes)
 │   ├── routes/              health · options · vrp · price · regime · yieldCurve
-│   ├── fetchers/            moomoo · deribit · cboe(Index/Vx) · fred · yahoo · eris · iceCds · jpxJgbVix · mofJgb · cftcCot · capeShiller · cnnFearGreed
-│   ├── analytics/           vrp · termStructure · regime · rateCurves · sec6kText (all pure, read-time compute)
+│   ├── fetchers/            optionsChain (options client contract) · moomoo · deribit · cboe(Index/Vx) · fred · yahoo · eris · iceCds · jpxJgbVix · mofJgb · cftcCot · capeShiller · cnnFearGreed
+│   ├── analytics/           vrp · termStructure · regime · rateCurves · sec6kText · tradingCalendar · monthlyExpiry (all pure)
 │   ├── storage/             bun:sqlite schema, migrations, repository
-│   └── jobs/                daily orchestrator + optionsSnapshot / vxTermStructure / cryptoDaily / erisSnapshot / iceCdsSnapshot / tradingCalendar
+│   └── jobs/                daily orchestrator + optionsSnapshot / vxTermStructure / cryptoDaily / erisSnapshot / iceCdsSnapshot
 └── web/
     ├── App.tsx              shell only (vertical perspectives × horizontal tabs, keep-alive)
     ├── perspectives.tsx     assembles the rail from pages/* (order only)

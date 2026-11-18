@@ -4,7 +4,7 @@ import { insertMarketSeries } from '../storage/repository';
 import { fetchMoveSeries, metaPoint, type MetaPoint, type MovePoint } from '../fetchers/moveIndex';
 import { readArchived, type ArchiveRun } from '../fetchers/snapshotArchive';
 import { HISTORY_START_DATE } from '../config';
-import { nyParts } from './tradingCalendar';
+import { nyParts } from '../analytics/tradingCalendar';
 
 type MoveFetch = { points: MovePoint[]; meta: MetaPoint | null };
 

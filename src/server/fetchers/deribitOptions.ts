@@ -1,7 +1,7 @@
 /**
  * Deribit 加密期权链抓取器(BTC/ETH)。
  *
- * 返回 optionsSnapshot.ts 定义的 OptionChainSnapshot,与 moomoo 一致,后续流水线
+ * 返回 fetchers/optionsChain.ts 定义的 OptionChainSnapshot,与 moomoo 一致,后续流水线
  * (select25Delta、归档)无需关心来源。Deribit 公开 REST API 免 key:
  *   - get_instruments  → 列出某币种所有未到期期权(含 strike/类型/到期时间戳)
  *   - ticker           → 单合约的 mark_iv + 全套 greeks + OI(无批量 greeks 接口,
@@ -11,7 +11,7 @@
  * Deribit 的 mark_iv 是百分数(35.12 表示 35.12%),归一化成小数。
  * 期权价格以币本位计(如 0.018 BTC),归档原样保留。
  */
-import type { OptionContract, OptionChainSnapshot, OptionsChainClient } from '../jobs/optionsSnapshot';
+import type { OptionContract, OptionChainSnapshot, OptionsChainClient } from './optionsChain';
 import { firstBy } from 'remeda';
 import { NonRetryableError, fetchWithTimeout, withRetry } from './http';
 

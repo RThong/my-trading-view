@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite';
 import { openDb, migrate } from '../storage/db';
 import { insertMarketSeries, getMarketSeries } from '../storage/repository';
 import { fetchPutCallDay, PUT_CALL_MIN_DATE, type PcVolume, type PutCallDay } from '../fetchers/cboePutCall';
-import { lastClosedTradingDate } from './tradingCalendar';
+import { lastClosedTradingDate } from '../analytics/tradingCalendar';
 
 /**
  * Cboe 认沽认购比(个股 / 指数 / 全部)→ market_series 三条(日频,值 = 认沽量 ÷ 认购量)。

@@ -130,10 +130,10 @@ SQL
   删掉文件头为静音 moomoo-api SDK 输出写的那段
 - `fetchers/cboeOptions.ts`:给 `.VIX` 加一道**收盘报价守卫** —— 链里最后成交晚于交易日美东 16:15:59、或平值附近价差中位数 > 30% 就抛错。
   只 VIX 失败、其余成功时整组记 partial(状态灯黄),当天后续触发点会重跑;不写库、不存夜盘数。写单测
-- 删除:`fetchers/moomooOptions.ts`、`moomooClient.ts`、`moomooHistoryKL.ts`(其中 `Bar` 类型被 `bitstampBtcHistory` / `jobs/btcPrice` / `jobs/vrpInputs` 引用,先挪到别处)、
+- 删除:`fetchers/moomooOptions.ts`、`moomooClient.ts`、`moomooHistoryKL.ts`(`Bar` 类型已于 2026-11-18 挪进 `bitstampBtcHistory`)、
   `jobs/repairMoomooOptions.ts` + `analytics/optionPricing.ts`(一次性修复用,跑完即无用)、`jobs/compareOptionsSources.ts`(验收用)、以上各自的测试
 - 清理残留:`biome.jsonc` 里指向 moomoo 测试文件的 override;`shared/marketCatalog.ts` 的 `optionSource: 'moomoo'` 与 `config.ts` 的 `optionUnderlyings('moomoo')`(改成 `'cboe'`);
-  `config.ts` / `jobs/tradingCalendar.ts` / `optionsSnapshot.ts` 里提到 moomoo 的注释;`package.json` 的 `job:daily:opend` 脚本(指向下一步要改名的脚本);
+  `config.ts` / `analytics/tradingCalendar.ts` / `optionsSnapshot.ts` / `fetchers/optionsChain.ts` 里提到 moomoo 的注释;`package.json` 的 `job:daily:opend` 脚本(指向下一步要改名的脚本);
   `.env.example` 的 `MOOMOO_*` / `OPEND_CMD` 说明;本地 `DATA_SOURCES.md`(gitignore)里列的 moomoo fetcher;
   `AGENTS.md`「关键差异」段的「两个期权源(moomoo + Deribit)」;`docs/data-sources-candidates.md` 速查表第 6 行与 §1.4 的「备份 / 并行试跑中」改成已接
 - **全仓库搜残留要清零**:`grep -rni moomoo src scripts AGENTS.md .env.example`。允许保留:`storage/db.ts` 迁移里的默认值 `'moomoo'`、`web/chart` 里「对齐 moomoo App 口径」的注释。

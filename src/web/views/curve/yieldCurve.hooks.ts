@@ -11,7 +11,7 @@ export type YieldCurveData = {
   tenors: string[];
   series: Record<string, YPoint[]>;
   unavailable: string[];
-  /** 服务端缓存过期、后台刷新中(见 server/routes/swrCache):先给的是旧数据。 */
+  /** 服务端缓存过期、后台刷新中(见 server/swrCache):先给的是旧数据。 */
   refreshing?: boolean;
   /** 服务端缓存值不完整(有源没拉到,等重试)。 */
   partial?: boolean;

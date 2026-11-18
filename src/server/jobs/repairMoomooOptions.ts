@@ -4,7 +4,8 @@ import YahooFinance from 'yahoo-finance2';
 import { openDb, migrate } from '../storage/db';
 import { getMarketSeries } from '../storage/repository';
 import { americanIvDelta } from '../analytics/optionPricing';
-import { select25Delta, type OptionContract } from './optionsSnapshot';
+import type { OptionContract } from '../fetchers/optionsChain';
+import { select25Delta } from './optionsSnapshot';
 
 /**
  * 一次性:切到 CBOE 主源前清理 moomoo 的 25Δ 历史(见 docs/data-sources-candidates.md §1.4)。原始链表不动,随时可重算。
