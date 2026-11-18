@@ -5,9 +5,11 @@ import { PROJECT_ROOT } from '../config';
 // GitHub Actions 定时抓的快照存档(私有仓库 market-snapshots,见其 fetch.sh)。
 // 为什么要它:期权链、ICE CDS 只有当天快照、漏一天补不回来,而本机常整天关机 / 没网;
 // 且 daily 的触发点全落在 VIX 期权夜盘,本机抓到的 VIX 是夜盘报价 —— Actions 在美东收盘后、夜盘前抓。
-// 仓库每次被压成一个无历史的提交强推,只留最近 14 天:data/<YYYY-MM-DDTHHMMZ>/<名字>.json.gz。
+// data 分支每轮被压成一个无历史的提交强推,只留最近 14 天:data/<YYYY-MM-DDTHHMMZ>/<名字>.json.gz。
 export const ARCHIVE_DIR = join(PROJECT_ROOT, 'data', 'market-snapshots');
 const REMOTE = 'git@github.com:RThong/market-snapshots.git';
+// 数据在单独的 data 分支(main 只放脚本:机器人强推 main 会让定时任务不触发)
+const BRANCH = 'data';
 const RUN_RE = /^(\d{4}-\d{2}-\d{2})T(\d{2})(\d{2})Z$/;
 
 export type ArchiveRun = { fetchedAt: Date; dir: string; names: Set<string> };
@@ -33,16 +35,14 @@ function git(args: string[], cwd?: string): string {
   return r.stdout.toString().trim();
 }
 
-/** 拉最新存档(浅克隆,只要最新一个提交);失败返回原因 —— 调用方照旧自己抓,不因存档挡住整组。 */
+/** 拉最新存档(只要 data 分支、浅克隆最新一个提交);失败返回原因 —— 调用方照旧自己抓,不因存档挡住整组。
+ *  这个目录只放 data 分支(没有脚本),reset --hard 不会丢东西;改 fetch.sh 另外克隆 main。 */
 export function syncArchive(dir = ARCHIVE_DIR): string | null {
   try {
-    if (!existsSync(join(dir, '.git'))) git(['clone', '-q', '--depth', '1', REMOTE, dir]);
+    if (!existsSync(join(dir, '.git')))
+      git(['clone', '-q', '--depth', '1', '--single-branch', '--branch', BRANCH, REMOTE, dir]);
     else {
-      // 这个目录也是改 fetch.sh 的地方:有没提交 / 没推送的改动就不同步(下面的 reset --hard 会把它们清掉,远端又是无历史强推,找不回)
-      if (git(['status', '--porcelain'], dir)) throw new Error('存档目录有未提交的改动,先提交推送');
-      if (git(['rev-parse', 'HEAD'], dir) !== git(['rev-parse', 'origin/main'], dir))
-        throw new Error('存档目录有没推送的提交(HEAD ≠ origin/main),先推送');
-      git(['fetch', '-q', '--depth', '1', 'origin', 'main'], dir);
+      git(['fetch', '-q', '--depth', '1', 'origin', BRANCH], dir);
       git(['reset', '-q', '--hard', 'FETCH_HEAD'], dir);
       // 每次都是无历史的新提交,旧提交的文件成了悬空对象,不清会越积越多
       git(['gc', '-q', '--prune=now'], dir);

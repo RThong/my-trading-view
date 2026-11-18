@@ -111,7 +111,8 @@
   与 moomoo 逐合约对比:不分红 ETF IV 差 ≤ 0.2pp、OI 全同。
   ⚠️ **daily 触发点全落在 VIX 期权夜盘**:夜里这个文件的 VIX 报价 / IV 跟着夜盘走(最后成交仍停在 16:15 前,别拿成交时间判)。
   所以另有 **GitHub Actions 存档**(私有仓库 `RThong/market-snapshots`,`fetch.sh` 在 22:00 / 23:30 UTC 抓 7 个标的的链 + ICE CDS / CDX,
-  每次压成无历史提交强推、只留 14 天):本机 `options_cboe` / `ice_cds` 先 `git fetch` 浅克隆到 `data/market-snapshots/`(gitignored)
+  数据在 **`data` 分支**、每轮压成无历史提交强推、只留 14 天;⚠️ 别强推回 `main` —— 机器人令牌强推 `main` 后定时任务一次都没触发过):
+  本机 `options_cboe` / `ice_cds` 先 `git fetch` 只拉 `data` 分支、浅克隆到 `data/market-snapshots/`(gitignored,里面没有脚本;改 `fetch.sh` 另克隆 `main`)
   再写库(`fetchers/snapshotArchive` + `jobs/cboeArchive`),已覆盖的「标的 | 交易日」本机不再抓;拉不到存档就照旧自己抓。
   也补本机关机 / 没网那几天(14 天内)。
   ⏰ **待办:2026-11-21 前后(并行满 5 个交易日)验收并切成主源,按 `docs/options-cboe-switch.md` 逐步做**
