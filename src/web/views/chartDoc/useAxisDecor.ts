@@ -102,8 +102,18 @@ export function useAxisDecor(
         const y = s?.priceToCoordinate(p);
         return y != null && y < HEAD_H + fontSize / 2;
       };
+      // 多出来的轴画在右轴画布上、靠挂在右轴某条线上的插件:这一格右轴没有线就画不出来,也就不留位置、不判命中
+      // (卡片上会提示);画出来的去掉原生最新值色块(它挤在原生右轴里、和这根轴对不上),改在这根轴上自己画
+      const right = sides.find((a) => a.side === 'right');
+      const drawable = right?.layers.some((l) => series(l)) ? extras : [];
+      // 轴顶有没有单位那一行:右轴看原生和多出来的几根(百分比 / 起点 100 的不出单位),原生自己没单位也要躲开那一行
+      const shownUnit = (a: (typeof extras)[number]) => {
+        const mode = series(a.layers[0])?.priceScale().options().mode;
+        return !!a.unit && mode !== undefined && !relative.includes(mode);
+      };
+      const headRow = (a: (typeof sides)[number]) => !!a.unit || (a.side === 'right' && drawable.some(shownUnit));
       sides.forEach((a) => {
-        const inHead = inHeadOf(a.layers.map(series).find(Boolean));
+        const inHead = headRow(a) ? inHeadOf(a.layers.map(series).find(Boolean)) : undefined;
         a.layers.forEach((l) => {
           series(l)?.applyOptions({ priceFormat: unitPriceFormat(a.unit, inHead) });
         });
@@ -113,10 +123,6 @@ export function useAxisDecor(
           series(l)?.applyOptions({ priceFormat: unitPriceFormat(a.unit) });
         });
       });
-      // 多出来的轴画在右轴画布上、靠挂在右轴某条线上的插件:这一格右轴没有线就画不出来,也就不留位置、不判命中
-      // (卡片上会提示);画出来的去掉原生最新值色块(它挤在原生右轴里、和这根轴对不上),改在这根轴上自己画
-      const right = sides.find((a) => a.side === 'right');
-      const drawable = right?.layers.some((l) => series(l)) ? extras : [];
       drawable.forEach((a) => {
         a.layers.forEach((l) => {
           series(l)?.applyOptions({ lastValueVisible: false });
@@ -172,7 +178,13 @@ export function useAxisDecor(
       hit.prim.setDecor(decor);
     });
 
-    layoutRef.current = { slots, panes: panes.map((p) => ({ id: p.pane.id, strips: p.strips.map((s) => s.id) })) };
+    layoutRef.current = {
+      slots,
+      panes: panes.map((p) => ({
+        id: p.pane.id,
+        strips: p.strips.map((s) => s.id),
+      })),
+    };
     stripSeriesRef.current = new Map(
       panes.flatMap((p) => p.strips.filter((s) => !s.locked).map((s) => [`${p.pane.id}:${s.id}`, s.series])),
     );
@@ -186,11 +198,12 @@ export function useAxisDecor(
 
     const sync = () => {
       const { slots, panes } = layoutRef.current;
-      panes.forEach((_, i) => {
-        const ps = chart.priceScale('right', i);
-        const want = slots ? nativeWidth(chart, ps, i, ctx) + slots * STRIP_W : 0;
-        if (ps.options().minimumWidth !== want) ps.applyOptions({ minimumWidth: want });
-      });
+      // 图表库各格的右轴等宽,只读整图那一份 minimumWidth(逐格写会并进整图、最后写的那格说了算):取各格最大的写一次
+      const want = slots
+        ? Math.max(...panes.map((_, i) => nativeWidth(chart, chart.priceScale('right', i), i, ctx))) + slots * STRIP_W
+        : 0;
+      if (chart.options().rightPriceScale.minimumWidth !== want)
+        chart.applyOptions({ rightPriceScale: { minimumWidth: want } });
     };
     sync();
     const ts = chart.timeScale();

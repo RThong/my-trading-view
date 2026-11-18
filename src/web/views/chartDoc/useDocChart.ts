@@ -35,6 +35,7 @@ import { BACKGROUND_ALPHA, SIGNED_DOWN, SIGNED_UP, TRANSPARENT, VOLUME_ALPHA, wi
 import type { Interval } from '../../hooks/interval';
 import { chartThemeOptions, getTheme, useTheme } from '../../hooks/theme';
 import {
+  DEFAULT_MARGINS,
   isMarkLayer,
   liveScaleIds,
   markColor,
@@ -367,13 +368,16 @@ export function useDocChart(
     else chart.timeScale().fitContent();
   }, [view, data, interval, fit]);
 
-  // 纵轴显示模式(倒轴 / 对数)。放在结构与数据之后:对数要看数据,轴上有 ≤0 的值就按普通坐标画。
+  // 纵轴显示模式(倒轴 / 对数)与上下留白。放在结构与数据之后:对数要看数据,轴上有 ≤0 的值就按普通坐标画。
   // 内置左右轴每格都在,没声明的也要明确设回默认(轴被回收后再挂上图层,不能沿用旧状态)。
+  // 留白逐根轴写,不用整图的 overlayPriceScales:那个会连带改掉色块 / 分位带 / 成交量条的隐形轴
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
 
     const panes = chart.panes();
+    const m = view.margins ?? DEFAULT_MARGINS;
+    const scaleMargins = { top: m.top / 100, bottom: m.bottom / 100 };
     // 文档里已没有的格 / 图里已删掉的 lw 格,对应关系作废(清空后再加线时新格可能复用同一个 id)
     const live = new Set(panes);
     const docIds = new Set(view.panes.map((p) => p.id));
@@ -393,6 +397,8 @@ export function useDocChart(
       }
       const byId = new Map(pane.scales.map((sc) => [sc.id, sc]));
       const ids = new Set(['right', 'left', ...liveScaleIds(pane)]);
+      // 成交量条的隐形轴只占底部一截(volumeStripScale),不吃留白
+      const strips = new Set(pane.layers.filter(isVolumePlot).map((l) => l.scale));
       ids.forEach((id) => {
         const sc = byId.get(id);
         const ps = api.priceScale(id);
@@ -404,6 +410,9 @@ export function useDocChart(
         // 把用户手动拖好的纵轴缩放冲掉(实测:加一格时主图纵轴被重置)
         if (cur.invertScale !== invertScale) ps.applyOptions({ invertScale });
         if (cur.mode !== mode) ps.applyOptions({ mode });
+        const sm = cur.scaleMargins;
+        if (!strips.has(id) && (sm.top !== scaleMargins.top || sm.bottom !== scaleMargins.bottom))
+          ps.applyOptions({ scaleMargins });
       });
     });
   }, [view, data]);

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import { PriceScaleMode } from 'lightweight-charts';
-import { axisSpace, axisUnit, fmtTick, linearTicks, logTicks, textOn } from './axisDecor';
+import { type BarPrice, PriceScaleMode } from 'lightweight-charts';
+import { axisSpace, axisUnit, fmtTick, layoutHeads, linearTicks, logTicks, textOn, unitPriceFormat } from './axisDecor';
 
 test('轴单位:上万 ×1,000、上千万 ×1M,更小不缩', () => {
   expect(axisUnit(9_999)).toBeUndefined();
@@ -43,4 +43,30 @@ test('刻度上的数:百分比 / 起点 100 按可视区第一根换算、可�
 
   expect(axisSpace(PriceScaleMode.Percentage, undefined, undefined).text(88)).toBe('88');
   expect(axisSpace(PriceScaleMode.Logarithmic, undefined, undefined).ticks(1, 1000, 8)).toEqual(logTicks(1, 1000, 8));
+});
+
+test('layoutHeads:放得下就写在自己那根轴上方;太长往里挪、不压外侧那个,最里面的伸进图表区(负数)', () => {
+  // 原生那截 0~40,外侧一根从 40 起;字宽 30 都放得下
+  const at = (outerW: number) =>
+    layoutHeads(
+      [
+        { want: 8, w: 30 },
+        { want: 47, w: outerW },
+      ],
+      92,
+    );
+  expect(at(30)).toEqual([8, 47]);
+  // 外侧的太长:往左挪到右端放得下,里面那个再往左让(隔 6)
+  expect(at(60)).toEqual([-4, 32]);
+  // 单独一个超长的(「×1,00000」):右端顶住画布,左边伸进图表区
+  expect(layoutHeads([{ want: 8, w: 80 }], 60)).toEqual([-20]);
+});
+
+test('unitPriceFormat:没单位但轴顶有单位那一行时,照默认两位小数写,只去掉落进那一行的刻度', () => {
+  const f = unitPriceFormat(undefined, (p) => p > 100);
+  if (f.type !== 'custom') throw new Error('应为 custom');
+  const p = (n: number) => n as BarPrice;
+  expect(f.formatter(p(-1.5))).toBe('\u22121.50');
+  expect(f.tickmarksFormatter?.([p(50), p(150)])).toEqual(['50.00', '']);
+  expect(unitPriceFormat(undefined).type).toBe('price');
 });

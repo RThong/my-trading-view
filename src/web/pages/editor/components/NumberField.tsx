@@ -23,7 +23,9 @@ export function NumberField({ value, onCommit, className, title, disabled }: Pro
   const commit = () => {
     const n = Number(draft.trim());
     if (draft.trim() !== '' && Number.isFinite(n)) onCommit(n);
-    else setDraft(String(value));
+    // 提交后也回到当前值:调用方取整 / 夹值后若没变,value 不变、上面的同步不触发,框里会一直留着打进去的 99。
+    // 值真变了的话,下一次渲染的同步会再换成新值
+    setDraft(String(value));
   };
 
   return (

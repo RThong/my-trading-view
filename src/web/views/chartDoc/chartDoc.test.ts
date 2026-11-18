@@ -18,6 +18,7 @@ import {
   nextId,
   normalize,
   parseChartDoc,
+  setDocMargins,
   setDocTitle,
   removeLayer,
   removeSeries,
@@ -201,6 +202,19 @@ describe('normalize / parseChartDoc', () => {
     expect(setDocTitle(d, 'SPX 对数回归 ')).toBe(d);
     expect('title' in setDocTitle(d, ' ')).toBe(false);
     expect(parseChartDoc({ ...d, title: 1 })).toBeNull();
+  });
+
+  test('留白:往返保留、normalize 不丢;取整夹到 0~25、等于默认删字段、没变返回原文档;不合法只丢这一项', () => {
+    const d = setDocMargins(twoOnMain(), { top: 0, bottom: 30.4 });
+    expect(d.margins).toEqual({ top: 0, bottom: 25 });
+    expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
+    expect(normalize(d).margins).toEqual({ top: 0, bottom: 25 });
+    expect(setDocMargins(d, { top: 0.2, bottom: 25 })).toBe(d);
+    expect('margins' in setDocMargins(d, { top: 10, bottom: 8 })).toBe(false);
+    const bad = parseChartDoc({ ...d, margins: { top: 26, bottom: 8 } });
+    expect(bad).not.toBeNull();
+    expect(bad && 'margins' in bad).toBe(false);
+    expect(parseChartDoc({ ...d, margins: { top: 10, bottom: 8 } })).toEqual(setDocMargins(d, { top: 10, bottom: 8 }));
   });
 
   test('id 冲突或保留轴 id 与 side 不符 → null', () => {

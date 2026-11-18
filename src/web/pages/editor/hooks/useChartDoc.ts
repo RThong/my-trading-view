@@ -31,11 +31,13 @@ import {
   setScaleInvert,
   setScaleShow,
   setScaleMode,
+  setDocMargins,
   setDocTitle,
   parseChartDoc,
   setStretches,
   type Calc,
   type ChartDoc,
+  type Margins,
   type Drawing,
   type Fit,
   type LayerRender,
@@ -155,6 +157,7 @@ export function useChartDoc() {
     clearDrawings: (keepLocked: boolean) =>
       edit(keepLocked ? '删除未锁定的画线' : '删除全部画线', (d) => clearDrawings(d, { keepLocked })),
     setTitle: (title: string) => edit(title.trim() ? '改标题' : '删除标题', (d) => setDocTitle(d, title)),
+    setMargins: (m: Margins) => edit('改上下留白', (d) => setDocMargins(d, m)),
   };
 }
 
