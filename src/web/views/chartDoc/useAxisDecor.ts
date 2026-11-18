@@ -1,6 +1,6 @@
 // 纵轴的补充:① 刻度颜色跟线(轴上只挂一条线时用它的色,多条 / 蜡烛用默认灰);② 数字上万的轴按单位缩、轴顶写「×1,000」;
 // ③ 独立轴勾了「显示刻度」(Scale.show)的,画成右轴外侧的第 3、4 根轴,能拖动缩放、双击复位(右键菜单见编辑器的 useAxisMenu)。
-// 画都在图表库的纵轴画布上(chart/axisDecor 的插件),所以多格、导出图片自然带上;本 hook 只管算该画什么、挂到哪条线上。
+// 画都在图表库的纵轴画布上(chart/primitives/axisDecor 的插件),所以多格、导出图片自然带上;本 hook 只管算该画什么、挂到哪条线上。
 // 编辑器、固定面板、出图页都挂它,紧跟在 useDocChart 后面调用(要在它建好 series 之后再改选项)
 import { type RefObject, useEffect, useRef } from 'react';
 import { type IChartApi, type ISeriesApi, PriceScaleMode, type SeriesType } from 'lightweight-charts';
@@ -12,7 +12,7 @@ import {
   STRIP_W,
   type Strip,
   unitPriceFormat,
-} from '../../chart/axisDecor';
+} from '../../chart/primitives/axisDecor';
 import { CHART_CHROME, useTheme } from '../../hooks/theme';
 import { type ChartDoc, isFitTarget, type Layer, onItsScale, type Pane } from './chartDoc';
 import { expandIndicators, isVolumePlot, type LayerData } from './layerPoints';
