@@ -2,12 +2,8 @@ import { describe, test, expect, beforeEach } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
 import { getOptions25Delta } from '../storage/repository';
-import {
-  select25Delta,
-  runOptionsSnapshot,
-  type OptionsChainClient,
-  type OptionChainSnapshot,
-} from './optionsSnapshot';
+import type { OptionsChainClient, OptionChainSnapshot } from '../fetchers/optionsChain';
+import { select25Delta, runOptionsSnapshot } from './optionsSnapshot';
 
 function freshDb(): Database {
   const db = new Database(':memory:');

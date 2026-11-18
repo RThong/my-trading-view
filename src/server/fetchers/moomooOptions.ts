@@ -1,7 +1,7 @@
 /**
  * moomoo OpenD 期权链抓取器(WebSocket)。
  *
- * 返回 optionsSnapshot.ts 定义的 OptionChainSnapshot 结构,这样后续流水线
+ * 返回 fetchers/optionsChain.ts 定义的 OptionChainSnapshot 结构,这样后续流水线
  * (select25Delta、原始数据归档)无需关心数据来源。moomoo 提供交易所级别的
  * OI/IV 以及预先算好的希腊字母(delta/gamma/vega/theta/rho),我们将其作为
  * 可选字段一并透传。
@@ -14,11 +14,11 @@
  * 鉴权 key。详见 .env:MOOMOO_WS_HOST / MOOMOO_WS_PORT / MOOMOO_WS_KEY。
  */
 
-import type { OptionChainSnapshot, OptionContract, OptionsChainClient } from '../jobs/optionsSnapshot';
-import { nextMonthlyExpiry } from '../jobs/monthlyExpiry';
+import type { OptionChainSnapshot, OptionContract, OptionsChainClient } from './optionsChain';
+import { nextMonthlyExpiry } from '../analytics/monthlyExpiry';
 import { QOT_MARKET_US, envConfig, rateGate, withConnection, type ConnOpts, type MoomooConfig } from './moomooClient';
 import { fetchUsTradingDates } from './moomooHistoryKL';
-import { lastClosedFrom } from '../jobs/tradingCalendar';
+import { lastClosedFrom } from '../analytics/tradingCalendar';
 import { firstBy } from 'remeda';
 
 const SNAPSHOT_BATCH = 400;

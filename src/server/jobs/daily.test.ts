@@ -3,7 +3,7 @@ import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
 import { getOptions25Delta, getJobHealth, insertMarketSeries } from '../storage/repository';
 import { runDailyJob, staleFreshnessProbes, pendingGroups, groupsForStaleProbes, runPendingGroups } from './daily';
-import type { OptionsChainClient, OptionChainSnapshot } from './optionsSnapshot';
+import type { OptionsChainClient, OptionChainSnapshot } from '../fetchers/optionsChain';
 
 function freshDb(): Database {
   const db = new Database(':memory:');

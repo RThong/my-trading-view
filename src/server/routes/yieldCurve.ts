@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { resolve } from 'node:path';
-import { createSwrCache } from './swrCache';
+import { createSwrCache } from '../swrCache';
 import { createFredFetcher } from '../fetchers/fred';
 import { preferLive, type Point } from '../analytics/regime';
 import { HISTORY_START_DATE, PROJECT_ROOT } from '../config';

@@ -3,7 +3,7 @@ import { gunzipSync } from 'node:zlib';
 import { openDb, migrate } from '../storage/db';
 import { closedBars } from '../live/market';
 import { OPTIONS_UNDERLYINGS } from '../config';
-import type { OptionContract } from './optionsSnapshot';
+import type { OptionContract } from '../fetchers/optionsChain';
 
 /**
  * 切换 CBOE 主源前的验收(见 docs/options-cboe-switch.md)。只读。

@@ -2,8 +2,8 @@ import { describe, test, expect } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { migrate } from '../storage/db';
 import { getOptions25Delta } from '../storage/repository';
-import { runOptionsSnapshot } from '../jobs/optionsSnapshot';
-import { defaultMoomooOptionsClient } from './moomooOptions';
+import { runOptionsSnapshot } from './optionsSnapshot';
+import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
 
 const EXPIRY = new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10);
 

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { resolve } from 'node:path';
 import { PROJECT_ROOT } from '../config';
-import { createSwrCache } from './swrCache';
+import { createSwrCache } from '../swrCache';
 import { createFredFetcher } from '../fetchers/fred';
 import { createEiaFetcher } from '../fetchers/eia';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';

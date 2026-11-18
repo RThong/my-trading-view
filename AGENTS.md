@@ -125,7 +125,7 @@
   - 快照:greeks/IV/OI 在 `optionExData`,行情(bid/ask/curPrice/volume)在 `basic`
 - **第二档到期日**(标的目录 `secondExpiry`:.VIX / TLT / GLD / USO / IBIT):第一档(~30 天,进 25Δ 表)之外,
   另存**第一个 DTE ≥60 的标准月度**原始链(`option_chain_raw`,25Δ 表不变)。不按「最接近 N 天」挑:常挑中周度
-  (实测 GLD 11/13 周度 25Δ call OI 13,12/18 月度 13800)。月度日由 `jobs/monthlyExpiry` 推算再按日查,
+  (实测 GLD 11/13 周度 25Δ call OI 13,12/18 月度 13800)。月度日由 `analytics/monthlyExpiry` 推算再按日查,
   因为月度间隔可达 35 天、而单次链查询跨度 ≤30 天;ETF = 第三个周五,**VIX = 次月第三个周五 −30 天的周三**
   (= VX 结算日,对 2018 起 114 份 VX 到期日:108 份吻合,6 份假日提前一天 → 查询窗口带上前一天)。
   第二档复用第一档的现货;失败记进 failures → 整组 partial → daily 守卫当天重跑(快照型,漏一天补不回)。7 标的一轮约 40 秒(链 12 次、受 3.2s 闸门约束)。
@@ -250,7 +250,8 @@
 - 注释用中文。声明式优先于命令式 `for` 循环。
 - **报警阈值只写在 `src/shared/alertRules.ts`**(分位带的风险端、常态带、警戒线):固定面板图层用 `...ruleMarks(id)` 取,别在 `docs.ts` 里手写 `percentile` / `refLines`(`views/chartDoc/ruleMarks.test.ts` 会拦)。改切点 / 含义就把规则的 `version` +1(存档按版本区分)。逐日状态(扫描用,截到当天、带滞后带)见 `shared/calc/ruleState.ts`。
 - **目录按「纯计算 / 业务」划界,业务再按视角(路由)分**:纯计算放 `web/chart`、`shared/calc`、
-  `server/analytics`、`server/backtest`(允许循环);前端业务里跨视角复用的视图放 `web/views/`,
+  `server/analytics`、`server/backtest`(允许循环),按谁在用分:前后端都用 → `shared/calc`,只后端用 → `server/analytics`,只前端用 → `web/chart`
+  (交易日历 / 月度到期日这类日期计算也算纯计算,别放 `jobs/`;job import fetcher,反之不行:fetcher 别 import `jobs/`);前端业务里跨视角复用的视图放 `web/views/`,
   只属于某个视角的 tab 定义 / regime 配置(`docs.ts`,每个 tab 一份 ChartDoc,与图表编辑器同一格式)/ 组件放 `web/pages/<视角>/`。业务代码禁循环由 Biome 插件
   `biome-plugins/no-loop.grit` 按目录执行(范围见 `biome.jsonc`):计算逻辑夹在业务文件里就拆进计算目录,别加 `biome-ignore`。
   `web/chart` 里实现 lightweight-charts 插件接口(`ISeriesPrimitive` / `IPanePrimitive`,自绘图元)的放 `web/chart/primitives/`:

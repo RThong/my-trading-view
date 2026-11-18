@@ -5,7 +5,7 @@
 // (带 caret;无 caret 的 MOVE 是 Movado 股票。)
 import YahooFinance from 'yahoo-finance2';
 import { HISTORY_START_DATE } from '../config';
-import { nyParts } from '../jobs/tradingCalendar';
+import { nyParts } from '../analytics/tradingCalendar';
 import { preferLive } from '../analytics/regime';
 
 export type MovePoint = { date: string; value: number };

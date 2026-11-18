@@ -7,7 +7,8 @@
  * **要么整段拉全、要么抛** —— 见下面的完整性校验,原因写在那里。
  */
 import { fetchWithTimeout } from './http';
-import type { Bar } from './moomooHistoryKL'; // 日线 OHLC 类型的单一真源
+
+export type Bar = { date: string; open: number | null; high: number | null; low: number | null; close: number };
 
 const URL_BASE = 'https://www.bitstamp.net/api/v2/ohlc/btcusd/';
 const DAY = 86_400;

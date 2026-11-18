@@ -11,13 +11,12 @@ import { rename } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createYahooFetcher } from '../fetchers/yahoo';
 import { fetchCboeIndexAsQuotes } from '../fetchers/cboeIndex';
-import { fetchBitstampBtcDaily } from '../fetchers/bitstampBtcHistory';
+import { fetchBitstampBtcDaily, type Bar } from '../fetchers/bitstampBtcHistory';
 import { fetchDvolHistory } from '../fetchers/deribitDvol';
 import { fetchBtcValuation, fetchSupplyDensitySeries, type BtcValuation } from '../fetchers/brkSupplyDensity';
 import { PRICE_HISTORY_START_DATE, PROJECT_ROOT } from '../config';
-import { lastClosedTradingDate } from '../jobs/tradingCalendar';
+import { lastClosedTradingDate } from '../analytics/tradingCalendar';
 
-type Bar = { date: string; open: number | null; high: number | null; low: number | null; close: number };
 type Point = { date: string; value: number };
 /** stale = 这次没拉到新的(或新的被判截短),回的是上一份。 */
 export type Live<T> = { value: T; stale: boolean };

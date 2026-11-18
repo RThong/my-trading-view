@@ -37,7 +37,7 @@
   // 首字母大写,会被误报成组件工厂。只豁免这两个测试文件,别放宽到整个 src/server(以后那里有 React 代码时规则得管)
   "overrides": [
     {
-      "includes": ["**/src/server/fetchers/moomooClient.test.ts", "**/src/server/fetchers/moomooOptions.test.ts"],
+      "includes": ["**/src/server/fetchers/moomooClient.test.ts", "**/src/server/jobs/moomooOptions.test.ts"],
       "linter": { "rules": { "correctness": { "noComponentHookFactories": "off" } } }
     }
   ],

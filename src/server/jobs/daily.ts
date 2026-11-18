@@ -11,10 +11,11 @@ import {
   getLatestMarketDate,
   type FinishParams,
 } from '../storage/repository';
-import { lastClosedTradingDate } from './tradingCalendar';
+import { lastClosedTradingDate } from '../analytics/tradingCalendar';
 import { OPTIONS_UNDERLYINGS } from '../config';
 import { defaultMoomooOptionsClient } from '../fetchers/moomooOptions';
-import { runOptionsSnapshot, type OptionsChainClient } from './optionsSnapshot';
+import type { OptionsChainClient } from '../fetchers/optionsChain';
+import { runOptionsSnapshot } from './optionsSnapshot';
 import { createCboeOptionsClient } from '../fetchers/cboeOptions';
 import { updateVxTermStructure } from './vxTermStructure';
 import { updateErisSnapshot } from './erisSnapshot';
