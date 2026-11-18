@@ -9,7 +9,7 @@ const DAY_MS = 86_400_000;
  * 只收「交易日收盘后、VIX 期权夜盘开盘前」抓的存档:交易日 21:30 UTC ~ 次日 00:15 UTC。
  * 下界 = 16:30 EST:收盘 16:15 再加端点的 15 分钟延迟(夏令时是 17:30 EDT,晚一小时,偏保守);上界 = 20:15 EDT(冬令时是 19:15 EST,早一小时)。
  * 挡掉三类:夜盘报价的 VIX;手动 / 推送触发、不在点上的那几轮;美国假日那天定时任务又抓到的上一交易日文件
- * (同一份收盘数据,但按晚了一天的时刻选「约 30 天」那档,可能换到另一个到期日)。Actions 的 22:00 / 23:30 UTC 都在窗口内。
+ * (同一份收盘数据,但按晚了一天的时刻选「约 30 天」那档,可能换到另一个到期日)。Actions 的定时(market-snapshots 的 snapshot.yml)要落在窗口内。
  */
 export function archiveUsable(tradingDate: string, fetchedAt: Date): boolean {
   const t = fetchedAt.getTime();
