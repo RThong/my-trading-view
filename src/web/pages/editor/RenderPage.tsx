@@ -10,6 +10,7 @@ import { latestTime } from '../../views/chartDoc/Legend';
 import { allSevenDay, layerRequest, useLayerData } from '../../views/chartDoc/layerPoints';
 import { useCrosshairLegend } from '../../views/chartDoc/useCrosshairLegend';
 import { useDocChart } from '../../views/chartDoc/useDocChart';
+import { useAxisDecor } from '../../views/chartDoc/useAxisDecor';
 import { usePercentileBand } from '../../views/chartDoc/usePercentileBand';
 import { useSeriesData } from '../../views/chartDoc/useSeriesData';
 import { useBaseBand } from './hooks/useBaseBand';
@@ -69,6 +70,7 @@ function RenderChart({ doc, interval, from }: { doc: ChartDoc; interval: Interva
     interval,
     fit,
   });
+  useAxisDecor(containerRef, chartRef, seriesRef, doc, data);
   const { layout } = useCrosshairLegend(containerRef, chartRef, doc);
   useDrawings(containerRef, chartRef, seriesRef, NO_SELECTION, doc, data, READ_ONLY, identity);
   useFitSync(chartRef, seriesRef, doc);

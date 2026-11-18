@@ -27,6 +27,7 @@ import { SeriesPicker } from './components/SeriesPicker';
 import { useChartDoc } from './hooks/useChartDoc';
 import { useCrosshairLegend } from '../../views/chartDoc/useCrosshairLegend';
 import { useDocChart } from '../../views/chartDoc/useDocChart';
+import { useAxisDecor } from '../../views/chartDoc/useAxisDecor';
 import { useSeriesData } from '../../views/chartDoc/useSeriesData';
 import { useBaseBand } from './hooks/useBaseBand';
 import { usePercentileBand } from '../../views/chartDoc/usePercentileBand';
@@ -62,6 +63,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
     interval,
     fit: 'common',
   });
+  const axisDecor = useAxisDecor(containerRef, chartRef, seriesRef, doc, data);
   const { hoverTime, layout } = useCrosshairLegend(containerRef, chartRef, doc);
   const visibleRange = useVisibleRange(chartRef);
   const selectedLineRef = useLineDrag(containerRef, chartRef, seriesRef, doc);
@@ -77,7 +79,7 @@ export function ChartEditorPage({ interval }: { interval: Interval }) {
     runPlugins(p, c, plugins.settings),
   );
   useFitSync(chartRef, seriesRef, doc);
-  const axisMenu = useAxisMenu(containerRef, chartRef, doc);
+  const axisMenu = useAxisMenu(containerRef, chartRef, doc, axisDecor.stripAt);
   useBaseBand(chartRef, doc, data);
   usePercentileBand(chartRef, doc, data);
 

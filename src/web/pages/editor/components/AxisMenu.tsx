@@ -2,7 +2,7 @@
 // 点菜单外、按 Esc、滚轮都收起(同 TradingView)
 import { type RefObject, useEffect, useRef } from 'react';
 import { Check } from 'lucide-react';
-import { onItsScale, type ChartDoc } from '../../../views/chartDoc/chartDoc';
+import { onItsScale, type ChartDoc, scaleName } from '../../../views/chartDoc/chartDoc';
 import { baseLabel } from '../../../views/chartDoc/layerLabel';
 import { positiveScale, type LayerData } from '../../../views/chartDoc/layerPoints';
 import type { AxisMenuAt } from '../hooks/useAxisMenu';
@@ -92,7 +92,7 @@ export function AxisMenu({ at, doc, data, actions, onClose, chartEl }: Props) {
     >
       {/* TV 没有这一行;留着是因为一格常有左右两根轴,改之前看清是哪根、会连带哪几条线 */}
       <div className="truncate px-3 py-1 text-xs text-neutral-500" title={names.join('、')}>
-        第 {index + 1} 格 · {at.scaleId === 'right' ? '右轴' : '左轴'} · {names.join('、')}
+        第 {index + 1} 格 · {scaleName(pane, at.scaleId)} · {names.join('、')}
       </div>
       <Separator />
       <Item item={invert} role="menuitemcheckbox" />

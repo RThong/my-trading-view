@@ -16,6 +16,11 @@ export type Scale = {
   /** 倒轴(上下颠倒)。是轴的属性:挂在这根轴上的图层一起倒 */
   invert?: true;
   /**
+   * 独立轴显示刻度(同原图的第 3、4 根纵轴):画在右轴外侧,按 scales 里的顺序往右排。只对独立轴有意义;
+   * 左右轴本来就有刻度。画法见 views/chartDoc/useAxisDecor
+   */
+  show?: true;
+  /**
    * 坐标模式三选一(都不写 = 普通,同 TradingView 价格轴右键的 Regular / Percent / Indexed to 100 / Logarithmic):
    * 对数 / 百分比(可视区第一个点 = 0%)/ 起点 = 100(可视区第一个点 = 100)。
    * 轴上有 ≤0 的值时渲染层按普通坐标画:对数取不了;百分比要拿第一个点当分母,≤0 时数字爆掉或方向画反
@@ -507,6 +512,7 @@ function canonicalScale(sc: Scale): Scale {
   return {
     id: sc.id,
     side: sc.side,
+    ...(sc.show ? { show: true as const } : {}),
     ...(sc.invert ? { invert: true as const } : {}),
     ...(sc.log ? { log: true as const } : {}),
     ...(sc.percent ? { percent: true as const } : {}),
@@ -528,6 +534,19 @@ function updateScale(doc: ChartDoc, paneId: string, scaleId: string, f: (sc: Sca
       p.id !== paneId ? p : { ...p, scales: p.scales.map((sc) => (sc.id === scaleId ? canonicalScale(f(sc)) : sc)) },
     ),
   };
+}
+
+/** 轴的叫法:左轴 / 右轴 / 独立轴 N(按本格独立轴的顺序编号;卡片挂轴下拉、右键菜单标题共用) */
+export function scaleName(pane: Pane, scaleId: string): string {
+  if (scaleId === 'right' || scaleId === 'left') return scaleId === 'right' ? '右轴' : '左轴';
+  return `独立轴 ${pane.scales.filter((s) => s.side === 'overlay').findIndex((s) => s.id === scaleId) + 1}`;
+}
+
+/** 独立轴显示 / 不显示刻度 */
+export function setScaleShow(doc: ChartDoc, paneId: string, scaleId: string, on: boolean) {
+  return updateScale(doc, paneId, scaleId, ({ show: _old, ...rest }) =>
+    on && rest.side === 'overlay' ? { ...rest, show: true } : rest,
+  );
 }
 
 export function setScaleInvert(doc: ChartDoc, paneId: string, scaleId: string, on: boolean) {
@@ -800,6 +819,7 @@ function isScale(x: unknown): x is Scale {
     isStr(x.id) &&
     (x.id === 'right' || x.id === 'left' ? x.side === x.id : x.side === 'overlay') &&
     (x.invert === undefined || x.invert === true) &&
+    (x.show === undefined || (x.show === true && x.side === 'overlay')) &&
     MODE_FLAGS.every((f) => x[f] === undefined || x[f] === true) &&
     MODE_FLAGS.filter((f) => x[f]).length <= 1 &&
     (x.clampVisibleTo === undefined || isRange(x.clampVisibleTo, false)) &&

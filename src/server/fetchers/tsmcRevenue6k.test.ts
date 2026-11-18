@@ -1,5 +1,15 @@
-import { expect, test } from 'bun:test';
+import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { fetchRevenueReports, parseRevenueReport, toText } from './tsmcRevenue6k';
+
+// UA 从 env 读:测试自己设,别依赖本机 .env(公司电脑没配,pre-push 会被这条拦下;请求全是 mock,值无所谓)
+const REAL_UA = process.env.SEC_USER_AGENT;
+beforeAll(() => {
+  process.env.SEC_USER_AGENT = 'test test@example.com';
+});
+afterAll(() => {
+  if (REAL_UA === undefined) delete process.env.SEC_USER_AGENT;
+  else process.env.SEC_USER_AGENT = REAL_UA;
+});
 
 test('parseRevenueReport:2016 版(Net Revenues、负数带括号)与 2026 版(Net Revenue)都认;别的 6-K → null', () => {
   const y2016 =
