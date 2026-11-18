@@ -1,5 +1,5 @@
 // 通用 ZigZag 摆动 regime 检测:对任意 {date,value}[] 序列,按 pct 反转阈值划出上行/下行段。
-// 纯函数、与业务无关(攻防面板等按需复用)。regime 标签沿用当前唯一消费方(攻防)的语义。
+// 纯函数、与业务无关(攻防序列由服务端用它算,见 calc/attackDefense)。regime 标签沿用当前唯一消费方(攻防)的语义。
 export type Regime = 'defense' | 'offense' | 'neutral';
 
 /** ZigZag 摆动检测(吸附极值):跟踪自上个拐点的波峰/波谷,反转 pct 确认拐点并回贴到极值点。

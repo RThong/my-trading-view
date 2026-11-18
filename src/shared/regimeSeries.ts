@@ -83,6 +83,16 @@ export const REGIME_SERIES = [
   'btcAviv',
   // 周末标记(0/1,日期同 BTC 日线):BTC 各格的灰色背景带
   'weekendFlag',
+  // 攻防(「特色指标 › 攻防」,见 shared/calc/attackDefense):NOBL / QQQ 比值、35 日均线,
+  // 慢线 ZigZag 防守 / 进攻 × 已确认 / 末段待定、快线防守 / 进攻的 0/1 背景标记
+  'noblQqq',
+  'noblQqqMa35',
+  'adZigDefense',
+  'adZigOffense',
+  'adZigDefensePending',
+  'adZigOffensePending',
+  'adFastDefense',
+  'adFastOffense',
   'vxTermSpread',
   'move',
   // 认沽认购比的均线(5 / 20 / 63 个交易日 ≈ 3 个月):日度噪音大,读趋势看均线

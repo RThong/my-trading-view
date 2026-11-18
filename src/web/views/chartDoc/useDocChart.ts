@@ -1,6 +1,6 @@
 // ChartDoc 的渲染层(图表编辑器与固定面板共用):只吃「ChartDoc + 取到的数据」,直接用 lightweight-charts v5 API。
 // 图只建一次;之后每次文档变化按图层 id 增量对账(加 / 删 / 换格 / 换轴 / 改色 / 倒轴 / 对数),不重建整张图,
-// 所以加格删格时缩放与十字线状态都还在。不依赖旧图表引擎(chart/ 下的 PaneChart*)。
+// 所以加格删格时缩放与十字线状态都还在。
 import { type RefObject, useEffect, useRef } from 'react';
 import {
   AreaSeries,
@@ -511,7 +511,8 @@ export function useDocChart(
         bands.set(l.id, b);
       }
       const times = (data[l.id]?.display ?? []).filter((pt) => pt.value !== 0).map((pt) => pt.time);
-      b.prim.setData(times, withAlpha(l.color, BACKGROUND_ALPHA));
+      const r = l.render?.kind === 'background' ? l.render : undefined;
+      b.prim.setData(times, withAlpha(l.color, r?.opacity ?? BACKGROUND_ALPHA), !!r?.strip);
     });
   }, [doc, data]);
 

@@ -28,19 +28,25 @@ export function mergeSpans(xs: number[], barSpacing: number): Span[] {
   }, []);
 }
 
+// 细带只占格子底部这么高(比例):够看出颜色,又压不住上面的线
+const STRIP_H = 0.06;
+
 class DayBandRenderer implements IPrimitivePaneRenderer {
   constructor(
     private readonly spans: Span[],
     private readonly color: string,
+    private readonly strip: boolean,
   ) {}
 
   draw(target: CanvasRenderingTarget2D): void {
-    // biome-ignore lint/correctness/useHookAtTopLevel: useMediaCoordinateSpace is a canvas method, not a React hook
+    // biome-ignore lint/correctness/useHookAtTopLevel: useMediaCoordinateSpace 是 canvas 方法,不是 React hook
     target.useMediaCoordinateSpace((scope: { context: CanvasRenderingContext2D; mediaSize: { height: number } }) => {
       const ctx = scope.context;
+      const { height } = scope.mediaSize;
+      const [top, h] = this.strip ? [height * (1 - STRIP_H), height * STRIP_H] : [0, height];
       ctx.fillStyle = this.color;
       this.spans.forEach((s) => {
-        ctx.fillRect(s.left, 0, s.right - s.left, scope.mediaSize.height);
+        ctx.fillRect(s.left, top, s.right - s.left, h);
       });
     });
   }
@@ -49,6 +55,7 @@ class DayBandRenderer implements IPrimitivePaneRenderer {
 export class DayBandPrimitive implements ISeriesPrimitive<Time> {
   private times: string[] = [];
   private color = 'transparent';
+  private strip = false;
   private param?: SeriesAttachedParameter<Time>;
 
   attached(param: SeriesAttachedParameter<Time>): void {
@@ -59,17 +66,18 @@ export class DayBandPrimitive implements ISeriesPrimitive<Time> {
     this.param = undefined;
   }
 
-  /** times = 要上色的日期(升序) */
-  setData(times: string[], color: string): void {
+  /** times = 要上色的日期(升序);strip = 只染格子底部一条细带 */
+  setData(times: string[], color: string, strip = false): void {
     this.times = times;
     this.color = color;
+    this.strip = strip;
     this.param?.requestUpdate();
   }
 
   paneViews(): IPrimitivePaneView[] {
     const param = this.param;
     const times = this.times;
-    const color = this.color;
+    const { color, strip } = this;
     return [
       {
         zOrder: (): PrimitivePaneViewZOrder => 'bottom',
@@ -81,7 +89,7 @@ export class DayBandPrimitive implements ISeriesPrimitive<Time> {
             const x = ts.timeToCoordinate(t as Time);
             return x == null ? [] : [x];
           });
-          return new DayBandRenderer(mergeSpans(xs, ts.options().barSpacing), color);
+          return new DayBandRenderer(mergeSpans(xs, ts.options().barSpacing), color, strip);
         },
       },
     ];

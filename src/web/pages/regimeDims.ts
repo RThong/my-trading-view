@@ -6,6 +6,7 @@ import { AI_DOCS } from './ai/docs';
 import { fundDoc } from './ai/fundamentals';
 import { BTC_DOCS } from './btc/docs';
 import { CREDIT_DOCS } from './credit/docs';
+import { ATTACK_DEFENSE } from './featured/attackDefense';
 import { CONCENTRATION } from './featured/concentration';
 import { INFLATION_DOCS } from './inflation/docs';
 import { JAPAN_DOCS } from './japan/docs';
@@ -30,6 +31,7 @@ export const REGIME_DOCS: Record<FixedDim, ChartDoc> = {
   ...AI_DOCS,
   ...VALUATION_DOCS,
   concentration: CONCENTRATION,
+  attackDefense: ATTACK_DEFENSE,
 };
 
 // 按 dim 缓存:同一 dim 永远拿到同一份 doc(DocChart 以它为初值;按名单现算,不缓存的话每次都是新对象)。

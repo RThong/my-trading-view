@@ -1,8 +1,18 @@
 // 手画线的纯计算:时间轴换算、命中检测、文字尺寸、光标。画在格子上的图元见 primitives/drawings,
 // 文档模型见 views/chartDoc/chartDoc 的 Drawing,交互见编辑器 useDrawings。
-import { pointToSegmentDistance } from './trendlines';
-
 const DAY_MS = 86_400_000;
+
+// 点 (px,py) 到线段 (x1,y1)-(x2,y2) 的最短距离。垂足落在段外时取到最近端点的距离(命中检测:≤ 阈值即压在线上)
+export function pointToSegmentDistance(px: number, py: number, x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  // 退化成一个点:直接返回到该点的距离,避免除零。
+  const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
 
 function dayNum(iso: string): number {
   return Date.parse(`${iso}T00:00:00Z`) / DAY_MS;

@@ -50,6 +50,8 @@ export type Fit = { target: string; start: string; end: string; alpha: number; b
  * events:事件竖线,序列里每个日期画一根满高细柱,值不画(发布日、决议日);挂自己的隐形轴,图层的 scale 不起作用。
  *   opacity(0~1,缺省不透明):竖线压在线上面,满色太抢眼;颜色仍只写 #rrggbb(取色器只认这个),透明度单列
  * background:背景色带,序列是 0 / 1 标记,值为 1 的日子整格高染图层颜色(淡色,压在线下面);同样挂自己的隐形轴。
+ *   opacity(0~1,缺省 0.14):同一种颜色要分深浅时用(攻防的已确认 / 末段待定);strip:只染格子底部一条细带
+ *   (同一格里叠第二套标记,如攻防的快线,不和整格高的背景混在一起)
  * candle:蜡烛(涨绿跌红,图层颜色不起作用),只有注册表标了 ohlc 的序列能用;图例 / 分位 / 参考线照旧按收盘
  * volume:成交量柱(图层颜色的单色柱、0 起),周 / 月线**按期求和**而不是取最后一天 —— 只给成交量这类流量用
  */
@@ -57,7 +59,7 @@ export type LayerRender =
   | { kind: 'line'; baseline?: number; step?: true }
   | { kind: 'signed' }
   | { kind: 'events'; opacity?: number }
-  | { kind: 'background' }
+  | { kind: 'background'; opacity?: number; strip?: true }
   | { kind: 'candle' }
   | { kind: 'volume' };
 /** 有绝对含义的阈值线(如「临界 4」),跟随图层所在的纵轴 */
@@ -867,10 +869,16 @@ function isFit(x: unknown): x is Fit {
   );
 }
 
+/** 缺省或 (0, 1] */
+function isOpacity(x: unknown): boolean {
+  return x === undefined || (isNum(x) && x > 0 && x <= 1);
+}
+
 function isRender(x: unknown): x is LayerRender {
   if (!isObj(x)) return false;
-  if (x.kind === 'signed' || x.kind === 'background' || x.kind === 'candle' || x.kind === 'volume') return true;
-  if (x.kind === 'events') return x.opacity === undefined || (isNum(x.opacity) && x.opacity > 0 && x.opacity <= 1);
+  if (x.kind === 'signed' || x.kind === 'candle' || x.kind === 'volume') return true;
+  if (x.kind === 'events') return isOpacity(x.opacity);
+  if (x.kind === 'background') return isOpacity(x.opacity) && (x.strip === undefined || x.strip === true);
 
   return (
     x.kind === 'line' && (x.baseline === undefined || isNum(x.baseline)) && (x.step === undefined || x.step === true)
@@ -1022,6 +1030,12 @@ function canonicalDrawing(d: Drawing): Drawing {
 
 function canonicalRender(r: LayerRender): LayerRender {
   if (r.kind === 'events') return { kind: r.kind, ...(r.opacity !== undefined ? { opacity: r.opacity } : {}) };
+  if (r.kind === 'background')
+    return {
+      kind: r.kind,
+      ...(r.opacity !== undefined ? { opacity: r.opacity } : {}),
+      ...(r.strip ? { strip: true as const } : {}),
+    };
   if (r.kind !== 'line') return { kind: r.kind };
 
   return {

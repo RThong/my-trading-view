@@ -97,7 +97,7 @@ describe('固定面板的 ChartDoc', () => {
   });
 
   // REGIME_DOCS 由各视角的 docs 展开拼成:同一 key 出现在两个文件里,后者会静默盖掉前者(类型查不出来)。
-  // 这里扫全部 pages/*/docs.ts,既查重名,也查有没有哪个文件漏拼进 REGIME_DOCS(集中度单独一个文件,另算)。
+  // 这里扫全部 pages/*/docs.ts,既查重名,也查有没有哪个文件漏拼进 REGIME_DOCS(特色指标的集中度 / 攻防各一个文件,另算)。
   test('各视角 docs 的 key 不重名,且全部拼进 REGIME_DOCS', async () => {
     const files = [...new Bun.Glob('../../pages/*/docs.ts').scanSync(import.meta.dir)];
     const modules = await Promise.all(files.map((f) => import(f)));
@@ -108,6 +108,6 @@ describe('固定面板的 ChartDoc', () => {
 
     expect(files.length).toBeGreaterThan(0);
     expect(dupes).toEqual([]);
-    expect([...keys, 'concentration'].toSorted()).toEqual(Object.keys(REGIME_DOCS).toSorted());
+    expect([...keys, 'concentration', 'attackDefense'].toSorted()).toEqual(Object.keys(REGIME_DOCS).toSorted());
   });
 });
