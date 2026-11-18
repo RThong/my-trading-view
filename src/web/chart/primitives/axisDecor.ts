@@ -93,17 +93,55 @@ export type Strip = {
   tag?: string;
 };
 
-/**
- * 色块上的值:同原生最新值标签,取可视区最右那根(缩放 / 拖到没看到最新那根时跟着变)。
- * ponytail: 那一根是空白占位就不画,不再往左找
- */
-function lastVisible(series: ISeriesApi<SeriesType>, chart: IChartApi | undefined): number | undefined {
-  const to = chart?.timeScale().getVisibleLogicalRange()?.to;
-  if (to === undefined) return undefined;
-  const d = series.dataByIndex(Math.floor(to), MismatchDirection.NearestLeft);
+/** 可视区某一端的那根的值(折线取值、蜡烛取收盘);那一根是空白占位 → undefined */
+function visibleEnd(
+  series: ISeriesApi<SeriesType>,
+  chart: IChartApi | undefined,
+  end: 'from' | 'to',
+): number | undefined {
+  const range = chart?.timeScale().getVisibleLogicalRange();
+  if (!range) return undefined;
+  // 同图表库的可视区取整(左 floor、右 ceil):最新值标签取 ceil(右端) 往左第一根,
+  // 百分比 / 起点 100 的基准取 floor(左端) 往右第一根。右端用 floor 会差一根,和原生轴的标签对不上
+  const [at, dir] =
+    end === 'to'
+      ? [Math.ceil(range.to), MismatchDirection.NearestLeft]
+      : [Math.floor(range.from), MismatchDirection.NearestRight];
+  const d = series.dataByIndex(at, dir);
   if (!d) return undefined;
 
   return 'value' in d ? d.value : 'close' in d ? d.close : undefined;
+}
+
+/**
+ * 刻度写什么:价格 ↔ 刻度上的数。普通 / 对数写价格(上万按单位缩);百分比 / 起点 100 按「可视区第一根」换算,
+ * 同图表库原生轴(它的基准也是可视区第一根,拖动时跟着变),不然线按百分比画、刻度却写原值。
+ * base 缺(可视区里没有这条线的点)时退回写价格
+ */
+export type AxisSpace = {
+  toLabel: (price: number) => number;
+  fromLabel: (label: number) => number;
+  text: (label: number) => string;
+  ticks: (lo: number, hi: number, count: number) => number[];
+};
+
+export function axisSpace(mode: PriceScaleMode, base: number | undefined, unit: AxisUnit | undefined): AxisSpace {
+  if (base && mode === PriceScaleMode.Percentage)
+    return {
+      toLabel: (p) => (p / base - 1) * 100,
+      fromLabel: (v) => base * (1 + v / 100),
+      text: (v) => `${fmtTick(v)}%`,
+      ticks: linearTicks,
+    };
+  if (base && mode === PriceScaleMode.IndexedTo100)
+    return { toLabel: (p) => (p / base) * 100, fromLabel: (v) => (v * base) / 100, text: fmtTick, ticks: linearTicks };
+
+  return {
+    toLabel: (p) => p,
+    fromLabel: (v) => v,
+    text: (v) => fmtTick(unit ? v / unit.div : v),
+    ticks: mode === PriceScaleMode.Logarithmic ? logTicks : linearTicks,
+  };
 }
 
 /**
@@ -132,11 +170,16 @@ function drawStrip(
   const top = series.coordinateToPrice(0);
   const bottom = series.coordinateToPrice(height);
   if (top === null || bottom === null) return;
-  const [lo, hi] = [Math.min(top, bottom), Math.max(top, bottom)];
-  const log = series.priceScale().options().mode === PriceScaleMode.Logarithmic;
-  const ticks = (log ? logTicks : linearTicks)(lo, hi, Math.max(2, Math.floor(height / MIN_GAP)));
+  const mode = series.priceScale().options().mode;
+  const relative = mode === PriceScaleMode.Percentage || mode === PriceScaleMode.IndexedTo100;
+  // 基准用这条线自己可视区第一根:图表库在百分比 / 起点 100 下把每条线各按自己的第一根换算(轴上几条线起点不同也一样),
+  // priceToCoordinate 用的也是它。别换成「整根轴最早的那根」—— 2026-11-18 试过,刻度和色块整体错位
+  const space = axisSpace(mode, relative ? visibleEnd(series, chart, 'from') : undefined, unit);
+  // 换算是单调增的(基准 > 0):刻度在「刻度上的数」里取整,再换回价格定高度
+  const [lo, hi] = [Math.min(top, bottom), Math.max(top, bottom)].map(space.toLabel);
+  const ticks = space.ticks(lo, hi, Math.max(2, Math.floor(height / MIN_GAP)));
   // 最新值色块的纵向位置与半高:压在它下面的刻度不画(原生轴会叠字)
-  const last = tag === undefined ? undefined : lastVisible(series, chart);
+  const last = tag === undefined ? undefined : visibleEnd(series, chart, 'to');
   const tagY = last === undefined ? null : series.priceToCoordinate(last);
   const tagHalf = fontSize / 2 + 3;
 
@@ -148,24 +191,27 @@ function drawStrip(
   ctx.lineTo(x + 0.5, height);
   ctx.stroke();
   ticks.forEach((v) => {
-    const y = series.priceToCoordinate(v);
+    const y = series.priceToCoordinate(space.fromLabel(v));
     if (y === null || y < HEAD_H || y > height - 6) return;
     ctx.beginPath();
     ctx.moveTo(x, y);
     ctx.lineTo(x + 4, y);
     ctx.stroke();
     if (tagY !== null && Math.abs(y - tagY) < tagHalf + fontSize / 2) return;
-    ctx.fillText(fmtTick(unit ? v / unit.div : v), x + 7, y);
+    ctx.fillText(space.text(v), x + 7, y);
   });
-  if (unit) ctx.fillText(unit.label, x + 7, HEAD_H / 2);
+  if (unit && !relative) ctx.fillText(unit.label, x + 7, HEAD_H / 2);
   if (tagY === null || last === undefined || tag === undefined || tagY < 0 || tagY > height) return;
 
   ctx.fillStyle = tag;
   ctx.fillRect(x + 1, tagY - tagHalf, STRIP_W - 2, tagHalf * 2);
   ctx.fillStyle = textOn(tag);
-  // 同线的价格格式(带 2 位小数);上万的数没单位时放不下一根轴宽,退回刻度那种少小数的写法
-  const full = series.priceFormatter().format(last);
-  const text = ctx.measureText(full).width <= STRIP_W - 7 ? full : fmtTick(unit ? last / unit.div : last);
+  // 两位小数(普通坐标同线的价格格式;百分比 / 起点 100 同原生轴的写法);放不下一根轴宽时退回刻度那种少小数的写法
+  const label = space.toLabel(last);
+  const full = relative
+    ? `${label.toFixed(2)}${mode === PriceScaleMode.Percentage ? '%' : ''}`
+    : series.priceFormatter().format(last);
+  const text = ctx.measureText(full).width <= STRIP_W - 7 ? full : space.text(label);
   ctx.fillText(text, x + 5, tagY);
 }
 
