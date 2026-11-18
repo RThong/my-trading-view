@@ -251,7 +251,7 @@
   `biome-plugins/no-loop.grit` 按目录执行(范围见 `biome.jsonc`):计算逻辑夹在业务文件里就拆进计算目录,别加 `biome-ignore`。
   `web/chart` 里实现 lightweight-charts 插件接口(`ISeriesPrimitive` / `IPanePrimitive`,自绘图元)的放 `web/chart/primitives/`:
   只管怎么画、不认 ChartDoc,算画什么 / 挂哪条线由 `views/` 的 hook 做(如 `useAxisDecor` → `primitives/axisDecor`)。
-  `drawings.ts` / `trendlines.ts` 还是几何计算和图元类混在一个文件,待拆。
+  同一功能的纯计算留在 `web/chart`、同名放(如画线:`chart/drawings` 算命中 / 光标,`chart/primitives/drawings` 画)。
 - **UI 组件库:shadcn/ui**(base-nova 风格,底层 Base UI `@base-ui/react`),组件源码在 `src/web/components/ui/`(拷进来归自己,可改),
   类名合并 `cn` 在 `src/web/lib/utils.ts`(clsx + tailwind-merge),颜色变量在 `styles.css` 的 `@theme inline`(映射到 neutral 色阶)。
   **明暗主题**(顶栏切换,`hooks/theme.ts`):浅色 = `:root[data-theme="light"]` 把 neutral 色阶整条翻成暖白、几档强调色换深色号,

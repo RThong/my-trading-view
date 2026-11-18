@@ -8,14 +8,8 @@
 // series 句柄与图元存进 entriesRef,cleanup 只碰 ref。坐标一律用 crosshair 的 param.point(准、免手算多 pane 偏移)。
 import { useEffect, useRef, useState } from 'react';
 import type { IChartApi, Logical, MouseEventParams } from 'lightweight-charts';
-import {
-  TrendLinePrimitive,
-  serializeLines,
-  parseLines,
-  pointToSegmentDistance,
-  type Anchor,
-  type TrendLine,
-} from './trendlines';
+import { serializeLines, parseLines, pointToSegmentDistance, type Anchor, type TrendLine } from './trendlines';
+import { TrendLinePrimitive } from './primitives/trendlines';
 import type { PaneDef, AnySeries } from './paneChart.types';
 import { useStable } from '../hooks/useStable';
 

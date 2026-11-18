@@ -7,7 +7,6 @@ import {
   boxOf,
   calloutSize,
   channelOffset,
-  DrawingsPrimitive,
   hitShapes,
   isRectHandle,
   RECT_EDGES,
@@ -16,12 +15,12 @@ import {
   lineYAt,
   timeAxis,
   type Hit,
-  type PaneDrawingState,
   type Pt,
   type RectHandle,
   type Shape,
   type TimeAxis,
 } from '../../../chart/drawings';
+import { DrawingsPrimitive, type PaneDrawingState } from '../../../chart/primitives/drawings';
 import {
   allDrawings,
   canOwnDrawings,
