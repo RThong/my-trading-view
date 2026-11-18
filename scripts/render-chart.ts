@@ -12,6 +12,10 @@ import { type Interval, INTERVALS } from '../src/web/hooks/interval';
 const BASE = 'http://localhost:5173';
 // 数据从各源现拉,慢的源(如 Yahoo 长历史)十几秒,留足余量
 const TIMEOUT_MS = 90_000;
+// 2 倍像素(同 Retina 屏上导出的清晰度)。浏览器启动参数和页面的 deviceScaleFactor 都读它,两处不一致就会复发下面那个画布 1 倍 / 2 倍混用的问题:
+// 只靠 newPage 的 deviceScaleFactor(模拟)时,无界面 Chrome 报给 ResizeObserver 的 device-pixel 尺寸不可靠 ——
+// 图表各块画布有的停在 1 倍、有的(后来改过宽的)变 2 倍,拼出来右轴只有一半大(2026-11-18 实测)。所以启动时也真按这个倍数起
+const DPR = 2;
 
 function fail(msg: string): never {
   console.error(msg);
@@ -47,8 +51,7 @@ if (!doc) fail(`${docPath} 不是合法的 ChartDoc(同编辑器「导入 JSON�
 const url = `${values.base}/render#${renderHash(doc, { interval: values.interval as Interval, theme: values.theme, from: values.from })}`;
 /** 打开出图页、等它交出结果;出错抛一句话的 Error(浏览器由调用方在 finally 里关,不在这里 exit) */
 async function render(browser: Browser): Promise<{ png: string; missing: string[] }> {
-  // 2 倍像素:同 Retina 屏上导出的清晰度
-  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 2 });
+  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: DPR });
   await page.goto(url).catch(() => {
     throw new Error(`打不开 ${values.base}:dev server 开着吗(bun run dev)?`);
   });
@@ -63,8 +66,8 @@ async function render(browser: Browser): Promise<{ png: string; missing: string[
   return result;
 }
 
+const browser = await chromium.launch({ channel: 'chrome', args: [`--force-device-scale-factor=${DPR}`] });
 // 出错也要先关浏览器再退出:process.exit 不跑 finally,无界面 Chrome 会留在后台
-const browser = await chromium.launch({ channel: 'chrome' });
 const outcome = await render(browser)
   .then((r) => ({ ok: r }))
   .catch((e: unknown) => ({ err: e instanceof Error ? e.message : String(e) }))
