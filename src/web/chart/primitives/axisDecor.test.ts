@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
-import { axisUnit, fmtTick, linearTicks, logTicks, textOn } from './axisDecor';
+import { PriceScaleMode } from 'lightweight-charts';
+import { axisSpace, axisUnit, fmtTick, linearTicks, logTicks, textOn } from './axisDecor';
 
 test('轴单位:上万 ×1,000、上千万 ×1M,更小不缩', () => {
   expect(axisUnit(9_999)).toBeUndefined();
@@ -23,4 +24,23 @@ test('色块字色:深色底白字、浅色底黑字(同图表库原生标签);�
   expect(textOn('#facc15')).toBe('#000000');
   expect(textOn('#a3e635')).toBe('#000000');
   expect(textOn('red')).toBe('#ffffff');
+});
+
+test('刻度上的数:百分比 / 起点 100 按可视区第一根换算、可换回价格;普通写价格(上万按单位缩);缺基准退回写价格', () => {
+  const pct = axisSpace(PriceScaleMode.Percentage, 80, undefined);
+  expect(pct.toLabel(88)).toBeCloseTo(10);
+  expect(pct.fromLabel(10)).toBeCloseTo(88);
+  expect(pct.text(-12.5)).toBe('-12.5%');
+
+  const idx = axisSpace(PriceScaleMode.IndexedTo100, 80, undefined);
+  expect(idx.toLabel(88)).toBeCloseTo(110);
+  expect(idx.fromLabel(110)).toBeCloseTo(88);
+  expect(idx.text(110)).toBe('110');
+
+  const plain = axisSpace(PriceScaleMode.Normal, 80, axisUnit(20_000));
+  expect(plain.toLabel(18_000)).toBe(18_000);
+  expect(plain.text(18_000)).toBe('18');
+
+  expect(axisSpace(PriceScaleMode.Percentage, undefined, undefined).text(88)).toBe('88');
+  expect(axisSpace(PriceScaleMode.Logarithmic, undefined, undefined).ticks(1, 1000, 8)).toEqual(logTicks(1, 1000, 8));
 });
