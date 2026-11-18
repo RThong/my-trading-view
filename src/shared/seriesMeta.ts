@@ -74,6 +74,8 @@ function daily(category: SeriesCategory, label: string, unit?: string, aliases?:
 export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   // ── 资产
   qqq: daily('资产', 'QQQ 纳指 100', '$', ['纳指', 'nasdaq']),
+  lmeCopper3m: daily('资产', 'LME 铜 3 个月官方价', '$/吨', ['铜', 'copper', 'lme', '伦铜']),
+  // = yh:NOBL ÷ yh:QQQ(DERIVED 标 calc,不进下拉)
   noblQqq: daily('资产', 'NOBL / QQQ 攻防比值', undefined, ['攻防', '红利贵族', 'nobl']),
   noblQqqMa35: daily('资产', 'NOBL / QQQ 35 日均线', undefined, ['攻防']),
   adZigDefense: { ...daily('资产', '攻防慢线:防守(已确认)'), hidden: true },
@@ -470,6 +472,9 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   vxTermSpread: 'calc', // VX1 − VX3(注册表的 db:VX1 / db:VX3)
   vixSpotTerm: 'calc', // vixSpot − vix3m
   rxmSpx: 'calc', // rxm ÷ spx
+  // NOBL ÷ QQQ。例外:攻防那格仍读这条、没改成 calc 现算 —— 线和 ZigZag 标记要出自同一份服务端快照(过渡方案,见 ROADMAP 类 Pine)
+  noblQqq: 'calc',
+  noblQqqMa35: 'server', // NOBL ÷ QQQ 的 35 日均线
   repoStress: 'calc', // iorb − sofr
   spxEqw: 'calc', // spx ÷ spxew
   brentWti: 'calc', // brent − wti
