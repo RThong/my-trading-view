@@ -74,6 +74,7 @@ function daily(category: SeriesCategory, label: string, unit?: string, aliases?:
 export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   // ── 资产
   qqq: daily('资产', 'QQQ 纳指 100', '$', ['纳指', 'nasdaq']),
+  lmeCopper3m: daily('资产', 'LME 铜 3 个月官方价', '$/吨', ['铜', 'copper', 'lme', '伦铜']),
   noblQqq: daily('资产', 'NOBL / QQQ 攻防比值', undefined, ['攻防', '红利贵族', 'nobl']),
   noblQqqMa35: daily('资产', 'NOBL / QQQ 35 日均线', undefined, ['攻防']),
   adZigDefense: { ...daily('资产', '攻防慢线:防守(已确认)'), hidden: true },

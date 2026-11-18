@@ -28,6 +28,7 @@ import { fetchKcPrs } from '../fetchers/kcFedPrs';
 import { fetchCabinetCi } from '../fetchers/cabinetCi';
 import { fetchCflmi } from '../fetchers/chicagoLmi';
 import { fetchGex } from '../fetchers/squeezemetrics';
+import { fetchLme3m } from '../fetchers/westmetall';
 import { realizedVol } from '../analytics/vrp';
 import { fetchBtcVolume } from '../fetchers/binanceVolume';
 import {
@@ -240,6 +241,10 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const cflmiP = fetchCflmi().catch(warnNull('芝加哥联储 CFLMI'));
   // Squeezemetrics GEX(2011 起日频,一个 CSV)
   const gexP = fetchGex().catch(warnNull('Squeezemetrics GEX'));
+  // LME 铜 3 个月官方价(Westmetall 按年页,2018 起逐年串行约 9 次请求)
+  const lmeCopperP = fetchLme3m('LME_Cu_cash', Number(HISTORY_START_DATE.slice(0, 4))).catch(
+    warnNull('Westmetall LME 铜'),
+  );
   // Binance 现货 BTCUSDT 日成交额(2017-08 起,每页 1000 天,4 个并发请求)
   const btcVolumeP = fetchBtcVolume().catch(warnNull('Binance BTC 成交额'));
   // QQQ / BTC 现货与 BRK 链上:原先由 job 落库,改现拉(live/market 自带缓存,与 /api/vrp 共用一份)
@@ -372,6 +377,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     ci: ciP,
     cflmi: cflmiP,
     gex: gexP,
+    lmeCopper: lmeCopperP,
     btcVolume: btcVolumeP,
     qqqBars: qqqBarsP,
     noblBars: noblBarsP,
@@ -431,6 +437,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const ci = await ciP;
   const cflmi = await cflmiP;
   const gex = await gexP;
+  const lmeCopper = await lmeCopperP;
   const btcVolume = await btcVolumeP;
   const [qqqBars, noblBars, btcBars, btcClosed, densityRaw, valuation] = await Promise.all([
     qqqBarsP,
@@ -646,6 +653,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   put('jpCgpiYoy', cgpi ? fromHistoryStart(monthlyAnnualizedPct(cgpi.PRCG20_2200000000, 12)) : undefined);
   put('jpCoreCoreCpiYoy', coreCoreCpi ?? undefined);
   put('gex', gex ? fromHistoryStart(gex) : undefined);
+  put('lmeCopper3m', lmeCopper ? fromHistoryStart(lmeCopper) : undefined);
   // BTC 系列不截 2018(K 线 2012 起),成交额从源头 2017-08 起全给
   put('btcVolume', btcVolume ?? undefined);
   put('lmiFlowUnemp', cflmi ? fromHistoryStart(cflmi.flowRate) : undefined);

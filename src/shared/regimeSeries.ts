@@ -120,6 +120,8 @@ export const REGIME_SERIES = [
   'cftcJpy',
   // Squeezemetrics GEX:做市商 SPX 期权 gamma 敞口(亿美元 / SPX 每 1%),正 = 压波动、负 = 放大波动(伽马挤压那一侧)
   'gex',
+  // LME 铜 3 个月官方价(美元/吨,Westmetall 转载,读时现拉,见 fetchers/westmetall):全球铜价,替 COMEX HG=F(2025 关税溢价失真)
+  'lmeCopper3m',
   // MOF 周度跨境证券流(52 周累计净买入,兆円,正 = 买超):carry 的资金流上游。
   // 对外 = 日本居民买外国证券(寿险 / 信托 / 个人投信);对内 = 非居民买日本证券
   'jpFlowOutBonds',
