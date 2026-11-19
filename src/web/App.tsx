@@ -3,9 +3,12 @@ import { X } from 'lucide-react';
 import { Header } from './components/Header';
 import { TabBar } from './components/TabBar';
 import { Button } from './components/ui/button';
+import { useChoice } from './components/useChoice';
+import { cn } from './lib/utils';
 import { PERSPECTIVES } from './perspectives';
 import { useOpenInEditor } from './views/chartDoc/openInEditor';
 import { useBackGuard } from './hooks/useBackGuard';
+import { CustomChartEditor } from './pages/custom/CustomChartEditor';
 import { CustomTabBar } from './pages/custom/CustomTabBar';
 import { CustomTabPage } from './pages/custom/CustomTabPage';
 import { useAppNavigation } from './useAppNavigation';
@@ -13,23 +16,39 @@ import type { Interval } from './hooks/interval';
 
 // 外壳:Header + 竖 tab(视角)+ 横 tab + keep-alive 内容区。视角/tab 配置见 pages/<视角>/index(perspectives.tsx 组装),
 // 导航(内置 + 自建 + 地址栏同步)见 useAppNavigation;自建 tab(界面上增删改的)见 pages/custom,竖栏里接在内置的下面。
+// 自建 tab 里的图全屏编辑时(CustomChartEditor)顶栏换成带返回 / 完成的,其余整块藏起来(keep-alive,回来时图都还在)。
 // App 只负责组装与渲染。
 export function App() {
   const [interval, setInterval] = useState<Interval>('1D');
   const { nav, custom, pickBuiltin, missing, dismissMissing } = useAppNavigation();
   const { perspId, persp, activeTab, seen, selectTab } = nav;
+  const edit = custom.editTarget;
+  const [ask, choiceDialog] = useChoice();
 
   // 固定面板点了「在编辑器中打开」:跳到图表编辑页(图由编辑器自己接)
   useOpenInEditor(() => pickBuiltin('editor'));
   // 浏览器后退(触摸板左滑等)先弹窗确认,不直接离开看板
-  useBackGuard();
+  useBackGuard(ask);
 
   const builtinKey = custom.persp ? null : `${perspId}:${activeTab}`;
 
   return (
     <div className="flex h-screen flex-col">
-      <Header interval={interval} onIntervalChange={setInterval} />
-      <div className="flex flex-1 min-h-0">
+      {edit ? (
+        <CustomChartEditor
+          key={edit.blockId}
+          blockId={edit.blockId}
+          saved={edit.saved}
+          crumb={`${edit.persp.label} › ${edit.tab.label}`}
+          interval={interval}
+          header={(slots) => <Header interval={interval} onIntervalChange={setInterval} {...slots} />}
+          onCommit={custom.commitEdit}
+          onExit={custom.endEdit}
+        />
+      ) : (
+        <Header interval={interval} onIntervalChange={setInterval} />
+      )}
+      <div className={cn('flex flex-1 min-h-0', edit && 'hidden')}>
         <div className="flex flex-none flex-col gap-1 overflow-y-auto border-r border-neutral-800 px-2 py-3">
           <TabBar
             tabs={PERSPECTIVES}
@@ -94,7 +113,13 @@ export function App() {
                   .filter((t) => custom.mounted(t.id))
                   .map((t) => (
                     <div key={t.id} className={t.id === custom.activeTab ? 'h-full' : 'hidden'}>
-                      <CustomTabPage tab={t} interval={interval} onChange={(fn) => custom.editTab(p.id, t.id, fn)} />
+                      <CustomTabPage
+                        tab={t}
+                        interval={interval}
+                        onChange={(fn) => custom.editTab(p.id, t.id, fn)}
+                        onEdit={custom.startEdit}
+                        focus={custom.lastEdited}
+                      />
                     </div>
                   )),
               )}
@@ -105,6 +130,7 @@ export function App() {
           </main>
         </div>
       </div>
+      {choiceDialog}
     </div>
   );
 }

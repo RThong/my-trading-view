@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ChartDoc } from '../../views/chartDoc/chartDoc';
-import { EMPTY_STORE, editTab, parseStore, type CustomStore } from './customTabs';
+import { EMPTY_STORE, editTab, parseStore, putChart, type CustomStore } from './customTabs';
 
 const DOC: ChartDoc = {
   v: 1,
@@ -57,6 +57,16 @@ describe('parseStore', () => {
 
     expect(parseStore(raw)).toEqual(STORE);
   });
+});
+
+test('putChart:替换已有 / 新建接在最后 / 空图删掉', () => {
+  const blocks = STORE.perspectives[0].tabs[0].blocks;
+  const doc2: ChartDoc = { ...DOC, title: '改过' };
+
+  expect(putChart(blocks, 'b1', doc2)).toEqual([{ id: 'b1', kind: 'chart', doc: doc2 }]);
+  expect(putChart(blocks, 'b9', doc2).map((b) => b.id)).toEqual(['b1', 'b9']);
+  expect(putChart(blocks, 'b1', { v: 1, panes: [] })).toEqual([]);
+  expect(putChart(blocks, 'b9', { v: 1, panes: [] })).toEqual(blocks);
 });
 
 test('editTab 只改指定的 tab', () => {

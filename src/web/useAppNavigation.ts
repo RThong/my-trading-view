@@ -13,7 +13,7 @@ export function useAppNavigation() {
   const custom = useCustomTabs(initial?.custom ? initial : undefined);
 
   const here: Route = custom.persp
-    ? { custom: true, persp: custom.persp.id, tab: custom.activeTab ?? undefined }
+    ? { custom: true, persp: custom.persp.id, tab: custom.activeTab ?? undefined, edit: custom.editTarget?.blockId }
     : { custom: false, persp: nav.perspId, tab: nav.activeTab };
   const tabsOf = (isCustom: boolean, id: string) =>
     isCustom
@@ -31,7 +31,7 @@ export function useAppNavigation() {
     if (!routeExists(r, tabsOf)) return setMissing(true);
 
     setMissing(false);
-    if (r.custom) custom.open(r.persp, r.tab);
+    if (r.custom) custom.open(r.persp, r.tab, r.edit);
     else pickBuiltin(r.persp, r.tab);
   });
 
