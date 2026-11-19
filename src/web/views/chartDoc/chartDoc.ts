@@ -158,8 +158,12 @@ export type Pane = {
 
 /** 价格轴上下留白(占格高的百分数)。同 TradingView 的 Margins:整张图所有值轴共用一个值 */
 export type Margins = { top: number; bottom: number };
-/** TradingView 的默认值与上限(官方演示页实测)。lw-charts 自己的默认是上 20% / 下 10% */
-export const DEFAULT_MARGINS: Margins = { top: 10, bottom: 8 };
+/**
+ * 默认上 20% / 下 8%。上限 25 同 TradingView(官方演示页实测;TV 默认上 10% / 下 8%)。
+ * 上面比 TV 多留:图例(日期 + 每条线一行)盖在图表左上角,一般高度的图里占 15~20%,只留 10% 时线会钻到图例底下
+ * (2026-11-19 负责人定)
+ */
+export const DEFAULT_MARGINS: Margins = { top: 20, bottom: 8 };
 export const MAX_MARGIN = 25;
 
 /** title:整张图的标题(导出图片时写在顶上);没有就不写这个字段。margins:等于默认就不写 */
