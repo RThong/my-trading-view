@@ -54,6 +54,15 @@ export function parseStore(x: unknown): CustomStore {
   return { v: 1, perspectives: x.perspectives.map(parsePersp).filter((p) => p !== null) };
 }
 
+/** 编辑页点完成:把这张图写回 tab。空图 = 删掉(新建后没画东西就不留);已有的原位替换;新建的接在最后 */
+export function putChart(blocks: Block[], id: string, doc: ChartDoc): Block[] {
+  if (doc.panes.length === 0) return blocks.filter((b) => b.id !== id);
+
+  return blocks.some((b) => b.id === id)
+    ? blocks.map((b) => (b.id === id ? { ...b, doc } : b))
+    : [...blocks, { id, kind: 'chart', doc }];
+}
+
 /** 改一个视角(找不到就原样返回) */
 export function editPersp(s: CustomStore, perspId: string, fn: (p: CustomPersp) => CustomPersp): CustomStore {
   return { ...s, perspectives: s.perspectives.map((p) => (p.id === perspId ? fn(p) : p)) };

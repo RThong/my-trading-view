@@ -9,6 +9,11 @@ describe('parseRoute', () => {
     expect(parseRoute('#/credit')).toEqual({ custom: false, persp: 'credit' });
   });
 
+  test('编辑段只认自建 tab 下的', () => {
+    expect(parseRoute('#/c/p1/t1/b1')).toEqual({ custom: true, persp: 'p1', tab: 't1', edit: 'b1' });
+    expect(parseRoute('#/options/skew/b1')).toEqual({ custom: false, persp: 'options', tab: 'skew' });
+  });
+
   test('空的 / 只有 c / 写坏的转义 → null', () => {
     expect(parseRoute('')).toBeNull();
     expect(parseRoute('#/')).toBeNull();
@@ -31,6 +36,7 @@ test('routeHash 与 parseRoute 互逆', () => {
     { custom: false, persp: 'options', tab: 'skew' },
     { custom: true, persp: 'p 1', tab: '中文/斜杠' },
     { custom: true, persp: 'p1' },
+    { custom: true, persp: 'p1', tab: 't1', edit: 'b1' },
   ];
 
   routes.forEach((r) => {

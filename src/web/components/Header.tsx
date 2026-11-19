@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Moon, Sun } from 'lucide-react';
 import { setTheme, useTheme } from '../hooks/theme';
 import { StatusLight } from './StatusLight';
@@ -10,15 +11,19 @@ const INTERVALS: Interval[] = ['1D', '1W', '1M', '1Q', '1Y'];
 type HeaderProps = {
   interval: Interval;
   onIntervalChange: (i: Interval) => void;
+  /** 标题右边 / 最右边塞的东西(全屏编辑页的返回、完成) */
+  left?: ReactNode;
+  right?: ReactNode;
 };
 
-export function Header({ interval, onIntervalChange }: HeaderProps) {
+export function Header({ interval, onIntervalChange, left, right }: HeaderProps) {
   const theme = useTheme();
 
   return (
     <header className="flex items-center gap-4 border-b border-neutral-800 px-6 py-3">
       <StatusLight />
       <h1 className="text-lg font-semibold">My Trading View</h1>
+      {left}
       {/* Base UI 的 ToggleGroup 是多值数组语义:再点已选中的那个会清成空数组。周期必须有一个,空值直接忽略 */}
       <ToggleGroup
         aria-label="K 线周期"
@@ -46,6 +51,7 @@ export function Header({ interval, onIntervalChange }: HeaderProps) {
       >
         {theme === 'dark' ? <Sun /> : <Moon />}
       </Button>
+      {right}
     </header>
   );
 }

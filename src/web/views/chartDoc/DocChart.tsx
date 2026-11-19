@@ -28,9 +28,11 @@ type Props = {
   caption?: string;
   /** 初始窗口:缺省从 2018 起;期权页给 'common'(25Δ 是快照、今年才攒,从 2018 起它只剩右边一小条) */
   fit?: 'common' | { from: string };
+  /** 右下角「在编辑器中打开」按钮;自建 tab 里不给(那里的图有自己的编辑入口) */
+  openable?: boolean;
 };
 
-export function DocChart({ doc: builtin, interval, notes = [], caption, fit = FIT }: Props) {
+export function DocChart({ doc: builtin, interval, notes = [], caption, fit = FIT, openable = true }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState(builtin);
 
@@ -79,15 +81,17 @@ export function DocChart({ doc: builtin, interval, notes = [], caption, fit = FI
       />
       {/* 放在价格轴与时间轴交汇的右下角小方格里(lw-charts 那里不画东西),同编辑器收起侧栏的按钮。
           带过去的是当前看到的这份(眼睛按钮的显隐、拖过的格高都在),改的是副本 */}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onClick={() => openInEditor(doc)}
-        className="absolute right-1 bottom-0 z-10 text-neutral-500 hover:text-neutral-200"
-        title="在编辑器中打开(复制一份过去改,这里不受影响)"
-      >
-        <SquarePen />
-      </Button>
+      {openable && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => openInEditor(doc)}
+          className="absolute right-1 bottom-0 z-10 text-neutral-500 hover:text-neutral-200"
+          title="在编辑器中打开(复制一份过去改,这里不受影响)"
+        >
+          <SquarePen />
+        </Button>
+      )}
       {(status.length > 0 || caption) && (
         <div className="pointer-events-none absolute right-16 top-1 z-10 flex flex-col items-end gap-0.5 text-xs">
           {caption && <span className="rounded bg-neutral-950/80 px-2 py-0.5 text-neutral-400">{caption}</span>}
