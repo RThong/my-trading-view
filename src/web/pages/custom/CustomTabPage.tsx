@@ -57,7 +57,7 @@ export function CustomTabPage({ tab, interval, onChange, onEdit, focus }: Props)
           </div>
           <div className="min-h-0 flex-1">
             {/* 只读图拿的是初始那份的副本(眼睛按钮等只改副本):编辑完换了图要重挂,按内容做 key */}
-            <DocChart key={JSON.stringify(b.doc)} doc={b.doc} interval={interval} openable={false} />
+            <DocChart key={JSON.stringify(b.doc)} doc={b.doc} interval={interval} openable={false} pageScroll />
           </div>
         </section>
       ))}
