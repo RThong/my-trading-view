@@ -1,25 +1,24 @@
 import { useState } from 'react';
+import { X } from 'lucide-react';
 import { Header } from './components/Header';
 import { TabBar } from './components/TabBar';
+import { Button } from './components/ui/button';
 import { PERSPECTIVES } from './perspectives';
-import { usePerspectiveNavigation } from './hooks/usePerspectiveNavigation';
 import { useOpenInEditor } from './views/chartDoc/openInEditor';
 import { useBackGuard } from './hooks/useBackGuard';
 import { CustomTabBar } from './pages/custom/CustomTabBar';
 import { CustomTabPage } from './pages/custom/CustomTabPage';
-import { useCustomTabs } from './pages/custom/useCustomTabs';
+import { useAppNavigation } from './useAppNavigation';
 import type { Interval } from './hooks/interval';
 
 // 外壳:Header + 竖 tab(视角)+ 横 tab + keep-alive 内容区。视角/tab 配置见 pages/<视角>/index(perspectives.tsx 组装),
-// 导航状态见 usePerspectiveNavigation;自建 tab(界面上增删改的)见 pages/custom,竖栏里接在内置的下面。App 只负责组装与渲染。
+// 导航(内置 + 自建 + 地址栏同步)见 useAppNavigation;自建 tab(界面上增删改的)见 pages/custom,竖栏里接在内置的下面。
+// App 只负责组装与渲染。
 export function App() {
   const [interval, setInterval] = useState<Interval>('1D');
-  const { perspId, persp, activeTab, seen, selectPersp, selectTab } = usePerspectiveNavigation(PERSPECTIVES);
-  const custom = useCustomTabs();
-  const pickBuiltin = (id: string) => {
-    custom.leave();
-    selectPersp(id);
-  };
+  const { nav, custom, pickBuiltin, missing, dismissMissing } = useAppNavigation();
+  const { perspId, persp, activeTab, seen, selectTab } = nav;
+
   // 固定面板点了「在编辑器中打开」:跳到图表编辑页(图由编辑器自己接)
   useOpenInEditor(() => pickBuiltin('editor'));
   // 浏览器后退(触摸板左滑等)先弹窗确认,不直接离开看板
@@ -32,7 +31,12 @@ export function App() {
       <Header interval={interval} onIntervalChange={setInterval} />
       <div className="flex flex-1 min-h-0">
         <div className="flex flex-none flex-col gap-1 overflow-y-auto border-r border-neutral-800 px-2 py-3">
-          <TabBar tabs={PERSPECTIVES} active={custom.persp ? '' : perspId} onChange={pickBuiltin} vertical />
+          <TabBar
+            tabs={PERSPECTIVES}
+            active={custom.persp ? '' : perspId}
+            onChange={(id) => pickBuiltin(id)}
+            vertical
+          />
           <div className="border-t border-neutral-800 pt-1">
             <CustomTabBar
               vertical
@@ -62,7 +66,15 @@ export function App() {
           ) : (
             <TabBar tabs={persp.tabs} active={activeTab} onChange={selectTab} />
           )}
-          <main className="flex-1 p-4 min-h-0">
+          <main className="relative flex-1 p-4 min-h-0">
+            {missing && (
+              <div className="absolute top-6 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-amber-400">
+                链接里的视角 / 标签不存在(可能已删掉,或自建的不在这个浏览器里)
+                <Button variant="ghost" size="icon-xs" aria-label="关闭提示" onClick={dismissMissing}>
+                  <X />
+                </Button>
+              </div>
+            )}
             <div className="h-full w-full rounded border border-neutral-800 p-3">
               {PERSPECTIVES.flatMap((p) =>
                 p.tabs

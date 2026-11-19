@@ -8,7 +8,7 @@ import type { Interval } from '../../hooks/interval';
 import { DocChart } from '../../views/chartDoc/DocChart';
 import { EMPTY_DOC, type ChartDoc } from '../../views/chartDoc/chartDoc';
 import { ChartEditor } from '../editor';
-import type { Block, CustomTab } from './customTabs';
+import { type Block, type CustomTab, shortId } from './customTabs';
 
 type Props = { tab: CustomTab; interval: Interval; onChange: (fn: (t: CustomTab) => CustomTab) => void };
 
@@ -21,7 +21,7 @@ export function CustomTabPage({ tab, interval, onChange }: Props) {
   const remove = (id: string) => setBlocks((bs) => bs.filter((b) => b.id !== id));
 
   const create = () => {
-    const id = crypto.randomUUID();
+    const id = shortId();
     setBlocks((bs) => [...bs, { id, kind: 'chart', doc: EMPTY_DOC }]);
     setEditing(id);
   };
