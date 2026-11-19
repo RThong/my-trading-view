@@ -10,13 +10,14 @@ import { Legend } from './Legend';
 import { useCrosshairLegend } from './useCrosshairLegend';
 import { useDocChart } from './useDocChart';
 import { useAxisDecor } from './useAxisDecor';
+import { useDrawingsView } from './useDrawingsView';
 import { usePercentileBand } from './usePercentileBand';
 import { requestKey, useSeriesData } from './useSeriesData';
 
 // 初始窗口从 2018 起(往左拖还有更早的);模块常量 —— 每次渲染新建对象的话,对准 effect 会跟着依赖变化反复把视图拽回去
 const FIT = { from: '2018-01-01' };
 
-// 只读看一份 ChartDoc(固定面板的 regime tab):渲染与图表编辑器同一套(useDocChart / Legend / 分位带),只是没有侧栏和编辑。
+// 只读看一份 ChartDoc(固定面板的 regime tab):渲染与图表编辑器同一套(useDocChart / Legend / 分位带 / 画线),只是没有侧栏和编辑。
 // 眼睛按钮、拖分隔条只改本页这份副本,不回写内置 doc、也不存档(刷新即复原)。
 type Props = {
   doc: ChartDoc;
@@ -44,6 +45,7 @@ export function DocChart({ doc: builtin, interval, notes = [], caption, fit = FI
     fit,
   });
   useAxisDecor(containerRef, chartRef, seriesRef, doc, data);
+  useDrawingsView(chartRef, seriesRef, doc, data);
   const { hoverTime, layout } = useCrosshairLegend(containerRef, chartRef, doc);
   usePercentileBand(chartRef, doc, data);
 

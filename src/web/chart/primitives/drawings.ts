@@ -430,7 +430,11 @@ export class DrawingsPrimitive implements IPanePrimitive<Time> {
   // 同一个数组:lw-charts 按数组引用做缓存,集合没变就别换
   private readonly views: readonly IPanePrimitivePaneView[];
 
-  constructor(private readonly source: () => PaneDrawingState) {
+  /** interactive = false:只画不认鼠标(只读图),悬停在画线上不给移动 / 点选光标 */
+  constructor(
+    private readonly source: () => PaneDrawingState,
+    private readonly interactive = true,
+  ) {
     this.views = [{ renderer: () => new DrawingsRenderer(this.source()) }];
   }
 
@@ -452,6 +456,8 @@ export class DrawingsPrimitive implements IPanePrimitive<Time> {
 
   // 只用来换光标(lw-charts 按它设格子的 cursor):绘图模式下整格十字,悬停在画线上见 hitCursor
   hitTest(x: number, y: number) {
+    if (!this.interactive) return null;
+
     const { shapes, cursor } = this.source();
     if (cursor) return { externalId: 'drawing-tool', zOrder: 'top' as const, cursorStyle: cursor };
     const hit = hitShapes(shapes, x, y);
