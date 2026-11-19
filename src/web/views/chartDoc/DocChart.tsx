@@ -11,6 +11,7 @@ import { useCrosshairLegend } from './useCrosshairLegend';
 import { useDocChart } from './useDocChart';
 import { useAxisDecor } from './useAxisDecor';
 import { useDrawingsView } from './useDrawingsView';
+import { usePageScrollWheel } from './usePageScrollWheel';
 import { usePercentileBand } from './usePercentileBand';
 import { requestKey, useSeriesData } from './useSeriesData';
 
@@ -30,9 +31,19 @@ type Props = {
   fit?: 'common' | { from: string };
   /** 右下角「在编辑器中打开」按钮;自建 tab 里不给(那里的图有自己的编辑入口) */
   openable?: boolean;
+  /** 图在可滚动的列表里(自建 tab):滚轮滚页面,⌘ + 滚轮 / 捏合才缩放图 */
+  pageScroll?: boolean;
 };
 
-export function DocChart({ doc: builtin, interval, notes = [], caption, fit = FIT, openable = true }: Props) {
+export function DocChart({
+  doc: builtin,
+  interval,
+  notes = [],
+  caption,
+  fit = FIT,
+  openable = true,
+  pageScroll = false,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [doc, setDoc] = useState(builtin);
 
@@ -48,6 +59,7 @@ export function DocChart({ doc: builtin, interval, notes = [], caption, fit = FI
   });
   useAxisDecor(containerRef, chartRef, seriesRef, doc, data);
   useDrawingsView(chartRef, seriesRef, doc, data);
+  const scrollHint = usePageScrollWheel(containerRef, pageScroll);
   const { hoverTime, layout } = useCrosshairLegend(containerRef, chartRef, doc);
   usePercentileBand(chartRef, doc, data);
 
@@ -91,6 +103,13 @@ export function DocChart({ doc: builtin, interval, notes = [], caption, fit = FI
         >
           <SquarePen />
         </Button>
+      )}
+      {scrollHint && (
+        <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 flex -translate-y-1/2 justify-center">
+          <span className="rounded border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 shadow-md">
+            按住 ⌘ 滚动,或双指捏合,来缩放图表
+          </span>
+        </div>
       )}
       {(status.length > 0 || caption) && (
         <div className="pointer-events-none absolute right-16 top-1 z-10 flex flex-col items-end gap-0.5 text-xs">
