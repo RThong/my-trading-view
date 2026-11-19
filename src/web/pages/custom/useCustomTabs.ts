@@ -1,7 +1,7 @@
 // 自建 tab 的数据(存 localStorage)+ 导航状态(当前视角、每个视角停在哪个横 tab、keep-alive)。
 // 和内置 tab 的 usePerspectiveNavigation 各管各的:perspId 为 null = 当前在内置视角上。
 import { useEffect, useState } from 'react';
-import { type CustomStore, type CustomTab, EMPTY_STORE, editPersp, editTab, parseStore } from './customTabs';
+import { type CustomStore, type CustomTab, EMPTY_STORE, editPersp, editTab, parseStore, shortId } from './customTabs';
 
 const STORAGE_KEY = 'mtv:customTabs';
 
@@ -16,14 +16,19 @@ function loadStore(): CustomStore {
 }
 
 function newTab(label: string): CustomTab {
-  return { id: crypto.randomUUID(), label, blocks: [] };
+  return { id: shortId(), label, blocks: [] };
 }
 
-export function useCustomTabs() {
+/** initial = 打开页面时地址栏里的自建视角(见 useHashRoute);存档里没有就停在内置视角 */
+export function useCustomTabs(initial?: { persp: string; tab?: string }) {
   const [store, setStore] = useState(loadStore);
-  const [perspId, setPerspId] = useState<string | null>(null);
-  // 每个视角记住上次停的横 tab,切回来不跳回第一个
-  const [tabByPersp, setTabByPersp] = useState<Record<string, string>>({});
+  const [perspId, setPerspId] = useState<string | null>(() =>
+    initial && store.perspectives.some((p) => p.id === initial.persp) ? initial.persp : null,
+  );
+  // 每个视角记住上次停的横 tab,切回来不跳回第一个(记的那个不在了,activeTab 会退到第一个)
+  const [tabByPersp, setTabByPersp] = useState<Record<string, string>>(() =>
+    initial?.tab ? { [initial.persp]: initial.tab } : {},
+  );
   // keep-alive:看过的横 tab 一直挂着(切回来图的缩放等都还在)
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
 
@@ -50,13 +55,20 @@ export function useCustomTabs() {
     /** 这个横 tab 要不要挂着(看过的,或当前这个) */
     mounted: (tabId: string) => seen.has(tabId) || tabId === activeTab,
     selectPersp: setPerspId,
+    /** 按 id 跳过去(地址栏改了时);视角不在存档里就不动 */
+    open: (id: string, tabId?: string) => {
+      if (!store.perspectives.some((p) => p.id === id)) return;
+
+      setPerspId(id);
+      if (tabId) setTabByPersp((m) => ({ ...m, [id]: tabId }));
+    },
     selectTab: (tabId: string) => persp && setTabByPersp((m) => ({ ...m, [persp.id]: tabId })),
     /** 回到内置视角 */
     leave: () => setPerspId(null),
 
     /** 新建视角(带一个横 tab)并切过去,返回它的 id(调用方接着进改名) */
     addPersp: () => {
-      const id = crypto.randomUUID();
+      const id = shortId();
 
       setStore((s) => ({ ...s, perspectives: [...s.perspectives, { id, label: '新视角', tabs: [newTab('新标签')] }] }));
       setPerspId(id);

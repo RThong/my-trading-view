@@ -5,35 +5,46 @@ import { useEffect } from 'react';
 // (还在看板里,触发 popstate)→ 问一句 → 确认就再退一步真正离开,取消就重新压上。
 // 不用 beforeunload:它连刷新、关标签页、开发时的热重载都会弹,而且提示文字定不了。
 const MARK = 'mtvBackGuard';
+// 本页最底下那条历史(再往后退就离开看板)。地址栏改 hash / 点 #/… 的链接也会触发 popstate(新压一条、state 为空),
+// 那不是后退:只有退到带这个标记的那条才问
+const BASE = 'mtvBackBase';
 
-function marked(state: unknown): boolean {
-  return !!(state as Record<string, unknown> | null)?.[MARK];
+function flagged(state: unknown, key: string): boolean {
+  return !!(state as Record<string, unknown> | null)?.[key];
+}
+
+function isGuardState(state: unknown): boolean {
+  return flagged(state, MARK);
 }
 
 export function useBackGuard() {
   useEffect(() => {
     // 这个标签页里本来就没有上一页(新标签页直接打开;刷新前压过的那条不算):后退本来也离不开,
     // 拦了只会让 Safari 左滑白弹一次窗,点确定还走不了 —— 不拦(用户定)
-    const hasPrevPage = history.length > (marked(history.state) ? 2 : 1);
+    const hasPrevPage = history.length > (isGuardState(history.state) ? 2 : 1);
     if (!hasPrevPage) return;
+
+    // 只给 state 为空的那条打(= 本页第一次打开的那条)。历史项的 state 刷新后还在:停在守卫那条上刷新时底下那条早已标过;
+    // 停在地址栏改 hash 新压的那条上刷新时,它已被 useHashRoute 标过,不是最底下,不能再当底
+    if (history.state === null) history.replaceState({ [BASE]: true }, '');
 
     // 确认离开后不再拦(再退一步若仍落在本页,别重复弹);重新压上、或又回到带标记那条时清掉
     let leaving = false;
 
     const arm = () => {
-      if (marked(history.state)) return;
+      if (isGuardState(history.state)) return;
       history.pushState({ [MARK]: true }, '');
       leaving = false;
     };
 
-    // popstate 前进、后退都会触发:只在「从带标记那条退回原来那条」时问;前进回到带标记那条不问,
+    // popstate 前进、后退、改 hash 都会触发:只在「退回最底下那条」时问;前进回到带标记那条不问,
     // 只把 leaving 清掉(离开后从后退缓存 bfcache 回来再前进到这里时,JS 状态原样恢复,leaving 还是 true)
     const onPop = (e: PopStateEvent) => {
-      if (marked(e.state)) {
+      if (isGuardState(e.state)) {
         leaving = false;
         return;
       }
-      if (leaving) return;
+      if (leaving || !flagged(e.state, BASE)) return;
 
       if (window.confirm('要离开看板吗?\n(触摸板左滑、鼠标侧键都会触发浏览器后退)')) {
         leaving = true;

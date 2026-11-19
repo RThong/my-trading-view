@@ -10,6 +10,11 @@ export type CustomStore = { v: 1; perspectives: CustomPersp[] };
 
 export const EMPTY_STORE: CustomStore = { v: 1, perspectives: [] };
 
+/** 新 id:取 UUID 前 8 位,进地址栏不太长(自用、几十个 tab,撞不上) */
+export function shortId(): string {
+  return crypto.randomUUID().slice(0, 8);
+}
+
 function isObj(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
 }
