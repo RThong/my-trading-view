@@ -1,4 +1,4 @@
-// 纵轴的补充:① 刻度颜色跟线(轴上只挂一条线时用它的色,多条 / 蜡烛用默认灰);② 数字上万的轴按单位缩、轴顶写「×1,000」;
+// 纵轴的补充:① 刻度颜色跟线(一格显示着不止一条数据、且轴上只挂一条非蜡烛的线时用它的色,其余用默认灰);② 数字上万的轴按单位缩、轴顶写「×1,000」;
 // ③ 独立轴勾了「显示刻度」(Scale.show)的,画成右轴外侧的第 3、4 根轴,能拖动缩放、双击复位(右键菜单见编辑器的 useAxisMenu)。
 // 画都在图表库的纵轴画布上(chart/primitives/axisDecor 的插件),所以多格、导出图片自然带上;本 hook 只管算该画什么、挂到哪条线上。
 // 编辑器、固定面板、出图页都挂它,紧跟在 useDocChart 后面调用(要在它建好 series 之后再改选项)
@@ -14,7 +14,7 @@ import {
   unitPriceFormat,
 } from '../../chart/primitives/axisDecor';
 import { CHART_CHROME, useTheme } from '../../hooks/theme';
-import { type ChartDoc, isFitTarget, type Layer, onItsScale, type Pane } from './chartDoc';
+import { type ChartDoc, isFitTarget, isMarkLayer, type Layer, onItsScale, type Pane } from './chartDoc';
 import { expandIndicators, isVolumePlot, type LayerData } from './layerPoints';
 import { drawnKind } from './registry';
 import type { LayerSeries } from './useDocChart';
@@ -66,14 +66,17 @@ export function useAxisDecor(
     const plain = CHART_CHROME[theme].text;
     const series = (l: Layer) => seriesRef.current.get(l.id);
 
-    // 一根轴:哪几条线、单位(按显示中的线的最大绝对值)、刻度颜色(只挂一条非蜡烛的线才跟线色)
+    // 一根轴:哪几条线、单位(按显示中的线的最大绝对值)、刻度颜色。
+    // 颜色只在这一格显示着不止一条数据时才跟线色(用来分清哪根轴是哪条线);一格一条时各格轴都换色太花(2026-11-19 负责人定)。
+    // 跟线色还要这根轴上只挂一条非蜡烛的线;色块 / 竖线这类标记图层、成交量柱(只占格底一条)不算数据
     const axisOf = (pane: Pane, scaleId: string) => {
       const layers = onScale(pane, scaleId);
       const shown = layers.filter((l) => !l.hidden);
       const maxAbs = (shown.length ? shown : layers)
         .flatMap((l) => data[l.id]?.display ?? [])
         .reduce((m, p) => Math.max(m, Math.abs(p.value)), 0);
-      const color = shown.length === 1 && drawnKind(shown[0]) !== 'candle' ? shown[0].color : plain;
+      const multi = pane.layers.filter((l) => !l.hidden && !isMarkLayer(l) && !isVolumePlot(l)).length > 1;
+      const color = multi && shown.length === 1 && drawnKind(shown[0]) !== 'candle' ? shown[0].color : plain;
       return { layers, unit: axisUnit(maxAbs), color };
     };
 
