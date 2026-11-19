@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  DEFAULT_MARGINS,
   EMPTY_DOC,
   addLayer,
   applyLayerFit,
@@ -210,11 +211,11 @@ describe('normalize / parseChartDoc', () => {
     expect(parseChartDoc(JSON.parse(JSON.stringify(d)))).toEqual(d);
     expect(normalize(d).margins).toEqual({ top: 0, bottom: 25 });
     expect(setDocMargins(d, { top: 0.2, bottom: 25 })).toBe(d);
-    expect('margins' in setDocMargins(d, { top: 10, bottom: 8 })).toBe(false);
+    expect('margins' in setDocMargins(d, DEFAULT_MARGINS)).toBe(false);
     const bad = parseChartDoc({ ...d, margins: { top: 26, bottom: 8 } });
     expect(bad).not.toBeNull();
     expect(bad && 'margins' in bad).toBe(false);
-    expect(parseChartDoc({ ...d, margins: { top: 10, bottom: 8 } })).toEqual(setDocMargins(d, { top: 10, bottom: 8 }));
+    expect(parseChartDoc({ ...d, margins: DEFAULT_MARGINS })).toEqual(setDocMargins(d, DEFAULT_MARGINS));
   });
 
   test('id 冲突或保留轴 id 与 side 不符 → null', () => {
