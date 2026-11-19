@@ -1,6 +1,6 @@
 // 编辑状态:一份 ChartDoc + 一组编辑动作 + 撤销 / 重做。动作全部走 chartDoc.ts 的纯函数(updater 形式,不依赖闭包里的旧 doc),
 // 每个动作带一个中文名记进历史(见 docHistory)。最后一次显示的图存在 localStorage,刷新 / 切页回来接着用;历史不落盘。
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EDITOR_STORAGE_KEY, pendingDoc, useOpenInEditor } from '../../../views/chartDoc/openInEditor';
 import { SERIES_COLORS } from '../../../chart/palette';
 import type { IndicatorId } from '../../../chart/indicatorDefs';
@@ -72,9 +72,12 @@ function loadSaved(): ChartDoc {
   }
 }
 
-export function useChartDoc() {
+/** 编辑别处存的图(自建 tab 里的图):初始图 + 每次改完存回去。不传 = 编辑器自己那份自动保存 */
+export type DocStore = { initial: ChartDoc; save: (doc: ChartDoc) => void };
+
+export function useChartDoc(store?: DocStore) {
   // 用 state 不用 ref:撤销 / 重做按钮能不能点、提示写什么要跟着重渲染
-  const [hist, setHist] = useState<History>(() => initHistory(loadSaved()));
+  const [hist, setHist] = useState<History>(() => initHistory(store ? store.initial : loadSaved()));
   const { doc } = hist;
 
   /** 改文档并记一步;label 可按改之前的文档现定(如勾选序列是加还是减);mergeKey 见 docHistory.commit */
@@ -86,10 +89,21 @@ export function useChartDoc() {
   const load = (next: ChartDoc, label = '载入图表') => edit(label, () => next);
 
   // 固定面板点了「在编辑器中打开」:已挂载的编辑器直接换成那张图(没挂载的,挂载时从存档读到)
-  useOpenInEditor((d) => load(d, '在编辑器中打开'));
+  // 编辑别处存的图时不接:那是交给编辑器页的
+  useOpenInEditor((d) => !store && load(d, '在编辑器中打开'));
+
+  // 存回去的回调放 ref:调用方每次渲染都给新函数,放进依赖会每渲染存一次
+  const save = useRef(store?.save);
+  useEffect(() => {
+    save.current = store?.save;
+  });
 
   // 文档每变一次就落盘(文档只经编辑动作或校验过的导入改变,存下来的一定是能显示的图)
   useEffect(() => {
+    if (save.current) {
+      save.current(doc);
+      return;
+    }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(doc));
     } catch {
