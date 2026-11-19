@@ -33,6 +33,6 @@
 
 1. `ls -lh data/mtv.db`,再按表看大小:`sqlite3 data/mtv.db "SELECT name, SUM(pgsize)/1e6 AS MB FROM dbstat GROUP BY name ORDER BY 2 DESC LIMIT 10"` —— 决定 Release 附件是否可行。
 2. 家里那台的 `git ls-remote git@github.com:RThong/market-snapshots.git` 能不能通:不通就加 `git config --global url."git@github-hong:RThong/".insteadOf "git@github.com:RThong/"`(公司电脑 2026-11-18 已加),否则存档同步一直失败、照旧自己抓。
-3. 确认 Actions 定时触发恢复了:`market-snapshots` 的 `data` 分支出现 `YYYY-MM-DDT22xxZ` 目录(修复后第一次定时是 2026-11-18 22:07 UTC)。
+3. ~~确认 Actions 定时触发恢复了~~ → 2026-11-19 查实 GitHub 自带 `schedule` 在 `market-snapshots` 从没触发过(分开 `data` 分支前后都一样),改由 cron-job.org 调 `workflow_dispatch`(见其 README「触发」)。本方案的 workflow 若也不触发,照此办:**另开一个**只授权本仓库的 token、在 cron-job.org 另建任务。验收:2026-11-19 22:07 UTC 是外部触发后的第一次,`data` 分支应出现 `2026-11-19T22xxZ` 目录。
 
 三件都没问题,再定做不做;做的话先拿一个零依赖的组(如 `vx_term_structure`)在 Actions 上跑通「下载库 → 跑组 → 上传」,再逐组试云 IP。
