@@ -24,7 +24,7 @@ import { allSevenDay, layerRequest, useLayerData } from '../../views/chartDoc/la
 import { LayerList } from './components/LayerList';
 import { Legend } from '../../views/chartDoc/Legend';
 import { SeriesPicker } from './components/SeriesPicker';
-import { useChartDoc } from './hooks/useChartDoc';
+import { type DocStore, useChartDoc } from './hooks/useChartDoc';
 import { useCrosshairLegend } from '../../views/chartDoc/useCrosshairLegend';
 import { useDocChart } from '../../views/chartDoc/useDocChart';
 import { useAxisDecor } from '../../views/chartDoc/useAxisDecor';
@@ -45,9 +45,9 @@ import { useAxisMenu } from './hooks/useAxisMenu';
 // 图表编辑页:空白图上自己挑序列、分格叠放、把一条线叠到另一条上看劈叉。只负责组装 ——
 // 状态见 useChartDoc,取数见 views/chartDoc/useSeriesData,各图层最终数据见 layerPoints,渲染见 useDocChart。
 // 全部编辑状态就是 doc 这一份 JSON(右下角可查看)。
-export function ChartEditorPage({ interval }: { interval: Interval }) {
+export function ChartEditorPage({ interval, store }: { interval: Interval; store?: DocStore }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const actions = useChartDoc();
+  const actions = useChartDoc(store);
   const { doc, load, toggleSeries, setStretches } = actions;
   const [showJson, setShowJson] = useState(false);
   // 分析区选中的 A / B(页面持有:扫描要额外取它们未平移的原序列)
