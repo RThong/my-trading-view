@@ -117,7 +117,7 @@
   本机 `options_cboe` / `ice_cds` / `move` / `options_crypto` 先 `git fetch` 只拉 `data` 分支、浅克隆到 `data/market-snapshots/`(gitignored,里面没有脚本;改 `fetch.sh` 另克隆 `main`)
   再写库(`fetchers/snapshotArchive` + `jobs/cboeArchive` / `deribitArchive`,ICE / MOVE 在各自 job 里),已覆盖的「标的 | 交易日」本机不再抓;拉不到存档就照旧自己抓。
   也补本机关机 / 没网那几天(14 天内)。
-  ⏰ **待办:2026-11-21 前后(并行满 5 个交易日)验收并切成主源,按 `docs/options-cboe-switch.md` 逐步做**
+  ⏸ **切主源暂停**:2026-11-19 起这个接口被 Cloudflare 拦(不带 `Referer` 一律 403),11-23 复查,见 `docs/options-cboe-switch.md` 开头。原待办:验收并切成主源,按该文档逐步做
   (验收脚本 `bun run src/server/jobs/compareOptionsSources.ts`;重点看工作日夜里 VIX 是否仍是收盘报价、USO 偏差)。
 - **put delta 为负、call delta 为正**(已用真实链核实)。25Δ 选取依赖这个符号约定。
 - **链/快照字段路径**(靠 debug dump 试出来的,非直觉):
