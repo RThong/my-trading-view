@@ -279,4 +279,4 @@
   等 moomoo-api 升 protobufjs。yahoo-finance2 自带的 MCP SDK 链(express / qs / body-parser 等)上的漏洞,修复版都在上游声明的
   范围内,lock 已刷到修复版,不需要 `overrides`;再报出来就 `bun update <直接依赖>` 刷 lock,别加全局 overrides(它会悄悄压住
   以后其它依赖要的别的主版本)。
-- 秘密只在 `.env`(gitignored):`FRED_API_KEY`、`EIA_API_KEY`、`ESTAT_APP_ID`、`MOOMOO_WS_*`、`SEC_USER_AGENT`(SEC 要求真实联系方式)。
+- 秘密只在 `.env`(gitignored):`FRED_API_KEY`、`EIA_API_KEY`、`ESTAT_APP_ID`、`MOOMOO_WS_*`、`SEC_USER_AGENT`(SEC 要求真实联系方式)、`DART_API_KEY`;定时任务用到的 FRED / SEC / DART 三个另配在 `market-snapshots` 的 Actions Secrets。
