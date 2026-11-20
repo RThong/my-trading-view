@@ -30,6 +30,7 @@ import { updateCreditSpreads } from './creditSpreadSnapshot';
 import { updateMoveIndex, ingestArchivedMove, type MoveUpdateResult } from './moveSnapshot';
 import { updateIsm, type IsmResult } from './ismSnapshot';
 import { updatePutCall, PUT_CALL_SERIES, type PutCallResult } from './putCallSnapshot';
+import { updateSpxSkew, type SpxSkewResult } from './spxSkewSnapshot';
 
 // 认沽认购比的新鲜度探针:三条同一页同一时刻写,看个股那条就够
 const PUT_CALL_PROBE = PUT_CALL_SERIES.equity;
@@ -66,6 +67,8 @@ type RunDailyJobOpts = {
   ismUpdater?: (db: Database) => Promise<IsmResult>;
   /** Cboe 认沽认购比(个股 / 指数 / 全部)更新器(注入式;CLI 传 updatePutCall,测试省略以免联网)。 */
   putCallUpdater?: (db: Database) => Promise<PutCallResult>;
+  /** SPX 30 天 25Δ(Cboe VIX 分解接口)更新器(注入式;CLI 传 updateSpxSkew,测试省略以免联网)。 */
+  spxSkewUpdater?: (db: Database) => Promise<SpxSkewResult>;
   /** Computable GPU Index(H100/H200/B200/B300 算力租赁价)更新器(注入式;cryptoDaily 传 updateComputableGpu,测试省略以免联网)。 */
   computableGpuUpdater?: (db: Database) => Promise<{ total: number; missing: string[]; errors: string[] }>;
 };
@@ -296,6 +299,16 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       return threeState(written, fetched.length, failed);
     });
   }
+
+  // spx_skew 分组:SPX 30 天 25Δ。同 put_call:最近 30 天缺的天都补;当天的源要到美东次日凌晨才有,
+  // 拉不到不算失败、下一轮补,所以不设新鲜度探针。停更 / 断档 = failed(红灯)
+  if (opts.spxSkewUpdater) {
+    await withJobRun(opts.db, 'spx_skew', async () => {
+      const { written, fetched, failed, stale } = await opts.spxSkewUpdater!(opts.db);
+      if (stale.length) return { status: 'failed', error: [...stale, ...failed].join('; '), recordsWritten: written };
+      return threeState(written, fetched.length, failed);
+    });
+  }
 }
 
 /** 组名(= job_run.job_name)→ 该组在 runDailyJob 里的注入参数。函数形式:没轮到的组不构造客户端。 */
@@ -363,6 +376,7 @@ const DAILY_GROUPS: GroupTable = {
   move: () => ({ moveUpdater: updateMoveIndex, archiveRuns: syncedArchiveRuns }),
   ism: () => ({ ismUpdater: updateIsm }),
   put_call: () => ({ putCallUpdater: updatePutCall }),
+  spx_skew: () => ({ spxSkewUpdater: updateSpxSkew }),
 };
 
 // CLI 入口

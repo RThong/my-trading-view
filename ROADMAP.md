@@ -507,6 +507,7 @@ TradingView
 - L1-2 无前视约定写进 AGENTS.md（约 15 分钟）
 
 **只能回家做（真实库在家里）**
+- **SPX 30 天 25Δ 回填 + 对照**（2026-11-20 接入，约 30 分钟）：家里跑 `bun run src/server/jobs/spxSkewSnapshot.ts --backfill`（约 25 分钟）；回填后看「期权 › SPY」末格橙蓝两条重叠期差多少，贴得近就把 SPY 的 25Δ 两格换成 SPX 30 天、moomoo 停抓 SPY（见 `docs/data-sources-candidates.md` §1.9）
 - **期权切 CBOE 主源**（⏸ 暂停，2026-11-23 复查：CBOE 延迟期权接口 2026-11-19 起被 Cloudflare 拦(不带 `Referer: https://www.cboe.com/` 一律 403;同一天 GitHub 上多个项目同报,无官方说明)。仍拦 → 选加 `Referer` 继续，或放弃 CBOE、期权留 moomoo 在本机跑；见 `docs/options-cboe-switch.md` 开头）原计划 11-21 起的周末，约 3 小时：先补「VIX 缺可用存档且已进夜盘 → 记缺失 / partial」（`docs/options-cboe-switch.md` 第 3 步末的「⚠️ 切主源前要补」，约 30 分钟），再按该文档逐步切换
 - **清掉改现拉后的旧数据**（2026-11-24 起，约 20 分钟）：见下面「能现拉的落库源换成现拉」那条的剩余 ①
 - **库放 GitHub、由 Actions 跑 daily**（2026-11-18 提出，2026-11-19 定做）：本机不再跑定时任务、两台电脑看同一份库。云 IP 已实测全通；等 CBOE 切换（11-21）后按 `docs/db-on-github.md` 搭 workflow

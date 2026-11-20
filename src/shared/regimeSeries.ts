@@ -64,6 +64,11 @@ export const REGIME_SERIES = [
   'pcEquity',
   'pcIndex',
   'pcTotal',
+  // SPX 30 天恒定期限 25Δ put / call IV 与 skew(%,Cboe VIX 分解工具页的接口,daily 的 spx_skew 分组写库)。
+  // 见 fetchers/cboeVixDecomp 与 jobs/spxSkewSnapshot
+  'spxPutIv25',
+  'spxCallIv25',
+  'spxSkew25',
 
   // 美元零息通胀掉期 1Y / 2Y(DTCC 成交,daily 的 dtcc_zcis 分组写库):BEI 从 5Y 起,短端市场通胀定价只有掉期给得出
   'zcis1y',

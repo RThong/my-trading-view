@@ -31,6 +31,10 @@ export const JOB_WRITTEN_SERIES = [
   ['zcis2y', 'DTCC_ZCIS_2Y'],
   // 美元/日元 1 个月平值隐含波动率(日频,daily 的 dtcc_fx_vol 分组写库)。同 ISM,不进「缺着也缓存」的豁免
   ['usdjpyIv1m', 'DTCC_USDJPY_IV1M'],
+  // SPX 30 天恒定期限 25Δ(日频,daily 的 spx_skew 分组写库)。同 ISM,不进「缺着也缓存」的豁免
+  ['spxPutIv25', 'CBOE_SPX30_PUT25'],
+  ['spxCallIv25', 'CBOE_SPX30_CALL25'],
+  ['spxSkew25', 'CBOE_SPX30_SKEW25'],
 ] as const;
 
 /** 认沽认购比均线:对外名 → 哪条原始序列、几个交易日(63 ≈ 3 个月)。readDbBacked 现算 */
