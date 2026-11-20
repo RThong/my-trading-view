@@ -3,9 +3,9 @@
 A personal, local-only markets dashboard, organized as **vertical perspectives**
 (a left rail) × horizontal sub-tabs:
 
-- **期权 (Options)** — daily 25Δ IV + skew snapshot of SPY / QQQ / VIX / TLT / GLD / USO / IBIT
+- **期权 (Options)** — daily 25Δ IV + skew snapshot of QQQ / VIX / TLT / GLD / USO / IBIT
   (via moomoo OpenD; a CBOE delayed-quote chain runs in parallel ahead of a planned switch) and BTC
-  (via Deribit), stored in SQLite. Underlyings with a free volatility index (SPY/QQQ/GLD/USO/TLT/IBIT/SMH/BTC)
+  (via Deribit), stored in SQLite. SPY uses Cboe's SPX 30-day constant-maturity 25Δ instead (history from 2022-09). Underlyings with a free volatility index (SPY/QQQ/GLD/USO/TLT/IBIT/SMH/BTC)
   also get implied-vs-realized + VRP panes; SMH (semiconductors) has VRP only — its option wings are too
   wide-quoted for a meaningful 25Δ skew.
   The spot candle pane carries TradingView-style overlays (EMA ribbon, Bollinger 2σ/3σ) and,
@@ -158,7 +158,7 @@ IV + skew, plus implied-vs-realized + VRP where a free vol index exists:
 
 | Tab | Underlying | Source | VRP (implied / realized) |
 |---|---|---|---|
-| SPY | `SPY`  | moomoo OpenD | VIX / SPX |
+| SPY | `SPY`  | Cboe VIX Decomposition (SPX 30-day 25Δ) | VIX / SPX |
 | QQQ | `QQQ`  | moomoo OpenD | VXN / NDX |
 | VIX | `.VIX` | moomoo OpenD | — |
 | TLT | `TLT`  | moomoo OpenD | VXTLT / TLT |

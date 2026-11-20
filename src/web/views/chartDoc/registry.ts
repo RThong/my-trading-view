@@ -316,7 +316,8 @@ const OPTIONS: SeriesDef[] = MARKET_CATALOG.filter((a) => a.optionSource !== 'no
       ...base,
       id: `opt:${name}:skew`,
       label: `${name} 25Δ skew (put − call)`,
-      ...(u === 'SPY' && { featured: true as const }),
+      // SPY 不抓链(25Δ 改用 SPX 30 天,常显的 spxSkew25 不在本族),本族常显 QQQ
+      ...(u === 'QQQ' && { featured: true as const }),
       unit: 'pp',
       source: endpoint(url, 'skew'),
       aliases,

@@ -167,10 +167,10 @@ describe('seriesPoints', () => {
   });
 
   test('URL + 字段型(25Δ / VRP / 库里序列):按字段取值,取不到的接口 → 空数组', () => {
-    const skew = seriesDef('opt:SPY:skew')!;
-    expect(skew.source).toEqual({ kind: 'endpoint', url: '/api/options/25delta/SPY?days=3650', field: 'skew' });
+    const skew = seriesDef('opt:QQQ:skew')!;
+    expect(skew.source).toEqual({ kind: 'endpoint', url: '/api/options/25delta/QQQ?days=3650', field: 'skew' });
     const more = {
-      '/api/options/25delta/SPY?days=3650': [{ date: '2026-10-30', callIv: 12, putIv: 17, skew: 5 }],
+      '/api/options/25delta/QQQ?days=3650': [{ date: '2026-10-30', callIv: 12, putIv: 17, skew: 5 }],
       '/api/series/VX%3A2026-11-18': null,
     };
     expect(seriesPoints(skew, { ...src, endpoints: more }, '1D')).toEqual([{ time: '2026-10-30', value: 5 }]);
@@ -234,8 +234,8 @@ describe('registry', () => {
 
   test('同族序列默认收起:不打字只列常显的那几条,打了关键字才列出来', () => {
     const ids = (q: string, extra = []) => searchSeries(q, extra).map((d) => d.id);
-    expect(ids('')).toContain('opt:SPY:skew');
-    expect(ids('')).not.toContain('opt:QQQ:skew');
+    expect(ids('')).toContain('opt:QQQ:skew');
+    expect(ids('')).not.toContain('opt:TLT:skew');
     expect(ids('')).toContain('vrp:SPY:vrp');
     expect(ids('')).not.toContain('vrp:TLT:rv');
     expect(ids('qqq 25')).toEqual(['opt:QQQ:putIv', 'opt:QQQ:callIv', 'opt:QQQ:skew']);

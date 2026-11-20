@@ -17,7 +17,9 @@ export type MarketAsset = {
 export const MARKET_CATALOG: MarketAsset[] = [
   {
     underlying: 'SPY',
-    optionSource: 'moomoo',
+    // 不抓链:25Δ 两格用 SPX 30 天恒定期限(Cboe VIX 分解,daily 的 spx_skew 组,2022-09 起;见 web/pages/assetDoc)。
+    // 2026-11-20 换:与 moomoo 的 SPY 25Δ 重叠 105 天,skew 平均差 0.2pp、水平相关 0.91,历史多近 4 年、不随到期日跳
+    optionSource: 'none',
     tab: { id: 'spy', label: 'SPY' },
     vrp: { ivIndex: 'VIX', window: 21, periodsPerYear: 252 },
   },

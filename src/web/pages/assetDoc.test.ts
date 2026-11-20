@@ -11,7 +11,7 @@ const TABS = [
   ['IBIT', true, true] as const,
 ];
 // 标的专属附加格的数量(见 assetDoc 的 EXTRA)
-const EXTRA_PANES: Record<string, number> = { SMH: 1, SPY: 1 };
+const EXTRA_PANES: Record<string, number> = { SMH: 1 };
 
 describe('期权 / 现货 tab 的 ChartDoc', () => {
   test.each(TABS)('%s:JSON 往返无损、序列都在注册表、图层 id 不重复', (u, vrp, options) => {
@@ -26,7 +26,7 @@ describe('期权 / 现货 tab 的 ChartDoc', () => {
     '%s:现货蜡烛 + EMA / 布林带默认隐藏;有期权链才有 25Δ 两格、有 VRP 才有隐含/RV、VRP 两格',
     (u, vrp, options) => {
       const doc = assetDoc(u, vrp, options);
-      expect(doc.panes).toHaveLength(1 + (options ? 2 : 0) + (vrp ? 2 : 0) + (EXTRA_PANES[u] ?? 0));
+      expect(doc.panes).toHaveLength(1 + (options || u === 'SPY' ? 2 : 0) + (vrp ? 2 : 0) + (EXTRA_PANES[u] ?? 0));
       const [spot, ema, bb] = doc.panes[0].layers;
       expect(spot.render).toEqual({ kind: 'candle' });
       expect(seriesDef(spot.series)?.ohlc).toBe(true); // 画得出蜡烛
@@ -46,6 +46,12 @@ describe('期权 / 现货 tab 的 ChartDoc', () => {
     const series = doc.panes.flatMap((p) => p.layers.map((l) => l.series));
     expect(series.filter((s) => s.startsWith('opt:'))).toEqual([]);
     expect(doc.panes.at(-1)?.layers[0].calc).toEqual({ op: '-', series: 'vrp:QQQ:iv' });
+  });
+
+  test('SPY 不抓链:25Δ 两格画 SPX 30 天,没有 opt:SPY', () => {
+    const series = assetDoc('SPY', true, false).panes.flatMap((p) => p.layers.map((l) => l.series));
+    expect(series.filter((s) => s.startsWith('opt:'))).toEqual([]);
+    expect(series).toEqual(expect.arrayContaining(['spxCallIv25', 'spxPutIv25', 'spxSkew25']));
   });
 
   test('BTC 现货跨数量级走对数轴,其余不', () => {

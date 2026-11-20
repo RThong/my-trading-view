@@ -39,20 +39,8 @@ function pane(layers: Omit<Layer, 'id' | 'scale'>[], desc: string, log?: true, s
 // 标的专属的附加格(接在最后)。SMH:半导体隐含波动率减纳指的(VXN),看半导体是不是自己出事
 const EXTRA: Record<string, Omit<Layer, 'id' | 'scale'>[][]> = {
   SMH: [[{ series: 'vrp:SMH:iv', calc: { op: '-', series: 'vrp:QQQ:iv' }, color: '#f97316', title: 'VXSMH − VXN' }]],
-  // 对照期:SPX 30 天恒定期限那条够长、够稳就替换上面 SPY 的两格(见 docs/data-sources-candidates.md §1.9)
-  SPY: [
-    [
-      { series: 'spxSkew25', color: '#f97316', title: 'SPX 30 天' },
-      { series: 'opt:SPY:skew', color: COLORS.skew, title: 'SPY' },
-    ],
-  ],
 };
 const EXTRA_DESC: Record<string, string> = {
-  SPY:
-    '定义:25Δ 风险逆转(put IV − call IV),百分点。橙 = SPX 插值到恒定 30 天(Cboe VIX 分解工具页的数,2022-09 起);蓝 = 上面那格 SPY 的(取约 30 天那个到期日)。\n' +
-    '读法同上一格:高 = 下行保护贵。两条本该贴着走(同一个标普,SPY 与 SPX 的 25Δ skew 实测只差 0.2~0.4pp);' +
-    '橙线不随到期日切换跳动,历史也长得多。\n' +
-    '⚠️ 橙线的源当天收盘后要到美东次日凌晨才发,常比蓝线晚一天。',
   SMH:
     '定义:半导体隐含波动率(VXSMH)− 纳指 100 隐含波动率(VXN),百分点。两条都是 CBOE 按 VIX 同法编的 30 天口径。\n' +
     '⭐ 读法:平时半导体本来就比纳指波动大(2025-09 以来差值均值约 20、区间约 12~37);差值走阔 = 半导体自己出事(行业 / 出口管制 / 财报),' +
@@ -61,14 +49,23 @@ const EXTRA_DESC: Record<string, string> = {
     '⚠️ 本 tab 没有 25Δ IV / skew 两格:SMH 期权两翼买卖价差约 40%(QQQ 约 3%),25Δ 读数是报价噪声,只取 CBOE 的 VXSMH 当隐含腿。',
 };
 
+// SPY 不抓链,25Δ 两格画 SPX 30 天恒定期限(见 marketCatalog 的 SPY)
+const SPX_25D = { callIv: 'spxCallIv25', putIv: 'spxPutIv25', skew: 'spxSkew25' };
+const SPX_NOTE =
+  '\n本 tab 这两格是 SPX(标普指数期权)插值到恒定 30 天的 25Δ(Cboe VIX 分解工具页的数,2022-09 起),不是 SPY 某个到期日的;' +
+  '与原先 SPY 的 skew 平均只差约 0.2pp,且不随到期日切换跳动。\n⚠️ 源当天收盘后要到美东次日凌晨才发,常比别的格晚一天。';
+
 /**
  * vrp:有 VRP 配方的标的(.VIX 没有)才加 隐含/RV、VRP 两格;
- * options:抓期权链的才画 25Δ IV / skew 两格(SMH 不抓,见 marketCatalog)。
+ * options:抓期权链的才画 25Δ IV / skew 两格(SMH 不抓,见 marketCatalog;SPY 不抓链但画 SPX 的)。
  */
 export function assetDoc(underlying: string, vrp: boolean, options = true): ChartDoc {
   const spot = SPOT[underlying] ?? underlying;
   const k = optKey(underlying);
   const ivName = IV_INDEX[underlying] ?? 'IV';
+  const spx = underlying === 'SPY';
+  const opt = spx ? SPX_25D : { callIv: `opt:${k}:callIv`, putIv: `opt:${k}:putIv`, skew: `opt:${k}:skew` };
+  const note = spx ? SPX_NOTE : '';
 
   const panes: Pane[] = [
     pane(
@@ -83,16 +80,16 @@ export function assetDoc(underlying: string, vrp: boolean, options = true): Char
       // 现货是主图(图例常有三行),给两倍高;其余各格等高
       2,
     ),
-    ...(options
+    ...(options || spx
       ? [
           pane(
             [
-              { series: `opt:${k}:callIv`, color: COLORS.call, title: 'Call IV' },
-              { series: `opt:${k}:putIv`, color: COLORS.put, title: 'Put IV' },
+              { series: opt.callIv, color: COLORS.call, title: 'Call IV' },
+              { series: opt.putIv, color: COLORS.put, title: 'Put IV' },
             ],
-            DESC.iv,
+            DESC.iv + note,
           ),
-          pane([{ series: `opt:${k}:skew`, color: COLORS.skew, title: 'Skew' }], DESC.skew),
+          pane([{ series: opt.skew, color: COLORS.skew, title: 'Skew' }], DESC.skew + note),
         ]
       : []),
     ...(vrp

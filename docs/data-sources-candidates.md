@@ -254,12 +254,12 @@ OpenBB 的 `cftc/models/cds_index_trades.py` 读的是 DTCC 的 **CFTC 信用文
 > 同日逐合约核对后发现下表里的差异**是 moomoo 的问题，不是 CBOE 的**：
 > - **TLT**：两边报价、OI 完全相同，CBOE 计入分红、moomoo 不计 → moomoo 的 skew 系统性高约 2pp。历史已重算（11-13：0.30 对 CBOE 0.38）
 > - **VIX**：moomoo 以现货为标的算 IV，且约八成快照抓在夜盘（报价空或极宽），101 天里只有 15 天能修 → 切换时整段删、从 CBOE 重攒
-> - 覆盖：所有美国上市期权都有（个股 / ETF / 指数 SPX·NDX·RUT / ADR），非美国上市没有；纳指用 QQQ（NDX 周度期权 OI 太薄），标普 SPY 与 SPX 25Δ skew 只差 0.2~0.4pp，不换
+> - 覆盖：所有美国上市期权都有（个股 / ETF / 指数 SPX·NDX·RUT / ADR），非美国上市没有；纳指用 QQQ（NDX 周度期权 OI 太薄），标普 SPY 与 SPX 25Δ skew 只差 0.2~0.4pp（2026-11-20 起 SPY 已不抓链，改用 §1.9 的 SPX 30 天）
 > - 本源期权（CME 的 CL / GC / ZN 期货期权）免费拿不到（CME 站点脚本 403、CVOL 付费），且 VRP 的隐含腿 OVX / GVZ / VXTLT 本身是 ETF 口径，继续用 ETF
 
 | | |
 |---|---|
-| URL | `https://cdn-api.cboe.com/api/global/delayed_quotes/options/{SPY,QQQ,GLD,USO,TLT,IBIT,_VIX}.json`（指数前面加 `_`；旧域名 `cdn.cboe.com` 307 过来） |
+| URL | `https://cdn-api.cboe.com/api/global/delayed_quotes/options/{QQQ,GLD,USO,TLT,IBIT,_VIX}.json`（SPY 2026-11-20 起不抓）（指数前面加 `_`；旧域名 `cdn.cboe.com` 307 过来） |
 | 格式 | JSON，零依赖，免 key；SPY 约 6MB、`_VIX` 约 0.7MB |
 | 内容 | 每个合约带 `iv`（小数）、`delta`、`gamma`、`vega`、`theta`、`rho`、`open_interest`、`volume`、bid/ask；**一次请求给全部到期日**（SPY 34 个）；顶层另有 `iv30` |
 | 时点 | 文件 `timestamp` 是 UTC，持续刷新；11-13 11:00 UTC 拉到的是 11-12 收盘的值 |
@@ -371,7 +371,7 @@ Oracle 2031 年到期那只对 5Y 美债的利差，与 ICE CDS 在 77 天里**�
 
 ---
 
-### ✅ 1.9 CBOE VIX Decomposition：SPX 30 天恒定期限 IV 曲线（2026-11-20 实测，同日已接：`spxPutIv25` / `spxCallIv25` / `spxSkew25`，「期权 › SPY」末格与 SPY skew 对照；见 AGENTS.md「CBOE VIX 分解」行）
+### ✅ 1.9 CBOE VIX Decomposition：SPX 30 天恒定期限 IV 曲线（2026-11-20 实测，同日已接：`spxPutIv25` / `spxCallIv25` / `spxSkew25`，2026-11-20 对照后替换「期权 › SPY」的 25Δ 两格、SPY 停抓链（结果见 ROADMAP）；见 AGENTS.md「CBOE VIX 分解」行）
 
 > 来由：CBOE 延迟期权链 2026-11-19 起被 Cloudflare 拦（见 §1.4、`docs/options-cboe-switch.md`），翻同期受影响的 GitHub 项目时在
 > [wnsdudkk-ux/cboe_data](https://github.com/wnsdudkk-ux/cboe_data) 的 `vix_decomp.py` 里看到。它是官网「VIX Decomposition」工具页背后的接口，**同样没有文档**。

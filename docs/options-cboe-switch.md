@@ -47,7 +47,7 @@ bun run src/server/jobs/compareOptionsSources.ts
 脚本看最近 5 个并行日(并行开始以来 SPY 日线有收盘的交易日 —— 取自独立的源,moomoo / CBOE 哪边整天缺都查得出),最后一行 ✅ 才继续:
 
 - 每个标的每个并行日都要有 CBOE 的行(CBOE 整轮失败的日子也会因此被查出来)
-- skew 差的**中位数**:SPY / QQQ / GLD / USO / IBIT ≤ 0.3pp,TLT ≤ 0.5pp(个别日子超线不卡;moomoo 个别天没数只标注,
+- skew 差的**中位数**:QQQ / GLD / USO / IBIT ≤ 0.3pp(SPY 2026-11-20 起不抓链,不验),TLT ≤ 0.5pp(个别日子超线不卡;moomoo 个别天没数只标注,
   某标的 5 天里 moomoo 一天都没有 = 无法对照,判失败)
 - VIX 不比差(moomoo 值不可用),只看 CBOE 的 VIX 原始链:最后成交 = 快照日当天且**不晚于美东 16:15:59**(晚了 = 混进夜盘)、
   平值附近(|delta| 0.2~0.5)价差中位数 ≤ 30%

@@ -31,7 +31,7 @@ export async function ingestArchivedOptions(
 ): Promise<Set<string>> {
   const covered = new Set<string>();
 
-  // 逐轮串行(runs 已按抓取时刻升序):一份 SPY 解开约 6MB,一起读进来没必要
+  // 逐轮串行(runs 已按抓取时刻升序):一份大标的的链解开好几 MB,一起读进来没必要
   await runs.reduce(async (prev, run) => {
     await prev;
     // 一轮里有坏文件只跳过这一轮,不挡后面的轮次(坏文件会在存档里留 14 天)

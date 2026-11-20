@@ -65,10 +65,11 @@ describe('cboeOptions', () => {
   it('第一档取目标 DTE ±10 天内最近的到期日;同一标的整轮只下载一次', async () => {
     const { c, urls } = client();
     // 2026-11-14 + 30 天 = 12-14:12-11(差 3 天)比 12-18(差 4 天)近
-    const chain = await c.fetchChain('SPY', 30);
+    const chain = await c.fetchChain('QQQ', 30);
     expect(chain.expirationDate).toBe('2026-12-11');
     expect(chain.calls.map((x) => x.strike)).toEqual([105]);
     expect(chain.puts.map((x) => x.strike)).toEqual([95]);
+    // 交易日取 QQQ 那份,与上面共用一次下载
     expect(await c.getTradingDate?.()).toBe('2026-11-13');
     expect(urls).toHaveLength(1);
   });

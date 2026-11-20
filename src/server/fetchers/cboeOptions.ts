@@ -113,7 +113,7 @@ export function createCboeOptionsClient(
 ): OptionsChainClient {
   const doFetch = deps.fetch ?? fetchWithTimeout;
   const now = deps.now ?? (() => new Date());
-  // 同一轮里一个标的只下载一次(第一档 / 第二档 / 定交易日共用;SPY 一份约 6MB)
+  // 同一轮里一个标的只下载一次(第一档 / 第二档 / 定交易日共用;大标的一份几 MB)
   const cache = new Map<string, Promise<CboeChain>>();
   const load = (u: string) => {
     const sym = cboeSymbol(u);
@@ -133,9 +133,10 @@ export function createCboeOptionsClient(
   };
 
   return {
-    // 用 SPY 那份的最后成交日打戳:SPY 每个交易日都有成交,且在标的名单里(缓存复用、不多下载)
+    // 用 QQQ 那份的最后成交日打戳:QQQ 每个交易日都有成交,且在标的名单里(缓存复用、不多下载)。
+    // 原用 SPY,2026-11-20 起 SPY 不抓链(25Δ 改用 SPX 30 天),换 QQQ 免得为定交易日单独下 6MB
     async getTradingDate() {
-      return lastTradeDay(await load('SPY'));
+      return lastTradeDay(await load('QQQ'));
     },
 
     async fetchChain(symbol, targetDte) {
