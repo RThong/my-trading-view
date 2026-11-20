@@ -371,6 +371,35 @@ Oracle 2031 年到期那只对 5Y 美债的利差，与 ICE CDS 在 77 天里**�
 
 ---
 
+### ✅ 1.9 CBOE VIX Decomposition：SPX 30 天恒定期限 IV 曲线（2026-11-20 实测，同日已接：`spxPutIv25` / `spxCallIv25` / `spxSkew25`，「期权 › SPY」末格与 SPY skew 对照；见 AGENTS.md「CBOE VIX 分解」行）
+
+> 来由：CBOE 延迟期权链 2026-11-19 起被 Cloudflare 拦（见 §1.4、`docs/options-cboe-switch.md`），翻同期受影响的 GitHub 项目时在
+> [wnsdudkk-ux/cboe_data](https://github.com/wnsdudkk-ux/cboe_data) 的 `vix_decomp.py` 里看到。它是官网「VIX Decomposition」工具页背后的接口，**同样没有文档**。
+
+| | |
+|---|---|
+| URL | `https://www-api.cboe.com/vix_decomposition/?date1=YYYY-MM-DD&date2=YYYY-MM-DD`（两个参数都要，缺了回 420；收盘价另有 `…/get_closing_data/?…`，未试） |
+| 实测 | **不带 Referer 也是 200**（`www-api` 域名，和被拦的 `cdn-api…/delayed_quotes` 不同）；约 20~27KB / 次 |
+| 内容 | `factors`（VIX 日变化的六个分解因子）· `atmPairs`（两天的平值行权价与 IV）· `interpolatedIVs[日期][到期对].ivs[行权价] = {iv, delta}`：SPX **插值到 30 天恒定期限**的 IV 曲线（跨两个到期日按「方差 × 天数」插值，刚好 30 天时只有一个到期日），每个行权价带 delta（平值以下为 put delta、负，以上为 call delta、正），约 550 个行权价 |
+| 25Δ | 直接按 delta 取：2026-11-18 put 25Δ（K=7020）IV 24.15%、call 25Δ（K=7590）16.80% → skew **7.35pp** |
+| 历史 | **2022-09-01 起**能取；2022-06 / 07 回 400「No interest rate data found」；当天的要等到次日（`Data for today's date is not yet available.`） |
+| 口径核对 | cboe_data 用自存的 SPX 收盘链独立复算，82 个日期对（2026-07~11）平值 ±10% 内曲线平均只差 0.015pp |
+| 依赖 | 零 |
+
+**能补什么**：股指 25Δ skew 多一个 CBOE 自己算好的来源，而且是恒定 30 天（我们现在按「约 30 天那个到期日」选，DTE 会跳）；能回填约 3 年历史。
+**补不了什么**：只有 SPX，没有 VIX 期权（VIX 25Δ 仍没有来源）、没有 ETF。
+**风险**：和 delayed_quotes 一样是工具页背后的无文档接口，CBOE 收紧时可能一起被拦；Actions 云 IP 能不能拉未测。
+**落地方式（若做）**：要逐日请求、源头可能被拦 → 按 AGENTS.md「要逐日抓的才落库」落库：daily 每天请求「上一交易日 + 当天」一对存当天曲线的 25Δ 两点（或整条曲线），`--backfill` 从 2022-09 逐日拉（每次返回两天，约 800 次，间隔 0.3 秒约 5 分钟）。约 2~3 小时（fetcher + job + 回填 + 面板一格）。
+
+### 1.10 同批翻到的其余候选（2026-11-20 实测，低优先）
+
+| 内容 | 端点 | 实测 | 备注 |
+|---|---|---|---|
+| OCC 每个合约的持仓量（官方清算口径，全美期权） | `marketdata.theocc.com/series-search?symbolType=U&symbol=TLT` | 200，纯文本表（年 / 月 / 日 / 行权价 / call OI / put OI），TLT 约 68KB | 只有 OI，没有价格 / IV / 希腊值。可核对 OI 或算持仓口径认沽认购比。来自 gex-pro |
+| Binance 期权全量 mark（BTC） | `eapi.binance.com/eapi/v1/mark` | 日本 IP 200，一次 540KB：全部合约的 markIV、买卖 IV、delta / gamma / theta / vega | Deribit 要逐合约打 `ticker`，这里一次全拿。**美国 IP 回 451**（同 Binance 现货），Actions 跑不了；Deribit 正常时只当备用。来自 mcm-analytics |
+| 经济日历（带预期值 / 实际值） | Forex Factory `nfs.faireconomy.media/ff_calendar_thisweek.json`（只有本周，带 impact）；Nasdaq `api.nasdaq.com/api/calendar/economicevents?date=YYYY-MM-DD`（按日查，带 actual / consensus / previous） | 都 200 | 我们只有发布日（ALFRED）；多了预期值可算「超预期幅度」。没查历史能回多远。来自 gex-pro |
+| ❌ Farside BTC 现货 ETF 每日资金流 | `farside.co.uk/btc/` | 403「Just a moment...」（Cloudflare 人机验证） | 不绕 |
+
 ### ❌ EIA 周报的上游缓冲垫（原油库存 / SPR）—— 评估后不做（2026-11-14）
 
 > 能源页已有价格、裂解、炼厂与成品油库存,油价眼下由霍尔木兹海峡主导(那格已接);原油库存多一条线不改变对油市的判断。SPR 是政策性放储 / 回补,不是市场信号。下面的接入细节保留,真要接时只是加两个 series_id。

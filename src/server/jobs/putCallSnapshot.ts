@@ -55,9 +55,13 @@ export function weekdaysBetween(since: string, until: string): string[] {
  * 停更 / 断档检查,看库里的结果不看原因(同 ISM 的 staleSectors):末尾落后上一收盘日、或中间两天之间
  * 隔了超过 MAX_MISSING_WEEKDAYS 个工作日,各报一条
  */
-export function staleProblems(dates: string[], lastClosed: string): string[] {
+export function staleProblems(
+  dates: string[],
+  lastClosed: string,
+  script = 'src/server/jobs/putCallSnapshot.ts',
+): string[] {
   const latest = dates.at(-1);
-  if (!latest) return ['库里一个点都没有(先跑 bun run src/server/jobs/putCallSnapshot.ts --backfill)'];
+  if (!latest) return [`库里一个点都没有(先跑 bun run ${script} --backfill)`];
 
   const missing = (from: string, to: string) => weekdaysBetween(addDays(from, 1), addDays(to, -1)).length;
   const holes = dates

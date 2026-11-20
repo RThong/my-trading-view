@@ -11,7 +11,7 @@ const TABS = [
   ['IBIT', true, true] as const,
 ];
 // 标的专属附加格的数量(见 assetDoc 的 EXTRA)
-const EXTRA_PANES: Record<string, number> = { SMH: 1 };
+const EXTRA_PANES: Record<string, number> = { SMH: 1, SPY: 1 };
 
 describe('期权 / 现货 tab 的 ChartDoc', () => {
   test.each(TABS)('%s:JSON 往返无损、序列都在注册表、图层 id 不重复', (u, vrp, options) => {

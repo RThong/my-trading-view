@@ -39,8 +39,20 @@ function pane(layers: Omit<Layer, 'id' | 'scale'>[], desc: string, log?: true, s
 // 标的专属的附加格(接在最后)。SMH:半导体隐含波动率减纳指的(VXN),看半导体是不是自己出事
 const EXTRA: Record<string, Omit<Layer, 'id' | 'scale'>[][]> = {
   SMH: [[{ series: 'vrp:SMH:iv', calc: { op: '-', series: 'vrp:QQQ:iv' }, color: '#f97316', title: 'VXSMH − VXN' }]],
+  // 对照期:SPX 30 天恒定期限那条够长、够稳就替换上面 SPY 的两格(见 docs/data-sources-candidates.md §1.9)
+  SPY: [
+    [
+      { series: 'spxSkew25', color: '#f97316', title: 'SPX 30 天' },
+      { series: 'opt:SPY:skew', color: COLORS.skew, title: 'SPY' },
+    ],
+  ],
 };
 const EXTRA_DESC: Record<string, string> = {
+  SPY:
+    '定义:25Δ 风险逆转(put IV − call IV),百分点。橙 = SPX 插值到恒定 30 天(Cboe VIX 分解工具页的数,2022-09 起);蓝 = 上面那格 SPY 的(取约 30 天那个到期日)。\n' +
+    '读法同上一格:高 = 下行保护贵。两条本该贴着走(同一个标普,SPY 与 SPX 的 25Δ skew 实测只差 0.2~0.4pp);' +
+    '橙线不随到期日切换跳动,历史也长得多。\n' +
+    '⚠️ 橙线的源当天收盘后要到美东次日凌晨才发,常比蓝线晚一天。',
   SMH:
     '定义:半导体隐含波动率(VXSMH)− 纳指 100 隐含波动率(VXN),百分点。两条都是 CBOE 按 VIX 同法编的 30 天口径。\n' +
     '⭐ 读法:平时半导体本来就比纳指波动大(2025-09 以来差值均值约 20、区间约 12~37);差值走阔 = 半导体自己出事(行业 / 出口管制 / 财报),' +
