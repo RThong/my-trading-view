@@ -112,7 +112,7 @@
   带 IV / 希腊值 / OI / 全市场最优买卖价,7 个标的一轮约 5 秒、不用 OpenD。交易日取文件里最后一笔成交的日期。
   与 moomoo 逐合约对比:不分红 ETF IV 差 ≤ 0.2pp、OI 全同。
   ⚠️ **daily 触发点全落在 VIX 期权夜盘**:夜里这个文件的 VIX 报价 / IV 跟着夜盘走(最后成交仍停在 16:15 前,别拿成交时间判)。
-  所以另有 **GitHub Actions 存档**(私有仓库 `RThong/market-snapshots`,`fetch.sh` 收盘后、夜盘前定时(见其 `snapshot.yml`;⚠️ GitHub 自带定时在该仓库从没触发过,实际靠 cron-job.org 调 `workflow_dispatch`,token 2027-11-17 到期,见其 README「触发」)抓 7 个标的的链 + ICE CDS / CDX + MOVE(Yahoo chart 原文)+ Deribit BTC 期权链(周末只抓它),
+  所以另有 **GitHub Actions 存档**(私有仓库 `RThong/market-snapshots`,`fetch.sh` 收盘后、夜盘前定时(⚠️ GitHub 自带定时在该仓库不触发或晚约 5 小时、已删,实际靠 cron-job.org 调 `workflow_dispatch`,token 2027-11-17 到期,见其 README「触发」)抓 7 个标的的链 + ICE CDS / CDX + MOVE(Yahoo chart 原文)+ Deribit BTC 期权链(周末只抓它),
   数据在 **`data` 分支**、每轮压成无历史提交强推、只留 14 天;`main` 只放脚本、只由人推):
   本机 `options_cboe` / `ice_cds` / `move` / `options_crypto` 先 `git fetch` 只拉 `data` 分支、浅克隆到 `data/market-snapshots/`(gitignored,里面没有脚本;改 `fetch.sh` 另克隆 `main`)
   再写库(`fetchers/snapshotArchive` + `jobs/cboeArchive` / `deribitArchive`,ICE / MOVE 在各自 job 里),已覆盖的「标的 | 交易日」本机不再抓;拉不到存档就照旧自己抓。
