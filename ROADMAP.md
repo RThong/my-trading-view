@@ -513,7 +513,7 @@ TradingView
 - **库放 GitHub、由 Actions 跑 daily**（2026-11-18 提出，2026-11-19 定做）：本机不再跑定时任务、两台电脑看同一份库。云 IP 已实测全通；等 CBOE 切换（11-21）后按 `docs/db-on-github.md` 搭 workflow
 - ~~数据健康页门槛：用全量库看误报再调~~ ✅ 已完成（2026-11-17，见 L0-1 的「校准」）
 - ~~报警规则的滞后带宽度（`exitPad`）：看历史切换次数再调~~ ✅ 已完成（2026-11-17，见 L3-1 的「校准」）
-- ~~**能现拉的落库源换成现拉**~~ ✅ 已完成（2026-11-17）：ETF / VIX / BTC 现货、CBOE 波动率指数（VIX 家族 / VRP 隐含腿 / VVIX / SKEW）、Deribit DVOL、BRK 链上改读时现拉（`server/live/market`，1h 缓存、过期就等重拉、拉失败或被截短沿用上一份 + 落盘快照）；换之前逐日对账，重叠期每一天每个数与库里相等，VRP 八个标的新旧输出逐点相等。daily `vrp_inputs`、crypto `btc_price` / `btc_supply_density` 三组已删。剩两件：① 2026-11-24 没问题再清库（`price_eod` 整表、`market_series` 里这几条、`job_run` 里三组旧记录；`scripts/export-csv.sh` 还在导 `price_eod`，一并改）；② ~~ETF 蜡烛带成交量~~ ✅ 2026-11-18：前端固定 ETF 改走 `/api/yahoo/history`（与 `yh:` 同一条路、自带成交量），`/api/price` 删掉；服务端算 VRP / regime 仍用 `server/live/market`。
+- ~~**能现拉的落库源换成现拉**~~ ✅ 已完成（2026-11-17）：ETF / VIX / BTC 现货、CBOE 波动率指数（VIX 家族 / VRP 隐含腿 / VVIX / SKEW）、Deribit DVOL、BRK 链上改读时现拉（`server/live/market`，1h 缓存、过期就等重拉、拉失败或被截短沿用上一份 + 落盘快照）；换之前逐日对账，重叠期每一天每个数与库里相等，VRP 八个标的新旧输出逐点相等。daily `vrp_inputs`、crypto `btc_price` / `btc_supply_density` 三组已删。剩两件：① 2026-11-24 没问题再清库（`price_eod` 整表、`market_series` 里这几条、~~`job_run` 里三组旧记录~~ 2026-11-20 已删；`scripts/export-csv.sh` 还在导 `price_eod`，一并改）；② ~~ETF 蜡烛带成交量~~ ✅ 2026-11-18：前端固定 ETF 改走 `/api/yahoo/history`（与 `yh:` 同一条路、自带成交量），`/api/price` 删掉；服务端算 VRP / regime 仍用 `server/live/market`。
 
 后话，先不做：表达式图层（类似 Pine 的公式，如 `zscore(A/B, 252)`，函数只允许不看未来的版本）、TS 指标模块（`defineIndicator`）。等 ChartDoc 稳定以后，再在 ChartDoc 上加一个 expr 图层类型。在线脚本沙箱不做。
 

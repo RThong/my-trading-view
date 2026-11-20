@@ -30,9 +30,7 @@ case "${1:-status}" in
                CASE last.job_name
                  WHEN 'options'           THEN '美股期权'
                  WHEN 'options_crypto'    THEN 'BTC 期权'
-                 WHEN 'vrp_inputs'        THEN 'VRP 输入'
                  WHEN 'vx_term_structure' THEN 'VX 期限结构'
-                 WHEN 'btc_price'         THEN 'BTC 现货'
                  WHEN 'ice_cds'           THEN 'AI CDS'
                  WHEN 'credit_spread'     THEN '信用利差'
                  ELSE last.job_name
