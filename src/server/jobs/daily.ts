@@ -32,6 +32,7 @@ import { updateIsm, type IsmResult } from './ismSnapshot';
 import { updatePutCall, PUT_CALL_SERIES, type PutCallResult } from './putCallSnapshot';
 import { updateSpxSkew, type SpxSkewResult } from './spxSkewSnapshot';
 import { updateJgbi, expectedQuoteDate, JGBI_SERIES, type JgbiResult } from './jgbiSnapshot';
+import { updateBreadth, ingestArchivedBreadth, type BreadthResult } from './breadthSnapshot';
 
 // 认沽认购比的新鲜度探针:三条同一页同一时刻写,看个股那条就够
 const PUT_CALL_PROBE = PUT_CALL_SERIES.equity;
@@ -42,7 +43,7 @@ type RunDailyJobOpts = {
   db: Database;
   /** CBOE 延迟期权链(并行试跑,注入式;CLI 传 createCboeOptionsClient,测试省略以免联网)。 */
   cboeOptionsClient?: OptionsChainClient;
-  /** Actions 快照存档(注入式;CLI 传 syncedArchiveRuns,测试省略以免联网)。CBOE / Deribit 期权、ICE、MOVE 先把存档写进库,再自己抓。 */
+  /** Actions 快照存档(注入式;CLI 传 syncedArchiveRuns,测试省略以免联网)。CBOE / Deribit 期权、ICE、MOVE、WSJ 市场日志先把存档写进库,再自己抓。 */
   archiveRuns?: () => ArchiveRun[];
   /** moomoo 期权标的(如 ['SPY', '.VIX'])。需配合 optionsClient 使用。 */
   optionsUnderlyings?: string[];
@@ -74,6 +75,8 @@ type RunDailyJobOpts = {
   spxSkewUpdater?: (db: Database) => Promise<SpxSkewResult>;
   /** 日本 10Y 实际利率 + BEI(JSDA 売買参考統計値)更新器(注入式;CLI 传 updateJgbi,测试省略以免联网)。 */
   jgbiUpdater?: (db: Database) => Promise<JgbiResult>;
+  /** WSJ 市场日志(NYSE / NASDAQ 涨跌家数等)更新器(注入式;CLI 传 updateBreadth,测试省略以免联网)。 */
+  breadthUpdater?: (db: Database) => Promise<BreadthResult>;
   /** Computable GPU Index(H100/H200/B200/B300 算力租赁价)更新器(注入式;cryptoDaily 传 updateComputableGpu,测试省略以免联网)。 */
   computableGpuUpdater?: (db: Database) => Promise<{ total: number; missing: string[]; errors: string[] }>;
 };
@@ -334,6 +337,24 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       return { status: 'success', recordsWritten: written };
     });
   }
+
+  // breadth 分组:WSJ 市场日志,只给当天。拉失败或还是盘中那份 → 抛错记 failed,当天后续触发点重跑;
+  // 源的日期落后上一收盘日 → partial(假日也会落后一天,黄灯、后续触发点重跑);停更超过 5 个工作日 → failed(红灯)
+  if (opts.breadthUpdater) {
+    await withJobRun(opts.db, 'breadth', async () => {
+      // 先补存档里本机没抓到的那几天;存档写坏了不挡本机自己抓
+      try {
+        if (opts.archiveRuns) ingestArchivedBreadth(opts.db, opts.archiveRuns());
+      } catch (err) {
+        console.warn(`WSJ 市场日志存档写入失败(本轮照旧自己抓):${(err as Error).message}`);
+      }
+      const { date, written, lagging, stale } = await opts.breadthUpdater!(opts.db);
+      if (stale) return { status: 'failed', error: stale, recordsWritten: written };
+      if (lagging)
+        return { status: 'partial', error: `源的日期 ${date} 落后上一收盘日(假日则正常)`, recordsWritten: written };
+      return { status: 'success', recordsWritten: written };
+    });
+  }
 }
 
 /** 组名(= job_run.job_name)→ 该组在 runDailyJob 里的注入参数。函数形式:没轮到的组不构造客户端。 */
@@ -410,6 +431,7 @@ const DAILY_GROUPS: GroupTable = {
   put_call: () => ({ putCallUpdater: updatePutCall }),
   spx_skew: () => ({ spxSkewUpdater: updateSpxSkew }),
   jgbi: () => ({ jgbiUpdater: (db: Database) => updateJgbi(db) }),
+  breadth: () => ({ breadthUpdater: (db: Database) => updateBreadth(db), archiveRuns: syncedArchiveRuns }),
 };
 
 // CLI 入口

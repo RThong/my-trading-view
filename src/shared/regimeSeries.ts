@@ -118,6 +118,8 @@ export const REGIME_SERIES = [
   'pcIndexMa5',
   'pcIndexMa20',
   'pcIndexMa63',
+  // NYSE 涨跌线(WSJ 市场日志每天的上涨 − 下跌家数累加,daily 的 breadth 分组写库,2026-11 起)
+  'nyseAdLine',
 
   // ── 现拉 + 派生(主 handler)
   // ACM 期限溢价(纽约联储,月频)。不在 `direct` 映射里,是主 handler 单独现拉 + catch → null,

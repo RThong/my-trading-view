@@ -1,4 +1,4 @@
-// 「特色指标 · 集中度」tab:三格,价格已走出的集中度 / 期权隐含的集中度 / 宽度透支度。
+// 「特色指标 · 集中度」tab:四格,价格已走出的集中度 / 期权隐含的集中度 / 宽度透支度 / NYSE 涨跌线。
 // 整个 tab 就是一份 ChartDoc(与图表编辑器同一格式,能原样导出成 JSON),序列只引注册表 id。
 import type { ChartDoc } from '../../views/chartDoc/chartDoc';
 import { BREADTH_CHECK, SIGMA_ID } from '../../views/regime/descSnippets';
@@ -88,6 +88,28 @@ export const CONCENTRATION: ChartDoc = {
         '',
         '与上面两格的分工:「标普500 ÷ 等权」是比值、2023 起结构性上行只能读方向;',
         '这条是回撤差、均值回复,水位本身可读。',
+      ].join('\n'),
+    },
+    {
+      id: 'p4',
+      stretch: 1,
+      scales: [
+        { id: 'right', side: 'right' },
+        { id: 'left', side: 'left' },
+      ],
+      layers: [
+        { id: 'l4', series: 'nyseAdLine', scale: 'right', color: '#34d399', title: 'NYSE 涨跌线' },
+        { id: 'l5', series: 'spx', scale: 'left', color: '#737373', title: '标普 500' },
+      ],
+      desc: [
+        '定义:NYSE 每天上涨家数 − 下跌家数(WSJ 市场日志),从开始存的那天起累加。灰线是标普 500(左轴)。',
+        '读法:指数创新高、涨跌线没跟着创新高 = 背离,上涨靠少数股票撑着、参与的股票在变少。',
+        '',
+        '⚠️ 源只给当天、补不了历史:2026-11-20 起才有。绝对值取决于从哪天开始存,没有意义,只看形状与高点先后。',
+        '⚠️ 口径是 NYSE 本场挂牌的全部证券(约 2,800 只),不是标普 500 成分股。按 NYSE 上市目录(2026-11)数:',
+        '   普通股 57%、优先股 13%、封闭式基金 11%、ADR 7%、ETF 5%、REIT 4%、其它 3%(ETF 大头在 NYSE Arca,不算在内)。',
+        '   优先股 + 封闭式基金 + REIT ≈ 28% 对利率敏感 → 利率一动这条线会跟着走,可能报出假背离,判断时对照标普 500 口径。',
+        '⚠️ 漏存的那天少加一天的净差,之后整段线整体平移一截:缺口之后的点能不能越过缺口之前的高点会跟着变,可能凭空造出或掩盖背离。',
       ].join('\n'),
     },
   ],

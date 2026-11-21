@@ -22,12 +22,12 @@ describe('固定面板的 ChartDoc', () => {
     const moved = moveLayer(CONCENTRATION, 'l1', 'new');
     const pane = moved.panes.find((p) => p.layers.some((l) => l.id === 'l1'))!;
     expect(pane.desc).toBe(CONCENTRATION.panes[0].desc);
-    expect(moved.panes.length).toBe(3);
+    expect(moved.panes.length).toBe(CONCENTRATION.panes.length);
   });
 
   test('拖进已有格(两格并成一格):只留目标格自己的说明', () => {
     const merged = moveLayer(CONCENTRATION, 'l2', 'p1');
-    expect(merged.panes.map((p) => p.desc)).toEqual([CONCENTRATION.panes[0].desc, CONCENTRATION.panes[2].desc]);
+    expect(merged.panes.map((p) => p.desc)).toEqual(CONCENTRATION.panes.filter((_, i) => i !== 1).map((p) => p.desc));
   });
 
   // 口径隔离。**这条守的是一个已经犯过的错**:r* 曾被叠在「预期短端」同格,而两者一个实际、一个名义,
