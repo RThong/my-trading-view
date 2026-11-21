@@ -45,6 +45,7 @@ export type RegimeDim =
   | 'macro'
   | 'ism'
   | 'labor'
+  | 'gdp'
   | 'vol'
   | 'ratesVol'
   | 'inflSource'

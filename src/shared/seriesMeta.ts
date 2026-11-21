@@ -189,6 +189,13 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
     unit: '%',
     aliases: ['失业率', 'unemployment', '就业'],
   },
+  gdpReal: {
+    label: '美国实际 GDP 环比年化 (BEA)',
+    category: '通胀·宏观',
+    freq: '季',
+    unit: '%',
+    aliases: ['gdp', '经济增长', 'growth'],
+  },
   lmiFlowUnemp: {
     label: '流量一致失业率 (芝加哥联储 CFLMI)',
     category: '通胀·宏观',
