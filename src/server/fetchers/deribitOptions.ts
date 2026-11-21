@@ -16,7 +16,14 @@ import { firstBy } from 'remeda';
 import { NonRetryableError, fetchWithTimeout, withRetry } from './http';
 
 const BASE = 'https://www.deribit.com/api/v2/public';
-const TICKER_CONCURRENCY = 10;
+// 2026-11-20 起公开接口限流收紧(同时 5 个就有一半回 429,串行也会撞),并发 10 不重试时 120 个合约的季度到期日只剩个位数
+const TICKER_CONCURRENCY = 2;
+// 逐合约 ticker 只对 429 退避重试:首次等 1s、之后翻倍,最多 6 次(累计最多约 63s)
+const TICKER_429_RETRIES = 6;
+const TICKER_429_DELAY_MS = 1000;
+// 整条链逐合约 ticker 的总时限:开抓后超过 8 分钟,撞 429 的不再等、还没开抓的直接跳过(都当单合约失败丢掉)。
+// 挡两种拖长:持续限流(每合约退避约 63s,单链约 1 小时)、Deribit 整体卡死(并发 2 下每个等满 15s 超时,单链约 15 分钟)。同存档 fetch.sh 的 timeout 480
+const TICKER_BUDGET_MS = 8 * 60_000;
 
 /** 只重试传输层失败:429 限流与 5xx。其余 4xx 是「这个请求本身不对」,再打一次还是同样答复。 */
 export function isRetryableStatus(status: number) {
@@ -25,11 +32,14 @@ export function isRetryableStatus(status: number) {
 
 type Fetch = (url: string) => Promise<Response>;
 
-/** 裸调用,不重试。逐合约的 ticker 走这个 —— 那一层由 mapLimit 的 allSettled 兜着。 */
+class RateLimitError extends Error {}
+
+/** 裸调用,不重试。 */
 async function get(doFetch: Fetch, path: string): Promise<any> {
   const res = await doFetch(`${BASE}/${path}`);
   if (!res.ok) {
     const msg = `Deribit ${path} → HTTP ${res.status}`;
+    if (res.status === 429) throw new RateLimitError(msg);
     throw isRetryableStatus(res.status) ? new Error(msg) : new NonRetryableError(msg);
   }
 
@@ -47,10 +57,30 @@ async function get(doFetch: Fetch, path: string): Promise<any> {
  *
  * **不要给逐合约的 ticker 用**:那层本来就 allSettled 容错,缺几个合约不影响 25Δ 选取,
  * 而给上百次调用各加「1.5s + 一整轮 15s 超时」会让 Deribit 抽风时单链墙钟翻倍
- * (~300s → ~630s),而 crypto job 一天 5 个触发点、没有互斥锁。
+ * (~300s → ~630s),而 crypto job 一天 5 个触发点、没有互斥锁。ticker 只重试 429(见 getTicker)。
  */
 function getRetried(doFetch: Fetch, path: string, delayMs?: number): Promise<any> {
   return withRetry(() => get(doFetch, path), delayMs);
+}
+
+/**
+ * 逐合约 ticker:只对 429 退避重试(限流是常态,不重试一半合约拿不到);5xx / 超时仍只打一次(理由见 getRetried)。
+ * 2026-11-21 本机实测:120 个合约、并发 2 拿到 108 个,约 2 分钟。
+ */
+async function getTicker(
+  doFetch: Fetch,
+  path: string,
+  delayMs: number,
+  deadline: number,
+  left = TICKER_429_RETRIES,
+): Promise<any> {
+  try {
+    return await get(doFetch, path);
+  } catch (e) {
+    if (left === 0 || !(e instanceof RateLimitError) || Date.now() + delayMs > deadline) throw e;
+    await Bun.sleep(delayMs);
+    return getTicker(doFetch, path, delayMs * 2, deadline, left - 1);
+  }
 }
 
 /**
@@ -73,8 +103,14 @@ type Instrument = {
   expiration_timestamp: number;
 };
 
-async function tickerToContract(doFetch: Fetch, inst: Instrument): Promise<OptionContract | null> {
-  const t = await get(doFetch, `ticker?instrument_name=${inst.instrument_name}`);
+async function tickerToContract(
+  doFetch: Fetch,
+  inst: Instrument,
+  delayMs: number,
+  deadline: number,
+): Promise<OptionContract | null> {
+  if (Date.now() >= deadline) throw new Error(`Deribit ${inst.instrument_name}:超过整链时限,跳过`);
+  const t = await getTicker(doFetch, `ticker?instrument_name=${inst.instrument_name}`, delayMs, deadline);
   if (typeof t?.mark_iv !== 'number') return null;
   const g = t.greeks ?? {};
   return {
@@ -99,10 +135,10 @@ async function tickerToContract(doFetch: Fetch, inst: Instrument): Promise<Optio
 
 /**
  * fetch / now 注入:重放 Actions 存档时(见 jobs/deribitArchive)不联网、按抓取时刻选到期日、打戳。
- * retryDelayMs 只为测试留口:验证「重试确实发生」的测试不该真等 1.5s。生产用默认值。
+ * retryDelayMs / tickerBudgetMs 只为测试留口:验证「重试确实发生」的测试不该真等 1.5s(ticker 的 429 退避也从它起翻倍)。生产用默认值。
  */
 export function defaultDeribitOptionsClient(
-  deps: { fetch?: Fetch; now?: () => Date; retryDelayMs?: number } = {},
+  deps: { fetch?: Fetch; now?: () => Date; retryDelayMs?: number; tickerBudgetMs?: number } = {},
 ): OptionsChainClient {
   const doFetch = deps.fetch ?? ((url: string) => fetchWithTimeout(url));
   const now = deps.now ?? (() => new Date());
@@ -124,9 +160,11 @@ export function defaultDeribitOptionsClient(
       const bestExp = firstBy(expiries, (t) => Math.abs(t - target))!;
       const inExp = all.filter((i) => i.expiration_timestamp === bestExp);
 
+      // 预算按真实时钟算(now() 在重放存档时是当年的抓取时刻)
+      const deadline = Date.now() + (deps.tickerBudgetMs ?? TICKER_BUDGET_MS);
       const withType = await mapLimit(inExp, TICKER_CONCURRENCY, async (i) => ({
         type: i.option_type,
-        c: await tickerToContract(doFetch, i),
+        c: await tickerToContract(doFetch, i, retryDelayMs ?? TICKER_429_DELAY_MS, deadline),
       }));
       const calls = withType.filter((r) => r.type === 'call' && r.c).map((r) => r.c!);
       const puts = withType.filter((r) => r.type === 'put' && r.c).map((r) => r.c!);

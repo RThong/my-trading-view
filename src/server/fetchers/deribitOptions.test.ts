@@ -21,10 +21,10 @@ describe('isRetryableStatus', () => {
 });
 
 describe('重试的覆盖面(A3 的不变式)', () => {
-  // 这条守的是「逐合约 ticker 那层**不许**带重试」——否则 Deribit 抽风时上百次调用各加
+  // 这条守的是「逐合约 ticker 那层除 429 外**不许**带重试」——否则 Deribit 抽风时上百次调用各加
   // 「1.5s + 一整轮 15s 超时」,单链墙钟翻倍(~300s → ~630s),而 crypto job 一天 5 个触发点、无互斥锁。
   // 只靠注释守不住,这里打桩 fetch 数调用次数。
-  test('get_instruments 会重试,逐合约 ticker 不会', async () => {
+  test('get_instruments 会重试,逐合约 ticker 只重试 429', async () => {
     const expiry = Date.now() + 30 * 86400_000;
     const inst = (name: string, type: 'call' | 'put') => ({
       instrument_name: name,
@@ -44,7 +44,7 @@ describe('重试的覆盖面(A3 的不变式)', () => {
         bump('instruments');
         // 第一次瞬断,第二次成功 —— 验证这个单点调用带重试。
         if (calls.get('instruments') === 1) return new Response('boom', { status: 503 });
-        return json([inst('BTC-A', 'call'), inst('BTC-B', 'put')]);
+        return json([inst('BTC-A', 'call'), inst('BTC-B', 'put'), inst('BTC-C', 'call')]);
       }
       if (u.includes('instrument_name=BTC-A')) {
         bump('tickerA'); // 一直失败:若被重试,计数会 >1
@@ -53,6 +53,11 @@ describe('重试的覆盖面(A3 的不变式)', () => {
       if (u.includes('instrument_name=BTC-B')) {
         bump('tickerB');
         return json({ mark_iv: 40, greeks: { delta: 0.25 }, open_interest: 1 });
+      }
+      if (u.includes('instrument_name=BTC-C')) {
+        bump('tickerC'); // 前两次限流,第三次成功
+        if ((calls.get('tickerC') ?? 0) <= 2) return new Response('slow down', { status: 429 });
+        return json({ mark_iv: 45, greeks: { delta: 0.25 }, open_interest: 1 });
       }
       bump('index');
       return json({ index_price: 60_000 });
@@ -63,8 +68,21 @@ describe('重试的覆盖面(A3 的不变式)', () => {
 
       expect(calls.get('instruments')).toBe(2); // 单点调用:重试一次后成功
       expect(calls.get('tickerA')).toBe(1); // 逐合约:失败也只打一次
-      expect(snap.puts).toHaveLength(1); // 失败那个合约被丢弃,整条链照旧返回
-      expect(snap.calls).toHaveLength(0);
+      expect(calls.get('tickerC')).toBe(3); // 429:退避重试到成功
+      expect(snap.puts).toHaveLength(1); // 5xx 那个合约被丢弃,整条链照旧返回
+      expect(snap.calls.map((c) => c.contractSymbol)).toEqual(['BTC-C']);
+
+      // 再等就超过整链时限:撞 429 的合约不再等、直接丢(首次退避 100ms > 剩余预算 50ms)
+      calls.clear();
+      const late = await defaultDeribitOptionsClient({ retryDelayMs: 100, tickerBudgetMs: 50 }).fetchChain('BTC', 30);
+      expect(calls.get('tickerC')).toBe(1);
+      expect(late.calls).toHaveLength(0);
+
+      // 已过整链时限:还没开抓的合约一个都不打(Deribit 卡死时不再每个等满超时)
+      calls.clear();
+      const over = await defaultDeribitOptionsClient({ retryDelayMs: 1, tickerBudgetMs: -1 }).fetchChain('BTC', 30);
+      expect(calls.has('tickerA') || calls.has('tickerB') || calls.has('tickerC')).toBe(false);
+      expect(over.calls.length + over.puts.length).toBe(0);
     } finally {
       globalThis.fetch = realFetch;
     }
