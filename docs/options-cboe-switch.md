@@ -1,7 +1,8 @@
 # 期权数据源切换清单:moomoo → CBOE 延迟期权链
 
 > 状态:**⏸ 暂停**(2026-11-20 用户定)。CBOE 延迟期权接口 2026-11-19 起被 Cloudflare 拦(不带 `Referer: https://www.cboe.com/` 一律 403;同一天 GitHub 上多个项目同报,无官方说明),本机 `options_cboe` 和存档的 CBOE 部分都在失败。
-> **2026-11-23 复查**:仍拦就二选一 —— 加 `Referer`(绕对方有意设的门槛,随时可能加码,只当试跑 / 存档、不切主源),或放弃 CBOE(VIX 25Δ 没有来源;期权留 moomoo 在本机跑)。
+> **2026-11-21 用户定加 `Referer`**:本机 `fetchers/cboeOptions` 与存档 `fetch.sh` 都已带上,试跑恢复(Actions 上 7 个标的全通)。
+> 仍待定(11-23):切不切主源 —— `Referer` 是对方有意设的门槛,随时可能加码;加码后只剩放弃 CBOE 一条路(VIX 25Δ 没有来源;期权留 moomoo 在本机跑)。
 > Yahoo 期权链不能替代:没有希腊值,收盘后 IV 是占位值、买卖价 / OI 全 0(2026-11-20 实测)。
 > 原计划:并行试跑(2026-11-14 起),满 5 个交易日后验收与切换,约 2~3 小时。
 > 背景与核对结论:`AGENTS.md` 的 moomoo 段、`docs/data-sources-candidates.md` §1.4。

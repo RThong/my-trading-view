@@ -121,7 +121,9 @@ export function createCboeOptionsClient(
       cache.set(
         sym,
         (async () => {
-          const res = await doFetch(`${URL_BASE}${sym}.json`, { headers: { 'User-Agent': UA } }, 60_000);
+          // 2026-11-19 起不带 cboe.com 的 Referer 一律 403(Cloudflare);官网期权页自己请求时就带这个,存档 fetch.sh 同
+          const headers = { 'User-Agent': UA, Referer: 'https://www.cboe.com/' };
+          const res = await doFetch(`${URL_BASE}${sym}.json`, { headers }, 60_000);
           if (!res.ok) throw new Error(`CBOE 期权 ${sym} 下载失败:${res.status}`);
           const body = (await res.json()) as { data?: CboeChain };
           if (!body.data?.options?.length) throw new Error(`CBOE 期权 ${sym}:没有合约(结构可能变了)`);
