@@ -38,6 +38,8 @@ export const REGIME_SERIES = [
   'wages',
   // 就业(「宏观 · 就业」):官方失业率 UNRATE(FRED)+ 芝加哥联储 CFLMI 三条(月频 %,日期 = 当月 1 日)
   'unrate',
+  // 美国实际 GDP 环比年化(季频 %,FRED A191RL1Q225SBEA,落季末;「宏观 · GDP」)
+  'gdpReal',
   'lmiFlowUnemp',
   'lmiHiring',
   'lmiSeparations',

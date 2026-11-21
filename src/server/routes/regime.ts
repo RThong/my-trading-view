@@ -72,6 +72,7 @@ import { toOhlc, readDbBacked, readSecSeries } from './regimeDb';
 import { btcSupplyDensity, btcValuation, cboeStart, closedBars, spotBars, type Live, volIndex } from '../live/market';
 import { rollingSharpe } from '../analytics/sharpe';
 import type { OhlcBar } from './regimeKeys';
+import { quarterEndIso } from '../fetchers/quarter';
 
 // stale-while-revalidate(见 swrCache):有旧值先回、过期后台刷新,单个慢源(EIA 偶发卡 40s)不再拖住整页。
 // EOD 日频数据盘中不变,TTL 取 6h 安全;降级结果 10 分钟后重试(不粘 6h,也不每个请求打一轮全套上游)。
@@ -207,6 +208,14 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     sepMedianLr: fredSeries('FEDTARMDLR'),
     // 官方失业率(月频 %),「宏观 · 就业」里和 CFLMI 的流量一致失业率对照
     unrate: fredSeries('UNRATE'),
+    // 实际 GDP 环比年化(季频 %,BEA)。FRED 把季度记在季初(2026-07-01 = Q3),改落季末(fetchers/quarter 的约定):
+    // 落季初会让读数比季度结束还早三个月出现在图上
+    gdpReal: fredSeries('A191RL1Q225SBEA').then((rows) =>
+      rows.flatMap((p) => {
+        const end = quarterEndIso(p.date.slice(0, 4), (Number(p.date.slice(5, 7)) + 2) / 3);
+        return end ? [{ date: end, value: p.value }] : [];
+      }),
+    ),
     cor1m: cboeSeries('COR1M'),
     cor3m: cboeSeries('COR3M'),
     vixeq: cboeSeries('VIXEQ'),
@@ -535,6 +544,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     fedTargetLower: 'fedTargetLower',
     sepMedianLr: 'sepMedianLr',
     unrate: 'unrate',
+    gdpReal: 'gdpReal',
     // 下面几条原本只当派生量的腿在内部用(repoStress / vixSpotTerm / rxmSpx),现在原样发出来:
     // 前端用 ChartDoc 的 calc 现算差 / 比值,注册表下拉只放原始序列(派生的那几条仍照算、照发,见下)
     iorb: 'iorb',
