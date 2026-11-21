@@ -8,8 +8,8 @@ A personal, local-only markets dashboard, organized as **vertical perspectives**
   (via Deribit), stored in SQLite. SPY uses Cboe's SPX 30-day constant-maturity 25Δ instead (history from 2022-09). Underlyings with a free volatility index (SPY/QQQ/GLD/USO/TLT/IBIT/SMH/BTC)
   also get implied-vs-realized + VRP panes; SMH (semiconductors) has VRP only — its option wings are too
   wide-quoted for a meaningful 25Δ skew.
-  The spot candle pane carries TradingView-style overlays (EMA ribbon, Bollinger 2σ/3σ) and,
-  in a one-click *spot-only* mode, MACD / RSI sub-charts — see [Spot chart tools](#spot-chart-tools).
+  The spot candle pane carries TradingView-style overlays (EMA ribbon, Bollinger 2σ/3σ, hidden by default);
+  MACD / RSI can be added as indicator layers — see [Indicators](#indicators).
 - **Regime perspectives** — macro/market *regime* indicators pulled on demand from
   FRED / CBOE / CNN / Yahoo / Eris / MOF+JPX / CFTC / Shiller / ICE / DTCC / FINRA / EIA / BOJ / Cabinet Office /
   Chicago Fed / Kansas City Fed / IMF PortWatch / Squeezemetrics / BRK / Binance / Computable: **信用 · 流动性 · 情绪 ·
@@ -30,10 +30,11 @@ well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local pag
 - **Data sources:**
   - moomoo OpenD (local WebSocket) — stock/ETF/index options (options only; spot prices come from Yahoo)
   - [Deribit](https://docs.deribit.com) public REST — crypto options + DVOL
-  - CBOE public CSV — VIX/VXN/GVZ/OVX, COR1M/VIXEQ, VX1/VX3 futures, RXM (Risk Reversal) + SPX
+  - CBOE public CSV — VIX/VXN/GVZ/OVX, VIX9D/VIX3M/VIX6M, VVIX, SKEW, DSPX, COR1M/COR3M/VIXEQ, VX1/VX3 futures, RXM (Risk Reversal) + SPX; fetched live per request from each index's first day (percentile alerts still calibrated from 2018)
+  - CBOE VIX Decomposition (undocumented API behind the official tool page) — SPX 30-day constant-maturity 25Δ put / call IV, the SPY tab's skew (backfilled from 2022-09)
   - [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) — rates · credit spread · net liquidity · repo · inflation (5y5y forward · sticky CPI · wages) · Kim-Wright term premium (needs a free API key)
   - NY Fed — HLW natural rate r\* (`current estimates` xlsx, quarterly) · ACM 10Y term premium (monthly CSV, the independent cross-check on Kim-Wright); no key
-  - Yahoo (`yahoo-finance2` v4) — **ETF spot OHLC** (SPY/QQQ/GLD/USO/TLT/NOBL: split-adjusted, *not* dividend-adjusted — the same number TradingView shows by default; full history back to each fund's listing, re-fetched in full every run so a future split can't leave two adjustment bases stitched together) · DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY · S&P 500 and its equal-weight index (`^GSPC` / `^SPXEW`, the concentration ratio)
+  - Yahoo (`yahoo-finance2` v4) — **ETF spot OHLCV** (SPY/QQQ/GLD/USO/TLT/NOBL/SMH/IBIT: split-adjusted, *not* dividend-adjusted — the same number TradingView shows by default; full history back to each fund's listing, fetched live in full on every read — not stored — so a future split can't leave two adjustment bases stitched together) · DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY · S&P 500 and its equal-weight index (`^GSPC` / `^SPXEW`, the concentration ratio)
   - Eris — SOFR OIS par curve · MOF + JPX — JGB yields / JGB VIX · CFTC — JPY net positioning · Shiller — CAPE · CNN — Fear & Greed
   - [BOJ](https://www.boj.or.jp/research/research_data/gap/) — output gap + potential growth with its four contributions (official xlsx = zip+XML, quarterly, no key)
   - [Nakajima](https://github.com/jouchinakajima/program) (BOJ researcher, **personal model estimates, not a BOJ release**) — JGB 10Y term premium + expected short rate (daily, **nominal**; the two sum exactly to the MOF 10Y) and natural rate r\* with a 95% band (quarterly, **real** — never plot it against the nominal pair). Ships irregularly every 2-4 months; judge staleness by commit date, not by the data's last point
@@ -45,7 +46,9 @@ well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local pag
   - [Computable GPU Index](https://api.getcomputable.com) ([collector + method, Apache-2.0](https://github.com/getcomputable/gpu-index)) — H100/H200/B200/B300 cloud rental price indices, key-free public REST. **List-price aggregate, not transaction prices**; rolling window of only a few weeks, and CoreWeave sits in three of the panels (so not independent of CRWV). The method is re-minted every few weeks (panel seats, vote smoothing); each print carries its `methodology_id`. CC BY-NC 4.0
   - [Bitstamp](https://www.bitstamp.net/api) public REST — BTC spot daily OHLC (spot, native UTC midnight cut, gap-free from 2012; Deribit's daily bars cut at 08:00 UTC and Yahoo's BTC-USD only starts 2014-09)
   - [US Treasury](https://home.treasury.gov/interest-rates-data-csv-archive) daily par yield + TIPS real yield CSV — nominal / real / BEI curves, published same day (FRED's DGS / DFII lag one business day)
-- **Scheduling:** macOS `launchd`, three agents — **daily** (options · VRP inputs · VX term structure · Eris OIS · ICE CDS · MOVE), **crypto** (Deribit options · BTC spot · Computable GPU Index), and **SEC** (quarterly fundamentals). Each group records into `job_run`; a run whose required groups are already green for the day is skipped, so a single failing optional source can't make every trigger point re-run the whole job.
+  - [JSDA](https://market.jsda.or.jp) reference statistics + Japan Bond Trading (BB) — Japan 10Y real yield backed out of the latest inflation-indexed JGB's price, matched nominal, and BEI (daily, BB history from 2024-04)
+  - [Westmetall](https://www.westmetall.com) — LME copper 3-month official price (yearly HTML tables, key-free; unofficial reprint, no SLA)
+- **Scheduling:** macOS `launchd`, three agents — **daily** (options · VX term structure · Eris OIS · ICE CDS / CDX · MOVE · ICE BofA mirror · put/call · ISM · SPX 25Δ · JGBi · DTCC), **crypto** (Deribit options · Computable GPU Index), and **SEC** (quarterly fundamentals). Each group records into `job_run`; a run whose required groups are already green for the day is skipped, so a single failing optional source can't make every trigger point re-run the whole job.
 
 The end-to-end type safety from server routes to React components flows through
 Hono's `hc<AppType>` typed client — there's no hand-written API client.
@@ -79,20 +82,22 @@ signup); CBOE/CNN need nothing. See [AGENTS.md](AGENTS.md) for gotchas.
 bun run dev                     # Hono on :3000 + Vite on :5173 in one terminal
 ```
 
+Ports default to 3000 / 5173; set `API_PORT` / `WEB_PORT` in `.env` to run several worktrees side by side.
 Open <http://localhost:5173>. Ctrl-C kills both. For separate logs: `bun run dev:server` / `bun run dev:web`.
 
 ## Collect data
 
 ```bash
-bun run job:daily               # options (moomoo) + VRP inputs & ETF spot (Yahoo) + VX1/VX3 term + Eris SOFR OIS + ICE CDS + trading calendar
-bun run job:crypto              # BTC options + spot (Deribit) — separate, no OpenD needed
+bun run job:daily               # options (moomoo) + VX1/VX3 term + Eris SOFR OIS + ICE CDS + SPX 25Δ + JGBi + other stored groups
+bun run job:crypto              # BTC options (Deribit) + GPU rental index — separate, no OpenD needed
 bun run job:sec                 # SEC XBRL fundamentals — quarterly data, weekly cadence; add --force or TICKER... to override
 ```
 
 `job:daily` needs OpenD for the moomoo leg; if it's down that group fails and the others
 still run. Each underlying is independent. **Most regime perspectives fetch live per
-request** (FRED/Yahoo/CFTC/etc., cached 6h). Only the stored series — VIX/VXN, VX1/VX3,
-Eris SOFR OIS, ICE single-name CDS, BTC, SEC fundamentals — are read from the DB by the
+request** (FRED/Yahoo/CFTC/etc., cached 6h); ETF / BTC spot, the CBOE vol indices, DVOL and BRK
+on-chain series are live too (1h cache, last good copy on failure). Only the stored series — options 25Δ, VX1/VX3,
+Eris SOFR OIS, ICE / DTCC CDS, SPX 25Δ, JGBi, ISM, put/call, SEC fundamentals — are read from the DB by the
 regime / yield-curve endpoints. `job:sec` compares SEC's `filed` dates first, so most weeks are a no-op.
 
 ## Schedule the daily job (macOS)
@@ -114,12 +119,13 @@ Check recent runs with `./scripts/cron.sh history`.
 ```
 src/
 ├── shared/                  types · marketCatalog (标的元数据单一真相源;前后端派生)
-│   └── calc/                pure compute shared by both ends (stats · policyPath · oilRoll)
+│   └── calc/                pure compute shared by both ends (stats · policyPath · oilRoll · zigzag · attackDefense · freshness · ruleState)
 ├── server/
 │   ├── index.ts             Hono app, exports AppType
 │   ├── config.ts            option/price whitelists (derived from marketCatalog)
 │   ├── swrCache.ts          stale-while-revalidate cache + disk snapshot (regime / yieldCurve routes)
-│   ├── routes/              health · options · vrp · price · regime · yieldCurve
+│   ├── live/                market: read-time fetch of ETF / BTC spot, CBOE vol indices, DVOL, BRK (1h cache + disk snapshot)
+│   ├── routes/              health · options · vrp · regime · series · yahoo · yieldCurve
 │   ├── fetchers/            optionsChain (options client contract) · moomoo · deribit · cboe(Index/Vx) · fred · yahoo · eris · iceCds · jpxJgbVix · mofJgb · cftcCot · capeShiller · cnnFearGreed
 │   ├── analytics/           vrp · termStructure · regime · rateCurves · sec6kText · tradingCalendar · monthlyExpiry (all pure)
 │   ├── storage/             bun:sqlite schema, migrations, repository
@@ -127,12 +133,13 @@ src/
 └── web/
     ├── App.tsx              shell only (vertical perspectives × horizontal tabs, keep-alive)
     ├── perspectives.tsx     assembles the rail from pages/* (order only)
-    ├── components/          Header · TabBar · StatusLight · InfoTip · DatePickerWithPresets
-    ├── hooks/               interval · useStable · usePerspectiveNavigation
+    ├── components/          Header · TabBar · StatusLight · InfoTip · DatePickerWithPresets · ui/ (shadcn)
+    ├── hooks/               interval · theme · route / useHashRoute (URL hash ↔ tab) · usePerspectiveNavigation · useBackGuard
     ├── lib/                 generic helpers (http fetcher + SWR opts · utils)
     ├── chart/               chart engine + chart-side pure compute, data-source-agnostic:
-    │                        multi-pane infra (paneChart.hooks/types + PaneChartView), core (types / aggregate / dates),
-    │                        indicators (EMA / Bollinger / MACD / RSI) · zigzag · palette · trendlines · bandFill · analysis
+    │                        core (types / aggregate / dates), indicators + indicatorDefs (EMA / Bollinger / MACD / RSI) ·
+    │                        palette · analysis · drawings (hit-testing) + primitives/ (lightweight-charts plugins: axis decor,
+    │                        band fill, day bands, drawings)
     ├── views/               business views reused across perspectives
     │   ├── regime/          /api/regime data hook + FundChart (SEC notes); REGIME_DOCS (ChartDoc per tab) from pages/*/docs
     │   ├── curve/           yield-curve snapshot panel (YieldCurve* + yieldCurve hooks); tenor history is a ChartDoc (pages/curveHistory)
@@ -142,12 +149,14 @@ src/
         ├── tabs.tsx         tab factories (asset/regime/curve) + TabDef / Perspective types
         ├── rates/           … + PolicyPathPanel
         ├── ai/              … + IndustryChainPanel + fundamentals (per-company ChartDoc)
-        ├── featured/        … + AttackDefensePanel (NOBL/QQQ ZigZag) + concentration ChartDoc
+        ├── featured/        attack-defense (NOBL/QQQ ZigZag, computed server-side) + concentration ChartDocs
         ├── editor/          chart editor (free-form composer)
+        ├── custom/          user-built perspectives / tabs (a column of charts, stored in localStorage)
+        ├── health/          data-health page (per-series late / stale / flat-filled check)
         └── options · credit · liquidity · sentiment · macro · oil · btc · japan · inflation · valuation
 ```
 
-Each view is a thin shell: **fetch model (data hook) → pure buildSpecs → shared pane infra**.
+Each tab is a **ChartDoc** (JSON) drawn by the read-only `DocChart` — the same renderer as the chart editor.
 "Add an indicator/tab/underlying" = add one entry to its domain source-of-truth
 (`pages/<perspective>/docs` / `pages/<perspective>/index` / `MARKET_CATALOG`), nothing else moves.
 
@@ -193,7 +202,7 @@ several horizontal tabs:
 |---|---|---|
 | 信用 Credit | 利差走势 (HY OAS + CDX HY / IG index CDS) · 评级利差 · 期限结构 · 杠杆 (US margin debt YoY + Japan margin-buying balance YoY) | FRED / ICE / DTCC / FINRA / JPX |
 | 流动性 Liquidity | net liquidity (WALCL−TGA−RRP, weekly, sampled on Wednesdays) · bank reserves (WRBWFRBL) · reverse repo · repo usage · repo stress (IORB−SOFR) | FRED |
-| 情绪 Sentiment | 波动率 (COR1M · VIXEQ · VIX · VXN · VX1−V3 term · RXM/SPX risk-reversal) · 情绪 (Fear&Greed · Cboe put/call ratios) · Gamma (Squeezemetrics dealer gamma exposure GEX vs S&P 500) | CBOE / CNN / Squeezemetrics |
+| 情绪 Sentiment | 波动率 (VIX · VXN · VIXEQ · VX1−VX3 / VIX−VIX3M term · VIX6M · SKEW · CFTC VIX futures positioning) · 情绪 (Fear&Greed · COR1M / COR3M · RXM/SPX risk-reversal · Cboe put/call ratios) · Gamma (Squeezemetrics dealer gamma exposure GEX vs S&P 500) | CBOE / CNN / Squeezemetrics |
 | 宏观 Macro | 美元 (DXY) · ISM 景气 (PMI + Prices) · 就业 (Chicago Fed CFLMI: separation rate, outflow rate, flow-consistent unemployment vs BLS U-3) | FRED / ISM / Chicago Fed |
 | 能源 Energy | 油市结构 (Strait of Hormuz daily transits · Brent−WTI · diesel/gasoline/3-2-1 crack) · 炼厂·库存 (开工率 + 馏分油收率 + 加工量/产量同比 + 表观需求同比 + 库存与出口的**季节 z**，判紧张来自需求还是供应) · 泵价·加价 (retail diesel/gasoline vs wholesale) | Yahoo / EIA / IMF PortWatch |
 | 利率 Rates | 收益曲线 · 期限走势 (+ 10Y−1Y / 30Y−10Y spread panes) · SOFR OIS · OIS 走势 · 加息定价 / 定价走势 (OIS-implied hikes + Kansas City Fed policy-rate skew) · 利率波动率 (MOVE) · 实际收益率 (TIPS 曲线) · 实际走势 · 长端分解 (5y5y 通胀远期 + 期限溢价(Kim-Wright vs NY Fed ACM 两模型并排) + A vs L 缺口(KW 预期短端 vs HLW r*+5y5y) + HLW r*) | FRED / Eris / NY Fed / Kansas City Fed / Yahoo |
@@ -206,6 +215,12 @@ several horizontal tabs:
 
 Series with a trailing distribution carry P5/P95 bands + a current-percentile badge, and
 shade extreme periods red (risk end) / green (opportunity end) per each series' direction.
+
+Below the data perspectives the rail has two tools — **图表编辑** (free-form chart editor; every fixed tab can be
+opened into it from its bottom-right corner) and **数据健康** (per-series freshness) — followed by any
+**user-built perspectives / tabs** (create, rename, delete in the UI; each tab is a column of charts edited full-screen,
+kept in the browser's localStorage). The current perspective / tab lives in the URL hash (`#/<perspective>/<tab>`),
+so a reload stays put and links can be bookmarked.
 
 ## License
 

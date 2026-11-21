@@ -50,7 +50,8 @@
 
 **关键差异**:**两个期权源(moomoo + Deribit)的链都是快照型**——25Δ 序列只能从今往后每个
 交易日攒一个点,拿不到历史(25Δ 行权价每天滚动,固定合约的历史 IV 无法重建该序列)。
-其余源都能回填全历史;Deribit 的 **DVOL**(加密版 VIX)是个例外,带历史可回填。
+其余源都能回填全历史;Deribit 的 **DVOL**(加密版 VIX)是个例外,带历史可回填。CBOE 延迟期权链(并行试跑中)同样是快照型;
+SPY 的 25Δ 改走 CBOE VIX 分解后**可以回填**(2022-09 起,见取数总览)。
 
 ### 依赖档位(选源时的主要成本项)
 
@@ -121,7 +122,7 @@
   再写库(`fetchers/snapshotArchive` + `jobs/cboeArchive` / `deribitArchive`,ICE / MOVE 在各自 job 里),已覆盖的「标的 | 交易日」本机不再抓;拉不到存档就照旧自己抓 —— **VIX 例外**:本机实抓前过 `jobs/cboeArchive` 的 `guardVixNightSession`,
   不在收盘后、夜盘前(`archiveUsable` 窗口)就不抓、记失败(整组 partial,存档写好的标的算成功),本机触发点都在窗口外,所以 VIX 实际只靠存档。
   也补本机关机 / 没网那几天(14 天内)。
-  ⏸ **切主源暂停**:2026-11-19 起这个接口被 Cloudflare 拦(不带 `Referer` 一律 403);**11-21 起本机(`fetchers/cboeOptions`)与存档 `fetch.sh` 都带 `Referer: https://www.cboe.com/`,试跑恢复**。切不切主源 11-23 定,见 `docs/options-cboe-switch.md` 开头。原待办:验收并切成主源,按该文档逐步做
+  ⏸ **切主源暂停**:2026-11-19 起这个接口被 Cloudflare 拦(不带 `Referer` 一律 403);**11-21 起本机(`fetchers/cboeOptions`)与存档 `fetch.sh` 都带 `Referer: https://www.cboe.com/`,试跑恢复**。已定要切主源(2026-11-21 定),最早约 11-27 验收通过后切,见 `docs/options-cboe-switch.md` 开头。原待办:验收并切成主源,按该文档逐步做
   (验收脚本 `bun run src/server/jobs/compareOptionsSources.ts`:VIX 看库里那天的行 `fetched_at` 是否落在 `archiveUsable` 窗口;USO / IBIT 有固定方向口径差,线放到 0.8)。
 - **put delta 为负、call delta 为正**(已用真实链核实)。25Δ 选取依赖这个符号约定。
 - **链/快照字段路径**(靠 debug dump 试出来的,非直觉):
@@ -132,7 +133,7 @@
   (实测 GLD 11/13 周度 25Δ call OI 13,12/18 月度 13800)。月度日由 `analytics/monthlyExpiry` 推算再按日查,
   因为月度间隔可达 35 天、而单次链查询跨度 ≤30 天;ETF = 第三个周五,**VIX = 次月第三个周五 −30 天的周三**
   (= VX 结算日,对 2018 起 114 份 VX 到期日:108 份吻合,6 份假日提前一天 → 查询窗口带上前一天)。
-  第二档复用第一档的现货;失败记进 failures → 整组 partial → daily 守卫当天重跑(快照型,漏一天补不回)。7 标的一轮约 40 秒(链 12 次、受 3.2s 闸门约束)。
+  第二档复用第一档的现货;失败记进 failures → 整组 partial → daily 守卫当天重跑(快照型,漏一天补不回)。6 标的一轮约 40 秒(链 11 次、受 3.2s 闸门约束;SPY 2026-11-20 起不抓)。
 - **请求可能永不返回**:qot 会话悬空时 SDK 的 promise 不 settle(2026-10-17 一个脚本挂了 5.5 小时)。
   `withConnection` 用 Proxy 给 ws 上所有大写开头的请求方法套 `REQUEST_TIMEOUT_MS`(25s)截止,
   超时 reject → finally 断开;直接调 SDK 请求时别绕过 `withConnection`。
@@ -173,7 +174,7 @@
 - **日线是 08:00 UTC 切的**(交割时刻;12h 线也是 08/20 点对齐),「D 日收盘」= D+1 08:00 的价,与 Yahoo / Glassnode / BRK 的 UTC 0 点口径最多差 6%。**所以 BTC 现货日 K 不用 Deribit**,全段走 Bitstamp(现货、原生 UTC 0 点、2012 起零缺口;见 `server/live/market`)。DVOL 日线本来就是 UTC 0 点,不受影响。
 - **现货价**走 `get_index_price?index_name=btc_usd`(ticker 里的 `underlying_price` 是该到期日远期)。
 - **DVOL**(加密版 VIX,带历史):`get_volatility_index_data?currency=BTC&...&resolution=43200`,
-  返回 OHLC。目前没接,要做加密波动率历史曲线时用它(对标 SKEW/VX 那种有历史的源)。
+  返回 OHLC。已接(`fetchers/deribitDvol`,`resolution=1D`,2021-03-24 起):BTC VRP 的隐含腿,读时现拉、不入库(`server/live/market`)。
 - **加密 24/7**,没有"收盘"概念。BTC 期权快照按**抓取时的 UTC 日期**打戳(`getTradingDate`,不跳周末),
   **不是** `lastClosedTradingDate()` —— 改成美股交易日会让周六 / 周日 / 周一早上三份都标周五、互相覆盖。
   ⚠️ 所以 BTC 与 IBIT 的 25Δ **同标签日不可直接比**:BTC 标 D 那份 ≈ IBIT 标 D−1(上一美股收盘日)那份;
@@ -254,6 +255,7 @@
 
 - **出图**:`bun run render-chart <doc.json> <out.png> [--interval 1W] [--theme dark] [--size 1400x800] [--from 2022-12-01]`(dev server 要开着;浏览器用本机装的 Google Chrome,没装要先装,或改脚本里的 channel)。doc.json 是编辑器「查看 JSON」那种 ChartDoc,出来的图同编辑器「导出图片」;序列 id 用注册表 id 或 `yh:<Yahoo 代码>`。要画图给人看时用它,别另起 matplotlib 重画(样式会和看板分家)。
 - **dev server 端口**:默认 API 3000 / 前端 5173,可在 `.env` 配 `API_PORT` / `WEB_PORT`(vite 代理、`render-chart` 都跟着读;前端 `strictPort`,被占直接报错)。多个 worktree 同时开时,各自 `.env` 错开端口。
+- **界面状态只在浏览器里**:地址栏 hash 记当前位置(内置 `#/<视角>/<tab>`、自建 `#/c/<视角>/<tab>[/<图 id>]`,见 `web/hooks/route.ts`;改 tab id 会让旧书签回默认页);自建 tab(`pages/custom`)、编辑器存档、画线工具偏好都存 localStorage(`mtv:*` 键),**不进库、不进 git**,换浏览器 / 清站点数据就没了。
 - 改完代码跑 `bun run check`(= typecheck + `bun test` + `bun run lint`)。lint 是 **Biome**(lint + format 二合一,
   `react-hooks/exhaustive-deps` 为 error;带 `--error-on-warnings`,有 warning 也算失败)。因 typescript-eslint 不支持项目用的 TS7,
   lint 用 Biome/oxlint 这类 Rust 工具(不依赖 typescript 包)。**不要自动 git commit**,等用户发话。

@@ -2,7 +2,7 @@
 
 > 状态:**⏸ 暂停**(2026-11-20 用户定)。CBOE 延迟期权接口 2026-11-19 起被 Cloudflare 拦(不带 `Referer: https://www.cboe.com/` 一律 403;同一天 GitHub 上多个项目同报,无官方说明),本机 `options_cboe` 和存档的 CBOE 部分都在失败。
 > **2026-11-21 用户定加 `Referer`**:本机 `fetchers/cboeOptions` 与存档 `fetch.sh` 都已带上,试跑恢复(Actions 上 7 个标的全通)。
-> 仍待定(11-23):切不切主源 —— `Referer` 是对方有意设的门槛,随时可能加码;加码后只剩放弃 CBOE 一条路(VIX 25Δ 没有来源;期权留 moomoo 在本机跑)。
+> 已定要切(2026-11-21 用户拍板,最早约 11-27 验收通过后)。风险照记:`Referer` 是对方有意设的门槛,随时可能加码;加码后只剩放弃 CBOE 一条路(VIX 25Δ 没有来源;期权留 moomoo 在本机跑)。
 > Yahoo 期权链不能替代:没有希腊值,收盘后 IV 是占位值、买卖价 / OI 全 0(2026-11-20 实测)。
 > 原计划:并行试跑(2026-11-14 起),满 5 个交易日后验收与切换,约 2~3 小时。
 > 背景与核对结论:`AGENTS.md` 的 moomoo 段、`docs/data-sources-candidates.md` §1.4。
@@ -12,7 +12,7 @@
 > ⚠️ **这是指引,不是逐字执行的脚本**:切换时对照实际状态做,切换当天的代码改动照常跑一轮 `code-review`。
 > **切换时再问用户定的两件事**:① 第 4 步停掉定时任务后要不要再 `VACUUM INTO` 备份一次(第 1 步到第 4 步之间若碰上触发点,新写入的不在第 1 步的备份里);
 > ② ~~VIX 夜盘~~ **已定(2026-11-17)**:实测工作日夜里文件跟着夜盘更新(见第 3 步「VIX 那项的决策」),用户选 **GitHub Actions 存档**;
-> 若到切换时 Actions 的 VIX 存档还没验收过,**其余 6 个先切**,VIX 等存档验收后再切(用户定)。
+> 若到切换时 Actions 的 VIX 存档还没验收过,**其余 5 个先切**(SPY 2026-11-20 起不抓,原为 6 个),VIX 等存档验收后再切(用户定)。
 
 ## 现在的样子
 
@@ -73,7 +73,7 @@ VIX 只有 11-17 / 11-19 是收盘后抓的(存档定时 11-19 才上);TLT 差 3
 **上面两条硬线拦不住它**。`prev_day_close` 也对不上周一最后成交(674 个里只 71 个相等),含义未定。
 → 用户选的不是下面两条,而是 **GitHub Actions 存档**(手机是 Pixel,快捷指令那条不成立):私有仓库 `RThong/market-snapshots`
 的 `fetch.sh` 在美东收盘后、夜盘前定时(见其 `snapshot.yml`)抓 7 个标的的链 + ICE CDS / CDX,只留 14 天;
-本机 `options_cboe` 先把存档写进库(`jobs/cboeArchive`,抓取时刻晚于交易日次日 00:15 UTC 的 VIX 不收),
+本机 `options_cboe` 先把存档写进库(`jobs/cboeArchive`,抓取时刻不在 `archiveUsable` 窗口的存档各标的一律不收),
 已覆盖的「标的 | 交易日」本机不再抓。验收脚本的 VIX 项已改成看 `fetched_at`(见上)。
 ✅ **2026-11-21 已补本机闸门**:存档没写上那天的 VIX 时,本机实抓前先过 `jobs/cboeArchive` 的 `guardVixNightSession` ——
 不在 `archiveUsable` 窗口(收盘后、夜盘前)就不抓 VIX、该标的记失败(整组 partial —— 存档写好的标的算进成功数,只缺 VIX 也是黄灯;当天后续触发点再试),其余标的照抓;
@@ -88,7 +88,7 @@ VIX 只有 11-17 / 11-19 是收盘后抓的(存档定时 11-19 才上);TLT 差 3
      背景:用户的 Mac 早上没网(手机热点不开),所以不能给 Mac 加早上的触发点;要实测锁屏时自动化会不会跑
   2. **用 `prev_day_close` 自算**:文件里每个合约带前一交易日收盘价,用它 + Black-76(远期由收盘价平价反推)自己反解 IV。
      11-13 实测该算法与 CBOE 给的 IV 差约 0.5pp;要先确认夜盘期间 `prev_day_close` 是刚结束那个常规时段的收盘价
-     (Black-76 要重新实现:`analytics/optionPricing.ts` 现只有美式二叉树;11-13 的验证记录见 `docs/data-sources-candidates.md` §1.4)
+     (当时 `analytics/optionPricing.ts` 只有美式二叉树;2026-11-21 起已有 Black-76 远期 delta `black76Delta`(Deribit 用),反解 IV 仍要另写;11-13 的验证记录见 `docs/data-sources-candidates.md` §1.4)
 
 ## 第 4 步:停掉 daily 定时任务(问用户)
 
@@ -144,14 +144,15 @@ SQL
 - VIX 夜盘闸门已有(`guardVixNightSession`,2026-11-21):`options` 分组改用 CBOE 时**照样套上**(连同存档写库 `ingestArchivedOptions`,去掉 `@cboe` 后缀)。
   别再按「最后成交 ≤ 16:15:59 + 价差」做守卫 —— 拦不住夜盘(见第 3 步实测)
 - 删除:`fetchers/moomooOptions.ts`、`moomooClient.ts`、`moomooHistoryKL.ts`(`Bar` 类型已于 2026-11-18 挪进 `bitstampBtcHistory`)、
-  `jobs/repairMoomooOptions.ts` + `analytics/optionPricing.ts`(一次性修复用,跑完即无用)、`jobs/compareOptionsSources.ts`(验收用)、以上各自的测试
+  `jobs/repairMoomooOptions.ts`(一次性修复用,跑完即无用)、`jobs/compareOptionsSources.ts`(验收用)、以上各自的测试;
+  ⚠️ `analytics/optionPricing.ts` **不能整个删**:2026-11-21 起 `fetchers/deribitOptions`(`black76Delta`)与 `analytics/fxImpliedVol`(`normCdf`)在用,只删美式二叉树那部分
 - 清理残留:`biome.jsonc` 里指向 moomoo 测试文件的 override;`shared/marketCatalog.ts` 的 `optionSource: 'moomoo'` 与 `config.ts` 的 `optionUnderlyings('moomoo')`(改成 `'cboe'`);
   `config.ts` / `analytics/tradingCalendar.ts` / `optionsSnapshot.ts` / `fetchers/optionsChain.ts` 里提到 moomoo 的注释;`package.json` 的 `job:daily:opend` 脚本(指向下一步要改名的脚本);
   `.env.example` 的 `MOOMOO_*` / `OPEND_CMD` 说明;本地 `DATA_SOURCES.md`(gitignore)里列的 moomoo fetcher;
   `AGENTS.md`「关键差异」段的「两个期权源(moomoo + Deribit)」;`docs/data-sources-candidates.md` 速查表第 6 行与 §1.4 的「备份 / 并行试跑中」改成已接
 - **全仓库搜残留要清零**:`grep -rni moomoo src scripts AGENTS.md .env.example`。允许保留:`storage/db.ts` 迁移里的默认值 `'moomoo'`、`web/chart` 里「对齐 moomoo App 口径」的注释。
-  ⚠️ 特别是 `shared/marketCatalog.ts`:`optionSource` 的类型联合里要**删掉** `'moomoo'`(只加 `'cboe'` 不删的话 typecheck 不报错,但 `cboeIvLegs()` 按 `'moomoo'` 过滤,
-  VRP 的隐含腿 VXN / GVZ / OVX / VXTLT 会悄悄消失)
+  ⚠️ 特别是 `shared/marketCatalog.ts`:`optionSource` 的类型联合里要**删掉** `'moomoo'`(只加 `'cboe'` 不删的话 typecheck 不报错,漏改的 `config.ts` `optionUnderlyings('moomoo')`
+  会悄悄返回空清单、期权一个都不抓;`cboeIvLegs()` 按 `!== 'deribit'` 过滤,不受影响)
 - `bun remove moomoo-api`(`bun audit` 剩的 protobufjs 漏洞随之消失;`AGENTS.md` 约定段那条删掉)
 - 删代码是用户定的(2026-11-21):CBOE 以后若加码拦死、要换回 moomoo,从 git 历史恢复(约 1 小时),中间漏的天补不回
 - 本地 `.env` 的 `MOOMOO_*`、`OPEND_CMD` 不再需要
@@ -179,5 +180,5 @@ SQL
 
 ## 第 8 步:收尾
 
-- `bun run check`;浏览器看期权页 7 个标的(VIX 那格从 11-13 起)、跑 `code-review`、提交
+- `bun run check`;浏览器看 6 个切换标的(期权页 QQQ / VIX / TLT / GLD / USO + BTC 视角的 IBIT;VIX 那格从 11-13 起)、跑 `code-review`、提交
 - 更新记忆 `options-data-source`;把本文件状态改成「已完成」或删掉

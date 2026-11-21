@@ -359,7 +359,7 @@ Oracle 2031 年到期那只对 5Y 美债的利差，与 ICE CDS 在 77 天里**�
 | 纽约联储消费者调查 SCE 1/3/5 年通胀预期 | `frbny-sce-data.xlsx`，读 `Inflation expectations` 表，表头第 4 行 | 2013-06~2026-10（密歇根 MICH 只到 2026-09）；最新 1y 3.91、3y 3.29、5y 3.0 | `fflate`（1.27MB，43 张表） | 5 年期那列起点更晚 |
 | 全球供应链压力 GSCPI | `newyorkfed.org/medialibrary/research/interactives/data/gscpi/gscpi_interactive_data.csv` | 338KB，1997-09~2026-10，最新 1.26 | 零 | 每一列是一个发布版本（表头是 Excel 序列号），取最后一列；缺值写 `#N/A`。官方「.xlsx」下载其实是 BIFF8，见 §4.6 |
 | 回购尾部压力 / 融资压力 | FRED `SOFR99`；`RIFSPPFAAD90NB − DTB3` | SOFR99 2018 起，2025-09 以来最高 4.68（2025-09-15） | 零 | 各加一行 |
-| VIX 期限结构两端 | CBOE `VIX9D`（2011 起）、`VIX1Y`（2007 起） | 都 200，更新到 11-12 | 零 | 各加一行 |
+| VIX 期限结构两端（✅ `VIX9D` 2026-11-21 已接：`vix9d` + 派生 `vix9dVix`，只进编辑器、不上固定面板；`VIX1Y` 未接） | CBOE `VIX9D`（2011 起）、`VIX1Y`（2007 起） | 都 200，更新到 11-12 | 零 | 各加一行 |
 | ❌ BTC 永续资金费率(2026-11-15 评估后不做:换 Binance U 本位 `BTCUSDT`(2019-09 起,日本 IP 可用)实做过一版又撤了。**2023 年后两端都没有择时价值**:7 日均线 < 0 之后 90 天 BTC 中位 −7.8%、原始值 < −0.01 之后 −9.5%(2019~2022 同条件是 +17.6%),2023 起 10 次 90 日新低当天费率几乎都是正的;> 0.1 之后 90 天 +3.6%,不如基准 +6.8%。换 3 日均线 / 原始值一样。参照站也说它是「同步指标、不预测方向」。改做了 BRK 的 MVRV / AVIV) | `deribit.com/api/v2/public/get_funding_rate_history?instrument_name=BTC-PERPETUAL&start_timestamp=&end_timestamp=` | 每小时一点，至少 2019-06 起；单次最多 744 行要翻页 | 零 | Deribit 是小交易所，代表性有限 |
 | 一级交易商美债分期限净头寸 | `markets.newyorkfed.org/api/pd/get/{PDPOSGSC-G7L11,G11L21,G21,PDPOSGS-B}.json` | 每周三时点，最新 2026-11-04（滞后 8 天），2013-04 起 | 零 | 11Y 以上两档 2022-01 才有（期限档重新划分过） |
 | VX 曲线每日校验探针 | `www.cboe.com/us/futures/market_statistics/settlement/csv?dt=YYYY-MM-DD` | 1.7KB；和库里 `VX:*` 精确到 4 位小数一致；旧日期（2025-06-02）只回表头 | 零 | 周度 VX 的值等于下个月度合约（占位数，别用）；同文件有 IBHY / IBIG 信用期货 |
@@ -561,7 +561,7 @@ TK99F0000206HCQ00000   ５年後
 | 3年後 | 2.3 | 2.2 | 2.4 | 2.5 | **2.6** |
 | 5年後 | 2.1 | 2.1 | 2.3 | 2.4 | **2.6** |
 
-**补的空白**：日本 BEI 造不出来（见 `AGENTS.md`「查过、确认没有的」），这是最接近的替代。
+**补的空白**：日本 BEI 造不出来（见 `AGENTS.md`「查过、确认没有的」），这是最接近的替代。（2026-11-21 起已有市场口径的 10Y BEI `jpBei10`，JSDA 价格倒推，见 AGENTS.md「JSDA + BB」行；这条调查仍是唯一的 1 / 5 年预期。）
 当前读数在讲一件事：**5 年後从 2.1 爬到 2.6，且长端涨得比短端快 = 长期通胀锚在上移。**
 
 ⚠️ **是调查不是市场定价** —— 无风险溢价、不可套利、季频、滞后。和 `t5yifr` 不同级，
@@ -611,7 +611,7 @@ DB 名对照在官方手册 `https://www.stat-search.boj.or.jp/info/api_manual.p
 普通事業債 / 社債有明确收益率列，**不涉及物価連動国債那个选券难题**。
 
 ⚠️ 里面的物価連動国債只有 10 只，且**是价格不是收益率**——想做日本 BEI 仍然要自己定价，见
-`AGENTS.md`「查过、确认没有的」。
+`AGENTS.md`「查过、确认没有的」。（✅ 2026-11-21 已自己定价接上 10Y 实际利率 / BEI，见 AGENTS.md「JSDA + BB」行；本条的信用利差部分仍不做。）
 
 ### ✅ 2.6 内閣府 景気動向指数 —— 已接（2026-11-15：`jpCiLeading` / `jpCiCoincident`，「日本 › 景气」，用 SheetJS 读长期系列 xlsx，见 `fetchers/cabinetCi`）
 
@@ -711,7 +711,7 @@ CI / DI 的**先行指数**，日本景气拐点的标准判据。
 - 财政部日报 DTS 的每日 TGA：96 个周三和 `WDTGAL` 全部一致；只多给周中的值，和「净流动性只取周三」的设计冲突
 - 财政部国债拍卖结果（fiscaldata）：没有发行前收益率（when-issued），算不出拍卖尾差；续发的期限标签不统一
 - 纽约联储 SOMA 持仓汇总：WALCL 已经覆盖
-- CBOE DSPX 离散度指数：和 √(VIXEQ² − VIX²) 相关 0.998（2018 起 2229 天），我们能自己算
+- CBOE DSPX 离散度指数：和 √(VIXEQ² − VIX²) 相关 0.998（2018 起 2229 天），我们能自己算（2026-11-21 仍顺手接了现成的 `dspx`，只进编辑器）
 - 克利夫兰联储通胀预期模型：`rates-decomposition-handoff.md` 已经讨论过（DKW 那段）
 - 堪萨斯城联储 FSI（月频，和 HY / VIX / MOVE 重复）、纽约联储 MCT 趋势通胀（月频，和 sticky CPI 同角色）
 
