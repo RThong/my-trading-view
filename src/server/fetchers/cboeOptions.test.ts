@@ -45,6 +45,35 @@ function client(data = CHAIN, now = '2026-11-14T03:00:00Z') {
 }
 
 describe('cboeOptions', () => {
+  it('VIX 第一档只挑月度(VIX 根),不挑周度 VIXW,也不卡 ±10 天窗口', async () => {
+    const vix = {
+      current_price: 35.89,
+      options: [
+        // 周度 12-23 离 11-20 + 30 天更近,但不要
+        opt('VIXW261223C00045000', { delta: 0.25, iv: 1.1 }),
+        opt('VIXW261223P00027000', { delta: -0.25, iv: 2.22 }),
+        opt('VIX261216C00045000', { delta: 0.25, iv: 1.6 }),
+        opt('VIX261216P00023000', { delta: -0.25, iv: 1.28 }),
+        // 假设同一天也挂了周度:不能混进 12-16 的链
+        opt('VIXW261216P00027000', { delta: -0.25, iv: 2.22 }),
+        // 月度 2027-01-20 在窗口外,也不要(更远)
+        opt('VIX270120C00045000', { delta: 0.25 }),
+      ],
+    };
+    const snap = await client(vix as never, '2026-11-21T00:20:00Z').c.fetchChain('.VIX', 30);
+    expect(snap.expirationDate).toBe('2026-12-16');
+    expect([...snap.calls, ...snap.puts].map((c) => c.contractSymbol)).toEqual([
+      'VIX261216C00045000',
+      'VIX261216P00023000',
+    ]);
+
+    // 只剩窗口外的月度时也照取(ETF 会报错)
+    const far = { current_price: 20, options: [opt('VIXW261223C00045000'), opt('VIX270120C00045000')] };
+    expect((await client(far as never, '2026-11-21T00:20:00Z').c.fetchChain('.VIX', 30)).expirationDate).toBe(
+      '2027-01-20',
+    );
+  });
+
   it('指数前加下划线', () => {
     expect(cboeSymbol('.VIX')).toBe('_VIX');
     expect(cboeSymbol('SPY')).toBe('SPY');

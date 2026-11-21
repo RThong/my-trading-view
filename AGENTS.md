@@ -113,6 +113,7 @@
   `cdn-api.cboe.com/api/global/delayed_quotes/options/{代码}.json`(免 key、无文档,指数前加 `_`),一个文件 = 全部到期日、
   带 IV / 希腊值 / OI / 全市场最优买卖价,6 个标的一轮约 5 秒、不用 OpenD。交易日取 QQQ 那份最后一笔成交的日期(原用 SPY,SPY 停抓后换)。
   与 moomoo 逐合约对比:不分红 ETF IV 差 ≤ 0.2pp、OI 全同。
+  ⚠️ **VIX 周度(根代码 `VIXW`)的 IV / delta 不能用**:没有同到期 VX 期货,CBOE 按错的远期算(2026-11-20 VIX 收 35.89 倒挂时,12-23 周度按平价反推远期 25.6,CBOE 却把 27 的 put 算成 Δ−0.25、IV 222%,skew 读成 +112;同日 12-16 月度与 VX 期货一致)→ VIX 第一档只挑月度、不卡 ±10 天窗口,链里也剔掉 VIXW(`fetchers/cboeOptions`)。
   ⚠️ **daily 触发点全落在 VIX 期权夜盘**:夜里这个文件的 VIX 报价 / IV 跟着夜盘走(最后成交仍停在 16:15 前,别拿成交时间判)。
   所以另有 **GitHub Actions 存档**(私有仓库 `RThong/market-snapshots`,`fetch.sh` 收盘后、夜盘前定时(⚠️ GitHub 自带定时在该仓库不触发或晚约 5 小时、已删,实际靠 cron-job.org 调 `workflow_dispatch`,token 2027-11-17 到期,见其 README「触发」)抓 7 个标的的链(其中 SPY 2026-11-20 起不再写库) + ICE CDS / CDX + MOVE(Yahoo chart 原文)+ Deribit BTC 期权链(周末只抓它),
   数据在 **`data` 分支**、每轮压成无历史提交强推、只留 14 天;`main` 只放脚本、只由人推):

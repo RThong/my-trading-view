@@ -42,7 +42,7 @@ export function cboeSymbol(u: string): string {
   return u.startsWith('.') ? `_${u.slice(1)}` : u;
 }
 
-// OCC 代码:根代码 + YYMMDD + C/P + 行权价 × 1000(8 位)。VIX 有 VIX / VIXW 两个根,同一到期日只会属于其中一个
+// OCC 代码:根代码 + YYMMDD + C/P + 行权价 × 1000(8 位)。VIX 有 VIX(月度)/ VIXW(周度)两个根,同一到期日通常只属于其中一个;VIXW 不用(见 fetchChain)
 const OCC = /^([A-Z]+?)(\d{6})([CP])(\d{8})$/;
 
 type Parsed = { expiry: string; type: 'C' | 'P'; contract: OptionContract };
@@ -96,8 +96,14 @@ export function lastTradeDay(data: CboeChain): string | null {
   );
 }
 
+/** VIX 的周度合约(根代码 VIXW):没有同到期的 VX 期货,CBOE 的 IV / delta 按错的远期算(见 fetchChain),一律不用。 */
+function isVixWeekly(p: Parsed): boolean {
+  return p.contract.contractSymbol.startsWith('VIXW');
+}
+
+/** 某个到期日的链;VIX 只取月度合约(万一同一天也挂了 VIXW,不混进来)。 */
 function snapshotOf(symbol: string, data: CboeChain, expiry: string): OptionChainSnapshot {
-  const rows = parseCboeChain(data).filter((p) => p.expiry === expiry);
+  const rows = parseCboeChain(data).filter((p) => p.expiry === expiry && !(symbol === '.VIX' && isVixWeekly(p)));
   if (!rows.length) throw new Error(`CBOE ${symbol}: 到期日 ${expiry} 没有合约`);
   return {
     underlyingSymbol: symbol,
@@ -148,11 +154,24 @@ export function createCboeOptionsClient(
       // 窗口按日历日期框(同 moomoo:begin / end 是日期,两端都含),再按时刻取最近的那个
       const begin = isoDay(now().getTime() + (targetDte - EXPIRY_WINDOW_DAYS) * DAY_MS);
       const end = isoDay(now().getTime() + (targetDte + EXPIRY_WINDOW_DAYS) * DAY_MS);
-      const expiries = [...new Set(parseCboeChain(data).map((p) => p.expiry))].filter(
-        (e) => e > today && e >= begin && e <= end,
-      );
+      // VIX 只挑月度(根代码 VIX,不要周度 VIXW),且不卡 ±10 天窗口(月度间隔可达 35 天,窗口里可能一个都没有)。
+      // 周度没有同到期的 VX 期货,CBOE 给的 IV / delta 按错的远期算:2026-11-20(VIX 收 35.89)12-23 周度按平价反推远期 25.6,
+      // CBOE 却把行权价 27 的 put 算成 Δ−0.25、IV 222%(实为价内),skew 读成 +112;同日 12-16 月度远期 27.5、delta 与 VX 期货一致
+      const vix = symbol === '.VIX';
+      const expiries = [
+        ...new Set(
+          parseCboeChain(data)
+            .filter((p) => !vix || !isVixWeekly(p))
+            .map((p) => p.expiry),
+        ),
+      ].filter((e) => e > today && (vix || (e >= begin && e <= end)));
       const best = firstBy(expiries, (e) => Math.abs(Date.parse(`${e}T16:00:00Z`) - target));
-      if (!best) throw new Error(`CBOE ${symbol}: 目标 ${targetDte} 天 ±${EXPIRY_WINDOW_DAYS} 天内没有到期日`);
+      if (!best)
+        throw new Error(
+          vix
+            ? `CBOE ${symbol}: 没有未到期的月度合约`
+            : `CBOE ${symbol}: 目标 ${targetDte} 天 ±${EXPIRY_WINDOW_DAYS} 天内没有到期日`,
+        );
 
       return snapshotOf(symbol, data, best);
     },
