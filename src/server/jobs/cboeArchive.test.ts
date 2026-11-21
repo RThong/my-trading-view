@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { migrate } from '../storage/db';
 import { archiveRuns } from '../fetchers/snapshotArchive';
-import { archiveUsable, ingestArchivedOptions } from './cboeArchive';
+import type { OptionsChainClient } from '../fetchers/optionsChain';
+import { archiveUsable, guardVixNightSession, ingestArchivedOptions } from './cboeArchive';
 
 function chain(root: string, lastTrade: string) {
   const opt = (option: string, delta: number) => ({
@@ -85,5 +86,31 @@ describe('cboeArchive', () => {
 
     // VIX 那份交易日是 11-12,而抓取时刻不在 11-12 的窗口里 → 不收
     expect(rowsOf(db)).toEqual([{ underlying: 'SPY', snapshot_date: '2026-11-13', put_iv: 20 }]);
+  });
+});
+
+describe('guardVixNightSession', () => {
+  const fetched: string[] = [];
+  const client: OptionsChainClient = {
+    fetchChain: async (u) => {
+      fetched.push(u);
+      return { underlyingSymbol: u, underlyingPrice: null, expirationDate: '2026-12-16', calls: [], puts: [] };
+    },
+    getTradingDate: async () => '2026-11-20',
+  };
+  const at = (iso: string) => guardVixNightSession(client, () => new Date(iso));
+
+  it('收盘后、夜盘前照抓 VIX', async () => {
+    fetched.length = 0;
+    await at('2026-11-20T22:07:00Z').fetchChain('.VIX', 30);
+    expect(fetched).toEqual(['.VIX']);
+  });
+
+  it('夜盘里(次日 JST 上午)不抓 VIX、抛错;其它标的照抓', async () => {
+    fetched.length = 0;
+    const g = at('2026-11-21T02:00:00Z');
+    await expect(g.fetchChain('.VIX', 30)).rejects.toThrow('不抓');
+    await g.fetchChain('QQQ', 30);
+    expect(fetched).toEqual(['QQQ']);
   });
 });

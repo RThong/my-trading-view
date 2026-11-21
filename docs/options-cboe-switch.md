@@ -7,7 +7,7 @@
 > 原计划:并行试跑(2026-11-14 起),满 5 个交易日后验收与切换,约 2~3 小时。
 > 背景与核对结论:`AGENTS.md` 的 moomoo 段、`docs/data-sources-candidates.md` §1.4。
 > 改本机定时任务(第 4、7 步)前先问用户。
-> ⚠️ **切换前先改代码**:VIX 缺可用存档时本机会把夜盘 VIX 当收盘写库,见第 3 步末「⚠️ 切主源前要补」(约 30 分钟,和切换同一天做、同一轮 code-review)。
+> ✅ ~~切换前先改代码~~ **2026-11-21 已补**:VIX 缺可用存档且本机不在收盘后、夜盘前时不抓(`jobs/cboeArchive` 的 `guardVixNightSession`),见第 3 步末。
 >
 > ⚠️ **这是指引,不是逐字执行的脚本**:切换时对照实际状态做,切换当天的代码改动照常跑一轮 `code-review`。
 > **切换时再问用户定的两件事**:① 第 4 步停掉定时任务后要不要再 `VACUUM INTO` 备份一次(第 1 步到第 4 步之间若碰上触发点,新写入的不在第 1 步的备份里);
@@ -18,7 +18,8 @@
 
 - daily 有两个期权分组:`options`(moomoo,主源,上图)和 `options_cboe`(CBOE,落库键带 `@cboe` 后缀,不上图)
 - moomoo 的两个已知问题:
-  - **VIX**:按现货算 IV(该用同到期远期),约八成快照抓在夜盘 → 历史基本不可用,切换时整段删
+  - **VIX**:按现货算 IV(该用同到期远期),约八成快照抓在夜盘 → 历史基本不可用(连走势也不行:11-13~19 五天 skew 在 −64 ~ +67 间跳,CBOE 稳定在 −53 ~ −63)。
+    切换时**不删、只隐藏**(2026-11-21 用户定):改名成 `.VIX@moomoo`,不上图、留在库里;**不能当 CBOE 断了时的备用**
   - **TLT**:不计分红 → skew 高约 2pp。2026-11-14 前的历史已重算(source `moomoo-recalc`);并行期间 moomoo 每天新写的 TLT 仍未修正
 - 两张期权表的主键**不含 source**(`option_snapshot_25delta`:标的 + 日期;`option_chain_raw`:标的 + 日期 + 到期日)
 
@@ -48,15 +49,22 @@ bun run src/server/jobs/compareOptionsSources.ts
 脚本看最近 5 个并行日(并行开始以来 SPY 日线有收盘的交易日 —— 取自独立的源,moomoo / CBOE 哪边整天缺都查得出),最后一行 ✅ 才继续:
 
 - 每个标的每个并行日都要有 CBOE 的行(CBOE 整轮失败的日子也会因此被查出来)
-- skew 差的**中位数**:QQQ / GLD / USO / IBIT ≤ 0.3pp(SPY 2026-11-20 起不抓链,不验),TLT ≤ 0.5pp(个别日子超线不卡;moomoo 个别天没数只标注,
+- skew 差的**中位数**:QQQ / GLD ≤ 0.3pp,USO / IBIT ≤ 0.8pp(见下「USO / IBIT 口径差」),TLT ≤ 0.5pp(SPY 2026-11-20 起不抓链,不验;个别日子超线不卡;moomoo 个别天没数只标注,
   某标的 5 天里 moomoo 一天都没有 = 无法对照,判失败)
-- VIX 不比差(moomoo 值不可用),只看 CBOE 的 VIX 原始链:最后成交 = 快照日当天且**不晚于美东 16:15:59**(晚了 = 混进夜盘)、
-  平值附近(|delta| 0.2~0.5)价差中位数 ≤ 30%
-  —— **重点**:daily 的触发点(JST 11/12/20/21/22)全部落在 VIX 期权夜盘(美东 20:15 ~ 次日 09:15),工作日的样本才说明问题
+- VIX 不比差(moomoo 值不可用),只看库里那天 `.VIX@cboe` 的 25Δ 行 **`fetched_at` 落在 `archiveUsable` 窗口**(交易日 21:30 ~ 次日 00:15 UTC,
+  即收盘后、夜盘前抓的,实际就是 Actions 存档写的);缺行判失败。2026-11-21 起脚本已按这个判
+  (原先看「最后成交 ≤ 16:15:59 + 平值价差 ≤ 30%」:夜里文件的报价 / IV 跟着夜盘走、成交时间却停在收盘前,拦不住,见下面实测)
 
 已知要盯的:**USO** 第一天(11-13)就差 −0.72pp。约 30 天那档 USO 翼上流动性薄(25Δ 附近有效报价的合约只有十几个),
 两边报价稍有不同就选到不同合约。若中位数持续超线:先看两边是不是选中了不同行权价;确认是流动性噪声而非口径问题时,
 可放宽 USO 的线并在这里记下理由(别为它改选取口径 —— 见记忆 options-25delta-scales-with-iv)。
+
+**USO / IBIT 口径差(2026-11-21 定)**:两边每天偏同一个方向 —— USO skew 差 −0.3~−0.7(CBOE 的 put IV 低 0.5~0.8)、
+IBIT +0.2~+0.6(CBOE 的 call IV 低 0.6~0.8),是两家 IV 算法(远期 / 借券成本等)不同,不是流动性噪声。
+用户定:**接受切换那天约 0.5pp 的台阶,旧历史不平移**,验收线放到 0.8 只用来挡「抓坏了」。
+
+**2026-11-21 首次跑**(窗口 11-16~20):全部 ❌,原因都已知 —— 11-20 CBOE 被拦整天缺(要等 5 个干净交易日,约 11-27 后);
+VIX 只有 11-17 / 11-19 是收盘后抓的(存档定时 11-19 才上);TLT 差 3.4(第 2 步还没跑);USO 0.58 / IBIT 0.43(见上)。
 
 **不通过**:哪项不达标就查哪项,别切。
 
@@ -66,13 +74,10 @@ bun run src/server/jobs/compareOptionsSources.ts
 → 用户选的不是下面两条,而是 **GitHub Actions 存档**(手机是 Pixel,快捷指令那条不成立):私有仓库 `RThong/market-snapshots`
 的 `fetch.sh` 在美东收盘后、夜盘前定时(见其 `snapshot.yml`)抓 7 个标的的链 + ICE CDS / CDX,只留 14 天;
 本机 `options_cboe` 先把存档写进库(`jobs/cboeArchive`,抓取时刻晚于交易日次日 00:15 UTC 的 VIX 不收),
-已覆盖的「标的 | 交易日」本机不再抓。⚠️ **`compareOptionsSources.ts` 的 VIX 两条硬线(最后成交 ≤ 16:15:59、价差 ≤ 30%)已失效**,
-夜盘报价照样判过,它的 ✅ 不能信 —— 切换当天先把这项改成「存档里有那天可用的 `_VIX.json.gz`」(抓取时刻在交易日 21:30 ~ 次日 00:15 UTC,
-见 `jobs/cboeArchive` 的 `archiveUsable`;同一天只认最早那份、本机不覆盖,所以有它 = 库里那天的 VIX 是存档写的),再跑验收。
-**切换时验收 VIX 改看:库里那天的 VIX 行是存档写的**(本机日志无「存档 … 失败」、
-`data/market-snapshots/data/` 里有那天能用的 `_VIX.json.gz`)。
-⚠️ **切主源前要补**:存档里没有那天能用的 VIX 时,本机 fallback 照样实抓、把夜盘 VIX 当收盘写进库(`daily.ts` 的 `runOptionsGroup` →
-`optionsSnapshot` 不拦)。试跑期带 `@cboe` 后缀、不上图,影响有限;切成主源前改成「VIX 缺可用存档且现在已进夜盘 → 记缺失 / partial,其余标的照抓」。
+已覆盖的「标的 | 交易日」本机不再抓。验收脚本的 VIX 项已改成看 `fetched_at`(见上)。
+✅ **2026-11-21 已补本机闸门**:存档没写上那天的 VIX 时,本机实抓前先过 `jobs/cboeArchive` 的 `guardVixNightSession` ——
+不在 `archiveUsable` 窗口(收盘后、夜盘前)就不抓 VIX、该标的记失败(整组 partial —— 存档写好的标的算进成功数,只缺 VIX 也是黄灯;当天后续触发点再试),其余标的照抓;
+`daily.ts` 的 `options_cboe` 组已套上。ponytail:周五晚到周日没有夜盘、文件仍是周五收盘,也一律拦(靠存档)。
 
 以下是原定的决策框架(用户 2026-11-14 定),留作背景 ——
 
@@ -99,10 +104,10 @@ launchctl print gui/$(id -u)/com.mtv.daily   # 应报「找不到服务」,确�
 ## 第 5 步:切数据
 
 ```
-bun run src/server/jobs/repairMoomooOptions.ts --write --drop-vix
+bun run src/server/jobs/repairMoomooOptions.ts --write
 ```
 
-删 moomoo 的 `.VIX` 25Δ 历史(并行期间 moomoo 若又写了 TLT,也一并重算)。
+并行期间 moomoo 若又写了 TLT,一并重算。**不加 `--drop-vix`**:moomoo 的 `.VIX` 历史改名隐藏(见下面 SQL 第一段),不删。
 
 再把 `@cboe` 行提升为正式名字(先删同标的同日的 moomoo 行再改名,否则撞主键;2026-11-14 已在内存库上验证过):
 
@@ -111,11 +116,14 @@ sqlite3 data/mtv.db <<'SQL'
 .bail on
 PRAGMA busy_timeout=30000;
 BEGIN;
-DELETE FROM option_snapshot_25delta AS m WHERE m.underlying NOT LIKE '%@cboe'
+-- moomoo 的 VIX 先整段改名隐藏(不上图、不删),下面提升 @cboe 时才不会和它撞主键 / 被当成要删的 moomoo 行
+UPDATE option_snapshot_25delta SET underlying = '.VIX@moomoo' WHERE underlying = '.VIX';
+UPDATE option_chain_raw SET underlying = '.VIX@moomoo' WHERE underlying = '.VIX';
+DELETE FROM option_snapshot_25delta AS m WHERE m.underlying NOT LIKE '%@%'
   AND EXISTS (SELECT 1 FROM option_snapshot_25delta c WHERE c.underlying = m.underlying || '@cboe' AND c.snapshot_date = m.snapshot_date);
 UPDATE option_snapshot_25delta SET underlying = replace(underlying, '@cboe', '') WHERE underlying LIKE '%@cboe';
 -- 原始链按「标的 + 日期」整天删(两边同一天选中的到期日可能不同,按到期日删会留下两份混在一起)
-DELETE FROM option_chain_raw AS m WHERE m.underlying NOT LIKE '%@cboe'
+DELETE FROM option_chain_raw AS m WHERE m.underlying NOT LIKE '%@%'
   AND EXISTS (SELECT 1 FROM option_chain_raw c WHERE c.underlying = m.underlying || '@cboe' AND c.snapshot_date = m.snapshot_date);
 UPDATE option_chain_raw SET underlying = replace(underlying, '@cboe', '') WHERE underlying LIKE '%@cboe';
 -- 并行分组下线后,它在 job_run 里的最后一条会一直挂在状态灯上
@@ -126,15 +134,15 @@ SQL
 
 (`.bail on`:任一句出错就停,不会把改了一半的提交掉;`busy_timeout`:com.mtv.crypto 那个定时任务没停,可能同时在写。)
 
-结果:并行日全部是 CBOE;更早的天 ETF 保留 moomoo(两边一致)、TLT 保留重算值;VIX 从 2026-11-13 起全是 CBOE。
-并行日 moomoo 的原始链只留在备份文件里;更早日子 moomoo 的原始链保留存档。
+结果:并行日全部是 CBOE;更早的天 ETF 保留 moomoo(两边一致)、TLT 保留重算值;VIX 从 2026-11-13 起全是 CBOE;moomoo 的 VIX 整段(含并行日)在 `.VIX@moomoo` 下(不上图)。
+并行日 moomoo 的 ETF 原始链只留在备份文件里(VIX 的在库里 `.VIX@moomoo` 下);更早日子 moomoo 的原始链保留存档。
 
 ## 第 6 步:切代码
 
 - `jobs/daily.ts`:`options` 分组改用 `createCboeOptionsClient()`、source `'cboe'`、不加后缀(`runOptionsGroup` 对 cboe 自动开 `strictTradingDate`);删掉 `options_cboe` 分组;
   删掉文件头为静音 moomoo-api SDK 输出写的那段
-- `fetchers/cboeOptions.ts`:给 `.VIX` 加一道**收盘报价守卫** —— 链里最后成交晚于交易日美东 16:15:59、或平值附近价差中位数 > 30% 就抛错。
-  只 VIX 失败、其余成功时整组记 partial(状态灯黄),当天后续触发点会重跑;不写库、不存夜盘数。写单测
+- VIX 夜盘闸门已有(`guardVixNightSession`,2026-11-21):`options` 分组改用 CBOE 时**照样套上**(连同存档写库 `ingestArchivedOptions`,去掉 `@cboe` 后缀)。
+  别再按「最后成交 ≤ 16:15:59 + 价差」做守卫 —— 拦不住夜盘(见第 3 步实测)
 - 删除:`fetchers/moomooOptions.ts`、`moomooClient.ts`、`moomooHistoryKL.ts`(`Bar` 类型已于 2026-11-18 挪进 `bitstampBtcHistory`)、
   `jobs/repairMoomooOptions.ts` + `analytics/optionPricing.ts`(一次性修复用,跑完即无用)、`jobs/compareOptionsSources.ts`(验收用)、以上各自的测试
 - 清理残留:`biome.jsonc` 里指向 moomoo 测试文件的 override;`shared/marketCatalog.ts` 的 `optionSource: 'moomoo'` 与 `config.ts` 的 `optionUnderlyings('moomoo')`(改成 `'cboe'`);
@@ -145,6 +153,7 @@ SQL
   ⚠️ 特别是 `shared/marketCatalog.ts`:`optionSource` 的类型联合里要**删掉** `'moomoo'`(只加 `'cboe'` 不删的话 typecheck 不报错,但 `cboeIvLegs()` 按 `'moomoo'` 过滤,
   VRP 的隐含腿 VXN / GVZ / OVX / VXTLT 会悄悄消失)
 - `bun remove moomoo-api`(`bun audit` 剩的 protobufjs 漏洞随之消失;`AGENTS.md` 约定段那条删掉)
+- 删代码是用户定的(2026-11-21):CBOE 以后若加码拦死、要换回 moomoo,从 git 历史恢复(约 1 小时),中间漏的天补不回
 - 本地 `.env` 的 `MOOMOO_*`、`OPEND_CMD` 不再需要
 - `AGENTS.md`:取数总览 moomoo 行换成 CBOE 期权;moomoo 踩坑段压成一段「已下线(2026-11)」,保留 VIX / TLT 两个坑的结论;删掉并行试跑那条待办
 

@@ -12,12 +12,13 @@ import { select25Delta } from './optionsSnapshot';
  *  · TLT:moomoo 不计分红 → call IV 偏低约 1pp、put 偏高约 1.3pp。按「快照日 → 到期日之间实际除息」折成期限内
  *    等效分红率,用存下的中间价按美式二叉树重算 IV / delta、重选 25Δ(2026-11-13 与 CBOE 同日对比:skew 0.30 对 0.38)。
  *  · VIX:moomoo 以 VIX 现货(而非同到期远期)为标的算 IV,且约八成快照抓在夜盘、报价空或极宽,只有 15/101 天
- *    能修(2026-11 经 Codex 独立复核同此结论)→ 整段删掉 moomoo 的 VIX 25Δ,改从 CBOE 重新积累。
+ *    能修(2026-11 经 Codex 独立复核同此结论)→ 本脚本不碰 VIX:切换那天按 docs/options-cboe-switch.md 第 5 步改名 `.VIX@moomoo` 隐藏、不删
+ *    (2026-11-21 用户定;原先的 --drop-vix 整段删已去掉)。
  * ⚠️ 切到 CBOE 主源之前,daily 的 moomoo 组每天还会写没计分红的 TLT(source='moomoo'),图上与修过的历史差约 2pp;
- *    切换那天跑 `--write --drop-vix` 会把这些天一并重算(本脚本读 moomoo / moomoo-recalc 两种)。
+ *    切换那天跑 `--write` 会把这些天一并重算(本脚本读 moomoo / moomoo-recalc 两种)。
  * 只碰 moomoo 写的行(source = moomoo / moomoo-recalc):切到 CBOE 主源后误跑也不会改掉 CBOE 的数据。
- * 默认只打印前后对比;加 --write 才写库(只改 TLT);VIX 整段删另加 --drop-vix(切到 CBOE 主源那天再用,免得图上空一周)。
- *   bun run src/server/jobs/repairMoomooOptions.ts [--write [--drop-vix]]
+ * 默认只打印前后对比;加 --write 才写库(只改 TLT)。
+ *   bun run src/server/jobs/repairMoomooOptions.ts [--write]
  */
 
 const DAY_MS = 86_400_000;
@@ -149,7 +150,7 @@ async function tltDividends() {
 
 type Old = { snapshot_date: string; call_iv: number; put_iv: number; skew: number };
 
-export async function repairMoomooOptions(db: Database, write: boolean, dropVix = false) {
+export async function repairMoomooOptions(db: Database, write: boolean) {
   const divs = await tltDividends();
   type Outcome =
     | { kind: 'update'; u: string; date: string; c: number; p: number; s: number; line: string }
@@ -204,14 +205,6 @@ export async function repairMoomooOptions(db: Database, write: boolean, dropVix 
   });
   const updates = outcomes.filter((x) => x.kind === 'update');
   const deletes = outcomes.filter((x) => x.kind === 'delete');
-  const vixRows = (
-    db
-      .query(`SELECT COUNT(*) n FROM option_snapshot_25delta WHERE underlying = '.VIX' AND source = 'moomoo'`)
-      .get() as {
-      n: number;
-    }
-  ).n;
-
   if (write) {
     db.transaction(() => {
       const up = db.query(
@@ -227,18 +220,13 @@ export async function repairMoomooOptions(db: Database, write: boolean, dropVix 
       deletes.forEach((x) => {
         del.run({ $u: x.u, $d: x.date });
       });
-      // VIX 整段删(只删 moomoo 写的;并行试跑的 `.VIX@cboe` 不动)
-      if (dropVix) db.run(`DELETE FROM option_snapshot_25delta WHERE underlying = '.VIX' AND source = 'moomoo'`);
     })();
   }
 
   return {
-    lines: [
-      ...outcomes.map((x) => x.line),
-      `.VIX moomoo 25Δ 历史 ${vixRows} 天 → ${dropVix ? '整段删' : '暂不动(加 --drop-vix 才删)'}`,
-    ],
+    lines: outcomes.map((x) => x.line),
     updated: updates.length,
-    deleted: deletes.length + (dropVix ? vixRows : 0),
+    deleted: deletes.length,
   };
 }
 
@@ -246,7 +234,7 @@ if (import.meta.main) {
   const write = process.argv.includes('--write');
   const db = openDb();
   migrate(db);
-  const r = await repairMoomooOptions(db, write, process.argv.includes('--drop-vix'));
+  const r = await repairMoomooOptions(db, write);
   db.close();
   r.lines.forEach((l) => {
     console.log(l);

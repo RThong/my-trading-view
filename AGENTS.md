@@ -104,11 +104,11 @@
 - **IV 是百分数**:moomoo 返回 `19.296` 表示 19.296%,入库前 ÷100 归一化成小数。
 - ⚠️ **VIX 期权的 IV 不可用**(2026-11 查实,Codex 独立复核同结论):moomoo 以 **VIX 现货**为标的算 IV(正确口径是同到期 VX 远期 + Black-76,
   CBOE 即如此),远期偏离现货时 put IV 严重偏低(10-15:行权价 18 的 put moomoo 20.6%、按远期 77.5%);且 daily 触发点大多落在
-  VIX 期权夜盘,101 天里只有 15 天 25Δ 附近有正常报价。→ VIX 的 25Δ 改用 CBOE(见下条),moomoo 的 `.VIX` 历史在切换那天整段删
-  (`bun run src/server/jobs/repairMoomooOptions.ts --write --drop-vix`)。
+  VIX 期权夜盘,101 天里只有 15 天 25Δ 附近有正常报价。→ VIX 的 25Δ 改用 CBOE(见下条),moomoo 的 `.VIX` 历史切换那天**改名 `.VIX@moomoo` 隐藏、不删**(2026-11-21 用户定;
+  连走势也不可用:11-13~19 五天 skew 在 −64 ~ +67 间跳、CBOE 稳在 −53 ~ −63,不能当 CBOE 断了时的备用),见 `docs/options-cboe-switch.md` 第 5 步。
 - ⚠️ **不计分红**:TLT(年化约 4~5%,每月除息)call IV 偏低约 1pp、put 偏高约 1.3pp,skew 被系统性高估约 2pp。
   历史已按「期限内实际除息」用美式二叉树重算(`jobs/repairMoomooOptions`,source 标 `moomoo-recalc`,2026-11-14 已改 99 天)。
-  ⚠️ 切换前 moomoo 每天新写的 TLT 仍没计分红(图上差约 2pp 的台阶),切换那天的 `--write --drop-vix` 会一并重算。
+  ⚠️ 切换前 moomoo 每天新写的 TLT 仍没计分红(图上差约 2pp 的台阶),切换那天的 `repairMoomooOptions --write` 会一并重算。
 - **CBOE 延迟期权链在并行试跑**(daily `options_cboe` 分组,落库键带 `@cboe` 后缀、不上图;`fetchers/cboeOptions`):
   `cdn-api.cboe.com/api/global/delayed_quotes/options/{代码}.json`(免 key、无文档,指数前加 `_`),一个文件 = 全部到期日、
   带 IV / 希腊值 / OI / 全市场最优买卖价,6 个标的一轮约 5 秒、不用 OpenD。交易日取 QQQ 那份最后一笔成交的日期(原用 SPY,SPY 停抓后换)。
@@ -117,10 +117,11 @@
   所以另有 **GitHub Actions 存档**(私有仓库 `RThong/market-snapshots`,`fetch.sh` 收盘后、夜盘前定时(⚠️ GitHub 自带定时在该仓库不触发或晚约 5 小时、已删,实际靠 cron-job.org 调 `workflow_dispatch`,token 2027-11-17 到期,见其 README「触发」)抓 7 个标的的链(其中 SPY 2026-11-20 起不再写库) + ICE CDS / CDX + MOVE(Yahoo chart 原文)+ Deribit BTC 期权链(周末只抓它),
   数据在 **`data` 分支**、每轮压成无历史提交强推、只留 14 天;`main` 只放脚本、只由人推):
   本机 `options_cboe` / `ice_cds` / `move` / `options_crypto` 先 `git fetch` 只拉 `data` 分支、浅克隆到 `data/market-snapshots/`(gitignored,里面没有脚本;改 `fetch.sh` 另克隆 `main`)
-  再写库(`fetchers/snapshotArchive` + `jobs/cboeArchive` / `deribitArchive`,ICE / MOVE 在各自 job 里),已覆盖的「标的 | 交易日」本机不再抓;拉不到存档就照旧自己抓。
+  再写库(`fetchers/snapshotArchive` + `jobs/cboeArchive` / `deribitArchive`,ICE / MOVE 在各自 job 里),已覆盖的「标的 | 交易日」本机不再抓;拉不到存档就照旧自己抓 —— **VIX 例外**:本机实抓前过 `jobs/cboeArchive` 的 `guardVixNightSession`,
+  不在收盘后、夜盘前(`archiveUsable` 窗口)就不抓、记失败(整组 partial,存档写好的标的算成功),本机触发点都在窗口外,所以 VIX 实际只靠存档。
   也补本机关机 / 没网那几天(14 天内)。
   ⏸ **切主源暂停**:2026-11-19 起这个接口被 Cloudflare 拦(不带 `Referer` 一律 403);**11-21 起本机(`fetchers/cboeOptions`)与存档 `fetch.sh` 都带 `Referer: https://www.cboe.com/`,试跑恢复**。切不切主源 11-23 定,见 `docs/options-cboe-switch.md` 开头。原待办:验收并切成主源,按该文档逐步做
-  (验收脚本 `bun run src/server/jobs/compareOptionsSources.ts`;重点看工作日夜里 VIX 是否仍是收盘报价、USO 偏差)。
+  (验收脚本 `bun run src/server/jobs/compareOptionsSources.ts`:VIX 看库里那天的行 `fetched_at` 是否落在 `archiveUsable` 窗口;USO / IBIT 有固定方向口径差,线放到 0.8)。
 - **put delta 为负、call delta 为正**(已用真实链核实)。25Δ 选取依赖这个符号约定。
 - **链/快照字段路径**(靠 debug dump 试出来的,非直觉):
   - 静态链:`o.call.basic.security.code`、`o.call.optionExData.strikePrice`

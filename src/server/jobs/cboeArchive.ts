@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite';
 import { cboeSymbol, createCboeOptionsClient, lastTradeDay } from '../fetchers/cboeOptions';
+import type { OptionsChainClient } from '../fetchers/optionsChain';
 import { readArchived, type ArchiveRun } from '../fetchers/snapshotArchive';
 import { runOptionsSnapshot } from './optionsSnapshot';
 
@@ -73,4 +74,24 @@ export async function ingestArchivedOptions(
       if (failures.length) console.warn(`存档 ${run.dir}:${failures.join('; ')}`);
     }, Promise.resolve());
   }
+}
+
+/**
+ * 本机实抓 CBOE 时给 VIX 加的闸:只在「收盘后、夜盘前」那段(同 archiveUsable 的窗口)才抓,否则抛错 → 这个标的记失败、整组 partial,
+ * 当天后续触发点再试,其余标的照抓。走到实抓说明存档没写上那天(已覆盖的标的 runOptionsSnapshot 根本不会请求);
+ * 本机触发点全落在 VIX 期权夜盘,夜里文件里的 VIX 报价 / IV 跟着夜盘走,不能当收盘写库。
+ * ponytail: 周五晚上到周日没有夜盘、文件仍是周五收盘,这里也一律拦(要靠存档);存档常漏周五再按交易所日历放开。
+ */
+export function guardVixNightSession(client: OptionsChainClient, now = () => new Date()): OptionsChainClient {
+  return {
+    ...client,
+    async fetchChain(underlying, targetDte) {
+      if (underlying === '.VIX') {
+        const date = await client.getTradingDate?.();
+        if (!date || !archiveUsable(date, now()))
+          throw new Error(`存档里没有 ${date} 收盘后的 VIX,本机现在不在收盘后、夜盘前,不抓(夜盘报价不能当收盘)`);
+      }
+      return client.fetchChain(underlying, targetDte);
+    },
+  };
 }

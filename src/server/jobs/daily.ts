@@ -20,7 +20,7 @@ import { createCboeOptionsClient } from '../fetchers/cboeOptions';
 import { updateVxTermStructure } from './vxTermStructure';
 import { updateErisSnapshot } from './erisSnapshot';
 import { updateIceCds, ingestArchivedIce } from './iceCdsSnapshot';
-import { ingestArchivedOptions } from './cboeArchive';
+import { guardVixNightSession, ingestArchivedOptions } from './cboeArchive';
 import { ingestArchivedDeribit } from './deribitArchive';
 import { syncedArchiveRuns, type ArchiveRun } from '../fetchers/snapshotArchive';
 import { updateDtccCds, type DtccCdsResult } from './dtccCdsSnapshot';
@@ -113,7 +113,11 @@ async function runOptionsGroup(
     });
     // CBOE 的交易日来自文件里的成交时间,取不到就整轮失败,不回退本地推算(不认假日)
     const strictTradingDate = source === 'cboe';
-    const { rows, failures } = await runOptionsSnapshot({
+    const {
+      rows,
+      failures,
+      covered: archived,
+    } = await runOptionsSnapshot({
       db,
       source,
       underlyings,
@@ -122,7 +126,8 @@ async function runOptionsGroup(
       strictTradingDate,
       covered: done,
     });
-    return threeState(rows.length, rows.length, failures); // rows==0 即无成功 → failed
+    // 存档已写的标的也算成功:否则存档覆盖了其余全部、本机只剩被夜盘闸门拦下的 VIX 时会误判全败(红灯),实际只缺 VIX(黄灯)
+    return threeState(rows.length, rows.length + archived, failures);
   });
 }
 
@@ -141,7 +146,7 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       'options_cboe',
       'cboe',
       OPTIONS_UNDERLYINGS,
-      opts.cboeOptionsClient,
+      guardVixNightSession(opts.cboeOptionsClient),
       key,
       // async:runs() 同步抛的错也变成 rejected,由 runOptionsGroup 的 catch 兜住,不挡本机自己抓
       runs && (async () => ingestArchivedOptions(opts.db, runs(), OPTIONS_UNDERLYINGS, key)),

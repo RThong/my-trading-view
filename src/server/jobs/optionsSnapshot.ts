@@ -73,6 +73,8 @@ export type OptionsSnapshotResult = {
   rows: Options25DeltaRow[];
   /** 失败的标的,形如 'SPY: <原因>' / 'GLD 第二档: <原因>';由上层 job 决定记为 partial 还是 failed。 */
   failures: string[];
+  /** 这轮因存档已写(covered)而跳过、没实抓的标的数:上层算成功数时要算进去,否则只剩一个标的且它失败时会误判全败 */
+  covered: number;
 };
 
 // 第二档到期日的最小 DTE:第一个 ≥60 天的月度,DTE 落在 60~95。
@@ -89,7 +91,11 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
     snapshotDate = d ?? lastClosedTradingDate();
   } catch (err) {
     if (opts.strictTradingDate)
-      return { rows: [], failures: opts.underlyings.map((u) => `${u}: 取交易日失败(${(err as Error).message})`) };
+      return {
+        rows: [],
+        failures: opts.underlyings.map((u) => `${u}: 取交易日失败(${(err as Error).message})`),
+        covered: 0,
+      };
     snapshotDate = lastClosedTradingDate();
   }
   const rows: Options25DeltaRow[] = [];
@@ -110,7 +116,8 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
 
   // 每个标的独立处理,成功一个就立刻落库:某个标的失败(抓取出错、超时、缺 delta 等)只记下来,
   // 不影响其它标的;也不会因为后面的标的卡住 / 进程被杀,把前面已拿到的数据一起丢掉(快照型补不回来)。
-  for (const u of opts.underlyings.filter((x) => !opts.covered?.has(`${key(x)}|${snapshotDate}`))) {
+  const todo = opts.underlyings.filter((x) => !opts.covered?.has(`${key(x)}|${snapshotDate}`));
+  for (const u of todo) {
     try {
       const chain = await opts.client.fetchChain(u, TARGET_DTE);
       const sel = select25Delta(chain);
@@ -146,7 +153,7 @@ export async function runOptionsSnapshot(opts: RunOpts): Promise<OptionsSnapshot
 
   // 成功的行已逐个落库;失败的标的一并回传,由上层 job 据此记 success/partial/failed
   // (与 quotes/macro/cboe 分组的三态一致),不让个别标的拖垮整批。
-  return { rows, failures };
+  return { rows, failures, covered: opts.underlyings.length - todo.length };
 }
 
 export { TARGET_DTE };

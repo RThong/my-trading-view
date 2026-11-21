@@ -1,9 +1,8 @@
 import type { Database } from 'bun:sqlite';
-import { gunzipSync } from 'node:zlib';
 import { openDb, migrate } from '../storage/db';
 import { closedBars } from '../live/market';
 import { OPTIONS_UNDERLYINGS } from '../config';
-import type { OptionContract } from '../fetchers/optionsChain';
+import { archiveUsable } from './cboeArchive';
 
 /**
  * 切换 CBOE 主源前的验收(见 docs/options-cboe-switch.md)。只读。
@@ -14,20 +13,17 @@ import type { OptionContract } from '../fetchers/optionsChain';
  *  · 每天都要有 CBOE 的行(缺一天 = ❌,抓取有问题)
  *  · ETF / TLT:skew 与 moomoo 差的**中位数**在线内(个别日子超线不卡 —— 翼上流动性薄的标的单日会跳);
  *    moomoo 个别天没数只标注;窗口里一天都对照不上 = 无法验收,判失败
- *  · VIX:moomoo 的值本身不可用,不比差;只看 CBOE 的 VIX 原始链是不是常规时段收盘报价
+ *  · VIX:moomoo 的值本身不可用,不比差;只看库里那天的 VIX 是不是收盘后、夜盘前抓的(fetched_at 落在 archiveUsable 窗口,
+ *    即 Actions 存档写的)。原先看「最后成交 ≤ 16:15:59 + 价差」:夜里文件的报价 / IV 跟着夜盘走、成交时间却停在收盘前,拦不住(2026-11-17 实测)
  */
 
 const WINDOW = 5;
 // skew 差中位数的验收线(pp):不分红 ETF 两边口径一致;TLT 为 moomoo 按分红重算后的残差
-// (所以验收前要先跑一次 repairMoomooOptions --write,把并行期间 moomoo 新写的 TLT 也重算掉,见清单)
-const LIMIT: Record<string, number> = { TLT: 0.5 };
+// (所以验收前要先跑一次 repairMoomooOptions --write,把并行期间 moomoo 新写的 TLT 也重算掉,见清单)。
+// USO / IBIT 两边有固定方向的口径差(11-13~19 每天:USO −0.3~−0.7、CBOE put IV 低;IBIT +0.2~+0.6、CBOE call IV 低),
+// 不是噪声;2026-11-21 用户定接受切换那天约 0.5pp 的台阶,线放到 0.8 只挡「抓坏了」
+const LIMIT: Record<string, number> = { TLT: 0.5, USO: 0.8, IBIT: 0.8 };
 const DEFAULT_LIMIT = 0.3;
-// VIX 期权常规时段 16:15 收盘;晚于此的成交属于夜盘(20:15 起)
-const VIX_CLOSE = '16:15:59';
-// 平值附近 = |delta| 在这个区间(随 VIX 点位移动,不写死行权价);收盘时价差中位数约 5%,夜盘常比价格还宽
-const NEAR_DELTA = [0.2, 0.5] as const;
-const MAX_REL_SPREAD = 0.3;
-
 type Row = { underlying: string; snapshot_date: string; skew: number };
 
 function median(v: number[]): number | undefined {
@@ -37,31 +33,12 @@ function median(v: number[]): number | undefined {
 
 function vixCheck(db: Database, date: string): { ok: boolean; line: string } {
   const r = db
-    .query(
-      `SELECT chain_json_gz g FROM option_chain_raw WHERE underlying = '.VIX@cboe' AND snapshot_date = ?
-       ORDER BY expiry LIMIT 1`,
-    )
-    .get(date) as { g: Uint8Array } | null;
-  if (!r) return { ok: false, line: `  .VIX  ${date} 没有 CBOE 原始链 ❌` };
+    .query(`SELECT fetched_at f FROM option_snapshot_25delta WHERE underlying = '.VIX@cboe' AND snapshot_date = ?`)
+    .get(date) as { f: string } | null;
+  if (!r) return { ok: false, line: `  .VIX  ${date} 没有 CBOE 25Δ ❌` };
 
-  const j = JSON.parse(gunzipSync(r.g).toString()) as { calls: OptionContract[]; puts: OptionContract[] };
-  const all = [...j.calls, ...j.puts];
-  const near = all.filter((c) => Math.abs(c.delta ?? 0) >= NEAR_DELTA[0] && Math.abs(c.delta ?? 0) <= NEAR_DELTA[1]);
-  const spread = median(
-    near.filter((c) => (c.bid ?? 0) > 0 && (c.ask ?? 0) > 0).map((c) => (c.ask! - c.bid!) / ((c.ask! + c.bid!) / 2)),
-  );
-  const last =
-    all
-      .map((c) => c.lastTradeDate ?? '')
-      .sort()
-      .at(-1) ?? '';
-  // 最后成交必须是快照日当天、且不晚于 16:15:59(美东,文件里不带时区)—— 晚了说明混进了夜盘
-  const ok = last.startsWith(date) && last.slice(11) <= VIX_CLOSE && spread !== undefined && spread <= MAX_REL_SPREAD;
-
-  return {
-    ok,
-    line: `  .VIX  ${date} 最后成交 ${last || '无'} | 平值附近 ${near.length} 个、价差中位 ${spread?.toFixed(3) ?? '—'} ${ok ? '✅' : '❌'}`,
-  };
+  const ok = archiveUsable(date, new Date(r.f));
+  return { ok, line: `  .VIX  ${date} 抓于 ${r.f}${ok ? ' ✅' : '(不在收盘后、夜盘前)❌'}` };
 }
 
 /** spyDays:SPY 已收盘的交易日(升序),由调用方现拉传入,本函数只读库。 */
@@ -84,7 +61,10 @@ export function compareOptionsSources(db: Database, spyDays: string[]): { lines:
       const ok = !missing.length && checks.every((c) => c.ok);
       return {
         ok,
-        lines: [`.VIX  只看报价(缺 CBOE 25Δ ${missing.length} 天)${ok ? ' ✅' : ' ❌'}`, ...checks.map((c) => c.line)],
+        lines: [
+          `.VIX  只看抓取时刻(缺 CBOE 25Δ ${missing.length} 天)${ok ? ' ✅' : ' ❌'}`,
+          ...checks.map((c) => c.line),
+        ],
       };
     }
 

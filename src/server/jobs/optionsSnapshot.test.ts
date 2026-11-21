@@ -312,4 +312,28 @@ describe('runOptionsSnapshot', () => {
     expect(getOptions25Delta(db, '.VIX', 7)).toHaveLength(0);
     expect(db.query(`SELECT 1 FROM option_chain_raw WHERE underlying = '.VIX'`).all()).toHaveLength(0);
   });
+
+  test('存档已写(covered)的标的不实抓,并回报跳过了几个(上层据此把只缺 VIX 记 partial 而不是 failed)', async () => {
+    const fetched: string[] = [];
+    const mock: OptionsChainClient = {
+      fetchChain: async (u) => {
+        fetched.push(u);
+        throw new Error('夜盘,不抓');
+      },
+      getTradingDate: async () => '2026-11-20',
+    };
+
+    const r = await runOptionsSnapshot({
+      db,
+      source: 'cboe',
+      underlyings: ['QQQ', 'TLT', '.VIX'],
+      client: mock,
+      covered: new Set(['QQQ|2026-11-20', 'TLT|2026-11-20', 'QQQ|2026-11-19']),
+    });
+
+    expect(fetched).toEqual(['.VIX']);
+    expect(r.covered).toBe(2);
+    expect(r.rows).toHaveLength(0);
+    expect(r.failures).toHaveLength(1);
+  });
 });
