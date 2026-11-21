@@ -187,6 +187,10 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     // 2161 日)两者相关 0.876、**9.5% 的交易日符号相反**,互相替代会读反。
     vix3m: cboeSeries('VIX3M'),
     vix6m: cboeSeries('VIX6M'),
+    // 9 天恒定期限即期隐含波动率(源 2011 起),VIX9D / VIX 看最近一周的事件风险是否压过一个月
+    vix9d: cboeSeries('VIX9D'),
+    // Cboe 标普 500 离散度指数(成分股隐含波动率 vs 指数隐含波动率的差,源 2014 起,只有收盘)
+    dspx: cboeSeries('DSPX'),
     // VIX(即期期限结构价差的近端腿,也直接对外发 vix)/ VXN / SKEW:原先由 vrp_inputs 组写库,
     // 2026-11-17 起改现拉,与 /api/vrp 共用 live/market 的缓存(与库里逐日相等)
     vixSpot: track(['vix', 'vixSpot'], volIndex('VIX', FRESH)),
@@ -512,6 +516,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     vix: 'vixSpot',
     vxn: 'vxn',
     skew: 'skew',
+    vix9d: 'vix9d',
+    dspx: 'dspx',
   };
   // 空数组归 unavailable 由 put 统一兜(见其注释),这里直接传。
   // Object.entries 会把 key 拓宽回 string,这里断言回来 —— 真正的校验发生在上面的对象字面量。
@@ -791,6 +797,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   put('corTermSpread', subtractAt(raw.cor3m ?? [], raw.cor1m ?? []));
   // RXM(Cboe 风险逆转指数:买 25Δ call / 卖 25Δ put 滚动策略)/ SPX:该策略相对 SPX 的累计表现比。
   put('rxmSpx', raw.rxm && raw.spx ? divideAligned(raw.rxm, raw.spx) : undefined);
+  // 即期期限结构的两段比值:>1 = 近端比远端贵(倒挂)。腿都是 CBOE 现拉、同日内连接
+  put('vix9dVix', raw.vix9d && raw.vixSpot ? divideAligned(raw.vix9d, raw.vixSpot) : undefined);
+  put('vixVix3m', raw.vixSpot && raw.vix3m ? divideAligned(raw.vixSpot, raw.vix3m) : undefined);
 
   // 油市结构(物理紧张):Brent−WTI 海运 vs 内陆;柴油裂解 = ULSD×42 − WTI(HO 单位 $/gal→$/bbl)。
   // 交集相减(同裂解,见 oilCracks):Brent 在 2023-11-23 感恩节有行、WTI 无,前向填充会造假点

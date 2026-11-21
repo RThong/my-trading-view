@@ -108,6 +108,8 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   corTermSpread: daily('波动率', '隐含相关性期限结构 COR3M − COR1M', 'pp', ['相关性']),
   vxTermSpread: daily('波动率', 'VX1 − VX3 期货期限结构', undefined, ['期限结构']),
   vixSpotTerm: daily('波动率', 'VIX − VIX3M 即期期限结构', undefined, ['期限结构']),
+  vix9dVix: daily('波动率', 'VIX9D / VIX 即期期限结构', undefined, ['期限结构']),
+  vixVix3m: daily('波动率', 'VIX / VIX3M 即期期限结构', undefined, ['期限结构']),
 
   // ── 利率
   dgs10: daily('利率', '美债 10Y', '%', ['us10y', '国债']),
@@ -449,6 +451,8 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   // ── 派生量的原始腿(前端 calc 现算差 / 比值用;以前只在服务端内部用)
   iorb: { ...daily('利率', 'IORB 准备金利率', '%', ['联储', 'fed']), weekends: true },
   vix3m: daily('波动率', 'VIX3M 3 个月隐含波动率'),
+  vix9d: daily('波动率', 'VIX9D 9 天隐含波动率'),
+  dspx: daily('波动率', 'DSPX 标普 500 离散度', undefined, ['离散度', 'dispersion']),
   // 与 vix 同值(都是 CBOE 收盘),但现拉、当天就有;给与现拉腿内连接的计算格用,下拉里只留 vix
   vixSpot: { ...daily('波动率', 'VIX(CBOE 现拉)'), hidden: true },
   rxm: daily('情绪·持仓', 'RXM 风险逆转指数', undefined, ['风险逆转']),
@@ -478,6 +482,8 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   corTermSpread: 'calc', // cor3m − cor1m
   vxTermSpread: 'calc', // VX1 − VX3(注册表的 db:VX1 / db:VX3)
   vixSpotTerm: 'calc', // vixSpot − vix3m
+  vix9dVix: 'calc', // vix9d ÷ vixSpot
+  vixVix3m: 'calc', // vixSpot ÷ vix3m
   rxmSpx: 'calc', // rxm ÷ spx
   // NOBL ÷ QQQ。例外:攻防那格仍读这条、没改成 calc 现算 —— 线和 ZigZag 标记要出自同一份服务端快照(过渡方案,见 ROADMAP 类 Pine)
   noblQqq: 'calc',

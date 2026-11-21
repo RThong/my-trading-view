@@ -530,6 +530,7 @@ const YAHOO_IN_LIBRARY: Record<string, string> = {
   'BZ=F': 'brent',
   'RB=F': 'rbob',
   '^VIX3M': 'vix3m',
+  '^VIX9D': 'vix9d',
 };
 
 /** Yahoo 代码在库里对应的序列 id;库里没有 → undefined。 */

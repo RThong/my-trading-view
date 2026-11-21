@@ -206,6 +206,9 @@ export const REGIME_SERIES = [
   'eqwDdSpread',
   'rxmSpx',
   'vixSpotTerm',
+  // 即期期限结构比值:VIX9D / VIX、VIX / VIX3M(>1 = 倒挂)
+  'vix9dVix',
+  'vixVix3m',
   'brentWti',
   'dieselCrack',
   'rbobCrack',
@@ -281,6 +284,9 @@ export const REGIME_SERIES = [
   'iorb',
   'vixSpot',
   'vix3m',
+  'vix9d',
+  // Cboe 标普 500 离散度指数(只有收盘,源 2014 起)
+  'dspx',
   'rxm',
   'spx',
   'spxew',
