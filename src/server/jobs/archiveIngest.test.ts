@@ -1,5 +1,5 @@
 // Deribit / MOVE 存档写库(CBOE 期权的在 cboeArchive.test.ts)
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, spyOn } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,7 +27,8 @@ function setup() {
   return db;
 }
 
-/** fetch.sh 存的形状:开抓时刻 + 三类原始响应(带 `{ result }` 外壳)。到期日 2026-12-18 离 11-18 + 30 天最近。 */
+/** fetch.sh 存的形状:开抓时刻 + 三类原始响应(带 `{ result }` 外壳)。到期日 2026-12-18 离 11-18 + 30 天最近。
+ *  远期 64000、30 天左右:70000 call 与 60000 put 的 Black-76 delta 约 ±0.25。 */
 function deribitChain(fetchedAt: string, putIv: number) {
   const exp = Date.parse('2026-12-18T08:00:00Z');
   const inst = (name: string, type: 'call' | 'put') => ({
@@ -36,8 +37,11 @@ function deribitChain(fetchedAt: string, putIv: number) {
     option_type: type,
     expiration_timestamp: exp,
   });
-  const ticker = (name: string, iv: number, delta: number) => ({
-    result: { instrument_name: name, mark_iv: iv, greeks: { delta }, open_interest: 1 },
+  const book = (name: string, iv: number) => ({
+    instrument_name: name,
+    mark_iv: iv,
+    underlying_price: 64_000,
+    open_interest: 1,
   });
 
   return {
@@ -46,12 +50,14 @@ function deribitChain(fetchedAt: string, putIv: number) {
       result: [
         inst('BTC-18DEC26-70000-C', 'call'),
         inst('BTC-18DEC26-60000-P', 'put'),
-        // 远月的不该被请求(存档里也没有它的 ticker)
+        // 远月的不该进链
         { ...inst('BTC-26MAR27-60000-P', 'put'), expiration_timestamp: Date.parse('2027-03-26T08:00:00Z') },
       ],
     },
     index: { result: { index_price: 64_000 } },
-    tickers: [ticker('BTC-18DEC26-70000-C', 40, 0.25), ticker('BTC-18DEC26-60000-P', putIv, -0.25)],
+    summary: {
+      result: [book('BTC-18DEC26-70000-C', 40), book('BTC-18DEC26-60000-P', putIv), book('BTC-26MAR27-60000-P', 99)],
+    },
   };
 }
 
@@ -70,10 +76,19 @@ describe('deribitArchive', () => {
       // 开抓在 11-19 23:58、整轮跨过零点才结束:按开抓时刻算 11-19,不按目录名
       '2026-11-20T0001Z': { 'deribit-BTC': deribitChain('2026-11-19T23:58:00Z', 60) },
       '2026-11-20T2207Z': { 'deribit-BTC': { tickers: [] } }, // 不带 fetchedAt 的旧格式 → 不收
+      // 逐合约 ticker 格式(11-21 前,没有 summary):早已写过库 → 跳过
+      '2026-11-20T2210Z': {
+        'deribit-BTC': { ...deribitChain('2026-11-20T22:09:00Z', 80), summary: undefined, tickers: [] },
+      },
     });
     const db = setup();
 
+    // 旧 ticker 格式要「跳过」而不是「重放失败」:失败也不写库,但会打 warn —— 靠 warn 区分两者
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
     const covered = await ingestArchivedDeribit(db, archiveRuns(dir), ['BTC']);
+    const warned = warn.mock.calls.length; // mockRestore 会清掉调用记录,先取出来
+    warn.mockRestore();
+    expect(warned).toBe(0);
 
     expect([...covered]).toEqual(['BTC|2026-11-18', 'BTC|2026-11-19']);
     expect(db.query('SELECT snapshot_date, put_iv, fetched_at FROM option_snapshot_25delta ORDER BY 1').all()).toEqual([

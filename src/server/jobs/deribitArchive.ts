@@ -5,13 +5,14 @@ import { runOptionsSnapshot } from './optionsSnapshot';
 
 /**
  * 存档里一份 Deribit 链:fetch.sh 照 client 的请求原样存的三类响应(带 `{ result }` 外壳),
- * 加上开抓那一刻 fetchedAt(毫秒)—— 选到期日、打戳都按它,不按目录名(那是整轮结束时刻,跨 UTC 零点会错一天)。
+ * 加上开抓那一刻 fetchedAt(毫秒)—— 选到期日、算 delta、打戳都按它,不按目录名(那是整轮结束时刻,跨 UTC 零点会错一天)。
+ * 2026-11-21 前的存档是逐合约 ticker 格式(`tickers`,没有 `summary`):那些天早已写进库,重放时跳过。
  */
 type ArchivedChain = {
   fetchedAt: number;
   instruments: unknown;
   index: unknown;
-  tickers: { result?: { instrument_name?: string } }[];
+  summary?: unknown;
 };
 
 /**
@@ -50,17 +51,16 @@ export async function ingestArchivedDeribit(
   async function ingestOne(run: ArchiveRun, u: string): Promise<void> {
     const chain = JSON.parse(readArchived(run, `deribit-${u}`)) as ArchivedChain;
     const at = new Date(chain.fetchedAt);
-    if (!deribitArchiveUsable(at) || covered.has(`${u}|${at.toISOString().slice(0, 10)}`)) return;
+    if (!chain.summary || !deribitArchiveUsable(at) || covered.has(`${u}|${at.toISOString().slice(0, 10)}`)) return;
 
-    const tickers = new Map(chain.tickers.map((t) => [t.result?.instrument_name, t]));
+    const bodies: Record<string, unknown> = {
+      get_instruments: chain.instruments,
+      get_book_summary_by_currency: chain.summary,
+      get_index_price: chain.index,
+    };
     const client = defaultDeribitOptionsClient({
       fetch: async (url) => {
-        const body = url.includes('/get_instruments?')
-          ? chain.instruments
-          : url.includes('/get_index_price?')
-            ? chain.index
-            : tickers.get(new URL(url).searchParams.get('instrument_name') ?? undefined);
-        // 存档里没有的合约(那次 ticker 失败)回 404:client 当单合约失败丢掉,同实抓
+        const body = bodies[new URL(url).pathname.split('/').pop() ?? ''];
         return body ? Response.json(body) : new Response('not archived', { status: 404 });
       },
       now: () => at,

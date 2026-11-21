@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { americanIvDelta, americanPrice } from './optionPricing';
+import { americanIvDelta, americanPrice, black76Delta } from './optionPricing';
 
 describe('american(CRR)', () => {
   it('不分红的美式 call = 欧式(不会提前行权):对上 Black-Scholes 闭式解', () => {
@@ -32,5 +32,17 @@ describe('american(CRR)', () => {
       q: 0.05,
     });
     expect(put!.delta).toBeLessThan(0);
+  });
+});
+
+describe('black76Delta', () => {
+  it('平值 call 略高于 0.5;同行权价 call − put = 1;深虚值趋 0', () => {
+    const base = { F: 60_000, K: 60_000, T: 30 / 365, vol: 0.5 };
+    const c = black76Delta({ ...base, call: true });
+    const p = black76Delta({ ...base, call: false });
+    expect(c).toBeGreaterThan(0.5);
+    expect(c).toBeLessThan(0.55);
+    expect(c - p).toBeCloseTo(1, 10);
+    expect(black76Delta({ ...base, K: 200_000, call: true })).toBeLessThan(1e-4);
   });
 });

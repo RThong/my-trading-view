@@ -156,10 +156,12 @@
 
 - **免 key 公开 REST**:`deribit.com/api/v2/public/{method}`,响应包 `{result}` 或 `{error}`。
   实现了跟 moomoo 同一个 `OptionsChainClient` 接口,所以 `select25Delta` + 入库全复用。
-- **没有批量 greeks 接口**:`get_book_summary_by_currency` 只有 mark_iv/OI,**没有 delta**。
-  25Δ 选取需要 delta,只能逐合约打 `ticker`(带 greeks)。好在**单个到期日才几十个合约**
-  (~30天的 BTC 约 34 个,但选中季度到期日时上百个,如 25DEC26 共 120 个)。⚠️ **2026-11-20 起公开接口限流收紧**:同时 5 个就约一半回 429、串行也会撞;
-  原先并发 8~10 不重试时只剩个位数合约、整链校验失败。现在本机并发 2 + 只对 429 指数退避重试(整链 8 分钟时限),存档 `fetch.sh` 同参数,120 个约 2 分钟。
+- **整条链一次拿:`get_book_summary_by_currency`**(2026-11-21 起):全部期权的 mark_iv / 同到期远期价(`underlying_price`)/ 买卖价 / OI,
+  但**没有 greeks** → delta 用 Black-76 自算(`analytics/optionPricing` 的 `black76Delta`,远期 delta 不贴现;
+  对 ticker 给的 greeks.delta 实测最大差 0.003、25Δ 附近差 ≤0.0003,选中的合约相同)。gamma / vega 等存 null。
+  ⚠️ 之前逐合约打 `ticker`(带 greeks),**2026-11-20 起公开接口限流收紧**(同时 5 个就约一半回 429、串行也会撞):
+  季度到期日 120 个合约,本机退避重试要约 2 分钟,GitHub Actions 上 8 分钟只拿到 26~30 个 → 换成一次请求。
+  11-21 前的存档是 ticker 格式(`tickers`),重放时跳过(那些天早已写库)。
 - **IV 是百分数**(`mark_iv: 35.12` = 35.12%),÷100 归一化,与流水线一致。
 - **期权价格是币本位**(如 `0.018` BTC,不是美元),归档原样保留,用时注意单位。
 - **日线是 08:00 UTC 切的**(交割时刻;12h 线也是 08/20 点对齐),「D 日收盘」= D+1 08:00 的价,与 Yahoo / Glassnode / BRK 的 UTC 0 点口径最多差 6%。**所以 BTC 现货日 K 不用 Deribit**,全段走 Bitstamp(现货、原生 UTC 0 点、2012 起零缺口;见 `server/live/market`)。DVOL 日线本来就是 UTC 0 点,不受影响。

@@ -1,4 +1,5 @@
 import type { FxOptionTrade } from '../fetchers/dtccFxOptions';
+import { normCdf } from './optionPricing';
 
 // 美元/日元 1 个月平值隐含波动率:从 DTCC 场外期权成交的期权费反推(Garman-Kohlhagen),每天取一个数。
 //
@@ -18,17 +19,6 @@ export const MIN_TRADES_EACH = 3;
 // 日元短端利率:ponytail —— 写死常数。取 0.25%~1.25% 结果只差约 0.03 点(1 个月期限里远期点很小);日银大幅加息后再改
 const JPY_RATE = 0.0075;
 
-function ncdf(x: number): number {
-  // Abramowitz-Stegun 7.1.26 近似 erf,误差 < 1.5e-7,对反推波动率足够
-  const t = 1 / (1 + 0.3275911 * Math.abs(x / Math.SQRT2));
-  const y =
-    1 -
-    ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) *
-      t *
-      Math.exp(-(x * x) / 2);
-  return 0.5 * (1 + Math.sign(x) * y);
-}
-
 /** Garman-Kohlhagen 价格,单位 = 日元 / 每 1 美元名义本金。rd = 日元利率(本币),rf = 美元利率(外币),都是连续复利小数。 */
 export function gkPrice(o: {
   spot: number;
@@ -46,7 +36,7 @@ export function gkPrice(o: {
   const d2 = d1 - sd;
   const df = Math.exp(-rd * years);
 
-  return call ? df * (fwd * ncdf(d1) - strike * ncdf(d2)) : df * (strike * ncdf(-d2) - fwd * ncdf(-d1));
+  return call ? df * (fwd * normCdf(d1) - strike * normCdf(d2)) : df * (strike * normCdf(-d2) - fwd * normCdf(-d1));
 }
 
 /** 按价格二分反推波动率(小数);价格落在 [0.01%, 200%] 波动率对应的区间外(低于内在价值等)回 null。 */

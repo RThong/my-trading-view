@@ -20,71 +20,91 @@ describe('isRetryableStatus', () => {
   });
 });
 
-describe('重试的覆盖面(A3 的不变式)', () => {
-  // 这条守的是「逐合约 ticker 那层除 429 外**不许**带重试」——否则 Deribit 抽风时上百次调用各加
-  // 「1.5s + 一整轮 15s 超时」,单链墙钟翻倍(~300s → ~630s),而 crypto job 一天 5 个触发点、无互斥锁。
-  // 只靠注释守不住,这里打桩 fetch 数调用次数。
-  test('get_instruments 会重试,逐合约 ticker 只重试 429', async () => {
-    const expiry = Date.now() + 30 * 86400_000;
-    const inst = (name: string, type: 'call' | 'put') => ({
-      instrument_name: name,
-      strike: 60_000,
-      option_type: type,
-      expiration_timestamp: expiry,
-    });
+describe('fetchChain(批量 book summary)', () => {
+  const at = Date.parse('2026-11-21T00:00:00Z');
+  const exp = Date.parse('2026-12-25T08:00:00Z'); // 离 at + 30 天最近
+  const inst = (name: string, strike: number, type: 'call' | 'put', e = exp) => ({
+    instrument_name: name,
+    strike,
+    option_type: type,
+    expiration_timestamp: e,
+  });
+  const json = (result: unknown) => new Response(JSON.stringify({ result }), { status: 200 });
+
+  test('一次 summary 拿全链:自算 delta、缺 IV / 缺远期价 / 不在 summary 的合约丢掉、只取选中到期日;单点调用瞬断重试一次', async () => {
     const calls = new Map<string, number>();
-    const bump = (k: string) => calls.set(k, (calls.get(k) ?? 0) + 1);
-    const json = (result: unknown) => new Response(JSON.stringify({ result }), { status: 200 });
-
-    const realFetch = globalThis.fetch;
-    globalThis.fetch = (async (url: string | URL | Request) => {
-      const u = String(url);
-
-      if (u.includes('get_instruments')) {
-        bump('instruments');
-        // 第一次瞬断,第二次成功 —— 验证这个单点调用带重试。
-        if (calls.get('instruments') === 1) return new Response('boom', { status: 503 });
-        return json([inst('BTC-A', 'call'), inst('BTC-B', 'put'), inst('BTC-C', 'call')]);
+    const bump = (k: string) => {
+      calls.set(k, (calls.get(k) ?? 0) + 1);
+      return calls.get(k)!;
+    };
+    const fetch = async (url: string) => {
+      if (url.includes('get_instruments')) {
+        if (bump('instruments') === 1) return new Response('boom', { status: 502 });
+        return json([
+          inst('BTC-25DEC26-70000-C', 70_000, 'call'),
+          inst('BTC-25DEC26-60000-P', 60_000, 'put'),
+          inst('BTC-25DEC26-80000-C', 80_000, 'call'), // summary 里 mark_iv 缺 → 丢
+          inst('BTC-25DEC26-90000-C', 90_000, 'call'), // summary 里没有 → 丢
+          inst('BTC-25DEC26-50000-P', 50_000, 'put'), // summary 里缺远期价 → 丢
+          inst('BTC-26MAR27-60000-P', 60_000, 'put', Date.parse('2027-03-26T08:00:00Z')), // 远月 → 不进链
+        ]);
       }
-      if (u.includes('instrument_name=BTC-A')) {
-        bump('tickerA'); // 一直失败:若被重试,计数会 >1
-        return new Response('boom', { status: 503 });
+      if (url.includes('get_book_summary_by_currency')) {
+        // 第一次瞬断,第二次成功 —— 单点调用带重试
+        if (bump('summary') === 1) return new Response('boom', { status: 503 });
+        return json([
+          { instrument_name: 'BTC-25DEC26-70000-C', mark_iv: 45, underlying_price: 64_000, open_interest: 3 },
+          { instrument_name: 'BTC-25DEC26-60000-P', mark_iv: 50, underlying_price: 64_000, bid_price: 0.01 },
+          { instrument_name: 'BTC-25DEC26-80000-C', underlying_price: 64_000 },
+          { instrument_name: 'BTC-25DEC26-50000-P', mark_iv: 60 },
+          { instrument_name: 'BTC-26MAR27-60000-P', mark_iv: 48, underlying_price: 65_000 },
+        ]);
       }
-      if (u.includes('instrument_name=BTC-B')) {
-        bump('tickerB');
-        return json({ mark_iv: 40, greeks: { delta: 0.25 }, open_interest: 1 });
-      }
-      if (u.includes('instrument_name=BTC-C')) {
-        bump('tickerC'); // 前两次限流,第三次成功
-        if ((calls.get('tickerC') ?? 0) <= 2) return new Response('slow down', { status: 429 });
-        return json({ mark_iv: 45, greeks: { delta: 0.25 }, open_interest: 1 });
-      }
-      bump('index');
-      return json({ index_price: 60_000 });
-    }) as typeof fetch;
+      return json({ index_price: 63_000 });
+    };
 
-    try {
-      const snap = await defaultDeribitOptionsClient({ retryDelayMs: 1 }).fetchChain('BTC', 30); // 重试间隔 1ms,别真等 1.5s
+    const snap = await defaultDeribitOptionsClient({ fetch, now: () => new Date(at), retryDelayMs: 1 }).fetchChain(
+      'BTC',
+      30,
+    );
 
-      expect(calls.get('instruments')).toBe(2); // 单点调用:重试一次后成功
-      expect(calls.get('tickerA')).toBe(1); // 逐合约:失败也只打一次
-      expect(calls.get('tickerC')).toBe(3); // 429:退避重试到成功
-      expect(snap.puts).toHaveLength(1); // 5xx 那个合约被丢弃,整条链照旧返回
-      expect(snap.calls.map((c) => c.contractSymbol)).toEqual(['BTC-C']);
+    expect(calls.get('instruments')).toBe(2);
+    expect(calls.get('summary')).toBe(2);
+    expect(snap.expirationDate).toBe('2026-12-25');
+    expect(snap.underlyingPrice).toBe(63_000);
+    expect(snap.calls.map((c) => c.contractSymbol)).toEqual(['BTC-25DEC26-70000-C']);
+    expect(snap.puts.map((c) => c.contractSymbol)).toEqual(['BTC-25DEC26-60000-P']);
+    expect(snap.calls[0].impliedVolatility).toBe(0.45);
+    expect(snap.calls[0].openInterest).toBe(3);
+    expect(snap.puts[0].bid).toBe(0.01);
+    // 远期 64000、约 35 天:70000 call 与 60000 put 都在 25Δ 附近,符号对
+    expect(snap.calls[0].delta!).toBeGreaterThan(0.2);
+    expect(snap.calls[0].delta!).toBeLessThan(0.35);
+    expect(snap.puts[0].delta!).toBeLessThan(-0.2);
+    expect(snap.puts[0].delta!).toBeGreaterThan(-0.35);
+  });
 
-      // 再等就超过整链时限:撞 429 的合约不再等、直接丢(首次退避 100ms > 剩余预算 50ms)
-      calls.clear();
-      const late = await defaultDeribitOptionsClient({ retryDelayMs: 100, tickerBudgetMs: 50 }).fetchChain('BTC', 30);
-      expect(calls.get('tickerC')).toBe(1);
-      expect(late.calls).toHaveLength(0);
+  test('现货一直失败 → spot 为 null、链照旧;已到期(到期时间早于抓取时刻)的合约不算 delta、丢掉', async () => {
+    const past = at - 3_600_000; // 1 小时前已到期,但 instruments 里还挂着
+    const fetch = async (url: string) => {
+      if (url.includes('get_instruments'))
+        return json([inst('BTC-20NOV26-60000-C', 60_000, 'call', past), inst('BTC-25DEC26-70000-C', 70_000, 'call')]);
+      if (url.includes('get_book_summary_by_currency'))
+        return json([
+          { instrument_name: 'BTC-20NOV26-60000-C', mark_iv: 40, underlying_price: 64_000 },
+          { instrument_name: 'BTC-25DEC26-70000-C', mark_iv: 45, underlying_price: 64_000 },
+        ]);
+      return new Response('down', { status: 503 });
+    };
 
-      // 已过整链时限:还没开抓的合约一个都不打(Deribit 卡死时不再每个等满超时)
-      calls.clear();
-      const over = await defaultDeribitOptionsClient({ retryDelayMs: 1, tickerBudgetMs: -1 }).fetchChain('BTC', 30);
-      expect(calls.has('tickerA') || calls.has('tickerB') || calls.has('tickerC')).toBe(false);
-      expect(over.calls.length + over.puts.length).toBe(0);
-    } finally {
-      globalThis.fetch = realFetch;
-    }
+    // targetDte = 0:到期日选最近的,即已到期那个 → 唯一的合约被丢,链为空
+    const client = defaultDeribitOptionsClient({ fetch, now: () => new Date(at), retryDelayMs: 1 });
+    const expired = await client.fetchChain('BTC', 0);
+    expect(expired.calls).toHaveLength(0);
+    expect(expired.underlyingPrice).toBeNull();
+
+    const snap = await client.fetchChain('BTC', 30);
+    expect(snap.calls.map((c) => c.contractSymbol)).toEqual(['BTC-25DEC26-70000-C']);
+    expect(snap.underlyingPrice).toBeNull();
   });
 });
