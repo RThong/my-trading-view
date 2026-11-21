@@ -8,7 +8,7 @@ type P = { time: string; value: number };
 type Row = { date: string; value: number };
 type View = { from: string; to: string };
 
-const API = process.env.API ?? 'http://localhost:3000';
+const API = process.env.API ?? `http://localhost:${process.env.API_PORT ?? 3000}`;
 async function get<T>(path: string): Promise<T> {
   const r = await fetch(API + path);
   if (!r.ok) throw new Error(`${path}: ${r.status}`);

@@ -251,6 +251,7 @@
 ## 约定
 
 - **出图**:`bun run render-chart <doc.json> <out.png> [--interval 1W] [--theme dark] [--size 1400x800] [--from 2022-12-01]`(dev server 要开着;浏览器用本机装的 Google Chrome,没装要先装,或改脚本里的 channel)。doc.json 是编辑器「查看 JSON」那种 ChartDoc,出来的图同编辑器「导出图片」;序列 id 用注册表 id 或 `yh:<Yahoo 代码>`。要画图给人看时用它,别另起 matplotlib 重画(样式会和看板分家)。
+- **dev server 端口**:默认 API 3000 / 前端 5173,可在 `.env` 配 `API_PORT` / `WEB_PORT`(vite 代理、`render-chart` 都跟着读;前端 `strictPort`,被占直接报错)。多个 worktree 同时开时,各自 `.env` 错开端口。
 - 改完代码跑 `bun run check`(= typecheck + `bun test` + `bun run lint`)。lint 是 **Biome**(lint + format 二合一,
   `react-hooks/exhaustive-deps` 为 error;带 `--error-on-warnings`,有 warning 也算失败)。因 typescript-eslint 不支持项目用的 TS7,
   lint 用 Biome/oxlint 这类 Rust 工具(不依赖 typescript 包)。**不要自动 git commit**,等用户发话。
