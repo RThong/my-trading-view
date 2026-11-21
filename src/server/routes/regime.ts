@@ -191,6 +191,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     vix9d: cboeSeries('VIX9D'),
     // Cboe 标普 500 离散度指数(成分股隐含波动率 vs 指数隐含波动率的差,源 2014 起,只有收盘)
     dspx: cboeSeries('DSPX'),
+    // VIX 的波动率(源 2006 起)
+    vvix: cboeSeries('VVIX'),
     // VIX(即期期限结构价差的近端腿,也直接对外发 vix)/ VXN / SKEW:原先由 vrp_inputs 组写库,
     // 2026-11-17 起改现拉,与 /api/vrp 共用 live/market 的缓存(与库里逐日相等)
     vixSpot: track(['vix', 'vixSpot'], volIndex('VIX', FRESH)),
@@ -518,6 +520,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     skew: 'skew',
     vix9d: 'vix9d',
     dspx: 'dspx',
+    vvix: 'vvix',
   };
   // 空数组归 unavailable 由 put 统一兜(见其注释),这里直接传。
   // Object.entries 会把 key 拓宽回 string,这里断言回来 —— 真正的校验发生在上面的对象字面量。

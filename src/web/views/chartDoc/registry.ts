@@ -377,7 +377,8 @@ function db(seriesId: string, label: string, aliases: string[] = [], weekends?: 
 }
 
 const DB_SERIES: SeriesDef[] = [
-  db('VVIX', 'VVIX (VIX 的波动率)'),
+  // 下拉里只留 /api/regime 的 vvix(同一个数);旧图引用 db:VVIX 照样能取
+  { ...db('VVIX', 'VVIX (VIX 的波动率)'), hidden: true },
   // 连续合约归到「VX 合约」组:那组的单月合约默认收起,这两条是组里常显的入口(代码同 TradingView 的 VX1! 写法)
   { ...db('VX1', 'VX 近月连续', ['vx', '期货']), category: 'VX 合约', code: 'VX1!' },
   { ...db('VX3', 'VX 第三近月连续', ['vx', '期货']), category: 'VX 合约', code: 'VX3!' },
@@ -513,8 +514,8 @@ const YAHOO_IN_LIBRARY: Record<string, string> = {
   '^VIXEQ': 'vixeq',
   '^COR1M': 'cor1m',
   '^COR3M': 'cor3m',
+  '^VVIX': 'vvix',
   // CBOE 指数库里另存了一份(/api/series 原样读),与 Yahoo 同一个数
-  '^VVIX': 'db:VVIX',
   '^GVZ': 'db:GVZ',
   '^OVX': 'db:OVX',
   '^VXTLT': 'db:VXTLT',

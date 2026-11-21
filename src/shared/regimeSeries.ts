@@ -287,6 +287,7 @@ export const REGIME_SERIES = [
   'vix9d',
   // Cboe 标普 500 离散度指数(只有收盘,源 2014 起)
   'dspx',
+  'vvix',
   'rxm',
   'spx',
   'spxew',
