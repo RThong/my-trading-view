@@ -107,6 +107,26 @@ describe('daily job (options-only)', () => {
     expect(h.error).toContain('svc');
   });
 
+  test('jgbi: 齐了 success;窗口里还缺 → partial(下个触发点再补一天);拉失败 / 停更 → failed', async () => {
+    const jgbi = (r: Partial<{ failed: string | null; missing: string[]; stale: string | null }>) => async () => ({
+      fetched: '2026-11-20',
+      failed: null,
+      missing: [],
+      stale: null,
+      latest: '2026-11-20',
+      ...r,
+    });
+    const status = async (r: Parameters<typeof jgbi>[0]) => {
+      await runDailyJob({ db, jgbiUpdater: jgbi(r) });
+      return getJobHealth(db).find((h) => h.name === 'jgbi')!;
+    };
+
+    expect((await status({})).status).toBe('success');
+    expect((await status({ missing: ['2026-11-19'] })).status).toBe('partial');
+    expect((await status({ failed: '2026-11-19: HTTP 429' })).error).toContain('429');
+    expect((await status({ stale: '最新 2026-11-10 落后' })).status).toBe('failed');
+  });
+
   test('move: 拿到 meta 快照点记 success', async () => {
     await runDailyJob({
       db,
@@ -174,28 +194,41 @@ describe('staleFreshnessProbes', () => {
   const putVx1 = (db: Database, obsDate: string) => insertMarketSeries(db, [{ seriesId: 'VX1', obsDate, value: 20 }]);
   const putPc = (db: Database, obsDate: string) =>
     insertMarketSeries(db, [{ seriesId: 'CBOE_PC_EQUITY', obsDate, value: 0.6 }]);
+  const putJp = (db: Database, obsDate: string) =>
+    insertMarketSeries(db, [{ seriesId: 'JP_NOM10_JGBI', obsDate, value: 2.7 }]);
   const upTo = (date: string) => {
     const db = freshDb();
     putVx1(db, date);
     putPc(db, date);
+    putJp(db, date);
     return db;
   };
+  // JST 上午:日本那条应有的是上一营业日;晚上 19 点后:当天
+  const am = (d: string) => new Date(`${d}T11:00:00+09:00`);
+  const pm = (d: string) => new Date(`${d}T20:00:00+09:00`);
 
   test('全部到上一交易日 → 空;旧行不影响(看的是最新一天)', () => {
     const db = upTo('2026-10-19');
     putVx1(db, '2026-10-16');
-    expect(staleFreshnessProbes(db, '2026-10-19')).toEqual([]);
+    expect(staleFreshnessProbes(db, '2026-10-19', am('2026-10-20'))).toEqual([]);
   });
 
   test('只有一条滞后 → 只列它', () => {
     const db = upTo('2026-10-19');
     putPc(db, '2026-10-20');
-    expect(staleFreshnessProbes(db, '2026-10-20')).toEqual(['VX1']);
+    expect(staleFreshnessProbes(db, '2026-10-20', am('2026-10-20'))).toEqual(['VX1']);
   });
 
   test('全部滞后 / 空库 → 全列', () => {
-    expect(staleFreshnessProbes(upTo('2026-10-19'), '2026-10-20')).toEqual(['VX1', 'CBOE_PC_EQUITY']);
-    expect(staleFreshnessProbes(freshDb(), '2026-10-19')).toEqual(['VX1', 'CBOE_PC_EQUITY']);
+    const all = ['VX1', 'CBOE_PC_EQUITY', 'JP_NOM10_JGBI'];
+    expect(staleFreshnessProbes(upTo('2026-10-19'), '2026-10-20', pm('2026-10-20'))).toEqual(all);
+    expect(staleFreshnessProbes(freshDb(), '2026-10-19', am('2026-10-20'))).toEqual(all);
+  });
+
+  test('日本实际利率:上午已齐、晚上 19 点后当天的还没进库 → 滞后(让 jgbi 组当晚再跑一次)', () => {
+    const db = upTo('2026-10-19');
+    expect(staleFreshnessProbes(db, '2026-10-19', am('2026-10-20'))).toEqual([]);
+    expect(staleFreshnessProbes(db, '2026-10-19', pm('2026-10-20'))).toEqual(['JP_NOM10_JGBI']);
   });
 });
 
@@ -213,6 +246,7 @@ describe('按组的成功即止守卫', () => {
     expect(groupsForStaleProbes([])).toEqual([]);
     expect(groupsForStaleProbes(['VX1'])).toEqual(['vx_term_structure']);
     expect(groupsForStaleProbes(['VX1', 'CBOE_PC_EQUITY'])).toEqual(['vx_term_structure', 'put_call']);
+    expect(groupsForStaleProbes(['JP_NOM10_JGBI'])).toEqual(['jgbi']);
   });
 
   test('runPendingGroups:失败的组下一轮单独重跑,成功的组不再跑;全绿后整轮跳过', async () => {

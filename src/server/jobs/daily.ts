@@ -31,9 +31,12 @@ import { updateMoveIndex, ingestArchivedMove, type MoveUpdateResult } from './mo
 import { updateIsm, type IsmResult } from './ismSnapshot';
 import { updatePutCall, PUT_CALL_SERIES, type PutCallResult } from './putCallSnapshot';
 import { updateSpxSkew, type SpxSkewResult } from './spxSkewSnapshot';
+import { updateJgbi, expectedQuoteDate, JGBI_SERIES, type JgbiResult } from './jgbiSnapshot';
 
 // 认沽认购比的新鲜度探针:三条同一页同一时刻写,看个股那条就够
 const PUT_CALL_PROBE = PUT_CALL_SERIES.equity;
+// 日本实际利率的新鲜度探针:名义腿每个报价日都有(JGBi 偶尔不公表价格)
+const JGBI_PROBE = JGBI_SERIES.nominal;
 
 type RunDailyJobOpts = {
   db: Database;
@@ -69,6 +72,8 @@ type RunDailyJobOpts = {
   putCallUpdater?: (db: Database) => Promise<PutCallResult>;
   /** SPX 30 天 25Δ(Cboe VIX 分解接口)更新器(注入式;CLI 传 updateSpxSkew,测试省略以免联网)。 */
   spxSkewUpdater?: (db: Database) => Promise<SpxSkewResult>;
+  /** 日本 10Y 实际利率 + BEI(JSDA 売買参考統計値)更新器(注入式;CLI 传 updateJgbi,测试省略以免联网)。 */
+  jgbiUpdater?: (db: Database) => Promise<JgbiResult>;
   /** Computable GPU Index(H100/H200/B200/B300 算力租赁价)更新器(注入式;cryptoDaily 传 updateComputableGpu,测试省略以免联网)。 */
   computableGpuUpdater?: (db: Database) => Promise<{ total: number; missing: string[]; errors: string[] }>;
 };
@@ -309,6 +314,21 @@ export async function runDailyJob(opts: RunDailyJobOpts): Promise<void> {
       return threeState(written, fetched.length, failed);
     });
   }
+
+  // jgbi 分组:日本 10Y 实际利率 + BEI。JSDA 限流(连续请求即 429),每轮只打一次:
+  // 拉失败 → failed、窗口里还有缺的天 → partial,两种都让下一个触发点(隔一小时)再跑一次,一次补一天;
+  // 停更(落后 ≥3 个营业日)= failed(红灯)
+  if (opts.jgbiUpdater) {
+    await withJobRun(opts.db, 'jgbi', async () => {
+      const { fetched, failed, missing, stale } = await opts.jgbiUpdater!(opts.db);
+      const written = fetched ? 1 : 0;
+      if (stale || failed) {
+        return { status: 'failed', error: [stale, failed].filter(Boolean).join('; '), recordsWritten: written };
+      }
+      if (missing.length) return { status: 'partial', error: `还缺 ${missing.join(', ')}`, recordsWritten: written };
+      return { status: 'success', recordsWritten: written };
+    });
+  }
 }
 
 /** 组名(= job_run.job_name)→ 该组在 runDailyJob 里的注入参数。函数形式:没轮到的组不构造客户端。 */
@@ -332,18 +352,25 @@ export function pendingGroups(groups: string[], succeededToday: string[], force:
  * (ETF 现货与 VIX 原先也是探针,2026-11-17 起改读时现拉、不再落库,没有要补跑的组了。)
  * 节假日 lastClosedTradingDate 不认交易所假日 → 恒判滞后 → 这两组当天每个触发点多跑一遍(几十秒,接受)。
  * VX 期货结算偶尔比 VIX 晚一天:那天同理多跑几遍,直到 VX1 到位。
+ * 日本实际利率(jgbi)另按 JST 判:JSDA 报价日当晚 19 点后挂出,上午那轮 success 后晚上就该再拉一次。
+ * 探针不拉假日表、只认周末和年末:祝日那晚会多跑一次 jgbi 组,组内按真假日表判断不缺,不会打 JSDA。
  */
-export function staleFreshnessProbes(db: Database, lastClosed = lastClosedTradingDate()): string[] {
-  const latest: [string, string | null][] = [
-    ['VX1', getLatestMarketDate(db, 'VX1')],
-    [PUT_CALL_PROBE, getLatestMarketDate(db, PUT_CALL_PROBE)],
+export function staleFreshnessProbes(db: Database, lastClosed = lastClosedTradingDate(), now = new Date()): string[] {
+  const latest: [string, string | null, string][] = [
+    ['VX1', getLatestMarketDate(db, 'VX1'), lastClosed],
+    [PUT_CALL_PROBE, getLatestMarketDate(db, PUT_CALL_PROBE), lastClosed],
+    [JGBI_PROBE, getLatestMarketDate(db, JGBI_PROBE), expectedQuoteDate(now, new Set())],
   ];
 
-  return latest.filter(([, d]) => (d ?? '') < lastClosed).map(([name]) => name);
+  return latest.filter(([, d, want]) => (d ?? '') < want).map(([name]) => name);
 }
 
 // 滞后探针 → 写它的那一组
-const PROBE_GROUP: Record<string, string> = { VX1: 'vx_term_structure', [PUT_CALL_PROBE]: 'put_call' };
+const PROBE_GROUP: Record<string, string> = {
+  VX1: 'vx_term_structure',
+  [PUT_CALL_PROBE]: 'put_call',
+  [JGBI_PROBE]: 'jgbi',
+};
 
 /** 滞后探针 → 写它的那一组(见 staleFreshnessProbes)。 */
 export function groupsForStaleProbes(stale: string[]): string[] {
@@ -377,6 +404,7 @@ const DAILY_GROUPS: GroupTable = {
   ism: () => ({ ismUpdater: updateIsm }),
   put_call: () => ({ putCallUpdater: updatePutCall }),
   spx_skew: () => ({ spxSkewUpdater: updateSpxSkew }),
+  jgbi: () => ({ jgbiUpdater: (db: Database) => updateJgbi(db) }),
 };
 
 // CLI 入口

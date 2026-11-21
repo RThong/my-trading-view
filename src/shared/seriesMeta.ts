@@ -329,6 +329,9 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   jgb2y: daily('日本', '日债 2Y', '%', ['jgb', '日本国债']),
   jgb10y: daily('日本', '日债 10Y', '%', ['jgb', '日本国债']),
   jgbVix: daily('日本', 'JGB VIX 日债波动率', undefined, ['jgb']),
+  jpReal10: daily('日本', '日本 10Y 实际利率 (物価連動国債)', '%', ['jgbi', 'real', '实际利率', '物价连动']),
+  jpNom10Jgbi: daily('日本', '日债 10Y 名义 (与物価連動国債同到期)', '%', ['jgb', 'jgbi', 'bei']),
+  jpBei10: daily('日本', '日本 10Y BEI', '%', ['bei', 'breakeven', '通胀预期', 'jgbi']),
   mufg: daily('日本', '8306.T 三菱 UFJ', '¥', ['银行', 'mufg']),
   jpTp10Nakajima: daily('日本', 'JGB 10Y 期限溢价 (中島)', '%', ['term premium']),
   jpExpShort10Nakajima: daily('日本', 'JGB 10Y 预期短端均值 (中島)', '%'),
@@ -470,6 +473,7 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   cdxIg: 'server', // 结算价 / 成交价按 CDS 定价模型反解成利差
   cdxHy: 'server',
   // ── calc:A − B / A ÷ B
+  jpBei10: 'calc', // jpNom10Jgbi − jpReal10
   vixeqVix: 'calc', // vixeq ÷ vixSpot(现拉 VIX,不等 daily job)
   corTermSpread: 'calc', // cor3m − cor1m
   vxTermSpread: 'calc', // VX1 − VX3(注册表的 db:VX1 / db:VX3)

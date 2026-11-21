@@ -35,6 +35,10 @@ export const JOB_WRITTEN_SERIES = [
   ['spxPutIv25', 'CBOE_SPX30_PUT25'],
   ['spxCallIv25', 'CBOE_SPX30_CALL25'],
   ['spxSkew25', 'CBOE_SPX30_SKEW25'],
+  // 日本 10Y 实际利率 / 同到期名义 / BEI(日频,daily 的 jgbi 分组写库,BB 回填 2024-04 起)。同 ISM,不进「缺着也缓存」的豁免
+  ['jpReal10', 'JP_REAL10'],
+  ['jpNom10Jgbi', 'JP_NOM10_JGBI'],
+  ['jpBei10', 'JP_BEI10'],
 ] as const;
 
 /** 认沽认购比均线:对外名 → 哪条原始序列、几个交易日(63 ≈ 3 个月)。readDbBacked 现算 */
