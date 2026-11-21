@@ -364,3 +364,19 @@ export function seasonalZFrom(rows: Point[] | null, opts: { years: number; from:
 
   return seasonalZ(rows, { years: opts.years }).filter((p) => p.date >= opts.from);
 }
+
+/**
+ * 涨跌线:每天(上涨 − 下跌)家数从第一天起累加。WSJ 只给当天值(daily 的 breadth 分组从 2026-11 起存),
+ * 绝对值取决于从哪天开始存、没有意义,只看形状与高点先后;漏存的那天就少加一天的净差。
+ */
+export function adLine(adv: Point[], dec: Point[]): Point[] {
+  const decBy = new Map(dec.map((p) => [p.date, p.value]));
+  let total = 0;
+
+  return adv.flatMap((p) => {
+    const d = decBy.get(p.date);
+    if (d === undefined) return [];
+    total += p.value - d;
+    return [{ date: p.date, value: total }];
+  });
+}

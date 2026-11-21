@@ -237,6 +237,7 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   pcIndexMa5: daily('情绪·持仓', 'Cboe 指数认沽认购比 5 日均线', undefined, ['put/call', 'pcr']),
   pcIndexMa20: daily('情绪·持仓', 'Cboe 指数认沽认购比 20 日均线', undefined, ['put/call', 'pcr']),
   pcIndexMa63: daily('情绪·持仓', 'Cboe 指数认沽认购比 3 个月均线', undefined, ['put/call', 'pcr']),
+  nyseAdLine: daily('估值·结构', 'NYSE 涨跌线', '家', ['advance decline', 'a/d', '广度', 'breadth', 'nyad']),
   cftcJpy: { label: 'CFTC 日元净持仓', category: '情绪·持仓', freq: '周', unit: '张', aliases: ['cot', '日元'] },
   gex: daily('情绪·持仓', '做市商 Gamma 敞口 GEX (Squeezemetrics,每 SPX 点)', '亿美元', [
     'gamma',
@@ -513,6 +514,7 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   pcIndexMa5: 'server',
   pcIndexMa20: 'server',
   pcIndexMa63: 'server',
+  nyseAdLine: 'server', // WSJ 每天上涨 − 下跌家数的累加
   reserves: 'server', // 源是百万美元,÷1000 换成十亿美元(乘常数)
   dieselCrack: 'server', // ULSD × 42 − WTI
   rbobCrack: 'server', // RBOB × 42 − WTI

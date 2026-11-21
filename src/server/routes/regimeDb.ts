@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite';
-import { preferLive, rollingMean, type Point } from '../analytics/regime';
+import { adLine, preferLive, rollingMean, type Point } from '../analytics/regime';
 import { OIS_INPUT_TENORS, hikesByTenor } from '../../shared/calc/policyPath';
 import type { SeriesKey } from '../../shared/regimeSeries';
 import { nearMinusFar } from '../analytics/termStructure';
@@ -115,6 +115,7 @@ export function readDbBacked(
   // MOVE:实时拉的优先,库里的补丁只填 Yahoo 断供的那些天。
   put('move', preferLive(moveLive, getMarketSeries(db, 'MOVE')));
   put('hyOas', preferLive(hyOasLive, getMarketSeries(db, 'BAMLH0A0HYM2')));
+  put('nyseAdLine', adLine(getMarketSeries(db, 'WSJ_NYSE_ADV'), getMarketSeries(db, 'WSJ_NYSE_DEC')));
   put('cdxIg', cdxSpreadPct(db, 'IG', 100));
   put('cdxHy', cdxSpreadPct(db, 'HY', 500));
 
