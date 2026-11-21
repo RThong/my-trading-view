@@ -69,6 +69,11 @@ export const REGIME_SERIES = [
   'spxPutIv25',
   'spxCallIv25',
   'spxSkew25',
+  // 日本 10Y 实际利率(物価連動国債复利,JSDA 价格倒推)/ 同到期 10 年利付国债名义 / BEI(%,日频,daily 的 jgbi 分组写库,
+  // 历史由日本相互证券 BB 回填 2024-04 起)。见 fetchers/jsdaJgbi 与 jobs/jgbiSnapshot
+  'jpReal10',
+  'jpNom10Jgbi',
+  'jpBei10',
 
   // 美元零息通胀掉期 1Y / 2Y(DTCC 成交,daily 的 dtcc_zcis 分组写库):BEI 从 5Y 起,短端市场通胀定价只有掉期给得出
   'zcis1y',

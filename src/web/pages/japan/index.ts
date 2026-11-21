@@ -22,5 +22,7 @@ export const JAPAN: Perspective = {
     regimeTab('jp_output_gap', '产出缺口', 'jpGap'),
     // 长端分解(中島上智模型)。对称利率视角同名那格,但只有一套模型 —— 读法差异写在两格 desc 里。
     regimeTab('jp_term_premium', '长端分解', 'jpTermPremium'),
+    // 名义 10Y 的另一种拆法:实际利率 + BEI(物価連動国債,JSDA 每日、BB 回填 2024-04 起)。和「长端分解」挨着放
+    regimeTab('jp_real', '实际利率', 'jpReal'),
   ],
 };

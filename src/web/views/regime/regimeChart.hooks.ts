@@ -58,6 +58,7 @@ export type RegimeDim =
   | 'jpBusiness'
   | 'jpGap'
   | 'jpTermPremium'
+  | 'jpReal'
   | 'valuation'
   | 'concentration'
   | 'attackDefense'

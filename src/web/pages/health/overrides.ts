@@ -37,6 +37,9 @@ const HEALTH_OVERRIDES: { [K in SeriesKey]?: HealthOverride } = {
   mufg: JP_DAILY,
   jp2yMinusDeposit: JP_DAILY,
   jp2yMinusCall: JP_DAILY,
+  jpReal10: JP_DAILY,
+  jpNom10Jgbi: JP_DAILY,
+  jpBei10: JP_DAILY,
   // DTCC 通胀掉期:一天不足 3 笔不出点,美国假日前后常连缺 2~3 天(两年回测最长 3)
   zcis1y: { rule: { late: 4, stale: 7 }, note: '成交少的日子不出点' },
   zcis2y: { rule: { late: 4, stale: 7 }, note: '成交少的日子不出点' },
