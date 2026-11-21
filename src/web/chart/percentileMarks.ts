@@ -12,6 +12,8 @@ type Options = {
   riskTail?: 'low' | 'high';
   /** 配了有绝对含义的参考线时,线用它、不画 P5 / P95(不让两套尺并存),背景照样按分位染 */
   refLines?: MarkLine[];
+  /** 这个点在不在算阈值的窗口里;窗口外不染色(拿 2018 起的切点去量 1990 年代没有意义),不给 = 全染 */
+  inWindow?: (time: string) => boolean;
 };
 
 /**
@@ -22,7 +24,7 @@ type Options = {
 export function percentileMarks(
   window: number[],
   pts: { time: string; value: number }[],
-  { riskTail, refLines }: Options,
+  { riskTail, refLines, inWindow }: Options,
 ): { lines: MarkLine[]; band: BandPoint[] | null } | null {
   if (window.length === 0) return null;
 
@@ -33,6 +35,7 @@ export function percentileMarks(
     { price: hi, title: `P${PCTL_HI}` },
   ];
   const tint = (p: { time: string; value: number }): BandPoint => {
+    if (inWindow && !inWindow(p.time)) return { time: p.time, value: 1, color: TRANSPARENT };
     if (p.value < lo) return { time: p.time, value: 1, color: riskTail === 'low' ? BAND_RISK : BAND_CALM };
     if (p.value > hi) return { time: p.time, value: 1, color: riskTail === 'high' ? BAND_RISK : BAND_CALM };
     return { time: p.time, value: 1, color: TRANSPARENT };

@@ -46,6 +46,11 @@ describe('parseCboeIndexCsv', () => {
     expect(rows[0].close).toBe(123.45);
   });
 
+  test('skips rows with close <= 0', () => {
+    const csv = 'DATE,DSPX\n' + '02/07/2018,30.5\n' + '02/08/2018,0.000000\n' + '02/09/2018,31.2\n';
+    expect(parseCboeIndexCsv(csv).map((r) => r.tradeDate)).toEqual(['2018-02-07', '2018-02-09']);
+  });
+
   test('handles CRLF line endings', () => {
     const csv = 'DATE,SKEW\r\n01/02/1990,126.09\r\n';
     expect(parseCboeIndexCsv(csv)).toHaveLength(1);

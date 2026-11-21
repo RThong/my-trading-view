@@ -532,6 +532,7 @@ const YAHOO_IN_LIBRARY: Record<string, string> = {
   'RB=F': 'rbob',
   '^VIX3M': 'vix3m',
   '^VIX9D': 'vix9d',
+  '^DSPX': 'dspx',
 };
 
 /** Yahoo 代码在库里对应的序列 id;库里没有 → undefined。 */
