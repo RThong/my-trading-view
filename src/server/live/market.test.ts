@@ -45,5 +45,9 @@ describe('checkedGaps', () => {
     expect(checkedGaps('X', pts('2001-09-10', '2001-09-17'))).toHaveLength(2);
     expect(() => checkedGaps('X', pts('2026-01-01', '2026-01-09'))).toThrow('断档');
     expect(() => checkedGaps('X', [])).toThrow('断档');
+    const known: [string, string][] = [['2000-09-19', '2000-10-02']];
+    expect(checkedGaps('X', pts('2000-09-19', '2000-10-02'), known)).toHaveLength(2);
+    // 前一天也丢了 = 断档变长,不在白名单里
+    expect(() => checkedGaps('X', pts('2000-09-18', '2000-10-02'), known)).toThrow('断档');
   });
 });

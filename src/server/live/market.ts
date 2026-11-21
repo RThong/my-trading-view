@@ -133,8 +133,10 @@ function live<T>(e: Entry): Live<T> {
 const BTC_START = '2012-01-01';
 // DVOL 指数 2021-03-24 上线(Deribit 那天起才有点)
 const DVOL_START = '2021-03-24';
-// CBOE 指数的起点:缺省 HISTORY_START_DATE,GVZ / OVX 放到上市日(只放开这两条,不扩大全系统的历史窗口)
-const CBOE_START: Record<string, string> = { GVZ: '2009-09-18', OVX: '2009-09-18' };
+// CBOE 指数的起点:缺省 HISTORY_START_DATE,GVZ / OVX 放到上市日、SKEW 放到源头最早的 1990(只放开这几条,不扩大全系统的历史窗口)
+const CBOE_START: Record<string, string> = { GVZ: '2009-09-18', OVX: '2009-09-18', SKEW: '1990-01-02' };
+// 源里已知、补不回来的断档(断档前后两天,精确匹配):SKEW 2000-09-20 ~ 09-29 缺 8 个交易日
+const CBOE_KNOWN_GAPS: Record<string, [string, string][]> = { SKEW: [['2000-09-19', '2000-10-02']] };
 
 function utcDate(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10);
@@ -142,10 +144,19 @@ function utcDate(ms: number): string {
 
 /**
  * 按交易日的序列(ETF / CBOE)只做宽松的断档检查:相邻两点隔超过 7 天就抛(9·11 休市那次正好 7 天)。
- * 节假日不规则,逐日核对交易日历不值得;7 天以上的洞只可能是源出了问题。
+ * 节假日不规则,逐日核对交易日历不值得;7 天以上的洞只可能是源出了问题。knownGaps 放行源里本来就缺的那几段。
  */
-export function checkedGaps<P extends { date: string }>(id: string, points: P[]): P[] {
-  const gap = points.find((p, i) => i > 0 && Date.parse(p.date) - Date.parse(points[i - 1].date) > 7 * 86400_000);
+export function checkedGaps<P extends { date: string }>(
+  id: string,
+  points: P[],
+  knownGaps: [string, string][] = [],
+): P[] {
+  const known = (from: string, to: string) => knownGaps.some(([a, b]) => a === from && b === to);
+  const gap = points.find((p, i) => {
+    const prev = points[i - 1]?.date;
+
+    return i > 0 && !known(prev, p.date) && Date.parse(p.date) - Date.parse(prev) > 7 * 86400_000;
+  });
   if (!points.length || gap) throw new Error(`${id} 断档(${gap?.date ?? '0 个点'})`);
 
   return points;
@@ -191,7 +202,7 @@ async function loadCboe(sym: string): Promise<Bar[]> {
   const rows = await fetchCboeIndexAsQuotes({ cboeSymbol: sym, storedSymbol: sym, startDate: CBOE_START[sym] });
   const bars = rows.map((r) => ({ date: r.tradeDate, open: r.open, high: r.high, low: r.low, close: r.close }));
 
-  return checkedGaps(`CBOE ${sym}`, bars);
+  return checkedGaps(`CBOE ${sym}`, bars, CBOE_KNOWN_GAPS[sym]);
 }
 
 const SPOT_LOADER: Record<string, () => Promise<Bar[]>> = {
