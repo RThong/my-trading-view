@@ -1,6 +1,6 @@
 import { firstBy } from 'remeda';
 import { fetchWithTimeout } from './http';
-import { nextMonthlyExpiry } from '../analytics/monthlyExpiry';
+import { nextMonthlyExpiry } from '../../shared/calc/monthlyExpiry';
 import type { OptionChainSnapshot, OptionContract, OptionsChainClient } from './optionsChain';
 
 // CBOE 网页「延迟报价」背后的期权链 JSON(无文档、免 key)。一个文件 = 该标的全部到期日的全部合约,

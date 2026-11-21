@@ -84,6 +84,10 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   adZigOffensePending: { ...daily('资产', '攻防慢线:进攻(末段待定)'), hidden: true },
   adFastDefense: { ...daily('资产', '攻防快线:防守'), hidden: true },
   adFastOffense: { ...daily('资产', '攻防快线:进攻'), hidden: true },
+  stStress: daily('波动率', '踩踏监控:综合压力分', '分', ['压力', 'stress', '踩踏']),
+  stStage3: { ...daily('波动率', '踩踏监控:阶段三 风暴'), hidden: true },
+  stCliff: { ...daily('波动率', '踩踏监控:断崖(VIXEQ/VIX 分位高位回落,只含亮灯日)'), hidden: true },
+  stEscalate: { ...daily('情绪·持仓', '踩踏监控:升级(指数 / 个股 P/C 双高)'), hidden: true },
   usd: daily('资产', '美元指数 DXY', undefined, ['dxy', '美元']),
   // 不标 weekends:以前 Yahoo 外汇日期按 UTC 取,夏令时期间周一被标成周日才像「带周末」;已按交易所时区修正(fetchers/yahoo 的 exchangeDate)
   usdjpy: daily('资产', 'USD/JPY', undefined, ['日元', 'yen']),
@@ -234,7 +238,12 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   pcIndexMa20: daily('情绪·持仓', 'Cboe 指数认沽认购比 20 日均线', undefined, ['put/call', 'pcr']),
   pcIndexMa63: daily('情绪·持仓', 'Cboe 指数认沽认购比 3 个月均线', undefined, ['put/call', 'pcr']),
   cftcJpy: { label: 'CFTC 日元净持仓', category: '情绪·持仓', freq: '周', unit: '张', aliases: ['cot', '日元'] },
-  gex: daily('情绪·持仓', '做市商 Gamma 敞口 GEX (Squeezemetrics)', '亿美元', ['gamma', 'gex', '伽马', '做市商']),
+  gex: daily('情绪·持仓', '做市商 Gamma 敞口 GEX (Squeezemetrics,每 SPX 点)', '亿美元', [
+    'gamma',
+    'gex',
+    '伽马',
+    '做市商',
+  ]),
   jpFlowOutBonds: {
     label: '日本居民净买外国中长期债 (52 周累计)',
     category: '日本',

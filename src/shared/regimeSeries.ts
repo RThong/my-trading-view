@@ -103,6 +103,12 @@ export const REGIME_SERIES = [
   'adZigOffensePending',
   'adFastDefense',
   'adFastOffense',
+  // 踩踏监控(「踩踏监控」视角,见 shared/calc/stampede):阶段三 0/1(历史图红底)、断崖亮灯日、升级 0/1(阶段卡徽标)
+  'stStage3',
+  // 综合压力分(0–100,方案 A,见 shared/calc/stampede 的 stressScore)
+  'stStress',
+  'stCliff',
+  'stEscalate',
   'vxTermSpread',
   'move',
   // 认沽认购比的均线(5 / 20 / 63 个交易日 ≈ 3 个月):日度噪音大,读趋势看均线
@@ -128,7 +134,7 @@ export const REGIME_SERIES = [
   // USD/JPY 1 个月平值隐含波动率(%,DTCC 场外期权成交反推,daily 的 dtcc_fx_vol 分组写库,2024-11 起)
   'usdjpyIv1m',
   'cftcJpy',
-  // Squeezemetrics GEX:做市商 SPX 期权 gamma 敞口(亿美元 / SPX 每 1%),正 = 压波动、负 = 放大波动(伽马挤压那一侧)
+  // Squeezemetrics GEX:做市商 SPX 期权 gamma 敞口(亿美元 / SPX 每 1 点),正 = 压波动、负 = 放大波动(伽马挤压那一侧)
   'gex',
   // LME 铜 3 个月官方价(美元/吨,Westmetall 转载,读时现拉,见 fetchers/westmetall):全球铜价,替 COMEX HG=F(2025 关税溢价失真)
   'lmeCopper3m',

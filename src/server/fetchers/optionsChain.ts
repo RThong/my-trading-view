@@ -35,7 +35,7 @@ export type OptionsChainClient = {
   /** 权威「最近已收盘交易日」,给快照打戳用。moomoo 实现(Qot_RequestTradeDate);
    *  不实现(如 Deribit)或返回 null 时,上层回退 lastClosedTradingDate。 */
   getTradingDate?(): Promise<string | null>;
-  /** 第二档:第一个 DTE ≥ minDte 的标准月度到期(见 analytics/monthlyExpiry);spot 复用第一档拿到的现货。
+  /** 第二档:第一个 DTE ≥ minDte 的标准月度到期(见 shared/calc/monthlyExpiry);spot 复用第一档拿到的现货。
    *  只存原始链,不进 25Δ 表。不实现(Deribit)= 不抓第二档。 */
   fetchMonthlyChain?(symbol: string, minDte: number, spot: number | null): Promise<OptionChainSnapshot>;
 };

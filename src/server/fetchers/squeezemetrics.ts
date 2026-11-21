@@ -1,6 +1,6 @@
 import { fetchWithTimeout } from './http';
 
-// Squeezemetrics 的 GEX(做市商 Gamma 敞口,只算 SPX 指数期权):标普 500 每变动 1%,做市商对冲要买卖多少美元。
+// Squeezemetrics 的 GEX(做市商 Gamma 敞口,只算 SPX 指数期权):标普 500 每变动 1 点,做市商对冲要买卖多少美元(白皮书口径;公开 CSV 的 gex 不是 GEX+)。
 // 正 = 做市商跌买涨卖(压住波动),负 = 追涨杀跌(放大波动,「伽马挤压」发生在这一侧)。
 // 免 key CSV(约 220KB,2011-05 起日频,列 date,price,dix,gex),读时现拉、不落库。同文件 DIX(暗池买入占比)不接。
 // ⚠️ 是模型估算:假设客户买 put、卖 call;个股 / ETF 期权都不算。是放大器不是触发器(2026-03-27 −72 亿没崩)。

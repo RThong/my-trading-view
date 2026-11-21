@@ -53,6 +53,7 @@ import {
 import type { RegimeSeries, FundSeries, SeriesKey, RegimeOhlcKey } from '../../shared/regimeSeries';
 import { rollMismatchFlags } from '../../shared/calc/oilRoll';
 import { attackDefenseSeries } from '../../shared/calc/attackDefense';
+import { cliffSeries, escalateSeries, rollingPctl, stageSeries, stressSeries } from '../../shared/calc/stampede';
 import { nearMinusFar } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
 import { getSecLatestFiled } from '../storage/repository';
@@ -82,6 +83,33 @@ const regimeCache = createSwrCache<RegimeCached>({
   load: (prev) => fetchFresh(prev ?? undefined),
 });
 
+// GEX 的滚动分位只随 6h 缓存里的 gex 变,按引用记住,别每次请求重算(约 3000 × 1260 次比较)
+let gexPctlMemo: { src: Point[]; out: Point[] } | null = null;
+function gexPctlOf(gex: Point[]): Point[] {
+  if (gexPctlMemo?.src !== gex) gexPctlMemo = { src: gex, out: rollingPctl(gex) };
+  return gexPctlMemo.out;
+}
+
+/**
+ * 踩踏监控里要读库的两条:「升级」(指数 / 个股 P/C 双高)与综合压力分(含三个 P/C)。
+ * P/C 是 daily job 写库的,跟着库读每次现算,不进 6h 缓存。
+ */
+function stampedeRead(
+  live: Record<string, Point[]>,
+  db: Record<string, Point[]>,
+): { series: Record<string, Point[]>; unavailable: string[] } {
+  const merged = { ...live, ...db };
+  const esc = escalateSeries(merged);
+  const stress = live.gex ? stressSeries(merged, gexPctlOf(live.gex)) : [];
+  const series = Object.fromEntries(
+    [
+      ['stEscalate', esc],
+      ['stStress', stress],
+    ].filter(([, rows]) => rows.length),
+  );
+  return { series, unavailable: ['stEscalate', 'stStress'].filter((k) => !series[k]) };
+}
+
 /**
  * 宏观 / regime 指标:现拉外部源(零存储,见 spec),并行 + 优雅降级 + 内存 TTL 缓存。
  * 单源失败(FRED key 缺 / CBOE 符号 404 / CNN 反爬)→ 归入 unavailable,其余照常返回,不整体 500。
@@ -98,7 +126,7 @@ export const regimeRoute = new Hono().get('/', async (c) => {
     const job = readDbBacked(db, cache.moveLive, cache.sofrLive, cache.hyOasLive ?? []);
     return c.json({
       ...cache.body,
-      ...mergeDbRead(cache.body, [sec, job]),
+      ...mergeDbRead(cache.body, [sec, job, stampedeRead(cache.body.series, job.series)]),
       secLag: sec.lag,
       secTrim: sec.trims,
       secFiled: getSecLatestFiled(db),
@@ -902,6 +930,14 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   } finally {
     db.close();
   }
+
+  // 踩踏监控:阶段三的 0/1 标记(历史图的红底;阶段一 / 二 / 四不画,叠在一起看着像六七个阶段)、断崖亮灯日。
+  // 输入全是现拉的 CBOE 序列,随缓存一起算;升级要读库里的认沽认购比,每次请求现算(见 stampedeRead)
+  put(
+    'stStage3',
+    stageSeries(series).map((x) => ({ date: x.date, value: x.stage === 3 ? 1 : 0 })),
+  );
+  put('stCliff', series.vixeqVix ? cliffSeries(series.vixeqVix).filter((p) => p.value === 1) : undefined);
 
   const fresh: RegimeBody = { series, unavailable, ohlc, secLag, secTrim, secFiled };
   // 全成功才算 complete(降级结果只短暂缓存、不落盘,见 swrCache)。例外:SEC 那几条是季频、GPU 那几条(gpu 前缀)

@@ -16,6 +16,7 @@ import { OIL } from './pages/oil';
 import { OPTIONS } from './pages/options';
 import { RATES } from './pages/rates';
 import { SENTIMENT } from './pages/sentiment';
+import { STAMPEDE } from './pages/stampede';
 import type { Perspective } from './pages/tabs';
 import { VALUATION } from './pages/valuation';
 
@@ -26,6 +27,7 @@ export const PERSPECTIVES: Perspective[] = [
   CREDIT,
   LIQUIDITY,
   SENTIMENT,
+  STAMPEDE,
   MACRO,
   OIL,
   BTC,

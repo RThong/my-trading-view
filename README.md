@@ -119,7 +119,7 @@ Check recent runs with `./scripts/cron.sh history`.
 ```
 src/
 ├── shared/                  types · marketCatalog (标的元数据单一真相源;前后端派生)
-│   └── calc/                pure compute shared by both ends (stats · policyPath · oilRoll · zigzag · attackDefense · freshness · ruleState)
+│   └── calc/                pure compute shared by both ends (stats · policyPath · oilRoll · zigzag · attackDefense · stampede · monthlyExpiry · freshness · ruleState)
 ├── server/
 │   ├── index.ts             Hono app, exports AppType
 │   ├── config.ts            option/price whitelists (derived from marketCatalog)
@@ -127,7 +127,7 @@ src/
 │   ├── live/                market: read-time fetch of ETF / BTC spot, CBOE vol indices, DVOL, BRK (1h cache + disk snapshot)
 │   ├── routes/              health · options · vrp · regime · series · yahoo · yieldCurve
 │   ├── fetchers/            optionsChain (options client contract) · moomoo · deribit · cboe(Index/Vx) · fred · yahoo · eris · iceCds · jpxJgbVix · mofJgb · cftcCot · capeShiller · cnnFearGreed
-│   ├── analytics/           vrp · termStructure · regime · rateCurves · sec6kText · tradingCalendar · monthlyExpiry (all pure)
+│   ├── analytics/           vrp · termStructure · regime · rateCurves · sec6kText · tradingCalendar (all pure)
 │   ├── storage/             bun:sqlite schema, migrations, repository
 │   └── jobs/                daily orchestrator + optionsSnapshot / vxTermStructure / cryptoDaily / erisSnapshot / iceCdsSnapshot
 └── web/
@@ -203,6 +203,7 @@ several horizontal tabs:
 | 信用 Credit | 利差走势 (HY OAS + CDX HY / IG index CDS) · 评级利差 · 期限结构 · 杠杆 (US margin debt YoY + Japan margin-buying balance YoY) | FRED / ICE / DTCC / FINRA / JPX |
 | 流动性 Liquidity | net liquidity (WALCL−TGA−RRP, weekly, sampled on Wednesdays) · bank reserves (WRBWFRBL) · reverse repo · repo usage · repo stress (IORB−SOFR) | FRED |
 | 情绪 Sentiment | 波动率 (VIX · VXN · VIXEQ · VX1−VX3 / VIX−VIX3M term · VIX6M · SKEW · CFTC VIX futures positioning) · 情绪 (Fear&Greed · COR1M / COR3M · RXM/SPX risk-reversal · Cboe put/call ratios) · Gamma (Squeezemetrics dealer gamma exposure GEX vs S&P 500) | CBOE / CNN / Squeezemetrics |
+| 踩踏监控 Stampede | single view copied from the source dashboard: header with five per-dimension scores (no composite, missing inputs noted) and the auto-judged stage (rule-based on VIX · VIX/VIX3M · VVIX · SKEW · VIXEQ/VIX) → scenario buttons (live first, then the source's four stage templates re-scored on the same rules, with a "template, not live data" banner) → four stage cards with cliff / escalation lamps → three small cards (VIX term structure, P/C vs red lines, GEX percentile gauge) → five dimension cards (value · warning-line tag · rolling 5Y percentile bar) → risk / pause checklists; S&P 500 history with stage-3 shading plus the composite stress score (expanded by default, collapsible). Rules and history stats live in ⓘ. A state backdrop, not a timing signal (spec: `docs/options-structure-panel-handoff.md` §11) | CBOE / Cboe P/C (DB) / Squeezemetrics / Yahoo |
 | 宏观 Macro | 美元 (DXY) · ISM 景气 (PMI + Prices) · 就业 (Chicago Fed CFLMI: separation rate, outflow rate, flow-consistent unemployment vs BLS U-3) | FRED / ISM / Chicago Fed |
 | 能源 Energy | 油市结构 (Strait of Hormuz daily transits · Brent−WTI · diesel/gasoline/3-2-1 crack) · 炼厂·库存 (开工率 + 馏分油收率 + 加工量/产量同比 + 表观需求同比 + 库存与出口的**季节 z**，判紧张来自需求还是供应) · 泵价·加价 (retail diesel/gasoline vs wholesale) | Yahoo / EIA / IMF PortWatch |
 | 利率 Rates | 收益曲线 · 期限走势 (+ 10Y−1Y / 30Y−10Y spread panes) · SOFR OIS · OIS 走势 · 加息定价 / 定价走势 (OIS-implied hikes + Kansas City Fed policy-rate skew) · 利率波动率 (MOVE) · 实际收益率 (TIPS 曲线) · 实际走势 · 长端分解 (5y5y 通胀远期 + 期限溢价(Kim-Wright vs NY Fed ACM 两模型并排) + A vs L 缺口(KW 预期短端 vs HLW r*+5y5y) + HLW r*) | FRED / Eris / NY Fed / Kansas City Fed / Yahoo |

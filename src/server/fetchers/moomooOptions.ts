@@ -15,7 +15,7 @@
  */
 
 import type { OptionChainSnapshot, OptionContract, OptionsChainClient } from './optionsChain';
-import { nextMonthlyExpiry } from '../analytics/monthlyExpiry';
+import { nextMonthlyExpiry } from '../../shared/calc/monthlyExpiry';
 import { QOT_MARKET_US, envConfig, rateGate, withConnection, type ConnOpts, type MoomooConfig } from './moomooClient';
 import { fetchUsTradingDates } from './moomooHistoryKL';
 import { lastClosedFrom } from '../analytics/tradingCalendar';
