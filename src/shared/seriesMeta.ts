@@ -453,6 +453,7 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   vix3m: daily('波动率', 'VIX3M 3 个月隐含波动率'),
   vix9d: daily('波动率', 'VIX9D 9 天隐含波动率'),
   dspx: daily('波动率', 'DSPX 标普 500 离散度', undefined, ['离散度', 'dispersion']),
+  vvix: daily('波动率', 'VVIX (VIX 的波动率)'),
   // 与 vix 同值(都是 CBOE 收盘),但现拉、当天就有;给与现拉腿内连接的计算格用,下拉里只留 vix
   vixSpot: { ...daily('波动率', 'VIX(CBOE 现拉)'), hidden: true },
   rxm: daily('情绪·持仓', 'RXM 风险逆转指数', undefined, ['风险逆转']),

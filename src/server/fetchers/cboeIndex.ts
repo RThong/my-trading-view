@@ -59,6 +59,7 @@ export function parseCboeIndexCsv(text: string): CboeIndexRow[] {
     header.includes('OPEN') && header.includes('HIGH') && header.includes('LOW') && header.includes('CLOSE');
 
   // 跳过表头行,逐行解析;flatMap 返回 [] 即丢弃该行(等价于原来的 continue)。
+  // 收盘 ≤ 0 也当坏行丢:这些指数不会是 0 或负数(DSPX 2018-02-08 源里就有一行 0)
   return lines.slice(1).flatMap((line): CboeIndexRow[] => {
     const cols = line.split(',');
     const tradeDate = toIsoDate(cols[0]?.trim());
@@ -66,14 +67,14 @@ export function parseCboeIndexCsv(text: string): CboeIndexRow[] {
 
     if (isOhlc) {
       const close = parseNullable(cols[4]);
-      if (close === null) return [];
+      if (close === null || close <= 0) return [];
       return [
         { tradeDate, open: parseNullable(cols[1]), high: parseNullable(cols[2]), low: parseNullable(cols[3]), close },
       ];
     }
 
     const close = parseNullable(cols[1]);
-    if (close === null) return [];
+    if (close === null || close <= 0) return [];
     return [{ tradeDate, open: null, high: null, low: null, close }];
   });
 }

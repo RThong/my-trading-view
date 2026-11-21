@@ -53,13 +53,19 @@ export function normalBand(lo: number, hi: number): RuleLevel[] {
   ];
 }
 
+/**
+ * 分位规则缺省只用 2018 起的数据算切点:读时现拉的序列放到了源头全历史(CBOE 1990 起等),
+ * 不锁的话序列一变长切点就悄悄变(SKEW 2010 前整体低一截,P95 157.5 → 147.8)。要别的起点就显式写 since。
+ */
+const PCTL_SINCE = '2018-01-01';
+
 function pctl<const Id extends string>(
   id: Id,
   at: string,
   name: string,
   input: AlertRule['input'],
   riskTail?: 'low' | 'high',
-  { since, ...extra }: Partial<Omit<AlertRule, 'id'>> & { since?: string } = {},
+  { since = PCTL_SINCE, ...extra }: Partial<Omit<AlertRule, 'id'>> & { since?: string } = {},
 ): AlertRule & { id: Id } {
   return {
     id,
@@ -67,7 +73,7 @@ function pctl<const Id extends string>(
     name,
     at,
     input,
-    percentile: { ...(riskTail && { riskTail }), ...(since && { since }) },
+    percentile: { ...(riskTail && { riskTail }), since },
     ...extra,
   };
 }
@@ -103,12 +109,7 @@ export const ALERT_RULES = [
   pctl('vxn', 'vol', 'VXN 纳指波动率分位(低 = 自满)', one('vxn'), 'low'),
   pctl('vixeq', 'vol', '成分股波动率 VIXEQ 分位(低 = 自满)', one('vixeq'), 'low'),
   pctl('vix6m', 'vol', 'VIX6M 分位(低 = 自满)', one('vix6m'), 'low'),
-  pctl('skew', 'vol', 'SKEW 分位(高 = 尾部保护被抢贵)', one('skew'), 'high', {
-    version: 2,
-    confirmDays: 2,
-    // 序列 1990 起,但 2010 前整体低一截,分位仍按 2018 起算,保持报警口径不变
-    since: '2018-01-01',
-  }),
+  pctl('skew', 'vol', 'SKEW 分位(高 = 尾部保护被抢贵)', one('skew'), 'high', { version: 2, confirmDays: 2 }),
   pctl('vixCotLm', 'vol', 'VIX 期货杠杆资金净持仓分位(极端净空 = 卖波动拥挤)', one('vixCotLm'), 'low', {
     version: 2,
     confirmDays: 2,

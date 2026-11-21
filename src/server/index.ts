@@ -18,7 +18,8 @@ const app = new Hono()
   .route('/series', seriesRoute);
 
 export default {
-  port: 3000,
+  // 端口可在 .env 配(API_PORT):多个 worktree 同时开 dev server 时错开
+  port: Number(process.env.API_PORT ?? 3000),
   // 只监听本机:Bun 默认绑 0.0.0.0,同一局域网的人能直连 API(个人看盘无需对外)
   hostname: '127.0.0.1',
   fetch: app.fetch,

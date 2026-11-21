@@ -9,7 +9,8 @@ import { isDate, parseChartDoc } from '../src/web/views/chartDoc/chartDoc';
 import { renderHash } from '../src/web/views/chartDoc/docLink';
 import { type Interval, INTERVALS } from '../src/web/hooks/interval';
 
-const BASE = 'http://localhost:5173';
+// 同 vite.config 的 WEB_PORT(bun 自动读 .env)
+const BASE = `http://localhost:${process.env.WEB_PORT ?? 5173}`;
 // 数据从各源现拉,慢的源(如 Yahoo 长历史)十几秒,留足余量
 const TIMEOUT_MS = 90_000;
 // 2 倍像素(同 Retina 屏上导出的清晰度)。浏览器启动参数和页面的 deviceScaleFactor 都读它,两处不一致就会复发下面那个画布 1 倍 / 2 倍混用的问题:

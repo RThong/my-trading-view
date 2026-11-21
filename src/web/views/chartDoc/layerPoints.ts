@@ -305,10 +305,10 @@ function computeMarks(layer: Layer, pts: LinePoint[]): LayerMarks {
 
   const since = pctl.since;
   const shift = layer.shift ?? 0;
-  const window = (since ? pts.filter((p) => (shift ? shiftBusinessDays(p.time, -shift) : p.time) >= since) : pts).map(
-    (p) => p.value,
-  );
-  const marks = percentileMarks(window, pts, { riskTail: pctl.riskTail, refLines: layer.refLines });
+  // 平移过的图层按平移前的日期比 since(同一个点在算阈值和染色两处口径一致)
+  const inWindow = since ? (time: string) => (shift ? shiftBusinessDays(time, -shift) : time) >= since : undefined;
+  const window = (inWindow ? pts.filter((p) => inWindow(p.time)) : pts).map((p) => p.value);
+  const marks = percentileMarks(window, pts, { riskTail: pctl.riskTail, refLines: layer.refLines, inWindow });
 
   return { lines: [...base, ...(marks?.lines ?? layer.refLines ?? [])], band: marks?.band ?? null, window };
 }

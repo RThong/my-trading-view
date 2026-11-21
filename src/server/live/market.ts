@@ -133,8 +133,13 @@ function live<T>(e: Entry): Live<T> {
 const BTC_START = '2012-01-01';
 // DVOL 指数 2021-03-24 上线(Deribit 那天起才有点)
 const DVOL_START = '2021-03-24';
-// CBOE 指数的起点:缺省 HISTORY_START_DATE,GVZ / OVX 放到上市日、SKEW 放到源头最早的 1990(只放开这几条,不扩大全系统的历史窗口)
-const CBOE_START: Record<string, string> = { GVZ: '2009-09-18', OVX: '2009-09-18', SKEW: '1990-01-02' };
+// CBOE 指数读时现拉、每次都下整份 CSV,所以源头有多早就从多早(截到 2018 只是丢掉已到手的数据);
+// 报警分位不受影响:规则的 since 缺省锁在 2018(见 shared/alertRules 的 pctl)。
+// 例外:VVIX 2006 年大半年稀疏(每月 3~8 个点、隔 1~3 周),从 2007 起
+const CBOE_START: Record<string, string> = { VVIX: '2007-01-01' };
+export function cboeStart(sym: string): string {
+  return CBOE_START[sym] ?? '1900-01-01';
+}
 // 源里已知、补不回来的断档(断档前后两天,精确匹配):SKEW 2000-09-20 ~ 09-29 缺 8 个交易日
 const CBOE_KNOWN_GAPS: Record<string, [string, string][]> = { SKEW: [['2000-09-19', '2000-10-02']] };
 
@@ -199,7 +204,7 @@ async function loadEtf(u: string): Promise<Bar[]> {
 }
 
 async function loadCboe(sym: string): Promise<Bar[]> {
-  const rows = await fetchCboeIndexAsQuotes({ cboeSymbol: sym, storedSymbol: sym, startDate: CBOE_START[sym] });
+  const rows = await fetchCboeIndexAsQuotes({ cboeSymbol: sym, storedSymbol: sym, startDate: cboeStart(sym) });
   const bars = rows.map((r) => ({ date: r.tradeDate, open: r.open, high: r.high, low: r.low, close: r.close }));
 
   return checkedGaps(`CBOE ${sym}`, bars, CBOE_KNOWN_GAPS[sym]);
