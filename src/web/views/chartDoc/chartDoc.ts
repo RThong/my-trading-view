@@ -166,8 +166,14 @@ export type Margins = { top: number; bottom: number };
 export const DEFAULT_MARGINS: Margins = { top: 20, bottom: 8 };
 export const MAX_MARGIN = 25;
 
-/** title:整张图的标题(导出图片时写在顶上);没有就不写这个字段。margins:等于默认就不写 */
-export type ChartDoc = { v: 1; title?: string; margins?: Margins; panes: Pane[] };
+/**
+ * 横轴可视区(YYYY-MM-DD,from < to)。打开 / 导入 / 出图时跳到这段(同 TradingView「Go to › Custom range」),
+ * 之后缩放归用户、不写回(用户定 2026-11-23,TradingView 也不把缩放位置存进图里)。只能在 JSON 里写
+ */
+export type ViewRange = { from: string; to: string };
+
+/** title:整张图的标题(导出图片时写在顶上);没有就不写这个字段。margins:等于默认就不写。range:没有 = 对准各线共同时段 */
+export type ChartDoc = { v: 1; title?: string; margins?: Margins; range?: ViewRange; panes: Pane[] };
 
 /** 图层挂轴的选择:内置左右轴、新开一根独立轴,或挂到本格已有的某根独立轴。 */
 export type ScaleChoice = 'right' | 'left' | 'newOverlay' | { overlay: string };
@@ -299,7 +305,13 @@ export function normalize(doc: ChartDoc): ChartDoc {
       return { ...p, layers, scales: [...declared, ...missing] };
     });
 
-  return { v: 1, ...(doc.title ? { title: doc.title } : {}), ...(doc.margins ? { margins: doc.margins } : {}), panes };
+  return {
+    v: 1,
+    ...(doc.title ? { title: doc.title } : {}),
+    ...(doc.margins ? { margins: doc.margins } : {}),
+    ...(doc.range ? { range: doc.range } : {}),
+    panes,
+  };
 }
 
 function mapLayer(doc: ChartDoc, layerId: string, fn: (l: Layer, p: Pane) => Partial<Layer>): ChartDoc {
@@ -819,6 +831,12 @@ function canonicalMargins(m: unknown): Margins | undefined {
   return { top: m.top, bottom: m.bottom };
 }
 
+function canonicalRange(r: unknown): ViewRange | undefined {
+  if (!isObj(r) || !isDate(r.from) || !isDate(r.to) || r.from >= r.to) return undefined;
+
+  return { from: r.from, to: r.to };
+}
+
 /** 改上下留白:取整、夹到 0 ~ MAX_MARGIN(同 TradingView);等于默认就删掉字段;没变返回原文档(不记撤销步) */
 export function setDocMargins(doc: ChartDoc, m: Margins): ChartDoc {
   const clamp = (n: number) => Math.min(MAX_MARGIN, Math.max(0, Math.round(n)));
@@ -1203,6 +1221,13 @@ export function parseChartDoc(x: unknown): ChartDoc | null {
 
   // 留白不合法只丢这一项(回默认),不整张拒收:理由同 dropBadDrawings
   const margins = canonicalMargins(x.margins);
+  const range = canonicalRange(x.range);
 
-  return normalize({ v: 1, ...(x.title ? { title: x.title } : {}), ...(margins ? { margins } : {}), panes });
+  return normalize({
+    v: 1,
+    ...(x.title ? { title: x.title } : {}),
+    ...(margins ? { margins } : {}),
+    ...(range ? { range } : {}),
+    panes,
+  });
 }

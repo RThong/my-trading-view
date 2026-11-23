@@ -254,7 +254,7 @@ SPY 的 25Δ 改走 CBOE VIX 分解后**可以回填**(2022-09 起,见取数总�
 
 ## 约定
 
-- **出图**:`bun run render-chart <doc.json> <out.png> [--interval 1W] [--theme dark] [--size 1400x800] [--from 2022-12-01]`(dev server 要开着;浏览器用本机装的 Google Chrome,没装要先装,或改脚本里的 channel)。doc.json 是编辑器「查看 JSON」那种 ChartDoc,出来的图同编辑器「导出图片」;序列 id 用注册表 id 或 `yh:<Yahoo 代码>`。要画图给人看时用它,别另起 matplotlib 重画(样式会和看板分家)。
+- **出图**:`bun run render-chart <doc.json> <out.png> [--interval 1W] [--theme dark] [--size 1400x800] [--from 2022-12-01] [--to 2023-06-30]`(dev server 要开着;浏览器用本机装的 Google Chrome,没装要先装,或改脚本里的 channel)。doc.json 是编辑器「查看 JSON」那种 ChartDoc,出来的图同编辑器「导出图片」;序列 id 用注册表 id 或 `yh:<Yahoo 代码>`;doc 里可带 `range: { from, to }` 定可视区(命令行 `--from` / `--to` 压过它)。要画图给人看时用它,别另起 matplotlib 重画(样式会和看板分家)。
 - **dev server 端口**:默认 API 3000 / 前端 5173,可在 `.env` 配 `API_PORT` / `WEB_PORT`(vite 代理、`render-chart` 都跟着读;前端 `strictPort`,被占直接报错)。多个 worktree 同时开时,各自 `.env` 错开端口。
 - **界面状态只在浏览器里**:地址栏 hash 记当前位置(内置 `#/<视角>/<tab>`、自建 `#/c/<视角>/<tab>[/<图 id>]`,见 `web/hooks/route.ts`;改 tab id 会让旧书签回默认页);自建 tab(`pages/custom`)、编辑器存档、画线工具偏好都存 localStorage(`mtv:*` 键),**不进库、不进 git**,换浏览器 / 清站点数据就没了。
 - 改完代码跑 `bun run check`(= typecheck + `bun test` + `bun run lint`)。lint 是 **Biome**(lint + format 二合一,
