@@ -8,6 +8,12 @@ export const DB_PATH = resolve(PROJECT_ROOT, 'data', 'mtv.db');
 export const HISTORY_START_DATE = '2018-01-01';
 
 /**
+ * FRED 宏观月 / 季频(通胀、就业、GDP)的展示起点:要能回看 1995–2004 科网泡沫那一轮(用户 2026-11-23 定)。
+ * 数据量可忽略。报警分位不受影响,仍按 2018 起(alertRules 的 PCTL_SINCE)。
+ */
+export const MACRO_HISTORY_START_DATE = '1995-01-01';
+
+/**
  * ETF 现货(server/live/market 读时现拉,算 VRP 等)的起始日:拉到上市日(SPY 1993,早于它的日期 Yahoo 自然不回)。
  * 单独于 HISTORY_START_DATE:K 线长周期均线要够长的历史才收敛 —— 周线 EMA365 只从 2018 起算,
  * 2026-09 比全历史低 8.9(498.5 vs 507.4)。只 Yahoo 一次请求,数据量可忽略。

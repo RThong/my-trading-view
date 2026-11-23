@@ -57,7 +57,7 @@ import { cliffSeries, escalateSeries, rollingPctl, stageSeries, stressSeries } f
 import { nearMinusFar } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
 import { getSecLatestFiled } from '../storage/repository';
-import { HISTORY_START_DATE, SEASONAL_BASELINE_YEARS } from '../config';
+import { HISTORY_START_DATE, MACRO_HISTORY_START_DATE, SEASONAL_BASELINE_YEARS } from '../config';
 import type { FundTrim, SecFiled, SecLag } from '../../shared/aiChain';
 import {
   type RegimeBody,
@@ -143,8 +143,8 @@ export const regimeRoute = new Hono().get('/', async (c) => {
 async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: RegimeCached; complete: boolean }> {
   const t0 = performance.now();
   const fred = createFredFetcher({ apiKey: process.env.FRED_API_KEY ?? '' });
-  const fredSeries = (id: string): Promise<Point[]> =>
-    fred.fetchSeries(id, HISTORY_START_DATE).then((rows) => rows.map((r) => ({ date: r.obsDate, value: r.value })));
+  const fredSeries = (id: string, since = HISTORY_START_DATE): Promise<Point[]> =>
+    fred.fetchSeries(id, since).then((rows) => rows.map((r) => ({ date: r.obsDate, value: r.value })));
   const cboeSeries = (sym: string): Promise<Point[]> =>
     fetchCboeIndexAsQuotes({ cboeSymbol: sym, storedSymbol: sym, startDate: cboeStart(sym) }).then((rows) =>
       rows.map((r) => ({ date: r.tradeDate, value: r.close })),
@@ -186,8 +186,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     // FRED 只留 3 年:长历史在库里(daily 的 credit_spread 组镜像),在下方 db 段合并,同 MOVE
     hyOas: fredSeries('BAMLH0A0HYM2'),
     // dgs10 / dgs2 改走财政部 par yield 直发源(当天出,FRED DGS 慢 1-2 天),见下方 ustP。
-    wages: fredSeries('FRBATLWGT3MMAUMHWGO'), // Atlanta Fed 薪资增速 tracker(3mma,月频 %)
-    stickyCpi: fredSeries('CORESTICKM159SFRBATL'), // Atlanta Fed 核心黏性价格 CPI(Sticky Price CPI less food & energy,YoY%,月频;不等于服务通胀)
+    wages: fredSeries('FRBATLWGT3MMAUMHWGO', MACRO_HISTORY_START_DATE), // Atlanta Fed 薪资增速 tracker(3mma,月频 %)
+    stickyCpi: fredSeries('CORESTICKM159SFRBATL', MACRO_HISTORY_START_DATE), // Atlanta Fed 核心黏性价格 CPI(Sticky Price CPI less food & energy,YoY%,月频;不等于服务通胀)
     // 5y5y 通胀远期:剥掉近 5 年、只看第 6-10 年的通胀定价,比 10Y BEI 更贴"长期通胀锚"。日频 %。
     // 用 FRED 官方口径,不自己拿 2×BEI10 − BEI5 算 —— DGS/DFII 是固定期限收益率不是零息,自算是近似。
     t5yifr: fredSeries('T5YIFR'),
@@ -207,10 +207,10 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     sepMedian: fredSeries('FEDTARMD'),
     sepMedianLr: fredSeries('FEDTARMDLR'),
     // 官方失业率(月频 %),「宏观 · 就业」里和 CFLMI 的流量一致失业率对照
-    unrate: fredSeries('UNRATE'),
+    unrate: fredSeries('UNRATE', MACRO_HISTORY_START_DATE),
     // 实际 GDP 环比年化(季频 %,BEA)。FRED 把季度记在季初(2026-07-01 = Q3),改落季末(fetchers/quarter 的约定):
     // 落季初会让读数比季度结束还早三个月出现在图上
-    gdpReal: fredSeries('A191RL1Q225SBEA').then((rows) =>
+    gdpReal: fredSeries('A191RL1Q225SBEA', MACRO_HISTORY_START_DATE).then((rows) =>
       rows.flatMap((p) => {
         const end = quarterEndIso(p.date.slice(0, 4), (Number(p.date.slice(5, 7)) + 2) / 3);
         return end ? [{ date: end, value: p.value }] : [];
@@ -342,14 +342,18 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // 源是个无文档端点(图表取数用),挂了就归 unavailable:少一条对照线,主线照画。见 fetchers/nyfedAcm。
   const acmP = fetchAcmTermPremium(HISTORY_START_DATE).catch(() => null);
   // 核心 CPI / PCE 指数 + 各自的例行发布日。指数多拉一年给同比垫对照期;任一腿失败整组归 unavailable。
-  const yearBeforeStart = `${Number(HISTORY_START_DATE.slice(0, 4)) - 1}${HISTORY_START_DATE.slice(4)}`;
+  // 从 MACRO_HISTORY_START_DATE 起(科网泡沫那轮);发布日 ALFRED 只到 CPI 1997-01 / PCE 2000-08。
+  const yearBeforeStart = `${Number(MACRO_HISTORY_START_DATE.slice(0, 4)) - 1}${MACRO_HISTORY_START_DATE.slice(4)}`;
   const coreInflP = Promise.all(
     ['CPILFESL', 'PCEPILFE'].map((id) =>
-      Promise.all([fred.fetchSeries(id, yearBeforeStart), fred.fetchFirstReleaseDates(id, HISTORY_START_DATE)]).catch(
-        () => null,
-      ),
+      Promise.all([
+        fred.fetchSeries(id, yearBeforeStart),
+        fred.fetchFirstReleaseDates(id, MACRO_HISTORY_START_DATE),
+      ]).catch(() => null),
     ),
   );
+  // 全口径 CPI(CPIAUCSL,季调)指数 → 同比。和核心 CPI 叠一格看能源 / 食品那层;不要发布日标记(同核心 CPI 同一天发)。
+  const headlineCpiP = fredSeries('CPIAUCSL', yearBeforeStart).catch(() => null);
   // 油品近月期货(Yahoo 连续近月,自带全历史,live 不落库)。派生油市结构 + 汽油 YoY。
   const yahooClose = (sym: string): Promise<Point[] | null> =>
     createYahooFetcher()
@@ -491,6 +495,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     valuationP,
   ]);
   const [coreCpi, corePce] = await coreInflP;
+  const headlineCpi = await headlineCpiP;
   const [
     refUtil,
     distStocks,
@@ -525,6 +530,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
 
   // 多拉的对照期(季节 z 的基准年、同比的前一年)不画到图上:别的线都从 HISTORY_START_DATE 起,混着会让 hover 对不上。
   const fromHistoryStart = (rows: Point[]) => rows.filter((p) => p.date >= HISTORY_START_DATE);
+  const fromMacroStart = (rows: Point[]) => rows.filter((p) => p.date >= MACRO_HISTORY_START_DATE);
 
   // 直接对外的序列(对外名 → 原始源名)。
   const direct: Partial<Record<RegimeSeries, keyof typeof src>> = {
@@ -703,9 +709,10 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   put('lmeCopper3m', lmeCopper ? fromHistoryStart(lmeCopper) : undefined);
   // BTC 系列不截 2018(K 线 2012 起),成交额从源头 2017-08 起全给
   put('btcVolume', btcVolume ?? undefined);
-  put('lmiFlowUnemp', cflmi ? fromHistoryStart(cflmi.flowRate) : undefined);
-  put('lmiHiring', cflmi ? fromHistoryStart(cflmi.hiring) : undefined);
-  put('lmiSeparations', cflmi ? fromHistoryStart(cflmi.separations) : undefined);
+  // CFLMI 不截 2018:源头 2008-07 起,全给(宏观从 1995 起,见 MACRO_HISTORY_START_DATE)
+  put('lmiFlowUnemp', cflmi?.flowRate);
+  put('lmiHiring', cflmi?.hiring);
+  put('lmiSeparations', cflmi?.separations);
   put('jpCiLeading', ci ? fromHistoryStart(ci.map((m) => ({ date: m.date, value: m.leading }))) : undefined);
   put('jpCiCoincident', ci ? fromHistoryStart(ci.map((m) => ({ date: m.date, value: m.coincident }))) : undefined);
   put('jpInflExp1y', tankan?.[TANKAN_INFL_EXP[0]]);
@@ -737,9 +744,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
 
     const [index, releases] = leg;
     const pts = index.map((r) => ({ date: r.obsDate, value: r.value }));
-    const yoy = fromHistoryStart(monthlyAnnualizedPct(pts, 12));
+    const yoy = fromMacroStart(monthlyAnnualizedPct(pts, 12));
 
-    return { yoy, ann3m: fromHistoryStart(monthlyAnnualizedPct(pts, 3)), releases: releaseMarkers(releases, yoy) };
+    return { yoy, ann3m: fromMacroStart(monthlyAnnualizedPct(pts, 3)), releases: releaseMarkers(releases, yoy) };
   };
   const cpi = inflation(coreCpi);
   const pce = inflation(corePce);
@@ -749,6 +756,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   put('corePceYoy', pce.yoy);
   put('corePce3m', pce.ann3m);
   put('corePceRelease', pce.releases);
+  put('cpiYoy', headlineCpi ? fromMacroStart(monthlyAnnualizedPct(headlineCpi, 12)) : undefined);
   // L 的粗代理 = HLW r*(实际中枢) + 5y5y 通胀远期(通胀锚)。**只为了和 A 并排读符号**,
   // 面板上不做 L − A、不乘 (T₂−T₁)/T₂ 系数、不出单一数字 —— 四层污染叠着,减出来的量不可识别:
   //   ① L 与 A 出自不同模型家族(HLW 宏观状态空间 vs Kim-Wright 期限结构),差里装着两模型的分歧,

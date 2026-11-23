@@ -52,14 +52,31 @@ function fmtChange({ delta, pct }: { delta: number; pct: number | null }): strin
  * 不写「最新」:存成图片后看图的人不知道最新是哪天(负责人 2026-11-13 定;TV 图例不写日期,我们的图要能单独拿出去看)
  */
 export function latestTime(doc: ChartDoc, data: Record<string, LayerData>): string | undefined {
+  return visibleEnds(doc, data, 'last').reduce<string | undefined>(
+    (max, t) => (max === undefined || t > max ? t : max),
+    undefined,
+  );
+}
+
+/** 同口径的最早日期(出图页判「截止日早于全部数据」用) */
+export function earliestTime(doc: ChartDoc, data: Record<string, LayerData>): string | undefined {
+  return visibleEnds(doc, data, 'first').reduce<string | undefined>(
+    (min, t) => (min === undefined || t < min ? t : min),
+    undefined,
+  );
+}
+
+// 看得见的普通线(不含隐藏 / 标记图层)各自的首 / 末日期,平移过的换回原日期
+function visibleEnds(doc: ChartDoc, data: Record<string, LayerData>, end: 'first' | 'last'): string[] {
   return doc.panes
     .flatMap((p) => p.layers)
     .filter((l) => !isMarkLayer(l) && !l.hidden)
-    .map((l) => {
-      const t = data[l.id]?.display?.at(-1)?.time;
-      return t && l.shift ? shiftBusinessDays(t, -l.shift) : t;
-    })
-    .reduce<string | undefined>((max, t) => (t !== undefined && (max === undefined || t > max) ? t : max), undefined);
+    .flatMap((l) => {
+      const pts = data[l.id]?.display;
+      const t = end === 'first' ? pts?.[0]?.time : pts?.at(-1)?.time;
+      if (!t) return [];
+      return [l.shift ? shiftBusinessDays(t, -l.shift) : t];
+    });
 }
 
 type Props = {

@@ -78,6 +78,22 @@ export function periodKey(dateStr: string, interval: Interval): string {
   return monday.toISOString().slice(0, 10);
 }
 
+/**
+ * from ~ to 之间每个工作日(按周期归并后)的时间键,给时间轴当「空白占位」。
+ * 为什么要:lw-charts 的横轴按数据点排、一点一格,不按日期比例。月频序列放长到 1995 年、
+ * 同图日频只从 2018 起时,前 23 年只有约 280 格、后 8 年两千多格 → 前段挤成一小截。
+ * 每个工作日补一格后,横轴间距 ≈ 日历时间。
+ */
+export function timelineSlots(from: string, to: string, interval: Interval): string[] {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const days = Math.floor((Date.parse(`${to}T00:00:00Z`) - start) / 86_400_000) + 1;
+  const dates = Array.from({ length: Math.max(days, 0) }, (_, i) =>
+    new Date(start + i * 86_400_000).toISOString().slice(0, 10),
+  ).filter((d) => !isWeekend(d));
+
+  return [...new Set(dates.map((d) => periodKey(d, interval)))];
+}
+
 /** 同一周期内多个点取最后一个(Map 重复 key 保留后写入的),再按时间升序。 */
 export function aggregate(points: LinePoint[], interval: Interval): LinePoint[] {
   if (interval === '1D') return points;

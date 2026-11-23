@@ -7,6 +7,7 @@ import {
   clampAutoscaleProvider,
   expandAutoscaleProvider,
   boxAutoscaleProvider,
+  timelineSlots,
   type Bar,
 } from './core';
 
@@ -137,4 +138,11 @@ describe('aggregateSum', () => {
     expect(aggregateSum(pts, '1M')).toEqual([{ time: '2026-11-01', value: 7 }]);
     expect(aggregateSum(pts, '1D')).toBe(pts);
   });
+});
+
+test('timelineSlots:只出工作日,按周期归并;to 早于 from 为空', () => {
+  expect(timelineSlots('2026-11-20', '2026-11-24', '1D')).toEqual(['2026-11-20', '2026-11-23', '2026-11-24']);
+  expect(timelineSlots('2026-11-20', '2026-12-02', '1W')).toEqual(['2026-11-16', '2026-11-23', '2026-11-30']);
+  expect(timelineSlots('2026-01-30', '2026-03-02', '1M')).toEqual(['2026-01-01', '2026-02-01', '2026-03-01']);
+  expect(timelineSlots('2026-11-24', '2026-11-20', '1D')).toEqual([]);
 });

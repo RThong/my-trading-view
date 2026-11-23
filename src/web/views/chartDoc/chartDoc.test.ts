@@ -1015,3 +1015,20 @@ test('独立轴显示刻度:只认独立轴;导入时左右轴写 show 拒收', 
   bad.panes[0].scales[0].show = true;
   expect(parseChartDoc(bad)).toBeNull();
 });
+
+describe('可视区 range', () => {
+  const base = addLayer(EMPTY_DOC, 'yh:SPY', '#2f6fd6');
+  const r = { from: '1998-10-01', to: '2000-03-31' };
+
+  test('parseChartDoc:合法的留下;不存在的日期 / from ≥ to 只丢 range,图照收', () => {
+    expect(parseChartDoc({ ...base, range: r })?.range).toEqual(r);
+    expect(parseChartDoc({ ...base, range: { from: '2023-02-30', to: '2023-06-01' } })).toEqual(base);
+    expect(parseChartDoc({ ...base, range: { from: '2000-01-03', to: '2000-01-03' } })).toEqual(base);
+  });
+
+  test('normalize 与编辑操作不丢 range', () => {
+    const doc = { ...base, range: r };
+    expect(normalize(doc).range).toEqual(r);
+    expect(addLayer(doc, 'yh:QQQ', '#ef4444').range).toEqual(r);
+  });
+});

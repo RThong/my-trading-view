@@ -6,7 +6,7 @@ import type { Interval } from '../../hooks/interval';
 import { CHART_CHROME, useTheme } from '../../hooks/theme';
 import type { ChartDoc } from '../../views/chartDoc/chartDoc';
 import { readRenderHash } from '../../views/chartDoc/docLink';
-import { latestTime } from '../../views/chartDoc/Legend';
+import { earliestTime, latestTime } from '../../views/chartDoc/Legend';
 import { allSevenDay, layerRequest, useLayerData } from '../../views/chartDoc/layerPoints';
 import { useCrosshairLegend } from '../../views/chartDoc/useCrosshairLegend';
 import { useDocChart } from '../../views/chartDoc/useDocChart';
@@ -51,14 +51,33 @@ export function RenderPage() {
   return 'error' in parsed ? (
     <p className="p-4 text-sm text-amber-500">{parsed.error}</p>
   ) : (
-    <RenderChart doc={parsed.doc} interval={parsed.interval} from={parsed.from} />
+    <RenderChart doc={parsed.doc} interval={parsed.interval} from={parsed.from} to={parsed.to} />
   );
 }
 
-function RenderChart({ doc, interval, from }: { doc: ChartDoc; interval: Interval; from?: string }) {
+function RenderChart({
+  doc: given,
+  interval,
+  from: linkFrom,
+  to: linkTo,
+}: {
+  doc: ChartDoc;
+  interval: Interval;
+  from?: string;
+  to?: string;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // 同一个对象:每次渲染新建的话,useDocChart 的对准 effect 会跟着依赖变化反复把视图拽回去
-  const fit = useMemo(() => (from ? { from } : ('common' as const)), [from]);
+  // 链接给了 from / to 就压过文档的 range:去掉 range,按链接对准。同一个对象:每次渲染新建的话,
+  // useDocChart 的对准 effect 会跟着依赖变化反复把视图拽回去
+  const linked = Boolean(linkFrom || linkTo);
+  const doc = useMemo(() => (linked ? { ...given, range: undefined } : given), [linked, given]);
+  const fit = useMemo(
+    () => (linked ? { from: linkFrom, to: linkTo } : ('common' as const)),
+    [linked, linkFrom, linkTo],
+  );
+  // 起止日检查对文档自带的 range 也生效
+  const from = linkFrom ?? (linked ? undefined : given.range?.from);
+  const to = linkTo ?? (linked ? undefined : given.range?.to);
   const theme = useTheme();
 
   const sevenDay = allSevenDay(doc);
@@ -97,10 +116,18 @@ function RenderChart({ doc, interval, from }: { doc: ChartDoc; interval: Interva
         return;
       }
       const { data: d, layout: l, missing: m } = latest.current;
-      // 起始日晚于数据最后一天:lw 会把可视区压成最后一根拉满全宽,图看着像坏了却「成功」—— 直接报错
+      // 起始日不早于数据最后一天 / 截止日不晚于数据第一天:可视区里没有数据,lw 会把最后一根拉满全宽,
+      // 图看着像坏了却「成功」—— 直接报错
       const last = latestTime(doc, d);
-      if (from && last && from > last) {
-        window.__render = { error: `--from ${from} 晚于数据最后一天 ${last}` };
+      const first = earliestTime(doc, d);
+      // 起止日可能来自命令行 / 链接,也可能是文档自带的 range,报错时说清是哪个
+      const [fromName, toName] = linked ? ['--from', '--to'] : ['range.from', 'range.to'];
+      if (from && last && from >= last) {
+        window.__render = { error: `${fromName} ${from} 不早于数据最后一天 ${last}` };
+        return;
+      }
+      if (to && first && to <= first) {
+        window.__render = { error: `${toName} ${to} 不晚于数据第一天 ${first}` };
         return;
       }
       const canvas = docSnapshot(chart, origin, doc, d, l, interval, CHART_CHROME[theme].ink);
@@ -108,7 +135,7 @@ function RenderChart({ doc, interval, from }: { doc: ChartDoc; interval: Interva
     }, SETTLE_MS);
 
     return () => clearTimeout(t);
-  }, [isLoading, error, chartRef, doc, interval, theme, from]);
+  }, [isLoading, error, chartRef, doc, interval, theme, from, to, linked]);
 
   return (
     <div className="relative h-screen w-screen bg-neutral-950">

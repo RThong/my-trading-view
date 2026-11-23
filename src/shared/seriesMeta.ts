@@ -155,6 +155,8 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
 
   // ── 信用·流动性
   hyOas: daily('信用·流动性', 'HY OAS 高收益信用利差', '%', ['高收益', '信用利差']),
+  // 与编辑器的 credit:CCC 同值,只为挂分位规则(规则输入只认 /api/regime 的键);下拉里只留 credit:CCC
+  cccOas: { ...daily('信用·流动性', 'CCC 及以下信用利差 OAS', '%'), hidden: true },
   cdxIg: daily('信用·流动性', 'CDX 北美投资级 5Y 利差', '%', ['cdx', 'cds', '投资级', 'ig']),
   cdxHy: daily('信用·流动性', 'CDX 北美高收益 5Y 利差', '%', ['cdx', 'cds', '高收益', 'hy']),
   jpMarginBuyYoy: {
@@ -219,6 +221,13 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   },
   stickyCpi: { label: 'Sticky CPI', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['cpi', '通胀'] },
   coreCpiYoy: { label: '核心 CPI 同比', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['cpi', '通胀'] },
+  cpiYoy: {
+    label: 'CPI 同比(全口径)',
+    category: '通胀·宏观',
+    freq: '月',
+    unit: '%',
+    aliases: ['cpi', '通胀', 'headline'],
+  },
   coreCpi3m: { label: '核心 CPI 3 个月年化', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['cpi', '通胀'] },
   corePceYoy: { label: '核心 PCE 同比', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['pce', '通胀'] },
   corePce3m: { label: '核心 PCE 3 个月年化', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['pce', '通胀'] },
@@ -535,6 +544,7 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   hormuzTankers: 'server',
   rbobYoy: 'server',
   coreCpiYoy: 'server', // 由 CPI 指数算同比 / 3 个月年化
+  cpiYoy: 'server',
   coreCpi3m: 'server',
   corePceYoy: 'server',
   corePce3m: 'server',

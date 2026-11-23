@@ -210,6 +210,8 @@ export const ALERT_RULES = [
     0.05,
     { version: 2, confirmDays: 2 },
   ),
+  // 信用 · 评级走势
+  pctl('cccOas', 'creditRating', 'CCC 及以下信用利差分位(高 = 垃圾债尾部承压)', one('cccOas'), 'high'),
   // 估值
   pctl('cape', 'valuation', '席勒 CAPE 分位(2000 年起;高 = 贵)', one('cape'), 'high', { since: '2000-01-01' }),
   // 特色指标 · 集中度

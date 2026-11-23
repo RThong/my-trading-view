@@ -28,6 +28,8 @@ import {
   REF_LINE,
   boxAutoscaleProvider,
   fullHeightScale,
+  periodKey,
+  timelineSlots,
   volumeStripScale,
   type LinePoint,
 } from '../../chart/core';
@@ -243,9 +245,10 @@ type Options = {
   /**
    * 对准到哪:common = 所有线都有数据的那一段(编辑器:临时拼的线历史长短不一,短的不挤在右边);
    * { from } = 从这天到最新(固定面板:QQQ 1999 起、美债 10Y 1990 起这类长历史,全段显示会把其余格挤在右边一小截;
-   * 用户定 2018 起,与以前全站的视野一致)。两种都能往左拖看更早的历史
+   * 用户定 2018 起,与以前全站的视野一致);{ from, to } 各自缺省 = 共同时段起点 / 最新(出图链接的 from / to)。
+   * 文档自带 range 时以 range 为准(出图链接另给了 from / to 的,由出图页先去掉 range)。都能往左拖看更早的历史
    */
-  fit: 'common' | { from: string };
+  fit: 'common' | { from?: string; to?: string };
 };
 
 const STRETCH_EPS = 1e-3;
@@ -271,6 +274,11 @@ export function useDocChart(
   const paneOwnerRef = useRef(new Map<IPaneApi<Time>, string>());
   // 上次对准视图时的周期:只在 effect 里读写,不参与渲染
   const alignedIntervalRef = useRef(interval);
+  // 上次对准时文档的可视区:变了(导入 / 改 JSON 换了 range,数据已在缓存里、不会有新线到位)也要对准一次
+  const alignedRangeRef = useRef<string | undefined>(undefined);
+  // 时间轴占位序列(只有空白点、不画任何东西),见 timelineSlots;上次灌的 起点|终点|周期,没变就不重灌
+  const fillerRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const fillerKeyRef = useRef('');
   // 最新回调放 ref:监听器只挂一次,不随调用方每次渲染的新函数引用重挂
   const onStretchesRef = useRef(onStretches);
   useEffect(() => {
@@ -293,12 +301,20 @@ export function useDocChart(
     });
     chart.applyOptions(chartThemeOptions(getTheme()));
     chartRef.current = chart;
+    // 独立的隐形轴 id:不和任何图层共轴,也不会被当成右轴的宿主(见 useAxisDecor 的 nativeWidth)
+    fillerRef.current = chart.addSeries(
+      LineSeries,
+      { priceScaleId: 'mtv-timeline', lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false },
+      0,
+    );
+    fillerKeyRef.current = '';
     const series = seriesRef.current;
     const fed = fedRef.current;
 
     return () => {
       chart.remove();
       chartRef.current = null;
+      fillerRef.current = null;
       series.clear();
       fed.clear();
     };
@@ -316,6 +332,28 @@ export function useDocChart(
     if (!chart) return;
     reconcile(chart, seriesRef.current, fedRef.current, view);
   }, [view]);
+
+  // 时间轴按日历铺开:最早一点到最晚一点之间每个工作日占一格(放在数据 effect 前,对准横轴时格子已经铺好)
+  useEffect(() => {
+    const filler = fillerRef.current;
+    if (!filler) return;
+
+    const spans = Object.values(data).flatMap((d) => (d.display.length ? [d.display] : []));
+    const from = spans.map((p) => p[0].time).sort()[0];
+    const to = spans
+      .map((p) => p.at(-1)!.time)
+      .sort()
+      .at(-1);
+    const key = `${from}|${to}|${interval}`;
+    if (!from || !to || key === fillerKeyRef.current) return;
+
+    fillerKeyRef.current = key;
+    // 左边多出格子时 lw 按格号保持视图,会把可视日期整体推走 → 按日期记下、灌完设回
+    const ts = chartRef.current?.timeScale();
+    const kept = ts?.getVisibleRange();
+    filler.setData(timelineSlots(from, to, interval).map((time) => ({ time })));
+    if (kept) ts?.setVisibleRange(kept);
+  }, [data, interval]);
 
   // 数据:只给新建的、或数据引用变了的图层 setData
   useEffect(() => {
@@ -352,19 +390,25 @@ export function useDocChart(
     // 有新线到位、或换了周期,就把横轴对准「所有线都有数据的那一段」:长历史的线不截,往左拖还在,
     // 只是不让短历史的线挤在右边。其余时候缩放归用户,删线 / 改色 / 数据刷新不动视图。
     const intervalChanged = alignedIntervalRef.current !== interval;
-    if (arrived.length === 0 && !intervalChanged) return;
+    const rangeKey = view.range && `${view.range.from}|${view.range.to}`;
+    const rangeChanged = alignedRangeRef.current !== rangeKey;
+    if (arrived.length === 0 && !intervalChanged && !rangeChanged) return;
     const seriesPts = [...seriesIds].map((id) => data[id]?.display ?? []);
     const range = commonRange(seriesPts);
     // 换周期时数据可能还没到:等有数据的那一轮再对准,别把「已对准」提前记上
     if (!range && !seriesPts.some((p) => p.length)) return;
 
     alignedIntervalRef.current = interval;
+    alignedRangeRef.current = rangeKey;
     const withData = seriesPts.filter((p) => p.length > 0);
-    const target =
-      fit === 'common'
-        ? range
-        : withData.length && { from: fit.from, to: latestIso(withData.map((p) => p.at(-1)!.time)) };
-    if (target) chart.timeScale().setVisibleRange(target);
+    const latest = withData.length ? latestIso(withData.map((p) => p.at(-1)!.time)) : undefined;
+    const earliest = withData.map((p) => p[0].time).sort()[0];
+    const to = fit === 'common' ? undefined : (fit.to ?? latest);
+    // 只给截止日、且它早于共同时段起点时,起点退到最早有数据的那天(否则区间反向,lw 会抛)
+    const start = range && to && range.from < to ? range.from : earliest;
+    const from = fit === 'common' ? undefined : (fit.from ?? start);
+    const target = view.range ?? (fit === 'common' ? range : from && to && from < to && { from, to });
+    if (target) chart.timeScale().setVisibleRange(snapToPeriod(target, interval, allSevenDay(view)));
     else chart.timeScale().fitContent();
   }, [view, data, interval, fit]);
 
@@ -526,6 +570,31 @@ export function useDocChart(
   }, [doc, data]);
 
   return { chartRef, seriesRef };
+}
+
+/**
+ * lw 把日期换成 K 线时取「第一根不早于它的」,所以截止日要先落到一根真实存在的 K 线上,否则多画一根:
+ * - 粗周期(周 / 月 / 季 / 年)K 线标在期初 → 起止日都换成所在那一期的期初(起始日不换会丢一根)
+ * - 日线没有周末格(全是 7 天序列的图除外)→ 截止日是周末就退到周五
+ * 换完首尾颠倒(range 比一期还短)就照原样给
+ */
+function snapToPeriod(
+  r: { from: string; to: string },
+  interval: Interval,
+  sevenDay: boolean,
+): { from: string; to: string } {
+  const to = interval === '1D' && !sevenDay ? lastWeekday(r.to) : periodKey(r.to, interval);
+  const snapped = { from: periodKey(r.from, interval), to };
+
+  return snapped.from < snapped.to ? snapped : r;
+}
+
+// 周六 / 周日退到当周周五,工作日原样
+function lastWeekday(date: string): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  const back = { 0: 2, 6: 1 }[d.getUTCDay()] ?? 0;
+
+  return new Date(d.getTime() - back * 86_400_000).toISOString().slice(0, 10);
 }
 
 /**

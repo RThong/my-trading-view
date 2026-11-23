@@ -19,6 +19,8 @@ export type FundSeries = `${typeof FUND_KEY_PREFIX}${string}`;
 export const REGIME_SERIES = [
   // ── 直接透传的 FRED / CBOE / CNN 源(regime.ts 的 `direct` 映射)
   'hyOas',
+  // ICE BofA CCC 及以下 OAS:读库(credit_spread 组每天全量镜像 FRED),只给「信用 · 评级走势」的分位规则用
+  'cccOas',
   // CDX 北美指数主力 5Y 的约定利差(%):ICE 结算价逐日存 + 之前的 DTCC 成交回填,读库换算(regimeDb)
   'cdxIg',
   'cdxHy',
@@ -277,6 +279,8 @@ export const REGIME_SERIES = [
   'coreCpi3m',
   'corePceYoy',
   'corePce3m',
+  // 全口径 CPI(CPIAUCSL)同比(%),日期 = 数据所属月份。
+  'cpiYoy',
   // 例行发布日(ALFRED 首发 vintage,已天然排除季调 / 年度修订那类 vintage)。
   // 日期 = 发布日;值 = 该次发布那个月的**当前修订后**同比(不是首发值)。给日线断点对齐用。
   'coreCpiRelease',
