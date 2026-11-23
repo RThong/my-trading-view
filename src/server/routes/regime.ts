@@ -623,15 +623,14 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
         52,
       ).map((p) => ({ date: p.date, value: (p.value * 52) / 1e4 })),
     );
-  // 融资余额看同比不看水位:水位随市值一起涨(1997 年 1 千亿 → 2026 年 1.45 万亿)
+  // 融资余额看同比不看水位:水位随市值一起涨(1997 年 1 千亿 → 2026 年 1.45 万亿)。
+  // 发全历史(1998 起)不裁到 2018:要回看科网泡沫那一轮;这条没有报警规则,不涉及分位口径
   put(
     'marginDebtYoy',
     margin
-      ? fromHistoryStart(
-          monthlyAnnualizedPct(
-            margin.map((m) => ({ date: m.date, value: m.debit })),
-            12,
-          ),
+      ? monthlyAnnualizedPct(
+          margin.map((m) => ({ date: m.date, value: m.debit })),
+          12,
         )
       : undefined,
   );
