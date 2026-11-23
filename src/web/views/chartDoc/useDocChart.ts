@@ -28,6 +28,7 @@ import {
   REF_LINE,
   boxAutoscaleProvider,
   fullHeightScale,
+  timelineSlots,
   volumeStripScale,
   type LinePoint,
 } from '../../chart/core';
@@ -271,6 +272,9 @@ export function useDocChart(
   const paneOwnerRef = useRef(new Map<IPaneApi<Time>, string>());
   // 上次对准视图时的周期:只在 effect 里读写,不参与渲染
   const alignedIntervalRef = useRef(interval);
+  // 时间轴占位序列(只有空白点、不画任何东西),见 timelineSlots;上次灌的 起点|终点|周期,没变就不重灌
+  const fillerRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const fillerKeyRef = useRef('');
   // 最新回调放 ref:监听器只挂一次,不随调用方每次渲染的新函数引用重挂
   const onStretchesRef = useRef(onStretches);
   useEffect(() => {
@@ -293,12 +297,20 @@ export function useDocChart(
     });
     chart.applyOptions(chartThemeOptions(getTheme()));
     chartRef.current = chart;
+    // 独立的隐形轴 id:不和任何图层共轴,也不会被当成右轴的宿主(见 useAxisDecor 的 nativeWidth)
+    fillerRef.current = chart.addSeries(
+      LineSeries,
+      { priceScaleId: 'mtv-timeline', lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false },
+      0,
+    );
+    fillerKeyRef.current = '';
     const series = seriesRef.current;
     const fed = fedRef.current;
 
     return () => {
       chart.remove();
       chartRef.current = null;
+      fillerRef.current = null;
       series.clear();
       fed.clear();
     };
@@ -316,6 +328,28 @@ export function useDocChart(
     if (!chart) return;
     reconcile(chart, seriesRef.current, fedRef.current, view);
   }, [view]);
+
+  // 时间轴按日历铺开:最早一点到最晚一点之间每个工作日占一格(放在数据 effect 前,对准横轴时格子已经铺好)
+  useEffect(() => {
+    const filler = fillerRef.current;
+    if (!filler) return;
+
+    const spans = Object.values(data).flatMap((d) => (d.display.length ? [d.display] : []));
+    const from = spans.map((p) => p[0].time).sort()[0];
+    const to = spans
+      .map((p) => p.at(-1)!.time)
+      .sort()
+      .at(-1);
+    const key = `${from}|${to}|${interval}`;
+    if (!from || !to || key === fillerKeyRef.current) return;
+
+    fillerKeyRef.current = key;
+    // 左边多出格子时 lw 按格号保持视图,会把可视日期整体推走 → 按日期记下、灌完设回
+    const ts = chartRef.current?.timeScale();
+    const kept = ts?.getVisibleRange();
+    filler.setData(timelineSlots(from, to, interval).map((time) => ({ time })));
+    if (kept) ts?.setVisibleRange(kept);
+  }, [data, interval]);
 
   // 数据:只给新建的、或数据引用变了的图层 setData
   useEffect(() => {
