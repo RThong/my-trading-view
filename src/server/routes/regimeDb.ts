@@ -115,6 +115,8 @@ export function readDbBacked(
   // MOVE:实时拉的优先,库里的补丁只填 Yahoo 断供的那些天。
   put('move', preferLive(moveLive, getMarketSeries(db, 'MOVE')));
   put('hyOas', preferLive(hyOasLive, getMarketSeries(db, 'BAMLH0A0HYM2')));
+  // ponytail: 只读库不现拉,FRED 当天新值要等 daily 的 credit_spread 组镜像进来;要更及时再照 hyOas 加现拉腿
+  put('cccOas', getMarketSeries(db, 'BAMLH0A3HYC'));
   put('nyseAdLine', adLine(getMarketSeries(db, 'WSJ_NYSE_ADV'), getMarketSeries(db, 'WSJ_NYSE_DEC')));
   put('cdxIg', cdxSpreadPct(db, 'IG', 100));
   put('cdxHy', cdxSpreadPct(db, 'HY', 500));

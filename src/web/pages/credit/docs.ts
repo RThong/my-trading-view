@@ -1,5 +1,6 @@
 // 「信用」视角各 regime tab 的 ChartDoc(合进 pages/regimeDims 的 REGIME_DOCS)。
 import type { RegimeDocs } from '../../views/regime/regimeChart.hooks';
+import { ruleMarks } from '../../views/chartDoc/ruleMarks';
 
 export const CREDIT_DOCS = {
   credit: {
@@ -40,6 +41,57 @@ export const CREDIT_DOCS = {
           '',
           '⚠️ 每年 3/20、9/20 换新系列(期限后移半年),换新那天有约 +4~5bp 的台阶(2024-09 起实测),不是行情。',
           '历史:ICE 结算价 2026-11-13 起逐日存,之前约 2 年由 DTCC 公开成交回填(当天全部成交的中位数)。',
+        ].join('\n'),
+      },
+    ],
+  },
+  // 评级走势:按评级拆开的 OAS 时间序列,看信用压力是否从垃圾债尾部(CCC)往上扩散。
+  // CCC 量级是 B 的约 2~4 倍(2018 起),单独一格;分位规则挂在 cccOas(与编辑器 credit:CCC 同值,规则输入只认 /api/regime 的键)。
+  creditRating: {
+    v: 1,
+    panes: [
+      {
+        id: 'p1',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          {
+            id: 'l1',
+            series: 'cccOas',
+            scale: 'right',
+            color: '#ef4444',
+            title: 'CCC 及以下 OAS',
+            ...ruleMarks('cccOas'),
+          },
+        ],
+        desc: [
+          '定义:ICE BofA CCC 及以下评级高收益债 vs 美债利差(OAS,%),FRED BAMLH0A3HYC。量级是 B 的约 2~4 倍(2018 起),单独一格。',
+          '读法:信用压力通常先从最弱的尾部(CCC)开始走阔。CCC 单独冲高、下面 B / BB / BBB 不动 = 压力还局限在垃圾债尾部(个别行业 / 发行人);',
+          '下面一格随后 B → BB → BBB 依次跟上 = 扩散成系统性信用事件。',
+          '分位色带按 2018 起算,风险端在高位。',
+          '',
+          '⚠️ FRED 只留滚动 3 年,2018 起的旧段靠库里存的镜像 + Wayback 存档补回,CCC 是连续的。',
+          '⚠️ 这条只读库:FRED 当天的新值要等下一轮 daily 存进来,最新一天可能比下面一格晚一个交易日。',
+        ].join('\n'),
+      },
+      {
+        id: 'p2',
+        stretch: 1,
+        scales: [{ id: 'right', side: 'right' }],
+        layers: [
+          { id: 'l2', series: 'credit:B', scale: 'right', color: '#f59e0b', title: 'B OAS' },
+          { id: 'l3', series: 'credit:BB', scale: 'right', color: '#a3e635', title: 'BB OAS' },
+          { id: 'l4', series: 'credit:BBB', scale: 'right', color: '#38bdf8', title: 'BBB OAS' },
+          { id: 'l5', series: 'hyOas', scale: 'right', color: '#737373', title: 'HY 总指数 OAS(参照)' },
+        ],
+        desc: [
+          '定义:B / BB(高收益)与 BBB(投资级最低档)的 OAS,%;灰线是高收益总指数 OAS,成分以 BB / B 为主,所以和 B 贴得近。',
+          '读法:对照上一格的 CCC 看先后。CCC 走阔后,B 先跟、BB 再跟、最后 BBB 也抬头 = 压力从尾部往上扩散到系统性;',
+          'BBB 是投资级与垃圾债的分界,它也走阔才算伤到信用市场主体。',
+          '只有 CCC 动、这几条在中位附近 = 尾部出事、整体还稳(如 2026-11-19:CCC 13.61% 约 96 分位,',
+          'B 3.80% 约 52 分位,BB 2.10% / BBB 1.17% 约 35 分位,HY 总指数 3.52% 约 48 分位)。',
+          '',
+          '⚠️ B 缺 2023-08~11 约 3 个月、BBB 缺 2023-09~11 约 2 个月(FRED 只留 3 年,旧段靠 Wayback 存档补回,存档没有那几个月),那段是直线连过去的;BB 与 HY 总指数连续。',
         ].join('\n'),
       },
     ],

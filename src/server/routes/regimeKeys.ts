@@ -65,6 +65,7 @@ export const DB_BACKED_KEYS: ReadonlySet<string> = new Set<string>([
   'vxTermSpread',
   'move',
   'hyOas',
+  'cccOas',
   'cdxIg',
   'cdxHy',
   ...OIS_HIKE_HORIZONS.map(([out]) => out),

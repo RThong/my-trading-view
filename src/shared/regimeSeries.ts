@@ -19,6 +19,8 @@ export type FundSeries = `${typeof FUND_KEY_PREFIX}${string}`;
 export const REGIME_SERIES = [
   // ── 直接透传的 FRED / CBOE / CNN 源(regime.ts 的 `direct` 映射)
   'hyOas',
+  // ICE BofA CCC 及以下 OAS:读库(credit_spread 组每天全量镜像 FRED),只给「信用 · 评级走势」的分位规则用
+  'cccOas',
   // CDX 北美指数主力 5Y 的约定利差(%):ICE 结算价逐日存 + 之前的 DTCC 成交回填,读库换算(regimeDb)
   'cdxIg',
   'cdxHy',

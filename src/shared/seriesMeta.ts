@@ -155,6 +155,8 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
 
   // ── 信用·流动性
   hyOas: daily('信用·流动性', 'HY OAS 高收益信用利差', '%', ['高收益', '信用利差']),
+  // 与编辑器的 credit:CCC 同值,只为挂分位规则(规则输入只认 /api/regime 的键);下拉里只留 credit:CCC
+  cccOas: { ...daily('信用·流动性', 'CCC 及以下信用利差 OAS', '%'), hidden: true },
   cdxIg: daily('信用·流动性', 'CDX 北美投资级 5Y 利差', '%', ['cdx', 'cds', '投资级', 'ig']),
   cdxHy: daily('信用·流动性', 'CDX 北美高收益 5Y 利差', '%', ['cdx', 'cds', '高收益', 'hy']),
   jpMarginBuyYoy: {
