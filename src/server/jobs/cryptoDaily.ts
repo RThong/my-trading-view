@@ -12,16 +12,32 @@ import { runPendingGroups, type GroupTable } from './daily';
 import { DERIBIT_UNDERLYINGS } from '../config';
 import { defaultDeribitOptionsClient } from '../fetchers/deribitOptions';
 import { updateComputableGpu } from './computableGpuSnapshot';
-import { archiveRuns } from '../fetchers/snapshotArchive';
+import { archiveRuns, syncArchive } from '../fetchers/snapshotArchive';
+
+/**
+ * 这天存档由不由 crypto 自己同步:daily 只在 JST 周二~周六跑(scripts/gen-cron.sh 的 EQUITY_WEEKDAYS),那几天由它同步 ——
+ * 两个 job 同一时刻触发,两个进程同时在存档目录里 fetch / reset / gc --prune=now 会弄坏仓库。
+ * 周日、周一 daily 不跑,没人同步,美东周六、周日收盘后那两份 BTC 存档要拖到周二才进库 → 这两天 crypto 自己同步。
+ * ponytail: 星期写死,和 EQUITY_WEEKDAYS 手动保持一致;改了 daily 的星期这里要跟着改
+ */
+export function cryptoOwnsArchiveSync(now: Date): boolean {
+  const jstDay = new Date(now.getTime() + 9 * 3600_000).getUTCDay();
+  return jstDay === 0 || jstDay === 1;
+}
 
 const CRYPTO_GROUPS: GroupTable = {
-  options_crypto: () => ({
-    cryptoOptionsUnderlyings: DERIBIT_UNDERLYINGS,
-    cryptoOptionsClient: defaultDeribitOptionsClient(),
-    // 只读不同步:launchd 和 daily 同一时刻触发,两个进程同时在存档目录里 fetch / reset / gc --prune=now 会弄坏仓库。
-    // 同步交给 daily;这里读到的若是上一轮的旧存档也无妨,14 天窗口里下次会补上
-    archiveRuns: () => archiveRuns(),
-  }),
+  options_crypto: () => {
+    if (cryptoOwnsArchiveSync(new Date())) {
+      const err = syncArchive();
+      if (err) console.warn(err);
+    }
+    return {
+      cryptoOptionsUnderlyings: DERIBIT_UNDERLYINGS,
+      cryptoOptionsClient: defaultDeribitOptionsClient(),
+      // 周二~周六只读、不同步(见 cryptoOwnsArchiveSync);读到上一轮的旧存档也无妨,每轮会把 14 天存档整段重放
+      archiveRuns: () => archiveRuns(),
+    };
+  },
   computable_gpu: () => ({ computableGpuUpdater: updateComputableGpu }),
 };
 
