@@ -221,6 +221,13 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   },
   stickyCpi: { label: 'Sticky CPI', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['cpi', '通胀'] },
   coreCpiYoy: { label: '核心 CPI 同比', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['cpi', '通胀'] },
+  cpiYoy: {
+    label: 'CPI 同比(全口径)',
+    category: '通胀·宏观',
+    freq: '月',
+    unit: '%',
+    aliases: ['cpi', '通胀', 'headline'],
+  },
   coreCpi3m: { label: '核心 CPI 3 个月年化', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['cpi', '通胀'] },
   corePceYoy: { label: '核心 PCE 同比', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['pce', '通胀'] },
   corePce3m: { label: '核心 PCE 3 个月年化', category: '通胀·宏观', freq: '月', unit: '%', aliases: ['pce', '通胀'] },
@@ -537,6 +544,7 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   hormuzTankers: 'server',
   rbobYoy: 'server',
   coreCpiYoy: 'server', // 由 CPI 指数算同比 / 3 个月年化
+  cpiYoy: 'server',
   coreCpi3m: 'server',
   corePceYoy: 'server',
   corePce3m: 'server',

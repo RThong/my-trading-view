@@ -279,6 +279,8 @@ export const REGIME_SERIES = [
   'coreCpi3m',
   'corePceYoy',
   'corePce3m',
+  // 全口径 CPI(CPIAUCSL)同比(%),日期 = 数据所属月份。
+  'cpiYoy',
   // 例行发布日(ALFRED 首发 vintage,已天然排除季调 / 年度修订那类 vintage)。
   // 日期 = 发布日;值 = 该次发布那个月的**当前修订后**同比(不是首发值)。给日线断点对齐用。
   'coreCpiRelease',

@@ -88,9 +88,12 @@ export const INFLATION_DOCS = {
         layers: [
           { id: 'l4', series: 'coreCpiYoy', scale: 'right', color: '#e879f9', title: '核心 CPI 同比%' },
           { id: 'l5', series: 'coreCpi3m', scale: 'right', color: '#a3e635', title: '核心 CPI 3 个月年化%' },
+          { id: 'l5b', series: 'cpiYoy', scale: 'right', color: '#94a3b8', title: 'CPI 同比%(全口径)' },
         ],
         desc: [
           '定义:BLS 核心 CPI(CPILFESL,剔除食品能源,季调)的同比与 3 个月年化。月频 %。',
+          '灰线:全口径 CPI(CPIAUCSL)同比,含食品能源 —— 和核心同比的差就是能源 / 食品那层。',
+          '1995 年起(科网泡沫那轮);报警分位仍按 2018 起算。',
           '3 个月年化比同比早转向 —— 两条交叉、或 3 个月那条单月跳开,就是「这次数据推没推动重定价」要查的那种月份。',
           '',
           '⚠️ **横轴是数据所属月份,不是发布日**(8 月的数 9 月中才发)。别拿它对日线的断点;',
