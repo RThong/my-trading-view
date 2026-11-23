@@ -66,6 +66,12 @@ import { latestIso } from '../../../shared/calc/isoDate';
 
 /** 折线是 Line;符号柱、事件竖线是 Histogram;背景色带是 Area。拖线 / 选中高亮只对折线(见 useLineDrag) */
 export type LayerSeries = Map<string, ISeriesApi<SeriesType>>;
+
+/**
+ * 每张图横轴上占位格的日期(见下方时间轴占位序列)。画线换算日期 ↔ 下标要把它们算进去:
+ * 占位序列只灌空白点,而 lw 的 series.data() 不返回空白点,从 series 上读不到
+ */
+export const timelineSlotsOf = new WeakMap<IChartApi, string[]>();
 type Kind = NonNullable<Layer['render']>['kind'];
 /**
  * 上次灌给某图层的数据、当时的画法和颜色:画法变了(符号柱 ↔ 事件)同一份点也要重灌,点的颜色 / 值不一样;
@@ -351,7 +357,9 @@ export function useDocChart(
     // 左边多出格子时 lw 按格号保持视图,会把可视日期整体推走 → 按日期记下、灌完设回
     const ts = chartRef.current?.timeScale();
     const kept = ts?.getVisibleRange();
-    filler.setData(timelineSlots(from, to, interval).map((time) => ({ time })));
+    const slots = timelineSlots(from, to, interval);
+    filler.setData(slots.map((time) => ({ time })));
+    if (chartRef.current) timelineSlotsOf.set(chartRef.current, slots);
     if (kept) ts?.setVisibleRange(kept);
   }, [data, interval]);
 

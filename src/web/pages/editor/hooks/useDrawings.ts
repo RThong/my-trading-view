@@ -30,6 +30,7 @@ import { fmtDate } from '../../../chart/core';
 import type { LayerData } from '../../../views/chartDoc/layerPoints';
 import type { LayerSeries } from '../../../views/chartDoc/useDocChart';
 import {
+  chartTimeAxis,
   type Entry,
   makeShapeCtx,
   paneShapes,
@@ -598,12 +599,11 @@ export function useDrawings(
     redrawAll(primsRef.current);
   });
 
-  // 时间轴(日期 ↔ 下标)跟着数据重建。取图上真有的 series 灌进去的点(= lw-charts 时间轴):
-  // data 里还有图上不画的(指标的源线只画展开后的子线),算进来下标会整体错位
+  // 时间轴(日期 ↔ 下标)跟着数据重建,见 chartTimeAxis
   useEffect(() => {
-    axisRef.current = timeAxis([...seriesRef.current.values()].flatMap((s) => s.data().map((p) => fmtDate(p.time))));
+    axisRef.current = chartTimeAxis(chartRef.current);
     redrawAll(primsRef.current);
-  }, [seriesRef, doc, data]);
+  }, [chartRef, doc, data]);
 
   // 每个 lw 格挂上图元(加格后新格要挂,删掉的格丢掉)
   useEffect(() => {

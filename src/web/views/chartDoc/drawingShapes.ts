@@ -1,9 +1,10 @@
 // 画线 → 这一格的像素(纯换算,不管交互):编辑器(pages/editor 的 useDrawings)和只读图(DocChart 的 useDrawingsView)共用。
 import type { IChartApi, ISeriesApi, Logical, SeriesType } from 'lightweight-charts';
-import { calloutSize, textSize, type Pt, type Shape, type TimeAxis } from '../../chart/drawings';
+import { calloutSize, textSize, timeAxis, type Pt, type Shape, type TimeAxis } from '../../chart/drawings';
+import { fmtDate } from '../../chart/core';
 import { linearRegression, regressionAt } from '../../chart/regression';
 import type { Drawing, DrawingPoint, Layer } from './chartDoc';
-import type { LayerSeries } from './useDocChart';
+import { type LayerSeries, timelineSlotsOf } from './useDocChart';
 
 export type Entry = { drawing: Drawing; layer: Layer; paneIndex: number };
 
@@ -16,6 +17,18 @@ export type ShapeCtx = {
   right: number;
   seriesOf: (layerId: string) => ISeriesApi<SeriesType> | undefined;
 };
+
+/**
+ * 日期 ↔ 下标,要和 lw-charts 的时间轴一致 = 图上所有 series 的点 + useDocChart 铺的占位格(timelineSlotsOf)。
+ * 漏掉占位格(节假日等只有占位才有的格子)越往后错位越多,画线整体往左偏;
+ * 也不能取 data 里的:那里有图上不画的源线(指标只画展开后的子线)
+ */
+export function chartTimeAxis(chart: IChartApi | null): TimeAxis {
+  if (!chart) return timeAxis([]);
+  const drawn = chart.panes().flatMap((p) => p.getSeries().flatMap((s) => s.data().map((d) => fmtDate(d.time))));
+
+  return timeAxis([...drawn, ...(timelineSlotsOf.get(chart) ?? [])]);
+}
 
 /**
  * 当前视图的换算。lw-charts 的 logicalToCoordinate 只认整数下标(带小数直接返回 0),

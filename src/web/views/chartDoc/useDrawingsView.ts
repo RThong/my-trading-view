@@ -3,11 +3,10 @@
 import { type RefObject, useEffect, useRef } from 'react';
 import type { IChartApi, IPaneApi, Time } from 'lightweight-charts';
 import { timeAxis, type TimeAxis } from '../../chart/drawings';
-import { fmtDate } from '../../chart/core';
 import { DrawingsPrimitive } from '../../chart/primitives/drawings';
 import { CHART_CHROME, getTheme } from '../../hooks/theme';
 import { allDrawings, type ChartDoc } from './chartDoc';
-import { makeShapeCtx, paneShapes } from './drawingShapes';
+import { chartTimeAxis, makeShapeCtx, paneShapes } from './drawingShapes';
 import type { LayerData } from './layerPoints';
 import type { LayerSeries } from './useDocChart';
 
@@ -30,13 +29,13 @@ export function useDrawingsView(
     });
   }, [doc]);
 
-  // 时间轴取图上真有的 series 灌进去的点(同编辑器:data 里还有图上不画的源线,算进来下标会错位)
+  // 时间轴跟着数据重建(见 chartTimeAxis)
   useEffect(() => {
-    axisRef.current = timeAxis([...seriesRef.current.values()].flatMap((s) => s.data().map((p) => fmtDate(p.time))));
+    axisRef.current = chartTimeAxis(chartRef.current);
     primsRef.current.forEach((p) => {
       p.update();
     });
-  }, [seriesRef, doc, data]);
+  }, [chartRef, doc, data]);
 
   // 每个 lw 格挂上图元(加格后新格要挂,删掉的格丢掉)
   useEffect(() => {
