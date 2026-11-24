@@ -35,6 +35,8 @@ import { DRAWING_COLOR, LINE_DASH, type LineDash } from '../../../chart/drawings
 import { cn } from '../../../lib/utils';
 import { allDrawings, type ChartDoc, type Drawing } from '../../../views/chartDoc/chartDoc';
 import { layerLabel } from '../../../views/chartDoc/layerLabel';
+import { usedColors } from '../usedColors';
+import { ColorPicker } from './ColorPicker';
 import { type PluginControls, POINT_PLUGINS } from '../drawingPlugins';
 import type { PointPlugin } from '../drawingPlugins/types';
 import type { DrawingTool } from '../hooks/useDrawings';
@@ -617,12 +619,11 @@ export function DrawingBar({
         <span className="text-neutral-500"> · 挂在 {layerLabel(doc, layer)}</span>
       </span>
       {/* 颜色 / 线型的默认值存成「不设」:老存档、没改过的线都不带这两个字段 */}
-      <input
-        type="color"
+      <ColorPicker
         value={d.color ?? DRAWING_COLOR}
-        onChange={(e) => onUpdate({ ...d, color: e.target.value === DRAWING_COLOR ? undefined : e.target.value })}
-        className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border-0 bg-transparent p-0"
-        title="颜色"
+        onChange={(c) => onUpdate({ ...d, color: c === DRAWING_COLOR ? undefined : c })}
+        used={usedColors(doc)}
+        side="top"
       />
       {d.kind !== 'text' && d.kind !== 'callout' && (
         <DashPicker dash={d.dash} onPick={(dash) => onUpdate({ ...d, dash })} />

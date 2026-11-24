@@ -31,6 +31,8 @@ import { INDICATOR_IDS, INDICATORS, type IndicatorId, periodsOf } from '../../..
 import { allSevenDay, plotsOf } from '../../../views/chartDoc/layerPoints';
 import { stripsDrawable } from '../../../views/chartDoc/useAxisDecor';
 import { SeriesSelect } from './SeriesSelect';
+import { ColorPicker } from './ColorPicker';
+import { usedColors } from '../usedColors';
 import type { ChartDocActions } from '../hooks/useChartDoc';
 import { ACTIVE, LOCKED_TITLE, NOT_POSITIVE_NOTE, ScaleControls } from './ScaleControls';
 
@@ -147,13 +149,7 @@ export function LayerCard({
             title="配色固定"
           />
         ) : (
-          <input
-            type="color"
-            value={layer.color}
-            onChange={(e) => actions.setColor(layer.id, e.target.value)}
-            className="h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border-0 bg-transparent p-0"
-            title="颜色"
-          />
+          <ColorPicker value={layer.color} onChange={(c) => actions.setColor(layer.id, c)} used={usedColors(doc)} />
         )}
         <span
           className={`min-w-0 flex-1 truncate text-sm ${layer.hidden ? 'text-neutral-500' : 'text-neutral-200'}`}
