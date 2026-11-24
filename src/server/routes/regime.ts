@@ -152,6 +152,8 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // regime 自己缓存 6h:live/market 的 1h 缓存不能再叠一层,每次刷新都要求重拉(并发合并),
   // VIX 也才能和每次现拉的 VIX3M / VIXEQ 同频(否则内连接丢当天那根)
   const FRESH = { fresh: true };
+  // FRED 的默认起点 = 拉全历史(流动性几条源头 2002~2003 起,要从有值那天起显示;用户 2026-11-25 定)
+  const FRED_ALL = '1776-07-04';
   // 攻防那组序列两条腿(QQQ / NOBL)任一沿用上次,整组都标沿用上次
   const AD_KEYS: SeriesKey[] = [
     'noblQqq',
@@ -173,14 +175,14 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
 
   // 并行拉全部原始源。key 为内部名,后面映射到对外序列名。
   const src = {
-    walcl: fredSeries('WALCL'),
+    walcl: fredSeries('WALCL', FRED_ALL),
     // TGA 取**周三时点** WDTGAL,与 WALCL(周三时点)同口径。别换回 WTREGEN:那是含周末的周平均,
     // 相减会把缴税日这类单日抽水摊平并滞后一周(实测 2026-09-09→16 准备金 −115B,用 WTREGEN 算反而 +12B)。
-    wdtgal: fredSeries('WDTGAL'),
+    wdtgal: fredSeries('WDTGAL', FRED_ALL),
     // 准备金余额,周三时点(源为百万美元,对外 ÷1000 成十亿美元,见下方 put)。不用周平均 WRESBAL,理由同上。
-    reserves: fredSeries('WRBWFRBL'),
-    rrp: fredSeries('RRPONTSYD'),
-    rpo: fredSeries('RPONTSYD'),
+    reserves: fredSeries('WRBWFRBL', FRED_ALL),
+    rrp: fredSeries('RRPONTSYD', FRED_ALL),
+    rpo: fredSeries('RPONTSYD', FRED_ALL),
     sofr: fredSeries('SOFR'),
     iorb: fredSeries('IORB'),
     // FRED 只留 3 年:长历史在库里(daily 的 credit_spread 组镜像),在下方 db 段合并,同 MOVE
