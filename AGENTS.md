@@ -211,7 +211,7 @@ SPY 的 25Δ 改走 CBOE VIX 分解后**可以回填**(2022-09 起,见取数总�
 - **能现拉的不落库(2026-11-17 起)**:ETF / VIX / BTC 现货、CBOE 波动率指数(VIX 家族 / VRP 隐含腿 / VVIX / SKEW)、Deribit DVOL、BRK 链上,
   源头随时能重拉全段,改为读时现拉(`server/live/market`:1h 缓存,过期就等重拉;拉失败或结果比上一份短 → 沿用上一份并标「沿用上次」;落盘快照兜冷启动)。
   停更 / 持续失败不进顶栏状态灯,看「数据健康」页。换之前逐日对账过:重叠期每一天都与库里逐位相等。
-  `price_eod` 表与 `market_series` 里这几条的旧行还在、不再读写;daily 的 `vrp_inputs`、crypto 的 `btc_price` / `btc_supply_density` 三组已删。
+  `price_eod` 表与 `market_series` 里这几条的旧行 2026-11-24 已清(表 DDL 也改成 `DROP TABLE IF EXISTS`);daily 的 `vrp_inputs`、crypto 的 `btc_price` / `btc_supply_density` 三组已删。
   **只有源头会丢历史、或要逐日逐篇抓的才落库**(期权链快照、ICE / DTCC、ICE BofA 与 MOVE 镜像、Computable、认沽认购比、ISM)。
 - **MOVE(ICE BofA 债市波动率,走 Yahoo `^MOVE`)**:带 caret,无 caret 的 `MOVE` 是 Movado 股票。
   MOVE 是 ICE 授权指数,FRED / stooq 都没有,GitHub 上的仓库不是用 yfinance 就是 Bloomberg,**没有第二个免费源**。

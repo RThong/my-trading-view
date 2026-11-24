@@ -50,13 +50,13 @@ describe('openDb', () => {
 });
 
 describe('migrate 的历史迁移 gate 在版本上,不每日重跑', () => {
-  test('库到 v4 后重跑 migrate 不再执行 DELETE(名单外的序列也存活)', () => {
+  test('重跑 migrate 不丢 job 写入的序列', () => {
     const db = new Database(':memory:');
-    migrate(db); // 首跑:建表 + 一次性迁移,库升到 v4
+    migrate(db); // 首跑:建表 + 一次性迁移,库升到当前版本
 
-    // 写入一个不在 VOL_INDICES 名单里的序列(daily job 抓取写库的常态)。
+    // daily job 抓取写库的常态
     insertMarketSeries(db, [{ seriesId: 'VX2', obsDate: '2026-06-01', value: 18.9 }]);
-    migrate(db); // 每天 daily job 启动都再跑一次 —— gate 后不再触发全量 DELETE
+    migrate(db); // 每天 daily job 启动都再跑一次
 
     expect(getMarketSeries(db, 'VX2')).toHaveLength(1);
   });

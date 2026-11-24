@@ -510,11 +510,11 @@ TradingView
 **只能回家做（真实库在家里）**
 - ~~**SPX 30 天 25Δ 回填 + 对照**~~ ✅ 已完成（2026-11-20）：回填 1058 个交易日（2022-09-01 起，只缺 2025-01-08：和国葬休市日配成一对、源报无数据）；与 moomoo 的 SPY 25Δ 重叠 105 天，skew 平均差 +0.20pp、平均绝对差 0.44pp、水平相关 0.91、日变化相关 0.82 → SPY 的 25Δ 两格换成 SPX 30 天，SPY 不再抓链（`marketCatalog` 的 SPY `optionSource: 'none'`）
 - **期权切 CBOE 主源**（已定要切，最早约 11-27 验收通过后；CBOE 延迟期权接口 2026-11-19 起被 Cloudflare 拦(不带 `Referer: https://www.cboe.com/` 一律 403;同一天 GitHub 上多个项目同报,无官方说明)。11-21 已定加 `Referer`：本机与存档都恢复，GitHub Actions 上实测 7 个标的全通；剩下要定的是切不切主源（`Referer` 随时可能失效）；见 `docs/options-cboe-switch.md` 开头）原计划 11-21 起的周末，约 3 小时：先补「VIX 缺可用存档且已进夜盘 → 记缺失 / partial」（`docs/options-cboe-switch.md` 第 3 步末的「⚠️ 切主源前要补」，约 30 分钟），再按该文档逐步切换
-- **清掉改现拉后的旧数据**（2026-11-24 起，约 20 分钟）：见下面「能现拉的落库源换成现拉」那条的剩余 ①
+- ~~**清掉改现拉后的旧数据**~~ ✅ 已完成（2026-11-24）：见下面「能现拉的落库源换成现拉」那条的 ①
 - **库放 GitHub、由 Actions 跑 daily**（2026-11-18 提出，2026-11-19 定做）：本机不再跑定时任务、两台电脑看同一份库。云 IP 已实测全通；等 CBOE 切换（11-21）后按 `docs/db-on-github.md` 搭 workflow
 - ~~数据健康页门槛：用全量库看误报再调~~ ✅ 已完成（2026-11-17，见 L0-1 的「校准」）
 - ~~报警规则的滞后带宽度（`exitPad`）：看历史切换次数再调~~ ✅ 已完成（2026-11-17，见 L3-1 的「校准」）
-- ~~**能现拉的落库源换成现拉**~~ ✅ 已完成（2026-11-17）：ETF / VIX / BTC 现货、CBOE 波动率指数（VIX 家族 / VRP 隐含腿 / VVIX / SKEW）、Deribit DVOL、BRK 链上改读时现拉（`server/live/market`，1h 缓存、过期就等重拉、拉失败或被截短沿用上一份 + 落盘快照）；换之前逐日对账，重叠期每一天每个数与库里相等，VRP 八个标的新旧输出逐点相等。daily `vrp_inputs`、crypto `btc_price` / `btc_supply_density` 三组已删。剩两件：① 2026-11-24 没问题再清库（`price_eod` 整表、`market_series` 里这几条、~~`job_run` 里三组旧记录~~ 2026-11-20 已删；`scripts/export-csv.sh` 还在导 `price_eod`，一并改）；② ~~ETF 蜡烛带成交量~~ ✅ 2026-11-18：前端固定 ETF 改走 `/api/yahoo/history`（与 `yh:` 同一条路、自带成交量），`/api/price` 删掉；服务端算 VRP / regime 仍用 `server/live/market`。
+- ~~**能现拉的落库源换成现拉**~~ ✅ 已完成（2026-11-17）：ETF / VIX / BTC 现货、CBOE 波动率指数（VIX 家族 / VRP 隐含腿 / VVIX / SKEW）、Deribit DVOL、BRK 链上改读时现拉（`server/live/market`，1h 缓存、过期就等重拉、拉失败或被截短沿用上一份 + 落盘快照）；换之前逐日对账，重叠期每一天每个数与库里相等，VRP 八个标的新旧输出逐点相等。daily `vrp_inputs`、crypto `btc_price` / `btc_supply_density` 三组已删。剩两件：① ~~2026-11-24 没问题再清库~~ ✅ 2026-11-24 已清（`price_eod` 整表、`market_series` 里这几条、~~`job_run` 里三组旧记录~~ 2026-11-20 已删；`scripts/export-csv.sh` 已改为只导 25Δ）；② ~~ETF 蜡烛带成交量~~ ✅ 2026-11-18：前端固定 ETF 改走 `/api/yahoo/history`（与 `yh:` 同一条路、自带成交量），`/api/price` 删掉；服务端算 VRP / regime 仍用 `server/live/market`。
 
 后话，先不做：表达式图层（类似 Pine 的公式，如 `zscore(A/B, 252)`，函数只允许不看未来的版本）、TS 指标模块（`defineIndicator`）。等 ChartDoc 稳定以后，再在 ChartDoc 上加一个 expr 图层类型。在线脚本沙箱不做。
 

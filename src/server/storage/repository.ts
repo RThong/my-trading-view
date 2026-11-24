@@ -31,7 +31,7 @@ export type MacroRow = {
   value: number;
 };
 
-// ── market_series(VRP 输入:隐含 VIX/VXN/GVZ/OVX/DVOL + RV 现货 SPX/NDX/GLD/USO/BTC)──
+// ── market_series(job 落库的单值日序列)──
 
 export type MarketSeriesRow = { seriesId: string; obsDate: string; value: number };
 
@@ -99,8 +99,6 @@ export function getEarliestMarketDate(db: Database, seriesId: string): string | 
   };
   return row?.d ?? null;
 }
-
-// price_eod 表(2026-11-17 前的 ETF / VIX / BTC 现货)已改读时现拉(server/live/market),旧行留在库里、不再读写。
 
 // ── job_run ───────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,5 @@
-// 原先由 daily / cryptoDaily 落库(price_eod / market_series)、但源头随时能重拉全段的行情,改为读时现拉。
+// 原先由 daily / cryptoDaily 落库(price_eod / market_series,旧行 2026-11-24 已清)、但源头随时能重拉全段的行情,改为读时现拉。
 // 2026-11-17 换之前逐日对账:ETF 8 只 + BTC 的开高低收、VIX、CBOE 8 条、DVOL、BRK 3 条,重叠期每一天都与库里逐位相等。
-// 库里的旧行没删,只是不再读写(ROADMAP「能现拉的落库源换成现拉」)。
 //
 // 缓存(不用 swrCache 的「先回旧值、后台刷新」:调用方有 regime 的 6h 缓存和 CLI 脚本,拿到旧值会被锁住或算错):
 //  · 新鲜(1h 内)→ 直接回;过期 / 进程刚起 → **等这次重拉**。

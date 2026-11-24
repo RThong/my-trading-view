@@ -357,7 +357,7 @@ const VRP: SeriesDef[] = Object.entries(IV_INDEX).flatMap(([u, ivIndex]) => {
   ];
 });
 
-// ── 库里 market_series 有、别的接口没发的(/api/series/:id 原样读)。
+// ── /api/series/:id 读的:库里 market_series 有、别的接口没发的(原样读),外加 GVZ / OVX 等波动率指数(该路由改读时现拉)。
 // 没列的都已经从别处发了:VIX / SKEW / MOVE / VXN / ISM / CGI(GPU)/ 供应密度在 regime,
 // ERIS_OIS / ICE_CDS 在曲线接口(CDS 库里存的是价,曲线接口换成了 bp),SEC_* / TWSE_* 即基本面 fund:*。
 export const DB_PREFIX = 'db:';
@@ -515,7 +515,7 @@ const YAHOO_IN_LIBRARY: Record<string, string> = {
   '^COR1M': 'cor1m',
   '^COR3M': 'cor3m',
   '^VVIX': 'vvix',
-  // CBOE 指数库里另存了一份(/api/series 原样读),与 Yahoo 同一个数
+  // CBOE 指数走 /api/series(读时现拉 CBOE),与 Yahoo 同一个数
   '^GVZ': 'db:GVZ',
   '^OVX': 'db:OVX',
   '^VXTLT': 'db:VXTLT',

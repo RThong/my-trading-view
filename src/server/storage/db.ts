@@ -42,30 +42,6 @@ function migrateOptionSource(db: Database): void {
   });
 }
 
-// v4:market_series 收敛为「只放波动率指数」,标的现货价挪到 price_eod。
-// 旧库的 market_series 里混着指数(VIX/VXN/GVZ/OVX/DVOL,留下)和现货
-// (SPY/QQQ/GLD/USO/BTC/SPX/NDX 等)。把有读取方的现货按 close 播种进 price_eod
-// (open/high/low 留空,下次 job 抓全 OHLC 时 upsert 覆盖),再从 market_series 删掉非指数序列。
-// 这样旧库迁完即满足不变式,且 VRP 的 RV 腿(只用 close)无需等回填就能算。
-// 须在 schema.sql 建出 price_eod 之后调用。幂等:INSERT OR IGNORE 不覆盖已抓的真 OHLC,
-// DELETE 只动现货 id;新库/已迁库再跑都是 no-op。
-// v4 要清出 market_series 的「现货序列」白名单(只删这几个,而非"删非指数")。
-// 反转成删除名单而非保留名单:这样迁移只精确清掉已知现货,指数 + 未来新增序列
-// (如 IV 腿 / Eris OIS 曲线等不能回填的历史)一律不受影响,避免静默误删。
-const SPOT_TO_DROP = ['SPY', 'QQQ', 'GLD', 'USO', 'BTC', 'SPX', 'NDX'];
-function migrateSpotToPriceEod(db: Database): void {
-  // VIX 既是指数又是 .VIX tab 的现货:播种进 price_eod,但保留在 market_series(IV 腿)。
-  // SPX/NDX 已无读取方,不播种,仅随 DELETE 清走。
-  db.run(
-    `INSERT OR IGNORE INTO price_eod (underlying, obs_date, open, high, low, close, source, fetched_at)
-     SELECT series_id, obs_date, NULL, NULL, NULL, value, 'migrated', ?
-     FROM market_series WHERE series_id IN ('SPY', 'QQQ', 'GLD', 'USO', 'BTC', 'VIX')`,
-    [new Date().toISOString()],
-  );
-  const drop = SPOT_TO_DROP.map((s) => `'${s}'`).join(', ');
-  db.run(`DELETE FROM market_series WHERE series_id IN (${drop})`);
-}
-
 // v5:sec_watermark 补 processed_filed。旧库那张表已经建过,CREATE IF NOT EXISTS 加不上列。
 // 这里只加列不回填:播种交给 job(见 secFundamentals 里那段) —— 它能在**拉 companyfacts 之前**
 // 播,拿到的是没被本次申报的比较期污染的 MAX(filed);而且那条路径同时覆盖「旧库」和
@@ -93,12 +69,9 @@ export function migrate(db: Database): void {
   const sql = readFileSync(schemaPath, 'utf-8');
   db.exec(sql);
 
-  // 一次性历史迁移:只在库版本落后时跑。尤其 migrateSpotToPriceEod
-  // 里有全量 DELETE —— gate 住版本,别让它挂在每天的 daily job 上无条件重跑。
-  // (须在 schema.sql 建出 price_eod 之后;两个迁移自身也都幂等,gate 只是省掉每日空转。)
+  // 一次性历史迁移:只在库版本落后时跑,别挂在每天的 daily job 上无条件重跑(迁移自身幂等,gate 只是省掉每日空转)。
   if (prior < CURRENT_SCHEMA_VERSION) {
     migrateOptionSource(db);
-    migrateSpotToPriceEod(db);
     migrateSecProcessedFiled(db);
     db.run('INSERT OR REPLACE INTO schema_version (version, applied_at) VALUES (?, ?)', [
       CURRENT_SCHEMA_VERSION,
