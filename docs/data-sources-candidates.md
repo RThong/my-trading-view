@@ -400,6 +400,43 @@ Oracle 2031 年到期那只对 5Y 美债的利差，与 ICE CDS 在 77 天里**�
 | 经济日历（带预期值 / 实际值） | Forex Factory `nfs.faireconomy.media/ff_calendar_thisweek.json`（只有本周，带 impact）；Nasdaq `api.nasdaq.com/api/calendar/economicevents?date=YYYY-MM-DD`（按日查，带 actual / consensus / previous） | 都 200 | 我们只有发布日（ALFRED）；多了预期值可算「超预期幅度」。没查历史能回多远。来自 gex-pro |
 | ❌ Farside BTC 现货 ETF 每日资金流 | `farside.co.uk/btc/` | 403「Just a moment...」（Cloudflare 人机验证） | 不绕 |
 
+### ❌ 1.11 NAAIM Exposure Index（主动经理美股仓位）—— 源可用但不接，要看时手查（2026-11-24）
+
+**是什么**：NAAIM（全美主动投资经理人协会）成员每周三报客户账户的美股仓位，−200（两倍杠杆做空）~ 0（空仓）~ 100（满仓）~ +200（两倍杠杆做多），周四发布各家平均值。通常反向读：越低 = 主动经理越减完仓。
+
+**不接的理由**：
+- 主要跟着价格走：水平与 SPY 过去 13 周回报相关 0.62（第三方 mspinola/surveys-dashboard 算的，未复核）。
+- 反向信号弱：同一人预注册检验，最低 1/5 的周之后 13 周只比最高 1/5 多约 2.5 个百分点，未过显著线；加入 S&P COT 投机仓位后无增量。
+- 面板已有市场成交口径的同类信号（认沽认购比、GEX、融资余额同比、VIX 期限结构）；数据源脆弱（见下）。
+
+**怎么手查当前值**（免 key，StockCharts 无文档接口，代码是 `!NAAIM`，**`$NAAIM` 回 not found**）：
+
+```
+curl -s --compressed "https://stockcharts.com/j-sum/sum?cmd=symsum&symbol=%21NAAIM"
+```
+
+- `close` = 最新值（2026-11-24 实测 51.22，与官方 / 推文的 51 对上；第三方称与官方差约 0.2）。`latestTrade` 是最近交易日（11-23），不是调查日（周三）。
+- `perf` 是 CSV 串：第 6 个字段是最新值，第 9 个字段起是各回看期的（涨跌, 涨跌%）对（期别没有标注，按推算对号）。2026-11-24 前两对是 0（日频回看，周频序列不变），之后 −21.68 / −36.47 反推出前 1 周 72.90、前 2 周 87.69（与推文的「两周 −36 点、−41%」吻合）。
+- 只给最新值，不给逐周历史（StockCharts 历史下载要会员）。
+
+**历史分位**（官方全历史 2006-07 ~ 2026-08-19，1052 周；均值列 `Mean/Average`）：
+
+| 读数 | 分位 | 含义 |
+|---|---|---|
+| < 22 | P5 以下 | 极度减仓（2020 低点 11、2022 低点 13） |
+| 22 ~ 47 | P5 ~ P20 | 明显偏空 |
+| 47 ~ 88 | P20 ~ P80 | 常态（中位 72） |
+| 88 ~ 99 | P80 ~ P95 | 偏满仓 |
+| > 99 | P95 以上 | 加杠杆做多（历史最高 120.6） |
+
+单值只看位置；**变化速度**要另外看 `perf`（2026-11 那次 51 只在 P24，但两周跌了 36 点，是 2023-11 以来最大的两周跌幅）。
+
+**官方源现状**（真要接时的拼法：官方历史 + StockCharts 每周落库最新值，官方表追上后覆盖）：
+- 2026-08-01 起改订阅制：实时数据只给会员，非会员 Professional Partner 每年 $600。
+- 公开的只剩 `index.naaim.org/embeddable/{table,chart,number}`：服务端渲染 HTML，免登录，**晚约 3 个月**（2026-11-24 只到 08-19 的 94.49）；table 约 130 行（约 2.5 年），列 Date / NAAIM Number / Bearish / Quarter 1~3 / Bullish / Deviation。
+- 旧全历史 xlsx `naaim.org/wp-content/uploads/YYYY/MM/USE_Data-since-Inception_<日期>.xlsx` 最后一份 **2026-08-19**（仍 200，2006 年起）；之后的日期全部 404，已停更。
+- GitHub 上抓 NAAIM 的仓库（ElMooro/si、EricSeoungminKim/Quant_Trading、northstar-quarry/UCT-Dashboard 等）都用上面的嵌入页或旧 xlsx，数据同样晚 3 个月；只有 mspinola/surveys-dashboard 是最新的，脚注写明最新 13 周是从 StockCharts 图上读的。
+
 ### ❌ EIA 周报的上游缓冲垫（原油库存 / SPR）—— 评估后不做（2026-11-14）
 
 > 能源页已有价格、裂解、炼厂与成品油库存,油价眼下由霍尔木兹海峡主导(那格已接);原油库存多一条线不改变对油市的判断。SPR 是政策性放储 / 回补,不是市场信号。下面的接入细节保留,真要接时只是加两个 series_id。
