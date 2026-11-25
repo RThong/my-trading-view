@@ -1,22 +1,24 @@
 // 攻防指标(纯函数,服务端 /api/regime 用它出序列,「特色指标 › 攻防」那张 ChartDoc 画):
-// NOBL / QQQ 比值 + 慢线(ZigZag 摆动 regime,事后确认)+ 快线(比值相对均线的滞回,当日可知)。
+// XLP / QQQ 比值 + 慢线(ZigZag 摆动 regime,事后确认)+ 快线(比值相对均线的滞回,当日可知)。
 import { type Regime, zigzagRegimes } from './zigzag';
 
 type Point = { date: string; value: number };
 
-// 参数均按 2018-01~2026-09 实测选定:以 QQQ ≥10% 回撤(16 次)为靶,量「接住几次 / 滞后 / 假警报」。
-// 20% 阈值只接住 2 次(2025-02、2025-10 两轮回撤比值涨 15~19% 都没到 20%);10% 接住 11 次且实时翻防守 9/9 都在回撤期内。
+// 参数按 XLP / QQQ 实测选定(2026-11-25,收盘价):以 QQQ ≥10% 回撤(QQQ 自身 10% ZigZag 的下行腿,1999 起 56 次、2018 起 17 次)为靶,
+// 量「接住几次 / 滞后 / 假警报(翻防守时不在任何一次回撤里)」。
+// 慢线 10%:2018 起接住 13/17、实时翻防守 12/12 都在回撤期内(全段 39/45);8% 多接 2 次,但实时翻防守有 5 次落在回撤外;12% 以上接得更少。
 export const SWING_PCT = 0.1; // ZigZag 反转阈值:比值反向摆动 ≥10% 才确认一次攻防切换
-// 快线:35 日均线 ±2% 滞回。接住 14/16、滞后中位 6 日、假警报 ~1 次/年;更短的 N 只快 1~2 天、假警报翻倍。
-// 波动率带(均线 ±kσ)试过 18 组,同等假警报下都慢 4 天左右,不如固定百分比。
-export const FAST_MA = 35;
-export const FAST_BAND = 0.02;
+// 快线:20 日均线 ±3% 滞回。全段接住 52/56、滞后中位 6 日、假警报 1.0 次/年(占翻防守的 33%);2018 起 16/17、8 日、0.7 次/年(24%)。
+// 原 NOBL 用的 35 日 ±2% 套到 XLP 上:全段 49/56、8 日、1.3 次/年(40%),两段都不如。XLP / QQQ 摆幅比 NOBL / QQQ 大,带要放宽。
+// 波动率带(均线 ±kσ)是在 NOBL 上试的 18 组,同等假警报下都慢 4 天左右,不如固定百分比(没在 XLP 上重测)。
+export const FAST_MA = 20;
+export const FAST_BAND = 0.03;
 
-/** NOBL/QQQ 按日期内联相除。qqq 缺该日或为 0 → 跳过;任一序列空 → [] */
-export function ratioSeries(nobl: Point[], qqq: Point[]): Point[] {
+/** XLP/QQQ 按日期内联相除。qqq 缺该日或为 0 → 跳过;任一序列空 → [] */
+export function ratioSeries(def: Point[], qqq: Point[]): Point[] {
   const q = new Map(qqq.map((p) => [p.date, p.value]));
 
-  return nobl.flatMap((p) => {
+  return def.flatMap((p) => {
     const qc = q.get(p.date);
     return qc ? [{ date: p.date, value: p.value / qc }] : [];
   });
@@ -47,8 +49,8 @@ export function fastRegime(
  * 攻防的全部对外序列。背景色带按「这一天是不是这一类」出 0 / 1 标记(ChartDoc 的 background 一层一种颜色):
  * 慢线分防守 / 进攻 × 已确认 / 末段待定四条,快线分防守 / 进攻两条
  */
-export function attackDefenseSeries(nobl: Point[], qqq: Point[]) {
-  const ratio = ratioSeries(nobl, qqq);
+export function attackDefenseSeries(def: Point[], qqq: Point[]) {
+  const ratio = ratioSeries(def, qqq);
   const zones = zigzagRegimes(ratio, SWING_PCT);
   const fast = fastRegime(ratio);
   const zone = (regime: Regime, pending: boolean) =>

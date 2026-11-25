@@ -88,7 +88,7 @@ lightweight-charts 的映射：`right` / `left` 用内置轴，`overlay` 用自�
 
 ## 3. 序列注册表（28 条内置 + 任意 Yahoo 代码，都不依赖 OpenD）
 
-数据来源：固定 ETF（SPY / QQQ / GLD / IBIT / TLT / USO / SMH / NOBL）走 `/api/yahoo/history/:symbol`（与 `yh:` 代码同一条路，带成交量；2026-11-18 前走 `/api/price`）；美债 2Y/10Y/30Y、实际利率 5/10/30Y、BEI 5/10Y 走 `/api/yield-curve?source=…&history=full`（编辑器专用长历史版：名义 1990 起、实际 / BEI 2003 起，与旧页面默认的 2018 起版本分开缓存）；其余走 `/api/regime`（`useRegimeData`，各面板共用 SWR 缓存）。另可搜任意 Yahoo 代码（图层 id = `yh:<代码>`，走 `/api/yahoo/search` + `/api/yahoo/history/:symbol`，读时现拉、不落库）。
+数据来源：固定 ETF（SPY / QQQ / GLD / IBIT / TLT / USO / SMH / XLP）走 `/api/yahoo/history/:symbol`（与 `yh:` 代码同一条路，带成交量；2026-11-18 前走 `/api/price`）；美债 2Y/10Y/30Y、实际利率 5/10/30Y、BEI 5/10Y 走 `/api/yield-curve?source=…&history=full`（编辑器专用长历史版：名义 1990 起、实际 / BEI 2003 起，与旧页面默认的 2018 起版本分开缓存）；其余走 `/api/regime`（`useRegimeData`，各面板共用 SWR 缓存）。另可搜任意 Yahoo 代码（图层 id = `yh:<代码>`，走 `/api/yahoo/search` + `/api/yahoo/history/:symbol`，读时现拉、不落库）。
 
 | 分类 | id | 名称 | 频率 | 来源 |
 |---|---|---|---|---|

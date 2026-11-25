@@ -50,7 +50,7 @@ export function DocChart({
   const layers = doc.panes.flatMap((p) => p.layers);
   const sevenDay = allSevenDay(doc);
   const requests = layers.map((l) => layerRequest(l, sevenDay));
-  const { points, bars, isLoading, error, missing, stale } = useSeriesData(requests, interval);
+  const { points, bars, isLoading, error, missingKeys, stale } = useSeriesData(requests, interval);
   const data = useLayerData(doc, points, interval, bars);
   const { chartRef, seriesRef } = useDocChart(containerRef, doc, data, {
     onStretches: (s) => setDoc((d) => setStretches(d, s)),
@@ -71,7 +71,7 @@ export function DocChart({
   // 源这次没拉到、服务端拿上一份顶上的:线照画,但要说明不是最新
   const staleNames = namesOf(layers.filter((_, i) => stale.includes(requestKey(requests[i]))));
   // 缺数的也按图例名报(missing 是注册表名,与图例、上一条提示对不上)
-  const missingNames = missing.length ? namesOf(layers.filter((_, i) => !points[requestKey(requests[i])]?.length)) : [];
+  const missingNames = namesOf(layers.filter((_, i) => missingKeys.includes(requestKey(requests[i]))));
   const status = [
     isLoading ? '加载中…' : undefined,
     error ? `取数失败:${error.message}` : undefined,

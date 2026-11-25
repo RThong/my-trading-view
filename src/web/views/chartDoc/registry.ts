@@ -132,7 +132,7 @@ const MANUAL: SeriesDef[] = [
   price('TLT', 'TLT', 'TLT 长期美债', ['美债', '国债']),
   price('USO', 'USO', 'USO 原油', ['原油', 'oil']),
   price('SMH', 'SMH', 'SMH 半导体', ['半导体', 'semiconductor', '芯片']),
-  price('NOBL', 'NOBL', 'NOBL 标普红利贵族', ['红利', '防御']),
+  price('XLP', 'XLP', 'XLP 必需消费', ['必需消费', '防御', 'staples']),
   {
     id: 'btc',
     label: 'BTC',

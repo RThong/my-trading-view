@@ -14,7 +14,7 @@ A personal, local-only markets dashboard, organized as **vertical perspectives**
   FRED / CBOE / CNN / Yahoo / Eris / MOF+JPX / CFTC / Shiller / ICE / DTCC / FINRA / EIA / BOJ / Cabinet Office /
   Chicago Fed / Kansas City Fed / IMF PortWatch / Squeezemetrics / BRK / Binance / Computable: **信用 · 流动性 · 情绪 ·
   宏观 · 能源 · 利率 · 日本 · AI · 通胀 · 估值**, plus a **特色指标 → 攻防** tab
-  (NOBL/QQQ offense-defense regime via ZigZag). Series with a trailing distribution add
+  (XLP/QQQ offense-defense regime via ZigZag). Series with a trailing distribution add
   P5/P95 bands, a current-percentile badge, and red/green shading of extreme periods.
 
 Each perspective (视角) owns a directory under [`src/web/pages/`](src/web/pages/) with its tabs and panel config;
@@ -34,7 +34,7 @@ well (25Δ skew, a composite regime read, yield/OIS/JGB curves) in one local pag
   - CBOE VIX Decomposition (undocumented API behind the official tool page) — SPX 30-day constant-maturity 25Δ put / call IV, the SPY tab's skew (backfilled from 2022-09)
   - [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) — rates · credit spread · net liquidity · repo · inflation (5y5y forward · sticky CPI · wages) · Kim-Wright term premium (needs a free API key)
   - NY Fed — HLW natural rate r\* (`current estimates` xlsx, quarterly) · ACM 10Y term premium (monthly CSV, the independent cross-check on Kim-Wright); no key
-  - Yahoo (`yahoo-finance2` v4) — **ETF spot OHLCV** (SPY/QQQ/GLD/USO/TLT/NOBL/SMH/IBIT: split-adjusted, *not* dividend-adjusted — the same number TradingView shows by default; full history back to each fund's listing, fetched live in full on every read — not stored — so a future split can't leave two adjustment bases stitched together) · DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY · S&P 500 and its equal-weight index (`^GSPC` / `^SPXEW`, the concentration ratio)
+  - Yahoo (`yahoo-finance2` v4) — **ETF spot OHLCV** (SPY/QQQ/GLD/USO/TLT/XLP/SMH/IBIT: split-adjusted, *not* dividend-adjusted — the same number TradingView shows by default; full history back to each fund's listing, fetched live in full on every read — not stored — so a future split can't leave two adjustment bases stitched together) · DXY (`DX-Y.NYB`) · MOVE (`^MOVE`) · oil futures (`CL/BZ/HO/RB=F`) · USD-JPY · S&P 500 and its equal-weight index (`^GSPC` / `^SPXEW`, the concentration ratio)
   - Eris — SOFR OIS par curve · MOF + JPX — JGB yields / JGB VIX · CFTC — JPY net positioning · Shiller — CAPE · CNN — Fear & Greed
   - [BOJ](https://www.boj.or.jp/research/research_data/gap/) — output gap + potential growth with its four contributions (official xlsx = zip+XML, quarterly, no key)
   - [Nakajima](https://github.com/jouchinakajima/program) (BOJ researcher, **personal model estimates, not a BOJ release**) — JGB 10Y term premium + expected short rate (daily, **nominal**; the two sum exactly to the MOF 10Y) and natural rate r\* with a 95% band (quarterly, **real** — never plot it against the nominal pair). Ships irregularly every 2-4 months; judge staleness by commit date, not by the data's last point
@@ -149,7 +149,7 @@ src/
         ├── tabs.tsx         tab factories (asset/regime/curve) + TabDef / Perspective types
         ├── rates/           … + PolicyPathPanel
         ├── ai/              … + IndustryChainPanel + fundamentals (per-company ChartDoc)
-        ├── featured/        attack-defense (NOBL/QQQ ZigZag, computed server-side) + concentration ChartDocs
+        ├── featured/        attack-defense (XLP/QQQ ZigZag, computed server-side) + concentration ChartDocs
         ├── editor/          chart editor (free-form composer)
         ├── custom/          user-built perspectives / tabs (a column of charts, stored in localStorage)
         ├── health/          data-health page (per-series late / stale / flat-filled check)
@@ -212,7 +212,7 @@ several horizontal tabs:
 | 通胀 Inflation | 通胀预期 (BEI) · 通胀走势 (+ 1Y / 2Y zero-coupon inflation swaps) · 通胀来源 (RBOB YoY 等) | US Treasury (BEI) / FRED / DTCC / Yahoo |
 | 估值 Valuation | Shiller CAPE regime | Shiller |
 | BTC | 现货/夏普 (spot candles + Binance spot daily volume + 1Y rolling Sharpe) · 链上 (±5% realized supply density · AVIV = price ÷ True Market Mean) · 期权 · IBIT | Bitstamp / Binance / BRK / Deribit / moomoo |
-| 特色指标 Featured | 攻防 — NOBL/QQQ offense-defense via ZigZag · 集中度 — S&P 500 ÷ S&P 500 Equal Weight (`^GSPC` / `^SPXEW`, realized cap concentration; read direction, not level — structural uptrend since 2023) paired with VIXEQ / VIX (implied concentration / dispersion, ≈ 1/√avg correlation, with percentile bands) · NYSE advance-decline line vs S&P 500 (WSJ Markets Diary, stored daily from 2026-11-20) | Yahoo / CBOE / WSJ |
+| 特色指标 Featured | 攻防 — XLP/QQQ offense-defense via ZigZag, with QQQ candles + XLP close above (QQQ down / XLP up = rotation, both down = broad sell-off) · 集中度 — S&P 500 ÷ S&P 500 Equal Weight (`^GSPC` / `^SPXEW`, realized cap concentration; read direction, not level — structural uptrend since 2023) paired with VIXEQ / VIX (implied concentration / dispersion, ≈ 1/√avg correlation, with percentile bands) · NYSE advance-decline line vs S&P 500 (WSJ Markets Diary, stored daily from 2026-11-20) | Yahoo / CBOE / WSJ |
 
 Series with a trailing distribution carry P5/P95 bands + a current-percentile badge, and
 shade extreme periods red (risk end) / green (opportunity end) per each series' direction.

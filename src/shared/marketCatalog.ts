@@ -5,9 +5,9 @@
 // 边界:catalog 只声明"是什么";异构的**抓取行为**(VIX 双写、DVOL 走 deribit、
 // 指数无现货)仍留在各 job/adapter,不塞进这里。
 export type MarketAsset = {
-  underlying: string; // 数据键 / 期权代码(SPY / .VIX / BTC / NOBL)
-  optionSource: 'moomoo' | 'deribit' | 'none'; // none = 不抓期权链(NOBL 只做价格;SMH 另有现货 + VRP)
-  tab?: { id: string; label: string }; // 有 → 进「期权」视角横 tab(NOBL 无)
+  underlying: string; // 数据键 / 期权代码(SPY / .VIX / BTC / XLP)
+  optionSource: 'moomoo' | 'deribit' | 'none'; // none = 不抓期权链(XLP 只做价格;SMH 另有现货 + VRP)
+  tab?: { id: string; label: string }; // 有 → 进「期权」视角横 tab(XLP 无)
   index?: boolean; // 指数(.VIX):无现货报价,不抓 price
   vrp?: { ivIndex: string; window: number; periodsPerYear: number }; // 有 → 做 VRP;spot 恒 = underlying
   // 有 → 期权链另抓第二档(第一个 ≥60 天的标准月度到期),只存原始链。SPY/QQQ 不抓:周度极活跃,不缺这档。
@@ -79,7 +79,7 @@ export const MARKET_CATALOG: MarketAsset[] = [
     tab: { id: 'smh', label: 'SMH' },
     vrp: { ivIndex: 'VXSMH', window: 21, periodsPerYear: 252 },
   },
-  { underlying: 'NOBL', optionSource: 'none' }, // 只做价格:攻防指标的防御腿
+  { underlying: 'XLP', optionSource: 'none' }, // 只做价格:攻防指标的防御腿
 ];
 
 /** 期权链要另抓第二档(月度)到期日的标的。 */
@@ -87,7 +87,7 @@ export function secondExpiryUnderlyings(): string[] {
   return MARKET_CATALOG.filter((a) => a.secondExpiry).map((a) => a.underlying);
 }
 
-/** 某期权源的标的清单(moomoo / deribit 白名单;none = 仅价格如 NOBL)。 */
+/** 某期权源的标的清单(moomoo / deribit 白名单;none = 仅价格如 XLP)。 */
 export function optionUnderlyings(source: MarketAsset['optionSource']): string[] {
   return MARKET_CATALOG.filter((a) => a.optionSource === source).map((a) => a.underlying);
 }

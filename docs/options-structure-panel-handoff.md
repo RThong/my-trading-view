@@ -75,7 +75,7 @@
 ## 8. 验收
 
 - 2026-11-20 应判：阶段三（VIX 35.89、VIX/VIX3M 1.160、VVIX 138.03）；断崖亮（本轮首日 11-17）；升级不亮（11-19 指数 P/C 1.20、个股 0.62）；风险清单第 4 项亮。
-- 回测参考脚本（semantic-garden 会话临时目录，可能被清理）：`/private/tmp/claude-501/-Users-hong-Desktop-workspace-project-semantic-garden/16b3250c-6731-4b84-800c-f98341903453/scratchpad/fourstage.py`，阶段 F 的逐日结果可用于对账。
+- 回测脚本已丢失，验收以 §7/§8 的数值为准。
 
 ## 9. 顺带订正（与本面板相关的已知问题）
 

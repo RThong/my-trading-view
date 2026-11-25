@@ -48,20 +48,24 @@ export type Fit = { target: string; start: string; end: string; alpha: number; b
  * 画法。缺省 = 普通折线。baseline:会穿零的序列画一条基线;step:低频序列画阶梯(两次发布之间值不变)。
  * signed:符号柱(正绿负红、0 基线),看正负和大小的量(净持仓、期限结构)。
  * events:事件竖线,序列里每个日期画一根满高细柱,值不画(发布日、决议日);挂自己的隐形轴,图层的 scale 不起作用。
- *   opacity(0~1,缺省不透明):竖线压在线上面,满色太抢眼;颜色仍只写 #rrggbb(取色器只认这个),透明度单列
+ *   opacity(0~1,缺省不透明):竖线压在线上面,满色太抢眼;颜色仍只写 #rrggbb(取色器只认这个),透明度单列。
+ *   dash:画成 1px 细虚线(攻防的「算法当天确认」线),不是满宽柱
  * background:背景色带,序列是 0 / 1 标记,值为 1 的日子整格高染图层颜色(淡色,压在线下面);同样挂自己的隐形轴。
  *   opacity(0~1,缺省 0.14):同一种颜色要分深浅时用(攻防的已确认 / 末段待定);strip:只染格子底部一条细带
  *   (同一格里叠第二套标记,如攻防的快线,不和整格高的背景混在一起)
  * candle:蜡烛(涨绿跌红,图层颜色不起作用),只有注册表标了 ohlc 的序列能用;图例 / 分位 / 参考线照旧按收盘
+ * markers:箭头标记(lw 的 series markers,只有带箭杆的箭头、没有实心三角),挂在同格第一条非标记图层(价格线 / 蜡烛)上,序列里每个日期一个;值不画。
+ *   shape:up = 画在 K 线下方朝上的箭头,down = 上方朝下的箭头;text:按值(转成字符串)查标记旁的文字,查不到不写字
  * volume:成交量柱(图层颜色的单色柱、0 起),周 / 月线**按期求和**而不是取最后一天 —— 只给成交量这类流量用
  */
 export type LayerRender =
   | { kind: 'line'; baseline?: number; step?: true }
   | { kind: 'signed' }
-  | { kind: 'events'; opacity?: number }
+  | { kind: 'events'; opacity?: number; dash?: true }
   | { kind: 'background'; opacity?: number; strip?: true }
   | { kind: 'candle' }
-  | { kind: 'volume' };
+  | { kind: 'volume' }
+  | { kind: 'markers'; shape: 'up' | 'down'; text?: Record<string, string> };
 /** 有绝对含义的阈值线(如「临界 4」),跟随图层所在的纵轴 */
 export type RefLine = RuleLevel;
 
@@ -485,9 +489,11 @@ export function markColor(l: Layer): string {
   return opacity === undefined ? l.color : withAlpha(l.color, opacity);
 }
 
-/** 标记图层(事件竖线、背景色带):值不画、挂自己的隐形轴、不算「一条线」(编辑器与固定面板共用这个判断) */
+const MARK_KINDS = new Set<unknown>(['events', 'background', 'markers']);
+
+/** 标记图层(事件竖线、背景色带、箭头标记):值不画、挂自己的隐形轴、不算「一条线」(编辑器与固定面板共用这个判断) */
 export function isMarkLayer(l: Layer): boolean {
-  return l.render?.kind === 'events' || l.render?.kind === 'background';
+  return MARK_KINDS.has(l.render?.kind);
 }
 
 /**
@@ -928,7 +934,12 @@ function isOpacity(x: unknown): boolean {
 function isRender(x: unknown): x is LayerRender {
   if (!isObj(x)) return false;
   if (x.kind === 'signed' || x.kind === 'candle' || x.kind === 'volume') return true;
-  if (x.kind === 'events') return isOpacity(x.opacity);
+  if (x.kind === 'events') return isOpacity(x.opacity) && (x.dash === undefined || x.dash === true);
+  if (x.kind === 'markers')
+    return (
+      (x.shape === 'up' || x.shape === 'down') &&
+      (x.text === undefined || (isObj(x.text) && Object.values(x.text).every(isStr)))
+    );
   if (x.kind === 'background') return isOpacity(x.opacity) && (x.strip === undefined || x.strip === true);
 
   return (
@@ -1031,16 +1042,11 @@ function isLayer(x: unknown): x is Layer {
     // 标记图层(竖线、色带)的值只是 0 / 1 标志、成交量柱按期求和,都不能同时是指标(编辑器里加不出,手写 JSON 也拒收)
     (x.indicator === undefined ||
       (isIndicator(x.indicator) &&
-        !(
-          isObj(x.render) &&
-          (x.render.kind === 'events' || x.render.kind === 'background' || x.render.kind === 'volume')
-        ))) &&
+        !(isObj(x.render) && (MARK_KINDS.has(x.render.kind) || x.render.kind === 'volume')))) &&
     // 画线不能挂在标记图层上(竖线、色带挂隐形 0~1 轴,纵坐标没有意义)。成交量不在这里拦(canOwnDrawings 拦的是新画):
     // 导入校验不过 = 整张图载不回来,挂在成交量上的旧画线照常载入、照常画,只是不能再往上新加
     (x.drawings === undefined ||
-      (Array.isArray(x.drawings) &&
-        x.drawings.every(isDrawing) &&
-        !(isObj(x.render) && (x.render.kind === 'events' || x.render.kind === 'background'))))
+      (Array.isArray(x.drawings) && x.drawings.every(isDrawing) && !(isObj(x.render) && MARK_KINDS.has(x.render.kind))))
   );
 }
 
@@ -1080,7 +1086,14 @@ function canonicalDrawing(d: Drawing): Drawing {
 }
 
 function canonicalRender(r: LayerRender): LayerRender {
-  if (r.kind === 'events') return { kind: r.kind, ...(r.opacity !== undefined ? { opacity: r.opacity } : {}) };
+  if (r.kind === 'events')
+    return {
+      kind: r.kind,
+      ...(r.opacity !== undefined ? { opacity: r.opacity } : {}),
+      ...(r.dash ? { dash: true as const } : {}),
+    };
+  if (r.kind === 'markers')
+    return { kind: r.kind, shape: r.shape, ...(r.text ? { text: Object.fromEntries(Object.entries(r.text)) } : {}) };
   if (r.kind === 'background')
     return {
       kind: r.kind,

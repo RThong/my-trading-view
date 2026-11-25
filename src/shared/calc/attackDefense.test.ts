@@ -7,9 +7,9 @@ function bar(date: string, value: number) {
 
 describe('ratioSeries', () => {
   it('按日期内联相除,qqq 缺的日期跳过', () => {
-    const nobl = [bar('d1', 50), bar('d2', 52), bar('d3', 51)];
+    const xlp = [bar('d1', 50), bar('d2', 52), bar('d3', 51)];
     const qqq = [bar('d1', 400), bar('d2', 410)]; // 缺 d3
-    const r = ratioSeries(nobl, qqq);
+    const r = ratioSeries(xlp, qqq);
     expect(r.map((p) => p.date)).toEqual(['d1', 'd2']);
     expect(r[0].value).toBeCloseTo(0.125); // 50/400
     expect(r[1].value).toBeCloseTo(0.126829); // 52/410
@@ -43,9 +43,9 @@ describe('attackDefenseSeries', () => {
   it('背景标记逐日 0 / 1、同一天至多一类为 1;均线从第 N 日起才有', () => {
     // 比值先涨 30% 再跌 30%:确认一个峰,之后的下行腿未确认(待定)
     const vals = [1, 1.1, 1.2, 1.3, 1.2, 1.0, 0.9];
-    const nobl = vals.map((v, i) => bar(`d${i}`, v));
+    const xlp = vals.map((v, i) => bar(`d${i}`, v));
     const qqq = vals.map((_, i) => bar(`d${i}`, 1));
-    const s = attackDefenseSeries(nobl, qqq);
+    const s = attackDefenseSeries(xlp, qqq);
     const flags = [s.zigDefense, s.zigOffense, s.zigDefensePending, s.zigOffensePending];
 
     expect(s.ratio.map((p) => p.value)).toEqual(vals);

@@ -350,6 +350,8 @@ export type SeriesData = {
   error?: Error;
   /** 用到了、但这次没有数据的序列名(计算图层是「A − B」,含两条没有重叠日期的情况) */
   missing: string[];
+  /** 同上,按请求键(requestKey):固定面板按图例名报缺数时对图层用 */
+  missingKeys: string[];
   /** 用到了「源这次没拉到、服务端拿上一份顶上」的腿的请求键(线照画,但不是最新;计算图层任一腿是这样就算) */
   stale: string[];
 };
@@ -474,16 +476,16 @@ export function useSeriesData(requests: SeriesRequest[], interval: Interval): Se
 
   // 状态只算当前真用到的源:只挑了 SPY 时,regime 慢或挂了都与这张图无关(没用到的曲线 key 为 null,不算)
   const isLoading = regimeLoading || yahooLoading || endpointLoading || curveStates.some((c) => c.isLoading);
-  const missing = isLoading
+  // 服务端明确发了、只是为空的 regime 序列不算缺数:标注类序列(轮动的「待定 ②」、阶段低点)合法地可以没有点;
+  // 真拿不到的服务端会归 unavailable、根本不发这个键
+  const servedEmpty = (r: SeriesRequest) => {
+    const src = seriesDef(r.series)?.source;
+    return !r.calc && src?.kind === 'regime' && Array.isArray(regime.series?.[src.key]);
+  };
+  const missingKeys = isLoading
     ? []
-    : [
-        ...new Set(
-          Object.keys(points)
-            .filter((k) => points[k].length === 0)
-            .map((k) => parseKey(k))
-            .map((r) => seriesLabel(r.series, r.calc)),
-        ),
-      ];
+    : Object.keys(points).filter((k) => points[k].length === 0 && !servedEmpty(parseKey(k)));
+  const missing = [...new Set(missingKeys.map((k) => parseKey(k)).map((r) => seriesLabel(r.series, r.calc)))];
   const error = regimeError ?? curveStates.find((c) => c.error)?.error;
 
   const stale = useMemo(() => {
@@ -502,5 +504,5 @@ export function useSeriesData(requests: SeriesRequest[], interval: Interval): Se
       });
   }, [keysStr, regime, curves]);
 
-  return { points, bars, isLoading, error, missing, stale };
+  return { points, bars, isLoading, error, missing, missingKeys, stale };
 }

@@ -97,16 +97,27 @@ export const REGIME_SERIES = [
   'btcAviv',
   // 周末标记(0/1,日期同 BTC 日线):BTC 各格的灰色背景带
   'weekendFlag',
-  // 攻防(「特色指标 › 攻防」,见 shared/calc/attackDefense):NOBL / QQQ 比值、35 日均线,
+  // 攻防(「特色指标 › 攻防」,见 shared/calc/attackDefense):XLP / QQQ 比值、20 日均线,
   // 慢线 ZigZag 防守 / 进攻 × 已确认 / 末段待定、快线防守 / 进攻的 0/1 背景标记
-  'noblQqq',
-  'noblQqqMa35',
+  'xlpQqq',
+  'xlpQqqMa20',
   'adZigDefense',
   'adZigOffense',
   'adZigDefensePending',
   'adZigOffensePending',
   'adFastDefense',
   'adFastOffense',
+  // 高切低 → 通杀 → 见底(攻防上格的阶段标注,见 shared/calc/rotationPhase):底色两条 0/1、竖线五条、三角两条、文字标签一条
+  'rpRotate',
+  'rpKill',
+  'rpPeakQ',
+  'rpPeakX',
+  'rpPeakXPending',
+  'rpBottom',
+  'rpConfirm',
+  'rpLowA',
+  'rpLowB',
+  'rpLabel',
   // 踩踏监控(「踩踏监控」视角,见 shared/calc/stampede):阶段三 0/1(历史图红底)、断崖亮灯日、升级 0/1(阶段卡徽标)
   'stStage3',
   // 综合压力分(0–100,方案 A,见 shared/calc/stampede 的 stressScore)

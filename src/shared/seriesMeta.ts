@@ -75,15 +75,25 @@ export const SERIES_META: Record<RegimeSeries, SeriesMeta> = {
   // ── 资产
   qqq: daily('资产', 'QQQ 纳指 100', '$', ['纳指', 'nasdaq']),
   lmeCopper3m: daily('资产', 'LME 铜 3 个月官方价', '$/吨', ['铜', 'copper', 'lme', '伦铜']),
-  // = yh:NOBL ÷ yh:QQQ(DERIVED 标 calc,不进下拉)
-  noblQqq: daily('资产', 'NOBL / QQQ 攻防比值', undefined, ['攻防', '红利贵族', 'nobl']),
-  noblQqqMa35: daily('资产', 'NOBL / QQQ 35 日均线', undefined, ['攻防']),
+  // = yh:XLP ÷ yh:QQQ(DERIVED 标 calc,不进下拉)
+  xlpQqq: daily('资产', 'XLP / QQQ 攻防比值', undefined, ['攻防', '必需消费', 'xlp']),
+  xlpQqqMa20: daily('资产', 'XLP / QQQ 20 日均线', undefined, ['攻防']),
   adZigDefense: { ...daily('资产', '攻防慢线:防守(已确认)'), hidden: true },
   adZigOffense: { ...daily('资产', '攻防慢线:进攻(已确认)'), hidden: true },
   adZigDefensePending: { ...daily('资产', '攻防慢线:防守(末段待定)'), hidden: true },
   adZigOffensePending: { ...daily('资产', '攻防慢线:进攻(末段待定)'), hidden: true },
   adFastDefense: { ...daily('资产', '攻防快线:防守'), hidden: true },
   adFastOffense: { ...daily('资产', '攻防快线:进攻'), hidden: true },
+  rpRotate: { ...daily('资产', '轮动:高切低(① → ②)'), hidden: true },
+  rpKill: { ...daily('资产', '轮动:通杀(② → ③)'), hidden: true },
+  rpPeakQ: { ...daily('资产', '轮动:① QQQ 高点'), hidden: true },
+  rpPeakX: { ...daily('资产', '轮动:② XLP 高点'), hidden: true },
+  rpPeakXPending: { ...daily('资产', '轮动:② XLP 高点(待定)'), hidden: true },
+  rpBottom: { ...daily('资产', '轮动:③ 底'), hidden: true },
+  rpConfirm: { ...daily('资产', '轮动:确认日'), hidden: true },
+  rpLowA: { ...daily('资产', '轮动:阶段低点 A'), hidden: true },
+  rpLowB: { ...daily('资产', '轮动:阶段低点 B'), hidden: true },
+  rpLabel: { ...daily('资产', '轮动:分型标签'), hidden: true },
   stStress: daily('波动率', '踩踏监控:综合压力分', '分', ['压力', 'stress', '踩踏']),
   stStage3: { ...daily('波动率', '踩踏监控:阶段三 风暴'), hidden: true },
   stCliff: { ...daily('波动率', '踩踏监控:断崖(VIXEQ/VIX 分位高位回落,只含亮灯日)'), hidden: true },
@@ -512,9 +522,9 @@ export const DERIVED: Partial<Record<RegimeSeries, 'calc' | 'server'>> = {
   vix9dVix: 'calc', // vix9d ÷ vixSpot
   vixVix3m: 'calc', // vixSpot ÷ vix3m
   rxmSpx: 'calc', // rxm ÷ spx
-  // NOBL ÷ QQQ。例外:攻防那格仍读这条、没改成 calc 现算 —— 线和 ZigZag 标记要出自同一份服务端快照(过渡方案,见 ROADMAP 类 Pine)
-  noblQqq: 'calc',
-  noblQqqMa35: 'server', // NOBL ÷ QQQ 的 35 日均线
+  // XLP ÷ QQQ。例外:攻防那格仍读这条、没改成 calc 现算 —— 线和 ZigZag 标记要出自同一份服务端快照(过渡方案,见 ROADMAP 类 Pine)
+  xlpQqq: 'calc',
+  xlpQqqMa20: 'server', // XLP ÷ QQQ 的 20 日均线
   repoStress: 'calc', // iorb − sofr
   spxEqw: 'calc', // spx ÷ spxew
   brentWti: 'calc', // brent − wti

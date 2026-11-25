@@ -6,6 +6,7 @@ import {
   AreaSeries,
   CandlestickSeries,
   createChart,
+  createSeriesMarkers,
   HistogramSeries,
   LineSeries,
   LineType,
@@ -15,6 +16,8 @@ import {
   type IChartApi,
   type IPaneApi,
   type IPriceLine,
+  type ISeriesMarkersPluginApi,
+  type SeriesMarker,
   type ISeriesApi,
   type SeriesDataItemTypeMap,
   type SeriesDefinition,
@@ -124,8 +127,9 @@ const KINDS: Record<Kind, KindDef> = {
   ),
   // 成交量柱:点自带涨跌色(见 layerPoints 的 tint);没带的用 series 选项里的图层颜色
   volume: kindDef(HistogramSeries, (_layer, pts) => pts),
+  // 虚线竖线不用柱子画(柱宽随缩放变),柱子透明、只占图例与显隐,线由 DayBandPrimitive 画(见下面的 effect)
   events: kindDef(HistogramSeries, (layer, pts) => {
-    const color = markColor(layer);
+    const color = layer.render?.kind === 'events' && layer.render.dash ? TRANSPARENT : markColor(layer);
     return pts.map((p) => ({ time: p.time, value: 1, color }));
   }),
   // 蜡烛读 K 线不读点:涨跌颜色由 series 选项定(见 seriesOptions),图层颜色不起作用
@@ -139,6 +143,8 @@ const KINDS: Record<Kind, KindDef> = {
   background: kindDef(AreaSeries, (_layer, pts) =>
     pts.map((p) => ({ time: p.time, value: 1, topColor: TRANSPARENT, bottomColor: TRANSPARENT })),
   ),
+  // 箭头标记:自己的 series 不灌点(只占图例与显隐),三角由宿主 series 上的 markers 插件画(见下面的 effect)
+  markers: kindDef(LineSeries, () => []),
 };
 
 /**
@@ -554,7 +560,7 @@ export function useDocChart(
   const bandsRef = useRef(new Map<string, { s: ISeriesApi<SeriesType>; prim: DayBandPrimitive }>());
   useEffect(() => {
     const bands = bandsRef.current;
-    const wanted = doc.panes.flatMap((p) => p.layers).filter((l) => drawnKind(l) === 'background');
+    const wanted = doc.panes.flatMap((p) => p.layers).filter((l) => drawnKind(l) === 'background' || isDashed(l));
     const wantedIds = new Set(wanted.map((l) => l.id));
     [...bands].forEach(([id, b]) => {
       const live = seriesRef.current.get(id) === b.s;
@@ -573,11 +579,61 @@ export function useDocChart(
       }
       const times = (data[l.id]?.display ?? []).filter((pt) => pt.value !== 0).map((pt) => pt.time);
       const r = l.render?.kind === 'background' ? l.render : undefined;
-      b.prim.setData(times, withAlpha(l.color, r?.opacity ?? BACKGROUND_ALPHA), !!r?.strip);
+      if (isDashed(l)) b.prim.setData(times, markColor(l), false, true);
+      else b.prim.setData(times, withAlpha(l.color, r?.opacity ?? BACKGROUND_ALPHA), !!r?.strip);
+    });
+  }, [doc, data]);
+
+  // 箭头标记:同一格的标记图层合起来,挂在这格第一条非标记图层(价格线 / 蜡烛)的 series 上(lw 的 series markers 跟着 K 线走)。
+  // 宿主 series 重建了就连插件一起重挂。autoScale 关掉:开着时插件给纵轴上下各留约 30~50px 放三角,
+  // 上格本来就矮,QQQ 轴会被撑出一截(底部露出 0);三角落在原有的轴边距里就够了
+  const markersRef = useRef(new Map<number, { s: ISeriesApi<SeriesType>; api: ISeriesMarkersPluginApi<Time> }>());
+  useEffect(() => {
+    const plugins = markersRef.current;
+    const wanted = new Map(
+      doc.panes.flatMap((pane, i) => {
+        const host = pane.layers.find((l) => !isMarkLayer(l));
+        const s = host && seriesRef.current.get(host.id);
+        const marks = pane.layers
+          .filter((l) => l.render?.kind === 'markers' && !l.hidden)
+          .flatMap((l) => layerMarkers(l, data));
+        return s && marks.length ? [[i, { s, marks }] as const] : [];
+      }),
+    );
+    [...plugins].forEach(([i, p]) => {
+      if (wanted.get(i)?.s === p.s) return;
+      p.api.detach();
+      plugins.delete(i);
+    });
+
+    wanted.forEach(({ s, marks }, i) => {
+      const sorted = [...marks].sort((a, b) => String(a.time).localeCompare(String(b.time)));
+      const p = plugins.get(i);
+      if (p) p.api.setMarkers(sorted);
+      else plugins.set(i, { s, api: createSeriesMarkers(s, sorted, { autoScale: false }) });
     });
   }, [doc, data]);
 
   return { chartRef, seriesRef };
+}
+
+/** 画成细虚线的竖线图层 */
+function isDashed(l: Layer): boolean {
+  return l.render?.kind === 'events' && !!l.render.dash;
+}
+
+/** 箭头标记图层 → lw 的 series markers:up = K 线下方朝上,down = 上方朝下;按值查文字 */
+function layerMarkers(l: Layer, data: Record<string, LayerData | undefined>): SeriesMarker<Time>[] {
+  if (l.render?.kind !== 'markers') return [];
+  const { shape, text } = l.render;
+
+  return (data[l.id]?.display ?? []).map((p) => ({
+    time: p.time as Time,
+    shape: shape === 'up' ? ('arrowUp' as const) : ('arrowDown' as const),
+    position: shape === 'up' ? ('belowBar' as const) : ('aboveBar' as const),
+    color: l.color,
+    ...(text?.[String(p.value)] && { text: text[String(p.value)] }),
+  }));
 }
 
 /**

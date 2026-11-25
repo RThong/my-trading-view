@@ -53,6 +53,7 @@ import {
 import type { RegimeSeries, FundSeries, SeriesKey, RegimeOhlcKey } from '../../shared/regimeSeries';
 import { rollMismatchFlags } from '../../shared/calc/oilRoll';
 import { attackDefenseSeries } from '../../shared/calc/attackDefense';
+import { rotationSeries } from '../../shared/calc/rotationPhase';
 import { cliffSeries, escalateSeries, rollingPctl, stageSeries, stressSeries } from '../../shared/calc/stampede';
 import { nearMinusFar } from '../analytics/termStructure';
 import { openDb } from '../storage/db';
@@ -154,16 +155,29 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const FRESH = { fresh: true };
   // FRED 的默认起点 = 拉全历史(流动性几条源头 2002~2003 起,要从有值那天起显示;用户 2026-11-25 定)
   const FRED_ALL = '1776-07-04';
-  // 攻防那组序列两条腿(QQQ / NOBL)任一沿用上次,整组都标沿用上次
+  // 攻防那组序列两条腿(QQQ / XLP)任一沿用上次,整组都标沿用上次
   const AD_KEYS: SeriesKey[] = [
-    'noblQqq',
-    'noblQqqMa35',
+    'xlpQqq',
+    'xlpQqqMa20',
     'adZigDefense',
     'adZigOffense',
     'adZigDefensePending',
     'adZigOffensePending',
     'adFastDefense',
     'adFastOffense',
+  ];
+  // 轮动阶段标注:QQQ / XLP / VIX 任一沿用上次,整组都标沿用上次(hyOas 读库兜底,不算)
+  const RP_KEYS: SeriesKey[] = [
+    'rpRotate',
+    'rpKill',
+    'rpPeakQ',
+    'rpPeakX',
+    'rpPeakXPending',
+    'rpBottom',
+    'rpConfirm',
+    'rpLowA',
+    'rpLowB',
+    'rpLabel',
   ];
   // live/market 这次没拉到新的、回的是上一份 → 对应的对外键标「沿用上次」,整份结果只短缓存(见 complete)
   const liveStale: string[] = [];
@@ -234,7 +248,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     vvix: cboeSeries('VVIX'),
     // VIX(即期期限结构价差的近端腿,也直接对外发 vix)/ VXN / SKEW:原先由 vrp_inputs 组写库,
     // 2026-11-17 起改现拉,与 /api/vrp 共用 live/market 的缓存(与库里逐日相等)
-    vixSpot: track(['vix', 'vixSpot'], volIndex('VIX', FRESH)),
+    vixSpot: track(['vix', 'vixSpot', ...RP_KEYS], volIndex('VIX', FRESH)),
     vxn: track(['vxn'], volIndex('VXN', FRESH)),
     skew: track(['skew'], volIndex('SKEW', FRESH)),
     rxm: cboeSeries('RXM'),
@@ -293,9 +307,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   // Binance 现货 BTCUSDT 日成交额(2017-08 起,每页 1000 天,4 个并发请求)
   const btcVolumeP = fetchBtcVolume().catch(warnNull('Binance BTC 成交额'));
   // QQQ / BTC 现货与 BRK 链上:原先由 job 落库,改现拉(live/market 自带缓存,与 /api/vrp 共用一份)
-  const qqqBarsP = track(['qqq', ...AD_KEYS], spotBars('QQQ', FRESH)).catch(warnNull('Yahoo QQQ'));
-  // NOBL(标普红利贵族):只做攻防比值的防守腿
-  const noblBarsP = track(AD_KEYS, spotBars('NOBL', FRESH)).catch(warnNull('Yahoo NOBL'));
+  const qqqBarsP = track(['qqq', ...AD_KEYS, ...RP_KEYS], spotBars('QQQ', FRESH)).catch(warnNull('Yahoo QQQ'));
+  // XLP(必需消费):只做攻防比值的防守腿
+  const xlpBarsP = track([...AD_KEYS, ...RP_KEYS], spotBars('XLP', FRESH)).catch(warnNull('Yahoo XLP'));
   const btcBarsP = track(['btc', 'weekendFlag'], spotBars('BTC', FRESH)).catch(warnNull('BTC 现货'));
   const btcClosedP = track(['btcSharpe1y'], closedBars('BTC', FRESH)).catch(warnNull('BTC 现货(已收盘)'));
   const densityP = track(['btcSupplyDensity', 'btcSupplyDensityRaw'], btcSupplyDensity(FRESH)).catch(
@@ -429,7 +443,7 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     lmeCopper: lmeCopperP,
     btcVolume: btcVolumeP,
     qqqBars: qqqBarsP,
-    noblBars: noblBarsP,
+    xlpBars: xlpBarsP,
     btcBars: btcBarsP,
     btcClosed: btcClosedP,
     density: densityP,
@@ -488,9 +502,9 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   const gex = await gexP;
   const lmeCopper = await lmeCopperP;
   const btcVolume = await btcVolumeP;
-  const [qqqBars, noblBars, btcBars, btcClosed, densityRaw, valuation] = await Promise.all([
+  const [qqqBars, xlpBars, btcBars, btcClosed, densityRaw, valuation] = await Promise.all([
     qqqBarsP,
-    noblBarsP,
+    xlpBarsP,
     btcBarsP,
     btcClosedP,
     densityP,
@@ -789,12 +803,12 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
   );
   if (qqq2018.length) ohlc.qqq = toOhlc(qqq2018);
 
-  // 攻防:NOBL / QQQ 从 NOBL 上市(2013)起全段算 —— ZigZag 的拐点要靠前面的走势确认,截到 2018 会改掉开头几段
+  // 攻防:XLP / QQQ 从两者共同的首日(QQQ 1999-03 上市)起全段算 —— ZigZag 的拐点要靠前面的走势确认,截到 2018 会改掉开头几段
   const close = (bars: { date: string; close: number }[] | null) =>
     (bars ?? []).map((b) => ({ date: b.date, value: b.close }));
-  const ad = noblBars?.length && qqqBars?.length ? attackDefenseSeries(close(noblBars), close(qqqBars)) : null;
-  put('noblQqq', ad?.ratio);
-  put('noblQqqMa35', ad?.ma);
+  const ad = xlpBars?.length && qqqBars?.length ? attackDefenseSeries(close(xlpBars), close(qqqBars)) : null;
+  put('xlpQqq', ad?.ratio);
+  put('xlpQqqMa20', ad?.ma);
   put('adZigDefense', ad?.zigDefense);
   put('adZigOffense', ad?.zigOffense);
   put('adZigDefensePending', ad?.zigDefensePending);
@@ -933,6 +947,19 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     const dbBacked = readDbBacked(db, raw.move ?? [], sofrLive, raw.hyOas ?? []);
     Object.assign(series, dbBacked.series);
     unavailable.push(...dbBacked.unavailable);
+
+    // 轮动阶段标注要 hyOas 全历史(现拉只有 3 年,库里补齐的在 dbBacked 里),所以放在读库之后算
+    const hy = dbBacked.series.hyOas;
+    const rp =
+      xlpBars?.length && qqqBars?.length && raw.vixSpot && hy
+        ? rotationSeries(close(qqqBars), close(xlpBars), raw.vixSpot, hy)
+        : null;
+    // 不走 put:标注序列合法地可以为空(没有进行中的轮时「待定 ②」就没有点),空的照样写,
+    // 否则归 unavailable 会让整份结果永远不进缓存、还被 fillFromPrev 补回过期的待定线。只有输入缺了才整组算缺
+    RP_KEYS.forEach((k) => {
+      if (rp) series[k] = rp[k as keyof typeof rp];
+      else unavailable.push(k);
+    });
 
     const spotTerm = nearMinusFar({ near: raw.vixSpot ?? [], far: raw.vix3m ?? [] });
     put('vixSpotTerm', spotTerm.length ? spotTerm : undefined);

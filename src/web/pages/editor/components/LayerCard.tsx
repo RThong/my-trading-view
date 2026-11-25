@@ -88,6 +88,8 @@ type Props = {
   onDragEnd: () => void;
 };
 
+// 标记图层的类型小字
+const MARK_KIND_LABEL: Record<string, string> = { background: '背景', events: '竖线', markers: '箭头' };
 export function LayerCard({
   doc,
   layer,
@@ -186,7 +188,7 @@ export function LayerCard({
         )}
         {events && (
           <span className="shrink-0 text-[10px] text-neutral-500">
-            {layer.render?.kind === 'background' ? '背景' : '竖线'}
+            {MARK_KIND_LABEL[layer.render?.kind ?? ''] ?? '竖线'}
           </span>
         )}
         {!events && (
