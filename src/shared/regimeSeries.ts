@@ -116,6 +116,11 @@ export const REGIME_SERIES = [
   'rpBottom',
   'rpConfirm',
   'rpLowA',
+  'rpLowACandidate',
+  'rpLowAGhost',
+  'rpLowBGhost',
+  'rpBottomGhost',
+  'rpKillGhost',
   'rpLowB',
   'rpLabel',
   // 踩踏监控(「踩踏监控」视角,见 shared/calc/stampede):阶段三 0/1(历史图红底)、断崖亮灯日、升级 0/1(阶段卡徽标)

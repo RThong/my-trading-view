@@ -127,9 +127,9 @@ const KINDS: Record<Kind, KindDef> = {
   ),
   // 成交量柱:点自带涨跌色(见 layerPoints 的 tint);没带的用 series 选项里的图层颜色
   volume: kindDef(HistogramSeries, (_layer, pts) => pts),
-  // 虚线竖线不用柱子画(柱宽随缩放变),柱子透明、只占图例与显隐,线由 DayBandPrimitive 画(见下面的 effect)
+  // 细线竖线不用柱子画(柱宽随缩放变),柱子透明、只占图例与显隐,线由 DayBandPrimitive 画(见下面的 effect)
   events: kindDef(HistogramSeries, (layer, pts) => {
-    const color = layer.render?.kind === 'events' && layer.render.dash ? TRANSPARENT : markColor(layer);
+    const color = fedColor(layer);
     return pts.map((p) => ({ time: p.time, value: 1, color }));
   }),
   // 蜡烛读 K 线不读点:涨跌颜色由 series 选项定(见 seriesOptions),图层颜色不起作用
@@ -382,8 +382,8 @@ export function useDocChart(
       const kind = drawnKind(l);
       const src = d && KINDS[kind].input(d);
       const prev = fedRef.current.get(l.id);
-      // 标记图层的颜色逐点写在数据里:实际画出来的颜色变了(改色 / 改竖线透明度)就得重灌
-      const tint = markColor(l);
+      // 标记图层的颜色逐点写在数据里:实际画出来的颜色变了(改色 / 改竖线透明度 / 满宽柱 ↔ 细线)就得重灌
+      const tint = fedColor(l);
       const changed = !prev || prev.src !== src || prev.kind !== kind || (isMarkLayer(l) && prev.color !== tint);
       // had:这条之前灌过非空数据(换画法 / 数据刷新),不算「第一次到位」,不去动横轴
       return s && d && src && changed ? [{ l, s, d, src, kind, tint, had: (prev?.src.length ?? 0) > 0 }] : [];
@@ -560,7 +560,7 @@ export function useDocChart(
   const bandsRef = useRef(new Map<string, { s: ISeriesApi<SeriesType>; prim: DayBandPrimitive }>());
   useEffect(() => {
     const bands = bandsRef.current;
-    const wanted = doc.panes.flatMap((p) => p.layers).filter((l) => drawnKind(l) === 'background' || isDashed(l));
+    const wanted = doc.panes.flatMap((p) => p.layers).filter((l) => drawnKind(l) === 'background' || !!lineStyle(l));
     const wantedIds = new Set(wanted.map((l) => l.id));
     [...bands].forEach(([id, b]) => {
       const live = seriesRef.current.get(id) === b.s;
@@ -579,7 +579,8 @@ export function useDocChart(
       }
       const times = (data[l.id]?.display ?? []).filter((pt) => pt.value !== 0).map((pt) => pt.time);
       const r = l.render?.kind === 'background' ? l.render : undefined;
-      if (isDashed(l)) b.prim.setData(times, markColor(l), false, true);
+      const line = lineStyle(l);
+      if (line) b.prim.setData(times, markColor(l), false, line);
       else b.prim.setData(times, withAlpha(l.color, r?.opacity ?? BACKGROUND_ALPHA), !!r?.strip);
     });
   }, [doc, data]);
@@ -617,9 +618,14 @@ export function useDocChart(
   return { chartRef, seriesRef };
 }
 
-/** 画成细虚线的竖线图层 */
-function isDashed(l: Layer): boolean {
-  return l.render?.kind === 'events' && !!l.render.dash;
+/** 标记图层逐点写进数据的颜色:细线竖线的柱子透明(线由图元画),其余同实际颜色 */
+function fedColor(l: Layer): string {
+  return lineStyle(l) ? TRANSPARENT : markColor(l);
+}
+
+/** 画成 1px 细线的竖线图层:实线 / 虚线;没设 = 满宽柱 */
+function lineStyle(l: Layer): 'solid' | 'dash' | undefined {
+  return l.render?.kind === 'events' ? l.render.line : undefined;
 }
 
 /** 箭头标记图层 → lw 的 series markers:up = K 线下方朝上,down = 上方朝下;按值查文字 */

@@ -176,6 +176,11 @@ async function fetchFresh(prev: RegimeCached | undefined): Promise<{ value: Regi
     'rpBottom',
     'rpConfirm',
     'rpLowA',
+    'rpLowACandidate',
+    'rpLowAGhost',
+    'rpLowBGhost',
+    'rpBottomGhost',
+    'rpKillGhost',
     'rpLowB',
     'rpLabel',
   ];

@@ -49,7 +49,7 @@ export type Fit = { target: string; start: string; end: string; alpha: number; b
  * signed:符号柱(正绿负红、0 基线),看正负和大小的量(净持仓、期限结构)。
  * events:事件竖线,序列里每个日期画一根满高细柱,值不画(发布日、决议日);挂自己的隐形轴,图层的 scale 不起作用。
  *   opacity(0~1,缺省不透明):竖线压在线上面,满色太抢眼;颜色仍只写 #rrggbb(取色器只认这个),透明度单列。
- *   dash:画成 1px 细虚线(攻防的「算法当天确认」线),不是满宽柱
+ *   line:画成 1px 细线(solid 实线 / dash 虚线),不是满宽柱 —— 放大后满宽柱会盖住同一根 K 线上的箭头
  * background:背景色带,序列是 0 / 1 标记,值为 1 的日子整格高染图层颜色(淡色,压在线下面);同样挂自己的隐形轴。
  *   opacity(0~1,缺省 0.14):同一种颜色要分深浅时用(攻防的已确认 / 末段待定);strip:只染格子底部一条细带
  *   (同一格里叠第二套标记,如攻防的快线,不和整格高的背景混在一起)
@@ -61,7 +61,7 @@ export type Fit = { target: string; start: string; end: string; alpha: number; b
 export type LayerRender =
   | { kind: 'line'; baseline?: number; step?: true }
   | { kind: 'signed' }
-  | { kind: 'events'; opacity?: number; dash?: true }
+  | { kind: 'events'; opacity?: number; line?: 'solid' | 'dash' }
   | { kind: 'background'; opacity?: number; strip?: true }
   | { kind: 'candle' }
   | { kind: 'volume' }
@@ -934,7 +934,8 @@ function isOpacity(x: unknown): boolean {
 function isRender(x: unknown): x is LayerRender {
   if (!isObj(x)) return false;
   if (x.kind === 'signed' || x.kind === 'candle' || x.kind === 'volume') return true;
-  if (x.kind === 'events') return isOpacity(x.opacity) && (x.dash === undefined || x.dash === true);
+  if (x.kind === 'events')
+    return isOpacity(x.opacity) && (x.line === undefined || x.line === 'solid' || x.line === 'dash');
   if (x.kind === 'markers')
     return (
       (x.shape === 'up' || x.shape === 'down') &&
@@ -1090,7 +1091,7 @@ function canonicalRender(r: LayerRender): LayerRender {
     return {
       kind: r.kind,
       ...(r.opacity !== undefined ? { opacity: r.opacity } : {}),
-      ...(r.dash ? { dash: true as const } : {}),
+      ...(r.line ? { line: r.line } : {}),
     };
   if (r.kind === 'markers')
     return { kind: r.kind, shape: r.shape, ...(r.text ? { text: Object.fromEntries(Object.entries(r.text)) } : {}) };

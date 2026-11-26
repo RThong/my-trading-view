@@ -31,15 +31,16 @@ export function mergeSpans(xs: number[], barSpacing: number): Span[] {
 // 细带只占格子底部这么高(比例):够看出颜色,又压不住上面的线
 const STRIP_H = 0.06;
 
-// 虚线模式(竖线图层的 dash):每个日期一根 1px 竖虚线,画在 K 线中心
-const DASH = [4, 3];
+// 细线模式(竖线图层的 line):每个日期一根 1px 竖线(实线 / 虚线),画在 K 线中心
+export type VLine = 'solid' | 'dash';
+const DASH: Record<VLine, number[]> = { solid: [], dash: [4, 3] };
 
 class DayBandRenderer implements IPrimitivePaneRenderer {
   constructor(
     private readonly spans: Span[],
     private readonly color: string,
     private readonly strip: boolean,
-    private readonly dashXs?: number[],
+    private readonly line?: { xs: number[]; style: VLine },
   ) {}
 
   draw(target: CanvasRenderingTarget2D): void {
@@ -47,12 +48,12 @@ class DayBandRenderer implements IPrimitivePaneRenderer {
     target.useMediaCoordinateSpace((scope: { context: CanvasRenderingContext2D; mediaSize: { height: number } }) => {
       const ctx = scope.context;
       const { height } = scope.mediaSize;
-      if (this.dashXs) {
+      if (this.line) {
         ctx.strokeStyle = this.color;
         ctx.lineWidth = 1;
-        ctx.setLineDash(DASH);
+        ctx.setLineDash(DASH[this.line.style]);
         ctx.beginPath();
-        this.dashXs.forEach((x) => {
+        this.line.xs.forEach((x) => {
           ctx.moveTo(Math.round(x) + 0.5, 0);
           ctx.lineTo(Math.round(x) + 0.5, height);
         });
@@ -73,7 +74,7 @@ export class DayBandPrimitive implements ISeriesPrimitive<Time> {
   private times: string[] = [];
   private color = 'transparent';
   private strip = false;
-  private dash = false;
+  private line?: VLine;
   private param?: SeriesAttachedParameter<Time>;
 
   attached(param: SeriesAttachedParameter<Time>): void {
@@ -84,19 +85,19 @@ export class DayBandPrimitive implements ISeriesPrimitive<Time> {
     this.param = undefined;
   }
 
-  /** times = 要上色的日期(升序);strip = 只染格子底部一条细带;dash = 不画色块,每个日期画一根竖虚线 */
-  setData(times: string[], color: string, strip = false, dash = false): void {
+  /** times = 要上色的日期(升序);strip = 只染格子底部一条细带;line = 不画色块,每个日期画一根 1px 竖线 */
+  setData(times: string[], color: string, strip = false, line?: VLine): void {
     this.times = times;
     this.color = color;
     this.strip = strip;
-    this.dash = dash;
+    this.line = line;
     this.param?.requestUpdate();
   }
 
   paneViews(): IPrimitivePaneView[] {
     const param = this.param;
     const times = this.times;
-    const { color, strip, dash } = this;
+    const { color, strip, line } = this;
     return [
       {
         zOrder: (): PrimitivePaneViewZOrder => 'bottom',
@@ -108,7 +109,7 @@ export class DayBandPrimitive implements ISeriesPrimitive<Time> {
             const x = ts.timeToCoordinate(t as Time);
             return x == null ? [] : [x];
           });
-          if (dash) return new DayBandRenderer([], color, false, xs);
+          if (line) return new DayBandRenderer([], color, false, { xs, style: line });
           return new DayBandRenderer(mergeSpans(xs, ts.options().barSpacing), color, strip);
         },
       },
