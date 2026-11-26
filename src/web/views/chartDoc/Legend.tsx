@@ -86,26 +86,31 @@ type Props = {
   data: Record<string, LayerData>;
   hoverTime: string | null;
   layout: LegendLayout;
-  onHidden: (layerId: string, hidden: boolean) => void;
+  /** 一次可改多条:标注行的眼睛按钮整组显隐,编辑器里只记一步撤销 */
+  onHidden: (layerIds: string[], hidden: boolean) => void;
 };
 
-// 每格左上角一块:该格各图层的名称 + 十字线当日(无十字线时为最新)的值,顶上写这一天的日期。不挡鼠标。
+// 每格左上角一列:该格各图层的名称 + 十字线当日(无十字线时为最新)的值,顶上写这一天的日期。不挡鼠标。
 // 换算过的线读原始值(换算值只是为了叠图);平移过的线附上这个点的原始日期,免得把挪过的日子当真。
 // 显隐按钮同 TradingView:悬停这一行才出现。隐藏的线收进下面一块紧凑小字(名字 + 读数,点一下显示):
 // 曲线走势那类一格挂十几二十条期限的,一条一行会比图还高。只有行本身接鼠标,块的其余部分照旧不挡十字线。
+// 标记图层(竖线、背景色带、箭头)不逐条列:同 TV 画线不进图例,读法写在格子 ⓘ 里;整格合成一行「标注」,只管整组显隐。
 export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Props) {
   const row = { doc, interval, data, hoverTime, onHidden };
   return (
     <>
       {doc.panes.map((pane, i) => {
-        const shown = pane.layers.filter((l) => !l.hidden);
-        const hidden = pane.layers.filter((l) => l.hidden);
-        // 读法说明属于格子(ChartDoc 的 pane.desc),挂在第一条显示中的线名后面,不另占一行;全隐藏时挂在隐藏块前
+        const marks = pane.layers.filter(isMarkLayer);
+        const lines = pane.layers.filter((l) => !isMarkLayer(l));
+        const shown = lines.filter((l) => !l.hidden);
+        const hidden = lines.filter((l) => l.hidden);
+        // 读法说明属于格子(ChartDoc 的 pane.desc),不另占一行,只挂一处:第一条显示中的线 → 标注行 → 隐藏块
         const info = pane.desc && <InfoTip text={pane.desc} className="-ml-0.5 h-3 w-3 text-[8px]" />;
+        const infoAt = shown.length > 0 ? 'shown' : marks.length > 0 ? 'marks' : 'hidden';
         return (
           <div
             key={pane.id}
-            className="pointer-events-none absolute z-10 flex max-w-xl flex-col overflow-hidden gap-0.5 rounded bg-neutral-950/70 px-1.5 py-1 text-xs"
+            className="pointer-events-none absolute z-10 flex max-w-xl flex-col items-start overflow-hidden gap-px text-xs"
             // 宽度不超出绘图区(窄屏时不压到价格轴 / 侧栏):放不下时线名截断、读数照常显示
             style={{
               top: (layout.tops[i] ?? 0) + 4,
@@ -114,24 +119,31 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
             }}
           >
             {/* 第 1 格顶上放十字线日期,没有十字线时是数据最后一天 */}
-            {i === 0 && <span className="text-neutral-500">{hoverTime ?? latestTime(doc, data) ?? '最新'}</span>}
+            {i === 0 && (
+              <span className={`${ROW_BG} text-neutral-500`}>{hoverTime ?? latestTime(doc, data) ?? '最新'}</span>
+            )}
             {shown.map((l, j) => (
               <LayerRow key={l.id} layer={l} pane={pane} info={j === 0 ? info : undefined} {...row} />
             ))}
+            {marks.length > 0 && (
+              <MarksRow marks={marks} info={infoAt === 'marks' ? info : undefined} onHidden={onHidden} />
+            )}
             {hidden.length > 0 && (
-              <span className="pointer-events-auto flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
-                {shown.length === 0 && info}
+              <span
+                className={`${ROW_BG} pointer-events-auto flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]`}
+              >
+                {infoAt === 'hidden' && info}
                 <EyeOff className="size-3 text-neutral-600" />
                 {hidden.map((l) => (
                   <button
                     key={l.id}
                     type="button"
-                    onClick={() => onHidden(l.id, false)}
+                    onClick={() => onHidden([l.id], false)}
                     title="显示"
                     className="whitespace-nowrap text-neutral-500 hover:text-neutral-200"
                   >
                     {layerLabel(doc, l)}
-                    {!isMarkLayer(l) && !l.indicator && (
+                    {!l.indicator && (
                       <span className="ml-1 tabular-nums">
                         {fmtValue(asOfPoint(data[l.id]?.display, hoverTime)?.value)}
                       </span>
@@ -150,6 +162,10 @@ export function Legend({ doc, interval, data, hoverTime, layout, onHidden }: Pro
 // 同 Tailwind max-w-xl:宽屏时图例也不铺太开
 const MAX_WIDTH = 576;
 
+// 底色只垫在每行文字后面、宽度贴字(同 TradingView 默认:演示页读像素,行内约 50% 底色,行外 K 线原色),
+// 不再整块铺一层 —— 一格线多时整块会盖住大片图
+const ROW_BG = 'max-w-full rounded-sm bg-neutral-950/50 px-1';
+
 /** 线名:放不下就截断成「…」,悬停看全名(读数、涨跌不截);至少留 3 个字宽,不至于整个名字缩没了只剩读数 */
 function NameText({ text }: { text: string }) {
   return (
@@ -161,6 +177,32 @@ function NameText({ text }: { text: string }) {
 
 type RowProps = Omit<Props, 'layout'> & { layer: Layer; pane: Pane; info: ReactNode };
 
+/** 一格的标记图层合成一行:全藏时名字变暗、点名字整组显示;否则悬停出眼睛,整组隐藏(编辑器里单藏了几条的也一并藏) */
+function MarksRow({ marks, info, onHidden }: { marks: Layer[]; info: ReactNode; onHidden: Props['onHidden'] }) {
+  const ids = marks.map((l) => l.id);
+  const allHidden = marks.every((l) => l.hidden);
+
+  return (
+    <span className={`${ROW_BG} group pointer-events-auto flex items-center gap-1.5 whitespace-nowrap`}>
+      {allHidden ? (
+        <button
+          type="button"
+          onClick={() => onHidden(ids, false)}
+          title="显示"
+          className="flex items-center gap-1 text-neutral-500 hover:text-neutral-200"
+        >
+          <EyeOff className="size-3" />
+          标注
+        </button>
+      ) : (
+        <span className="text-neutral-400">标注</span>
+      )}
+      {info}
+      {!allHidden && <HideButton onClick={() => onHidden(ids, true)} />}
+    </span>
+  );
+}
+
 function LayerRow(props: RowProps) {
   return props.layer.indicator ? <IndicatorRow {...props} /> : <SeriesRow {...props} />;
 }
@@ -169,7 +211,7 @@ function LayerRow(props: RowProps) {
 function IndicatorRow({ doc, data, hoverTime, onHidden, layer: l, pane, info }: RowProps) {
   const plots = plotsOf(l, allSevenDay(doc));
   return (
-    <span className="group pointer-events-auto flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+    <span className={`${ROW_BG} group pointer-events-auto flex min-w-0 items-center gap-1.5 whitespace-nowrap`}>
       <span className="h-0.5 w-3 rounded" style={{ background: plots[0]?.color }} />
       <NameText text={layerLabel(doc, l, { withShift: false })} />
       <LayerTags pane={pane} layer={l} data={data} />
@@ -183,7 +225,7 @@ function IndicatorRow({ doc, data, hoverTime, onHidden, layer: l, pane, info }: 
           </span>
         );
       })}
-      <HideButton onClick={() => onHidden(l.id, true)} />
+      <HideButton onClick={() => onHidden([l.id], true)} />
     </span>
   );
 }
@@ -271,12 +313,12 @@ function SeriesRow({ doc, interval, data, hoverTime, onHidden, layer: l, pane, i
   const rank = pctlRank(l, pts, pt?.value);
   // 蜡烛给开高低收;涨跌比的是前一个点(周 / 月线就是上一期),涨绿跌红,同旧固定面板与 TradingView
   const bar = drawnKind(l) === 'candle' ? asOfBar(data[l.id]?.bars, hoverTime) : undefined;
-  const change = pt && pts && !isMarkLayer(l) ? changeStats(pt.value, pts[pts.indexOf(pt) - 1]?.value) : null;
+  const change = pt && pts ? changeStats(pt.value, pts[pts.indexOf(pt) - 1]?.value) : null;
   const tone = change && change.delta !== 0 ? (change.delta > 0 ? SIGNED_UP : SIGNED_DOWN) : undefined;
   const num = (v: number) => <span style={{ color: tone }}>{fmtValue(v)}</span>;
 
   return (
-    <span className="group pointer-events-auto flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+    <span className={`${ROW_BG} group pointer-events-auto flex min-w-0 items-center gap-1.5 whitespace-nowrap`}>
       {drawnKind(l) === 'candle' ? (
         <CandleSwatch className="h-2.5 w-3" />
       ) : (
@@ -285,16 +327,14 @@ function SeriesRow({ doc, interval, data, hoverTime, onHidden, layer: l, pane, i
       <NameText text={layerLabel(doc, l, { withShift: false })} />
       <LayerTags pane={pane} layer={l} data={data} />
       {info}
-      {/* 标记图层(竖线、背景色带)的值无意义,只给名字 */}
-      {!isMarkLayer(l) &&
-        (bar ? (
-          <span className="tabular-nums text-neutral-400">
-            O {num(bar.open)} H {num(bar.high)} L {num(bar.low)} C {num(bar.close)}
-          </span>
-        ) : (
-          <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>
-        ))}
-      {unit && !isMarkLayer(l) && <span className="text-neutral-600">{unit}</span>}
+      {bar ? (
+        <span className="tabular-nums text-neutral-400">
+          O {num(bar.open)} H {num(bar.high)} L {num(bar.low)} C {num(bar.close)}
+        </span>
+      ) : (
+        <span className="tabular-nums text-neutral-100">{fmtValue(pt?.value)}</span>
+      )}
+      {unit && <span className="text-neutral-600">{unit}</span>}
       {change && (
         <span className="tabular-nums" style={{ color: tone }}>
           {fmtChange(change)}
@@ -304,7 +344,7 @@ function SeriesRow({ doc, interval, data, hoverTime, onHidden, layer: l, pane, i
       {shift !== 0 && pt && interval === '1D' && (
         <span className="text-neutral-600">原 {shiftBusinessDays(pt.time, -shift)}</span>
       )}
-      <HideButton onClick={() => onHidden(l.id, true)} />
+      <HideButton onClick={() => onHidden([l.id], true)} />
     </span>
   );
 }

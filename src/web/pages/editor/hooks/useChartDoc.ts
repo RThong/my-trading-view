@@ -138,8 +138,8 @@ export function useChartDoc(store?: DocStore) {
       edit('改线条颜色', (d) => setLayerColor(d, layerId, color), `layer-color:${layerId}`),
     setStretches: (stretches: number[]) => edit('调整格高', (d) => setStretches(d, stretches)),
     setShift: (layerId: string, shift: number) => edit('平移', (d) => setLayerShift(d, layerId, shift)),
-    setHidden: (layerId: string, hidden: boolean) =>
-      edit(hidden ? '隐藏线' : '显示线', (d) => setLayerHidden(d, layerId, hidden)),
+    setHidden: (layerIds: string[], hidden: boolean) =>
+      edit(hidden ? '隐藏线' : '显示线', (d) => layerIds.reduce((acc, id) => setLayerHidden(acc, id, hidden), d)),
     setRender: (layerId: string, render: LayerRender | undefined) =>
       edit('改画法', (d) => setLayerRender(d, layerId, render)),
     setCalc: (layerId: string, calc: Calc | undefined) => edit('改计算', (d) => setLayerCalc(d, layerId, calc)),

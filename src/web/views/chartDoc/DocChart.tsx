@@ -89,7 +89,7 @@ export function DocChart({
         data={data}
         hoverTime={hoverTime}
         layout={layout}
-        onHidden={(id, hidden) => setDoc((d) => setLayerHidden(d, id, hidden))}
+        onHidden={(ids, hidden) => setDoc((d) => ids.reduce((acc, id) => setLayerHidden(acc, id, hidden), d))}
       />
       {/* 放在价格轴与时间轴交汇的右下角小方格里(lw-charts 那里不画东西),同编辑器收起侧栏的按钮。
           带过去的是当前看到的这份(眼睛按钮的显隐、拖过的格高都在),改的是副本 */}
